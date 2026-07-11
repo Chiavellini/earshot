@@ -1,0 +1,29 @@
+# M2 acceptance drill: replayed fixture audio → real 1¢ IOC on a liquid
+# NON-mention market. Bounded loss by construction: 1 contract at 1¢.
+
+[event]
+id        = "M2DRILL"
+starts_at = "2026-07-10T00:00:00Z"
+
+[pipeline]
+chunk_ms = 160
+
+[[sources]]
+kind  = "replay"
+path  = "fixture.wav"
+speed = 1.0
+
+[kalshi]
+series = "KXBTCD"
+
+[risk]
+allowlist_tickers = ["KXBTCD-26JUL1717-T75999.99"]
+
+[[keywords]]
+market_ticker           = "KXBTCD-26JUL1717-T75999.99"
+phrase                  = "test burst"
+variants                = ["test burst"]
+max_price_cents         = 1        # M2 live gate requires ≤ 1¢
+budget_contracts        = 1
+policy                  = "fast_only"
+rule_risk_haircut_cents = 0

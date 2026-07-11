@@ -17,6 +17,8 @@ pub struct EventConfig {
     pub pipeline: PipelineSection,
     pub sources: Vec<SourceConfig>,
     pub kalshi: KalshiSection,
+    #[serde(default)]
+    pub risk: crate::risk::RiskConfig,
     pub keywords: Vec<KeywordConfig>,
 }
 
@@ -67,6 +69,17 @@ fn default_speed() -> f32 {
 #[serde(deny_unknown_fields)]
 pub struct KalshiSection {
     pub series: String,
+    #[serde(default = "default_env")]
+    pub env: String, // "prod" | "demo"
+    #[serde(default = "default_heartbeat")]
+    pub heartbeat_secs: u64,
+}
+
+fn default_env() -> String {
+    "prod".into()
+}
+fn default_heartbeat() -> u64 {
+    15
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]

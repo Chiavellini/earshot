@@ -241,6 +241,61 @@ at demo.kalshi.co and store them alongside `~/.kalshi/env` (e.g.
 
 ---
 
+## M2 live-drill pins (2026-07-10, production, bounded-loss 1¢ orders)
+
+All discovered by real order round-trips; each cost ≤ $0.01.
+
+**Claim:** `self_trade_prevention_type` is **REQUIRED** on V2 create-order
+(docs list it optional; live returns 400 `missing_parameters` without it).
+Use `taker_at_cross` for IOC, `maker` for post-only.
+**Confidence:** high (pinned). **Re-verify:** on any create-order 400.
+
+**Claim:** `count` must be a fixed-point 2-decimal string (`"1.00"`); plain
+`"1"` → 400 `invalid_parameters`.
+**Confidence:** high (pinned).
+
+**Claim:** `client_order_id` must be **UUID-shaped**; arbitrary strings → 400
+`invalid_parameters` (no field detail in the error). Earshot derives
+deterministic UUIDs from `sha256("{event}:{kw}:{tier}")` so idempotency
+survives the format constraint.
+**Confidence:** high (pinned).
+
+**Claim:** The 201 IOC ack has **no `order` wrapper and no `status` field**:
+top-level `{order_id, client_order_id, fill_count, remaining_count,
+average_fill_price, average_fee_paid, ts_ms}` (fp strings). Status must be
+derived: `remaining==0 && fill>0` → filled; `fill==0` → nothing crossed.
+**Evidence:** `{"average_fee_paid":"0.0007","average_fill_price":"0.0100",
+"fill_count":"1.00","remaining_count":"0.00",…}`.
+**Confidence:** high (pinned). Note the fee: $0.0007 on a 1¢ fill —
+**centicent precision**, i.e. our ceil-to-cent EV model is conservative.
+
+**Claim:** Legacy `DELETE /portfolio/orders/{id}` returns **410
+deprecated_v1_order_endpoint**. V2 cancel is `DELETE
+/portfolio/events/orders/{order_id}` → `{order_id, client_order_id,
+reduced_by, ts_ms}`. Works (pinned by kill drill; cancel path 140 ms
+STOP→cancelled from laptop).
+**Confidence:** high (pinned).
+
+**Claim:** WS orderbook wire format differs from the asyncapi docs:
+snapshots carry `yes_dollars_fp`/`no_dollars_fp` arrays of
+`[price_dollars, qty_fp]` strings; deltas carry `{price_dollars, delta_fp,
+side}`. The documented `use_yes_price` subscribe param is **ignored** — each
+side arrives in its own leg and the client must convert (YES ask = 100¢ − NO
+bid). Also: a quiet market sends no frames for seconds — feed liveness must
+be measured with pings, not message arrival.
+**Confidence:** high (pinned live).
+
+**Claim:** Measured order-path latency from this laptop: send→ack ~90–94 ms
+(RTT-dominated), exec→send 352 µs with pre-signed headers + pre-staged body
+(spec §3 stage-7 "<1 ms" target confirmed achievable). The ≤60 ms
+detection→ack gate is judged from the M5 region, not from here.
+**Confidence:** high (measured, n=2 sessions).
+
+**⚠ Operational:** this Kalshi account carries **~52 resting orders from
+other systems**. Any cancel logic must be scoped to the session's own order
+ids (`OrderRegistry`) — an account-wide cancel-all would destroy unrelated
+positions. This is now hard-coded policy in `rest.rs::cancel_orders`.
+
 ## Open items carried forward
 
 1. ~~Clock-skew tolerance~~ — RESOLVED: ±30 s, measured (see Q3).

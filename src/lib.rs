@@ -9,6 +9,7 @@ pub mod fixture;
 pub mod kalshi;
 pub mod pipeline;
 pub mod ring;
+pub mod risk;
 pub mod source;
 pub mod telemetry;
 pub mod types;

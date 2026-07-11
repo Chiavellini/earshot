@@ -16,12 +16,16 @@ use crate::types::{AudioChunk, AudioFrame};
 const FRAME_RING_CAP: usize = 256;
 const CHUNK_RING_CAP: usize = 64;
 
+/// `intent_tx`: the decision stage's exit door toward the executor (M2).
+/// `None` = log-only (M0 replay mode). `try_send` from the sync detect
+/// thread never blocks; a full channel is a counted, loud drop.
 pub fn run_pipeline(
     event_id: &str,
     chunk_ms: u32,
     source: Box<dyn AudioSource>,
     mut detector: Box<dyn Detector>,
     mut table: DecisionTable,
+    intent_tx: Option<tokio::sync::mpsc::Sender<crate::types::DecisionIntent>>,
 ) -> Result<PipelineReport, SourceError> {
     let (src_tx, preproc_rx) = ring::ring::<AudioFrame>(FRAME_RING_CAP);
     let (preproc_tx, chunker_rx) = ring::ring::<AudioFrame>(FRAME_RING_CAP);
@@ -78,13 +82,23 @@ pub fn run_pipeline(
                         decision_ts.saturating_since(det.audio_ts),
                     );
                     match &intent {
-                        Some(i) => tracing::info!(
-                            keyword = det.keyword.0,
-                            ticker = %i.market_ticker,
-                            tranche = i.tranche_contracts,
-                            tier = ?det.tier,
-                            "decision intent"
-                        ),
+                        Some(i) => {
+                            tracing::info!(
+                                keyword = det.keyword.0,
+                                ticker = %i.market_ticker,
+                                tranche = i.tranche_contracts,
+                                tier = ?det.tier,
+                                "decision intent"
+                            );
+                            if let Some(tx) = &intent_tx {
+                                if tx.try_send(i.clone()).is_err() {
+                                    tracing::error!(
+                                        keyword = det.keyword.0,
+                                        "intent channel full/closed: intent DROPPED"
+                                    );
+                                }
+                            }
+                        }
                         None => tracing::info!(
                             keyword = det.keyword.0,
                             tier = ?det.tier,

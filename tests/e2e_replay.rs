@@ -31,15 +31,16 @@ fn run(spec: &FixtureSpec, speed: f32) -> PipelineReport {
     let source = Box::new(ReplaySource::from_wav(&wav, speed, SourceId(0)).unwrap());
     let detector = Box::new(EnergyStubDetector::for_standard_fixture());
     let table = DecisionTable::from_keywords(&keywords());
-    run_pipeline("e2e", 160, source, detector, table).unwrap()
+    run_pipeline("e2e", 160, source, detector, table, None).unwrap()
 }
 
 fn assert_report_sane(report: &PipelineReport, expected_detections: usize) {
     assert_eq!(report.detections.len(), expected_detections);
     assert_eq!(report.drops.total(), 0, "no stage may drop under normal replay");
 
-    // Every edge histogram must be populated.
-    for edge in earshot::telemetry::EDGES {
+    // Every audio-pipeline edge histogram must be populated (the execution
+    // edges only exist when the M2 executor is attached).
+    for edge in ["capture→preproc", "preproc→chunk", "chunk→detect", "detect→decision", "capture→decision"] {
         let stats = report.edges.get(edge).unwrap_or_else(|| panic!("missing edge {edge}"));
         assert!(stats.count > 0, "edge {edge} recorded nothing");
     }

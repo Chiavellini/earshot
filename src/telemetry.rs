@@ -16,13 +16,21 @@ use serde::Serialize;
 use crate::types::{DecisionIntent, Detection};
 
 /// Edge names, in pipeline order (BTreeMap sorts alphabetically; the report
-/// renders in this order instead).
-pub const EDGES: [&str; 5] = [
+/// renders in this order instead). The M2 execution edges live in the same
+/// recorder space; a run that never fires an order simply leaves them at
+/// count 0 (hidden by the renderer).
+pub const EDGES: [&str; 11] = [
     "capture→preproc",
     "preproc→chunk",
     "chunk→detect",
     "detect→decision",
     "capture→decision",
+    "decision→exec",
+    "presign_age",
+    "exec→send",
+    "send→ack",
+    "decision→ack",
+    "capture→ack",
 ];
 
 pub struct LatencyRecorder {
@@ -53,9 +61,20 @@ impl LatencyRecorder {
         }
     }
 
+    /// Merge another recorder's histograms into this one (used to fold the
+    /// executor's recorder into the pipeline report at teardown).
+    pub fn merge(&mut self, other: &LatencyRecorder) {
+        for (edge, h) in &other.hists {
+            if let Some(mine) = self.hists.get_mut(edge) {
+                mine.add(h).ok();
+            }
+        }
+    }
+
     pub fn snapshot(&self) -> BTreeMap<String, EdgeStats> {
         self.hists
             .iter()
+            .filter(|(_, h)| !h.is_empty())
             .map(|(edge, h)| {
                 (
                     edge.to_string(),

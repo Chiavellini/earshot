@@ -1,0 +1,398 @@
+//! Local order-book cache fed by the Kalshi WebSocket (spec §5.7: "read the
+//! local WS book cache, never a blocking REST fetch").
+//!
+//! Concurrency: the WS reader task owns mutable scratch ladders and publishes
+//! an immutable `Arc<Book>` per update into an `ArcSwap` — readers (the
+//! executor, on the intent hot path) do wait-free loads and can never observe
+//! a torn book. The ticker set is fixed at arm time, so the map itself is
+//! never resized.
+//!
+//! Wire format (pinned live 2026-07-10 — the docs' `use_yes_price` flag is
+//! NOT honored on this protocol version, each side arrives in its own leg):
+//!   snapshot: msg.{yes,no}_dollars_fp = [["0.9900","23844.00"], …]
+//!   delta:    msg.{price_dollars, delta_fp, side: "yes"|"no"}
+//! Conversion done here: a NO bid at p¢ IS a YES ask at (100−p)¢. All prices
+//! integer cents internally, never floats.
+
+use std::collections::{BTreeMap, HashMap};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
+
+use arc_swap::ArcSwap;
+use futures_util::{SinkExt, StreamExt};
+use serde_json::{json, Value};
+
+use super::auth::Signer;
+use super::{KalshiEnv, KalshiError};
+use crate::clock::MonotonicNs;
+
+#[derive(Debug, Clone, Default)]
+pub struct Book {
+    /// (price_cents, qty), best (highest) first.
+    pub yes_bids: Vec<(u32, u32)>,
+    /// (price_cents, qty), best (lowest) first — from the no side, already
+    /// yes-leg priced via use_yes_price.
+    pub yes_asks: Vec<(u32, u32)>,
+    pub seq: u64,
+    pub as_of: MonotonicNs,
+}
+
+impl Book {
+    pub fn best_ask(&self) -> Option<(u32, u32)> {
+        self.yes_asks.first().copied()
+    }
+    pub fn best_bid(&self) -> Option<(u32, u32)> {
+        self.yes_bids.first().copied()
+    }
+    /// Total quantity offered at or below `cap_cents`.
+    pub fn depth_at_or_below(&self, cap_cents: u32) -> u32 {
+        self.yes_asks
+            .iter()
+            .take_while(|(p, _)| *p <= cap_cents)
+            .map(|(_, q)| q)
+            .sum()
+    }
+}
+
+pub struct BookCache {
+    books: HashMap<String, ArcSwap<Book>>,
+    last_ws_msg: AtomicU64, // MonotonicNs of last message on the socket
+}
+
+impl BookCache {
+    pub fn new(tickers: &[String]) -> Arc<Self> {
+        let books = tickers
+            .iter()
+            .map(|t| (t.clone(), ArcSwap::from_pointee(Book::default())))
+            .collect();
+        Arc::new(BookCache { books, last_ws_msg: AtomicU64::new(0) })
+    }
+
+    /// Wait-free read (hot path).
+    pub fn read(&self, ticker: &str) -> Option<Arc<Book>> {
+        self.books.get(ticker).map(|b| b.load_full())
+    }
+
+    pub fn tickers(&self) -> impl Iterator<Item = &String> {
+        self.books.keys()
+    }
+
+    /// ns since the last WS message; u64::MAX before the first one.
+    pub fn feed_age_ns(&self) -> u64 {
+        let last = self.last_ws_msg.load(Ordering::Relaxed);
+        if last == 0 {
+            u64::MAX
+        } else {
+            MonotonicNs::now().saturating_since(MonotonicNs(last))
+        }
+    }
+
+    /// Public for tests and the WS task; not part of any layer's door.
+    #[doc(hidden)]
+    pub fn touch(&self) {
+        self.last_ws_msg.store(MonotonicNs::now().0, Ordering::Relaxed);
+    }
+
+    /// Public for tests and the WS task; not part of any layer's door.
+    #[doc(hidden)]
+    pub fn publish(&self, ticker: &str, book: Book) {
+        if let Some(slot) = self.books.get(ticker) {
+            slot.store(Arc::new(book));
+        }
+    }
+}
+
+/// Mutable scratch state owned by the WS task.
+#[derive(Default)]
+struct Ladders {
+    yes_bids: BTreeMap<u32, u32>,
+    yes_asks: BTreeMap<u32, u32>,
+    seq: u64,
+}
+
+/// "0.9900" → 99¢. Integer parsing only; None for anything outside 0–100¢.
+fn dollars_to_cents(s: &str) -> Option<u32> {
+    let (int, frac) = s.split_once('.').unwrap_or((s, ""));
+    let dollars: u32 = int.parse().ok()?;
+    let frac2 = format!("{:0<2}", frac.chars().take(2).collect::<String>());
+    let cents_part: u32 = frac2.parse().ok()?;
+    let cents = dollars * 100 + cents_part;
+    (cents <= 100).then_some(cents)
+}
+
+/// Fixed-point quantity ("23844.00", "-11429.00") → whole contracts.
+/// Fractional remainders are logged loudly, never silently truncated.
+fn fp_to_contracts(s: &str) -> Option<i64> {
+    let neg = s.starts_with('-');
+    let s = s.trim_start_matches('-');
+    let (int, frac) = s.split_once('.').unwrap_or((s, "0"));
+    let whole: i64 = int.parse().ok()?;
+    if frac.trim_end_matches('0') != "" {
+        tracing::warn!(qty = s, "fractional contract quantity — truncating");
+    }
+    Some(if neg { -whole } else { whole })
+}
+
+impl Ladders {
+    fn to_book(&self) -> Book {
+        Book {
+            yes_bids: self.yes_bids.iter().rev().map(|(&p, &q)| (p, q)).collect(),
+            yes_asks: self.yes_asks.iter().map(|(&p, &q)| (p, q)).collect(),
+            seq: self.seq,
+            as_of: MonotonicNs::now(),
+        }
+    }
+
+    /// `price_cents` is in the side's OWN leg; the no→yes conversion
+    /// (yes_ask = 100 − no_bid) happens here and only here.
+    fn apply_level(&mut self, side: &str, price_cents: u32, qty_or_delta: i64, is_delta: bool) {
+        let (ladder, key) = match side {
+            "yes" => (&mut self.yes_bids, price_cents),
+            "no" => (&mut self.yes_asks, 100 - price_cents.min(100)),
+            _ => return,
+        };
+        let qty = if is_delta {
+            (ladder.get(&key).copied().unwrap_or(0) as i64 + qty_or_delta).max(0) as u32
+        } else {
+            qty_or_delta.max(0) as u32
+        };
+        if qty == 0 {
+            ladder.remove(&key);
+        } else {
+            ladder.insert(key, qty);
+        }
+    }
+}
+
+/// Apply one parsed WS message to the scratch ladders; returns the ticker
+/// whose book changed. Wire shapes pinned from live capture (see module doc).
+fn apply_message(scratch: &mut HashMap<String, Ladders>, msg: &Value) -> Option<String> {
+    let kind = msg["type"].as_str()?;
+    let m = &msg["msg"];
+    let ticker = m["market_ticker"].as_str()?.to_string();
+    let ladders = scratch.entry(ticker.clone()).or_default();
+
+    match kind {
+        "orderbook_snapshot" => {
+            ladders.yes_bids.clear();
+            ladders.yes_asks.clear();
+            for (side, key) in [("yes", "yes_dollars_fp"), ("no", "no_dollars_fp")] {
+                if let Some(levels) = m[key].as_array() {
+                    for level in levels {
+                        let price = level[0].as_str().and_then(dollars_to_cents);
+                        let qty = level[1].as_str().and_then(fp_to_contracts);
+                        if let (Some(p), Some(q)) = (price, qty) {
+                            ladders.apply_level(side, p, q, false);
+                        }
+                    }
+                }
+            }
+            ladders.seq = msg["seq"].as_u64().unwrap_or(0);
+            Some(ticker)
+        }
+        "orderbook_delta" => {
+            let price = m["price_dollars"].as_str().and_then(dollars_to_cents)?;
+            let delta = m["delta_fp"].as_str().and_then(fp_to_contracts)?;
+            let side = m["side"].as_str()?;
+            ladders.apply_level(side, price, delta, true);
+            ladders.seq = msg["seq"].as_u64().unwrap_or(ladders.seq + 1);
+            Some(ticker)
+        }
+        _ => None,
+    }
+}
+
+/// WS reader with reconnect. Runs until aborted. On any error it reconnects
+/// after 500 ms and re-subscribes — a fresh subscribe always yields a fresh
+/// snapshot, so the book can never silently drift across reconnects.
+/// Staleness during the gap is visible via `feed_age_ns()`.
+pub async fn run_ws(
+    env: KalshiEnv,
+    signer: Arc<Signer>,
+    cache: Arc<BookCache>,
+    tickers: Vec<String>,
+) {
+    let mut attempt = 0u32;
+    loop {
+        attempt += 1;
+        match connect_and_stream(&env, &signer, &cache, &tickers).await {
+            Ok(()) => tracing::info!("ws stream ended cleanly"),
+            Err(e) => tracing::warn!(attempt, "ws error: {e}; reconnecting"),
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+}
+
+async fn connect_and_stream(
+    env: &KalshiEnv,
+    signer: &Arc<Signer>,
+    cache: &Arc<BookCache>,
+    tickers: &[String],
+) -> Result<(), KalshiError> {
+    let path = "/trade-api/ws/v2";
+    let host = env
+        .ws_url
+        .trim_start_matches("wss://")
+        .split('/')
+        .next()
+        .unwrap()
+        .to_string();
+    let mut req = tokio_tungstenite::tungstenite::http::Request::builder()
+        .uri(env.ws_url)
+        .header("Host", host)
+        .header("Upgrade", "websocket")
+        .header("Connection", "Upgrade")
+        .header(
+            "Sec-WebSocket-Key",
+            tokio_tungstenite::tungstenite::handshake::client::generate_key(),
+        )
+        .header("Sec-WebSocket-Version", "13");
+    for (k, v) in signer.headers_now("GET", path) {
+        req = req.header(k, v);
+    }
+    let request = req.body(()).map_err(|e| KalshiError::Ws(e.to_string()))?;
+
+    let (mut ws, _) = tokio_tungstenite::connect_async(request)
+        .await
+        .map_err(|e| KalshiError::Ws(e.to_string()))?;
+
+    // NOTE: docs advertise use_yes_price but the live protocol ignores it
+    // (verified 2026-07-10) — sides arrive in their own legs and we convert.
+    let sub = json!({
+        "id": 1,
+        "cmd": "subscribe",
+        "params": {
+            "channels": ["orderbook_delta"],
+            "market_tickers": tickers,
+        }
+    });
+    ws.send(tokio_tungstenite::tungstenite::Message::Text(sub.to_string()))
+        .await
+        .map_err(|e| KalshiError::Ws(e.to_string()))?;
+
+    let mut scratch: HashMap<String, Ladders> = HashMap::new();
+    // A quiet market sends no deltas for seconds; liveness must not depend on
+    // trading activity. We ping every 500 ms — pongs (any frame) refresh
+    // feed_age, so the staleness guard measures CONNECTION health.
+    let mut ping = tokio::time::interval(Duration::from_millis(500));
+    ping.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        let frame = tokio::select! {
+            f = ws.next() => match f {
+                Some(f) => f.map_err(|e| KalshiError::Ws(e.to_string()))?,
+                None => break,
+            },
+            _ = ping.tick() => {
+                ws.send(tokio_tungstenite::tungstenite::Message::Ping(vec![]))
+                    .await
+                    .map_err(|e| KalshiError::Ws(e.to_string()))?;
+                continue;
+            }
+        };
+        cache.touch();
+        let text = match frame {
+            tokio_tungstenite::tungstenite::Message::Text(t) => t,
+            tokio_tungstenite::tungstenite::Message::Close(_) => break,
+            // Ping (server) is auto-ponged by tungstenite; Pong answers ours.
+            _ => continue,
+        };
+        tracing::debug!(msg = %text.chars().take(2000).collect::<String>(), "ws raw");
+        let Ok(msg) = serde_json::from_str::<Value>(&text) else { continue };
+        if msg["type"] == "error" {
+            tracing::error!(%text, "ws error message");
+            continue;
+        }
+        if let Some(ticker) = apply_message(&mut scratch, &msg) {
+            cache.publish(&ticker, scratch[&ticker].to_book());
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fp(cents: u32) -> String {
+        format!("{}.{:02}00", cents / 100, cents % 100)
+    }
+
+    /// Wire-exact snapshot: sides in their OWN legs (no side = NO prices).
+    fn snapshot(ticker: &str, yes: &[(u32, u32)], no: &[(u32, u32)], seq: u64) -> Value {
+        json!({
+            "type": "orderbook_snapshot", "sid": 1, "seq": seq,
+            "msg": {
+                "market_ticker": ticker,
+                "yes_dollars_fp": yes.iter().map(|(p,q)| json!([fp(*p), format!("{q}.00")])).collect::<Vec<_>>(),
+                "no_dollars_fp": no.iter().map(|(p,q)| json!([fp(*p), format!("{q}.00")])).collect::<Vec<_>>(),
+            }
+        })
+    }
+
+    fn delta(ticker: &str, side: &str, price: u32, d: i64, seq: u64) -> Value {
+        json!({
+            "type": "orderbook_delta", "sid": 1, "seq": seq,
+            "msg": {
+                "market_ticker": ticker, "side": side,
+                "price_dollars": fp(price), "delta_fp": format!("{d}.00"),
+            }
+        })
+    }
+
+    #[test]
+    fn parses_dollar_strings_exactly() {
+        assert_eq!(dollars_to_cents("0.9900"), Some(99));
+        assert_eq!(dollars_to_cents("0.01"), Some(1));
+        assert_eq!(dollars_to_cents("1.00"), Some(100));
+        assert_eq!(dollars_to_cents("1.01"), None); // out of contract range
+        assert_eq!(fp_to_contracts("23844.00"), Some(23844));
+        assert_eq!(fp_to_contracts("-11429.00"), Some(-11429));
+    }
+
+    #[test]
+    fn snapshot_then_deltas_converge_with_leg_conversion() {
+        let mut scratch = HashMap::new();
+        // NO bids at 55¢/50¢ ≡ YES asks at 45¢/50¢.
+        apply_message(
+            &mut scratch,
+            &snapshot("T", &[(40, 100), (39, 50)], &[(55, 200), (50, 10)], 7),
+        );
+        let book = scratch["T"].to_book();
+        assert_eq!(book.best_bid(), Some((40, 100)));
+        assert_eq!(book.best_ask(), Some((45, 200)));
+        assert_eq!(book.seq, 7);
+
+        // NO bid at 55 removed → YES ask at 45 gone; YES bid at 40 reduced.
+        apply_message(&mut scratch, &delta("T", "no", 55, -200, 8));
+        apply_message(&mut scratch, &delta("T", "yes", 40, -60, 9));
+        let book = scratch["T"].to_book();
+        assert_eq!(book.best_ask(), Some((50, 10)));
+        assert_eq!(book.best_bid(), Some((40, 40)));
+        assert_eq!(book.seq, 9);
+    }
+
+    #[test]
+    fn depth_at_or_below_cap() {
+        let mut scratch = HashMap::new();
+        // NO bids at 97/95/3/1 ≡ YES asks at 3/5/97/99.
+        apply_message(
+            &mut scratch,
+            &snapshot("T", &[], &[(97, 10), (95, 20), (3, 500), (1, 1000)], 1),
+        );
+        let book = scratch["T"].to_book();
+        assert_eq!(book.depth_at_or_below(97), 530);
+        assert_eq!(book.depth_at_or_below(2), 0);
+    }
+
+    #[test]
+    fn cache_publish_and_staleness() {
+        let cache = BookCache::new(&["T".to_string()]);
+        assert_eq!(cache.feed_age_ns(), u64::MAX);
+        cache.touch();
+        cache.publish("T", Book { seq: 3, ..Default::default() });
+        assert!(cache.feed_age_ns() < 1_000_000_000);
+        assert_eq!(cache.read("T").unwrap().seq, 3);
+        assert!(cache.read("UNKNOWN").is_none());
+    }
+}

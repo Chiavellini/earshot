@@ -10,8 +10,9 @@ use crate::config::{KeywordConfig, Policy};
 use crate::types::{DecisionIntent, Detection, Tier};
 
 /// Fraction of a keyword's budget released on a Fast-tier hit (spec §5.4:
-/// small tranche sized to be an acceptable write-off).
-const FAST_TRANCHE_PCT: u32 = 30;
+/// small tranche sized to be an acceptable write-off). Public because the
+/// executor pre-stages order bodies for exactly these tranche sizes.
+pub const FAST_TRANCHE_PCT: u32 = 30;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum KeywordState {
