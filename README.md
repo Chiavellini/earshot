@@ -1,44 +1,43 @@
 # earshot
 
-Audio-signal latency trader for Kalshi mention markets. See the meta-spec for
-architecture; **M0 (skeleton)** is complete: a replayed WAV flows through the
-ring-buffer pipeline (source → preproc → chunker → detector → decision) with a
-full monotonic timestamp chain and a per-stage latency report.
+Audio-signal latency trader for Kalshi mention markets. **M0** (replay
+pipeline + latency chain) and **M2** (Kalshi execution layer) are complete
+and live-validated; next milestones are M1 (detector bake-off) and M3
+(SIP/HLS live capture).
+
+New here (human or agent)? **Read `docs/ARCHITECTURE.md`** — every layer has
+a documented typed door and can be edited in isolation. Conventions in
+`CLAUDE.md`. All Kalshi API facts are pinned with evidence in
+`VERIFICATIONS.md`.
 
 ```
+cargo test                                                    # 48 tests: unit + mock + e2e
 cargo run --release -- gen-fixture --out configs/fixture.wav
-cargo run --release -- replay --config configs/example-event.toml
-cargo test
+cargo run --release -- replay --config configs/example-event.toml   # M0 pipeline
+cargo run --release -- arm --config configs/m2-drill.toml           # + executor, DRY-RUN
+cargo run --release -- book --ticker KXBTCD-... --secs 10           # live WS soak (read-only)
 ```
 
-Sample report (M1's real detectors replace the energy stub; `preproc→chunk` is
-chunk accumulation — the §3 stage-4 latency dial, 160 ms chunks here):
+Live order paths (`arm --i-am-live`, `probe-order`, `kill-drill`) are gated:
+allowlist + non-mention markets + 1¢ cap + $1 cumulative probe ledger. The
+kill switch (`touch state/STOP` or SIGINT) cancels this session's orders
+only — measured 140 ms STOP→cancelled.
+
+Measured on production (2026-07-10, from a laptop): full chain fixture-audio
+→ real fill in 231 ms — detection 137 ms (chunk-size dominated, the M1
+dial), decision 8 µs, executor 71 µs, order build+headers 352 µs
+(pre-signed/pre-staged), network send→ack 93.5 ms (region move is M5).
 
 ```
-event AAPL-Q3-2026  chunk 160 ms  frames 500  chunks 63  detections 3  drops 0
-
-edge (µs)             count        p50        p90        p95        p99        max
-capture→preproc          63        150        154        154        205        205
-preproc→chunk            63     139984     143654     146800     150601     150601
-chunk→detect             63        151        157        158        159        159
-detect→decision           3          1          8          8          8          8
-capture→decision          3     138805     139853     139853     139853     139853
+edge (µs)             count        p50        p95        p99
+capture→preproc          63        125        130        139
+preproc→chunk            63     140247     142999     144965
+chunk→detect             63        127        132        133
+detect→decision           3          2          8          8
+decision→exec             1         71         71         71
+exec→send                 1        352        352        352
+send→ack                  1      93519      93519      93519
+capture→ack               1     231211     231211     231211
 ```
 
-Layout: `src/source/` (AudioSource adapters — replay now; SIP/HLS in M2/M3),
-`src/pipeline/` (stages), `src/detector/` (M1 engine seam), `src/decision.rs`
-(keyword state machine), `src/kalshi/` (M2 execution seam), `src/telemetry.rs`
-(latency histograms + report.json).
-
-**VERIFICATIONS.md** records all resolved `[VERIFY]` items against live Kalshi
-docs/API (order transports, rate limits, signing scheme incl. the measured
-±30 s skew window, mention-market early-close mechanics, fees, demo parity).
-Kalshi code must cite that file. Re-run the probe with:
-
-```
-source ~/.kalshi/env
-cargo run --example sign_probe --features probe -- live   # read-only GETs + WS subscribe
-```
-
-Secrets live in `~/.kalshi/` (never in the repo). Drop policy: only the
-ingress ring drops (loudly, counted); interior stages apply backpressure.
+Secrets live in `~/.kalshi/` (env vars point at the PEM), never in the repo.
