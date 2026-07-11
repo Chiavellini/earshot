@@ -54,6 +54,9 @@ pub struct GridCell {
     pub engine: String,
     pub chunk_ms: u32,
     pub rows: Vec<AggRow>,
+    /// One "phrase tier call@pos_ms" line per false alarm — listen to the
+    /// audio there to classify engine error vs aligner miss (JSON only).
+    pub fa_autopsy: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -117,6 +120,7 @@ fn run_cell(
 ) -> Result<GridCell, AnyErr> {
     // Aggregate per (phrase, tier) across calls.
     let mut agg: BTreeMap<(String, Tier), TierScore> = BTreeMap::new();
+    let mut fa_autopsy = Vec::new();
     let mut corpus_hours = 0f64;
 
     for call in calls {
@@ -151,12 +155,16 @@ fn run_cell(
                 .filter(|o| o.phrase == kw.phrase)
                 .collect();
             for s in score::score_phrase(&kw.phrase, &dets, &occs, MatchWindow::default(), anchor) {
+                for &pos in &s.false_alarm_pos_ms {
+                    fa_autopsy.push(format!("{} {:?} {}@{}ms", s.phrase, s.tier, call.id, pos));
+                }
                 let entry = agg.entry((s.phrase.clone(), s.tier)).or_insert_with(|| TierScore {
                     phrase: s.phrase.clone(),
                     tier: s.tier,
                     true_positives: 0,
                     misses: 0,
                     false_alarms: 0,
+                    false_alarm_pos_ms: Vec::new(),
                     latency_ms: Vec::new(),
                 });
                 entry.true_positives += s.true_positives;
@@ -186,7 +194,7 @@ fn run_cell(
             }
         })
         .collect();
-    Ok(GridCell { engine: format!("{engine:?}").to_lowercase(), chunk_ms, rows })
+    Ok(GridCell { engine: format!("{engine:?}").to_lowercase(), chunk_ms, rows, fa_autopsy })
 }
 
 impl BenchReport {

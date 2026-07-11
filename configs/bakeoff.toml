@@ -42,8 +42,12 @@ variants         = ["recession", "recessions"]
 max_price_cents  = 97
 budget_contracts = 200
 policy           = "two_tier"
-fast_prefixes    = ["reces"]
-fast_threshold   = 0.08
+# "reces" (▁RE CE S) collides with reception/session on telephony audio
+# (dev FA autopsy) — "recess" adds the second S, killing those matches while
+# still firing one token before the full word.
+fast_prefixes    = ["recess"]
+fast_threshold   = 0.20
+confirmed_threshold = 0.28
 
 [[keywords]]
 market_ticker    = "KX-BENCH-GUIDANCE"
@@ -52,8 +56,11 @@ variants         = ["guidance"]
 max_price_cents  = 97
 budget_contracts = 200
 policy           = "two_tier"
-fast_prefixes    = ["guid"]
-fast_threshold   = 0.08
+# ▁GU ID also prefixes guiding/guided (said constantly on calls) and there
+# is no token boundary between "guid" and "guidance" — prefix firing is
+# structurally unavailable for this word (dev FA autopsy).
+fast_prefixes    = []
+confirmed_threshold = 0.25
 
 [[keywords]]
 market_ticker    = "KX-BENCH-TARIFF"
@@ -63,7 +70,9 @@ max_price_cents  = 97
 budget_contracts = 200
 policy           = "two_tier"
 fast_prefixes    = ["tari"]
-fast_threshold   = 0.08
+fast_threshold   = 0.05
+confirmed_threshold = 0.10
+boost            = 3.0
 
 [[keywords]]
 market_ticker    = "KX-BENCH-ACQUISITION"
@@ -73,7 +82,8 @@ max_price_cents  = 97
 budget_contracts = 200
 policy           = "two_tier"
 fast_prefixes    = ["acquis"]
-fast_threshold   = 0.08
+fast_threshold   = 0.20
+confirmed_threshold = 0.15
 
 [[keywords]]
 market_ticker    = "KX-BENCH-PARTNERSHIP"
@@ -82,5 +92,4 @@ variants         = ["partnership", "partnerships"]
 max_price_cents  = 97
 budget_contracts = 200
 policy           = "two_tier"
-fast_prefixes    = ["partner"]
-fast_threshold   = 0.08
+fast_prefixes    = []          # "partner" collides with the standalone word — no usable token boundary before SHIP

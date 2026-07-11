@@ -129,8 +129,38 @@ single disagreement was the telephony re-transcription mishearing
 error — the wideband alignment is correct). Aligner trusted. A by-ear pass
 (`scripts/corpus-verify.py`) can tighten this whenever a human has 20 min.
 
+## Dev tuning log (2026-07-11, sherpa_kws, corpus v1 dev = 2.81 h)
+
+Four accuracy rounds at speed=0. Chunk size (80/160/320) produced
+bit-identical accuracy — the model's internal chunking governs decoding, so
+`chunk_ms` is purely a latency dial; production uses 80 ms.
+
+Round 1 (all fast_thresholds 0.08, conf 0.20): guidance Conf recall 1.00 but
+Fast tier FA-heavy everywhere (recession control 6.4/h, partnership 6.05/h).
+Round 2 (thresholds up): raising Fast 0.08→0.15 barely moved FAs — scores
+cluster high under boost 2.0; tariff conf 0.10 + boost 3.0 lifted recall
+0.56→0.78. Round 3 added FA-position dumps; **FA autopsy** (independent
+re-transcription at every FA position) showed the false alarms are phonetic
+neighbors, not noise:
+- recession prefix `▁RE CE S` fired on "reception" and "a session" →
+  lengthened to "recess" (`▁RE CE S S`): Fast FA 6.05/h → 1.78/h.
+- guidance prefix `▁GU ID` fires on guiding/guided (constant on calls) and
+  no token boundary exists before ANCE → **prefix firing is structurally
+  unavailable for "guidance"**; Fast tier dropped (Confirmed releases the
+  full budget when Fast never fired).
+- partnership prefix "partner" collides with the standalone word → dropped.
+
+Frozen dev numbers (round 4): guidance Conf recall 1.00 / 1.07 FA/h;
+tariff Conf 0.78 / 0.36 FA/h, Fast 0.67 / 0.36 FA/h; partnership Conf 0.75;
+acquisition Conf 0.67 (n=3); recession (pure FA control, 0 positives) Fast
+1.78/h, Conf 1.42/h. Known gaps, stated: recession thresholds are FA-tuned
+only (no positive samples yet); telephony band costs tariff ~2/9 recall
+(the aligner spot-check showed even wideband ASR mishears degraded
+"tariff-related").
+
 ## Results log
 
 | date | split | config | outcome |
 |---|---|---|---|
-| _(pending)_ | | | |
+| 2026-07-11 | dev ×4 rounds | configs/bakeoff.toml (frozen at r4) | tuning log above |
+| _(holdout pending)_ | | | |

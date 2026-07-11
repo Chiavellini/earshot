@@ -31,6 +31,10 @@ pub struct TierScore {
     pub true_positives: u32,
     pub misses: u32,
     pub false_alarms: u32,
+    /// Stream positions of unmatched detections — the FA-autopsy handle
+    /// (listen to the audio there: engine error, or a word the aligner
+    /// missed?).
+    pub false_alarm_pos_ms: Vec<u64>,
     /// Wall-clock onset→emit latencies, paced (speed=1.0) runs only.
     pub latency_ms: Vec<i64>,
 }
@@ -97,12 +101,19 @@ pub fn score_phrase(
                     }
                 }
             }
+            let false_alarm_pos_ms: Vec<u64> = dets
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| !matched[*i])
+                .map(|(_, d)| d.detection.audio_pos_ms)
+                .collect();
             TierScore {
                 phrase: phrase.to_string(),
                 tier,
                 true_positives: tp,
                 misses: occurrences.len() as u32 - tp,
-                false_alarms: matched.iter().filter(|m| !**m).count() as u32,
+                false_alarms: false_alarm_pos_ms.len() as u32,
+                false_alarm_pos_ms,
                 latency_ms,
             }
         })
