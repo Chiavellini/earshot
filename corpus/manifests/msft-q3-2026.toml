@@ -1,0 +1,44 @@
+[call]
+id    = "MSFT-Q3-2026"
+audio = "telephony/msft-q3-2026.wav"
+split = "dev"
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 1120270
+end_ms   = 1120470
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 1682580
+end_ms   = 1682900
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 2510120
+end_ms   = 2510420
+
+[[occurrences]]
+phrase   = "partnership"
+onset_ms = 2775090
+end_ms   = 2775550
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 2875070
+end_ms   = 2875410
+
+[[occurrences]]
+phrase   = "partnership"
+onset_ms = 3457610
+end_ms   = 3458630
+
+[[occurrences]]
+phrase   = "partnership"
+onset_ms = 3461690
+end_ms   = 3462310
+
+[[occurrences]]
+phrase   = "partnership"
+onset_ms = 3527420
+end_ms   = 3527880

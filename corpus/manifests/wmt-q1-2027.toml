@@ -1,0 +1,89 @@
+[call]
+id    = "WMT-Q1-2027"
+audio = "telephony/wmt-q1-2027.wav"
+split = "holdout"
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 635390
+end_ms   = 635590
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 679550
+end_ms   = 679870
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 730490
+end_ms   = 730850
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 1087170
+end_ms   = 1087570
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 1119220
+end_ms   = 1119560
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 1146600
+end_ms   = 1146900
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 1183720
+end_ms   = 1184000
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1186900
+end_ms   = 1187120
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 1189760
+end_ms   = 1190120
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1195060
+end_ms   = 1195260
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1535800
+end_ms   = 1536420
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1604410
+end_ms   = 1604710
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1890600
+end_ms   = 1891540
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 1945130
+end_ms   = 1945370
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 2348800
+end_ms   = 2349320
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 2463490
+end_ms   = 2463710
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 3588620
+end_ms   = 3588900

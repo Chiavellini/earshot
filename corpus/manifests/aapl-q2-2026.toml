@@ -1,0 +1,74 @@
+[call]
+id    = "AAPL-Q2-2026"
+audio = "telephony/aapl-q2-2026.wav"
+split = "dev"
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 63160
+end_ms   = 63580
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 335260
+end_ms   = 335520
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 1327220
+end_ms   = 1327420
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 1352790
+end_ms   = 1352970
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1823320
+end_ms   = 1823660
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 1949340
+end_ms   = 1949680
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 2389730
+end_ms   = 2390970
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 3325890
+end_ms   = 3326210
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 3335930
+end_ms   = 3336190
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 3347990
+end_ms   = 3348230
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 3351810
+end_ms   = 3352010
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 3367820
+end_ms   = 3368100
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 3371020
+end_ms   = 3371620
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 3379300
+end_ms   = 3379640

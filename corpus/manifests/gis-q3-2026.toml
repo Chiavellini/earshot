@@ -1,0 +1,64 @@
+[call]
+id    = "GIS-Q3-2026"
+audio = "telephony/gis-q3-2026.wav"
+split = "holdout"
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 105120
+end_ms   = 105420
+
+[[occurrences]]
+phrase   = "acquisition"
+onset_ms = 189770
+end_ms   = 190130
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 338300
+end_ms   = 338760
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 1298690
+end_ms   = 1299070
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 1301660
+end_ms   = 1302020
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 1319740
+end_ms   = 1320000
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 1878000
+end_ms   = 1878360
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 1984020
+end_ms   = 1984400
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 2008620
+end_ms   = 2008940
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 2014860
+end_ms   = 2015160
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 2017140
+end_ms   = 2017440
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 2042020
+end_ms   = 2042300

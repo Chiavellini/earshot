@@ -1,0 +1,69 @@
+[call]
+id    = "QCOM-Q2-2026"
+audio = "telephony/qcom-q2-2026.wav"
+split = "dev"
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 145260
+end_ms   = 145620
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 852950
+end_ms   = 853210
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 860410
+end_ms   = 860710
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 956200
+end_ms   = 956540
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 968840
+end_ms   = 968980
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 998860
+end_ms   = 999180
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 1018870
+end_ms   = 1019030
+
+[[occurrences]]
+phrase   = "acquisition"
+onset_ms = 1221960
+end_ms   = 1222360
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 1321490
+end_ms   = 1321770
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 1845910
+end_ms   = 1846250
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 1865760
+end_ms   = 1865980
+
+[[occurrences]]
+phrase   = "acquisition"
+onset_ms = 2112980
+end_ms   = 2113380
+
+[[occurrences]]
+phrase   = "acquisition"
+onset_ms = 2114520
+end_ms   = 2114760

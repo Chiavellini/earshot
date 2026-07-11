@@ -108,14 +108,26 @@ recur in live Kalshi earnings-mention markets (e.g. KXEARNINGSMENTIONNFLX
 lists Acquisition / Partnership / Competition-style words): **recession,
 guidance, tariff, acquisition, partnership**.
 
-| call id | company | split | rationale |
-|---|---|---|---|
-| AAPL-Q2-2026 | Apple | dev | |
-| MSFT-Q3-2026 | Microsoft | dev | |
-| QCOM-Q2-2026 | Qualcomm | dev | |
-| WMT-Q1-2027 | Walmart | holdout | company never seen in dev |
-| CAT-Q1-2026 | Caterpillar | holdout | company never seen in dev |
-| GIS-Q3-2026 | General Mills | holdout | company never seen in dev |
+| call id | company | split | occurrences | rationale |
+|---|---|---|---|---|
+| AAPL-Q2-2026 | Apple | dev | 14 | |
+| MSFT-Q3-2026 | Microsoft | dev | 8 | |
+| QCOM-Q2-2026 | Qualcomm | dev | 13 | |
+| WMT-Q1-2027 | Walmart | holdout | 17 | company never seen in dev |
+| CAT-Q1-2026 | Caterpillar | holdout | 42 | company never seen in dev |
+| GIS-Q3-2026 | General Mills | holdout | 12 | company never seen in dev |
+
+Corpus v1 totals: **~5.5 h**, **106 occurrences** (tariff 55, guidance 42,
+acquisition 5, partnership 4, recession 0). **"recession" is a pure
+false-alarm control** — no call says it, so any recession detection is a
+false alarm by construction (this substitutes for the zero-keyword call).
+
+**Spot-check (2026-07-11, automated variant):** 12 random onsets re-checked
+by independently re-transcribing 4 s telephony clips: 11/12 confirmed; the
+single disagreement was the telephony re-transcription mishearing
+"tariff-related" as "tear-related" (channel degradation, not an alignment
+error — the wideband alignment is correct). Aligner trusted. A by-ear pass
+(`scripts/corpus-verify.py`) can tighten this whenever a human has 20 min.
 
 ## Results log
 

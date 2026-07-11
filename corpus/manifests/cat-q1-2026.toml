@@ -1,0 +1,214 @@
+[call]
+id    = "CAT-Q1-2026"
+audio = "telephony/cat-q1-2026.wav"
+split = "holdout"
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 227040
+end_ms   = 227460
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 230210
+end_ms   = 230550
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 241720
+end_ms   = 241880
+
+[[occurrences]]
+phrase   = "acquisition"
+onset_ms = 437060
+end_ms   = 437480
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 554550
+end_ms   = 554710
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 557780
+end_ms   = 558040
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 564350
+end_ms   = 564530
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 569340
+end_ms   = 569460
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1196930
+end_ms   = 1197190
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1205200
+end_ms   = 1205440
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1211690
+end_ms   = 1211990
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1235230
+end_ms   = 1235550
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1270370
+end_ms   = 1270550
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1344320
+end_ms   = 1344600
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1369970
+end_ms   = 1370330
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1442300
+end_ms   = 1442540
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1495270
+end_ms   = 1495490
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 1722990
+end_ms   = 1723190
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1849930
+end_ms   = 1850190
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1881550
+end_ms   = 1881710
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1887120
+end_ms   = 1887580
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1899020
+end_ms   = 1899240
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1912940
+end_ms   = 1913260
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1924790
+end_ms   = 1925110
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1931920
+end_ms   = 1932260
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1942210
+end_ms   = 1942490
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1950400
+end_ms   = 1950800
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 2034290
+end_ms   = 2034490
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 2056810
+end_ms   = 2057150
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 2080510
+end_ms   = 2080889
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 2092699
+end_ms   = 2092920
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 2106920
+end_ms   = 2107120
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 2111010
+end_ms   = 2111270
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 2119140
+end_ms   = 2119440
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 2121920
+end_ms   = 2122200
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 2124400
+end_ms   = 2124940
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 2129440
+end_ms   = 2129700
+
+[[occurrences]]
+phrase   = "guidance"
+onset_ms = 2134450
+end_ms   = 2135070
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 2775950
+end_ms   = 2776170
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 2783430
+end_ms   = 2783630
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 3350950
+end_ms   = 3351110
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 3599500
+end_ms   = 3599740
