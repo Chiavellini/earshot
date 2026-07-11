@@ -39,8 +39,24 @@ optional = true
 version = "0.22"
 optional = true
 
+[dependencies.tokio-tungstenite]
+version = "0.24"
+features = ["native-tls"]
+optional = true
+
+[dependencies.futures-util]
+version = "0.3"
+optional = true
+
 [features]
-probe = ["dep:reqwest", "dep:rsa", "dep:base64"]
+probe = [
+    "dep:reqwest",
+    "dep:rsa",
+    "dep:base64",
+    "dep:tokio-tungstenite",
+    "dep:futures-util",
+    "tokio/rt-multi-thread",
+]
 
 [[example]]
 name = "sign_probe"
