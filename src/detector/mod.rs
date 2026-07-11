@@ -6,6 +6,8 @@
 //! on a dedicated pinned OS thread.
 
 pub mod factory;
+pub mod kws_compile;
+pub mod sherpa_kws;
 pub mod stub;
 
 use smallvec::SmallVec;

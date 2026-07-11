@@ -125,6 +125,7 @@ mod tests {
             tier,
             audio_ts: MonotonicNs::now(),
             emit_ts: MonotonicNs::now(),
+            audio_pos_ms: 0,
         }
     }
 

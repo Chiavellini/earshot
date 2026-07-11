@@ -50,6 +50,10 @@ pub struct Detection {
     pub tier: Tier,
     pub audio_ts: MonotonicNs,    // capture_ts of triggering audio
     pub emit_ts: MonotonicNs,
+    /// Position of the triggering audio on the stream timeline (ms since the
+    /// stream's first sample). Wall-clock-free, so bench scoring works in
+    /// lossless speed=0 replays where MonotonicNs gaps are meaningless.
+    pub audio_pos_ms: u64,
 }
 
 /// Output of the decision stage; the M2 executor consumes these from a ring.

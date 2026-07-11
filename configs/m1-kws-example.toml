@@ -1,0 +1,46 @@
+# M1 sherpa_kws engine example (spec §5.4/§5.5). Shows every detector knob;
+# prerequisites: scripts/fetch-models.sh, and a replay WAV (8 kHz mono s16 —
+# the preproc resampler feeds the 16 kHz model).
+
+[event]
+id        = "M1-KWS-EXAMPLE"
+starts_at = "2026-07-30T21:00:00Z"
+
+[pipeline]
+chunk_ms       = 160
+resample_to_hz = 16000            # required for 8 kHz telephony sources
+
+[detector]
+engine = "sherpa_kws"
+
+[detector.sherpa_kws]
+# Relative to the working directory (repo root), unlike the replay `path`
+# which resolves relative to this file.
+model_dir         = "models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
+num_threads       = 1
+max_active_paths  = 4
+default_threshold = 0.25          # per-keyword overrides below
+default_boost     = 2.0
+refractory_ms     = 2000          # per (keyword, tier) dedupe window
+
+[[sources]]
+kind  = "replay"
+path  = "kws-smoke.wav"           # generate: see docs/layers/detector.md smoke test
+speed = 1.0
+
+[kalshi]
+series = "KXAAPLMENTION"
+
+[[keywords]]
+market_ticker           = "KXAAPLMENTION-26Q3-RECESSION"
+phrase                  = "recession"
+variants                = ["recession", "recessions"]
+max_price_cents         = 97
+budget_contracts        = 200
+policy                  = "two_tier"
+# Predictive partial-word firing: "reces" → tokens ▁RE CE S, fires Fast
+# before "-sion" completes. Shorter prefixes need lower thresholds.
+fast_prefixes           = ["reces"]
+fast_threshold          = 0.05
+confirmed_threshold     = 0.20
+rule_risk_haircut_cents = 2

@@ -317,6 +317,53 @@ directly instead of a hand-rolled greedy tokenizer (verify in M1 phase 3).
 **Confidence:** high (local artifact).
 **Re-verify:** only if the release asset is re-uploaded (sha mismatch).
 
+**Claim:** The model's `bpe.model` is (despite its name) a SentencePiece
+**UNIGRAM** model (`trainer_spec.model_type = 1`), and greedy longest-match
+tokenization against `tokens.txt` is WRONG for this vocab.
+**Evidence:** protobuf field inspected via python sentencepiece 2026-07-11;
+greedy diverges from spm on 4 of 12 known keyword vectors ("HEY SIRI",
+"MERRY CHRISTMAS", "LIGHT UP", "FOR EVER" — e.g. greedy `▁LI G H T` vs spm
+`▁ L IGHT`). No BPE merge path exists for e.g. `▁WORLD` (intermediates not
+in vocab), proving non-BPE.
+**Implication:** `kws_compile::TokenTable` implements unigram Viterbi
+segmentation (max summed piece log-probs) with the 12 vectors + "recession"
+/ "artificial intelligence" pinned as unit tests. Prefix (Fast) entries are
+CUT from the full variant's token sequence, never independently encoded —
+"ARTIFICIAL INTEL" encodes standalone to `… ▁IN T EL` but the transducer
+emits `▁IN TE LL IG ENCE` mid-word, so an independently-encoded prefix can
+never match.
+**Confidence:** high. **Re-verify:** on any model swap.
+
+**Claim (sherpa-onnx crate 1.13.4 KWS API, all pinned by local experiment
+2026-07-11 on the gigaspeech-3.3M model):**
+1. `keywords_buf` accepts in-memory keyword lines: `TOK TOK :boost
+   #threshold @label`; `@label` round-trips verbatim as `result.keyword`.
+2. `KeywordResult` exposes NO score/confidence field — gating is only via
+   per-entry `#threshold`. `Detection.confidence` is therefore constant 1.0.
+3. `start_time` is always 0.0. Per-token `timestamps` (40 ms granularity)
+   look absolute BUT rebase unpredictably around leading/decoded silence
+   (1 s decoded leading silence shifted times by −1.6 s; 5 s leading silence
+   by −4.8 s; mid-stream silence between words does NOT rebase). They are
+   NOT a reliable position source → `audio_pos_ms` uses our own fed-sample
+   counter (hit position = end of the chunk in which it surfaced ≈ word end
+   + decode lag ~0.4 s at chunk-16-left-64).
+4. Detections re-fire without `reset()`; `reset()` is unnecessary and (per
+   3) would corrupt the timeline. Refractory dedupe lives in our engine.
+5. `create_stream_with_keywords` SILENTLY IGNORES its per-stream keyword
+   list (config-level keywords fire instead).
+6. Within one decoder, a prefix entry and its full entry are mutually
+   exclusive per utterance (whichever path wins fires, the other never
+   does) → two-tier isolation requires TWO spotters (Fast-only +
+   Confirmed-only), which is what `SherpaKwsDetector` does.
+7. Threshold interacts with entry length: `▁LOVE LY ▁CHI` fires at #0.05
+   not #0.18; 1-token entries (`▁LOVE`) never fired at any threshold tried.
+   Keep prefixes ≥2 tokens and tune thresholds per keyword (the bake-off
+   dial). Measured prefix payoff on test_wavs: `▁LOVE LY` fires 640 ms
+   before the full `▁LOVE LY ▁CHI L D`.
+**Evidence:** examples/kws_probe.rs runs against test_wavs (known
+transcripts), 2026-07-11.
+**Confidence:** high. **Re-verify:** on sherpa-onnx crate upgrade.
+
 ## Open items carried forward
 
 1. ~~Clock-skew tolerance~~ — RESOLVED: ±30 s, measured (see Q3).

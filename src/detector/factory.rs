@@ -11,8 +11,6 @@ use crate::detector::Detector;
 
 #[derive(Debug, Error)]
 pub enum DetectorBuildError {
-    #[error("detector engine {0:?} is not built yet (lands in M1 phase 3)")]
-    NotImplemented(EngineKind),
     #[error("sherpa_kws: {0}")]
     SherpaKws(String),
 }
@@ -22,7 +20,16 @@ pub enum DetectorBuildError {
 pub fn build_detector(cfg: &EventConfig) -> Result<Box<dyn Detector>, DetectorBuildError> {
     match cfg.detector.engine {
         EngineKind::Stub => Ok(Box::new(EnergyStubDetector::for_standard_fixture())),
-        EngineKind::SherpaKws => Err(DetectorBuildError::NotImplemented(EngineKind::SherpaKws)),
+        EngineKind::SherpaKws => {
+            // Config validation guarantees the section exists for this engine.
+            let sk = cfg.detector.sherpa_kws.as_ref().expect("validated config");
+            if cfg.pipeline.resample_to_hz != Some(16_000) {
+                tracing::warn!(
+                    "sherpa_kws without pipeline.resample_to_hz = 16000: only valid if every source is 16 kHz-native"
+                );
+            }
+            Ok(Box::new(crate::detector::sherpa_kws::SherpaKwsDetector::new(sk, &cfg.keywords)?))
+        }
     }
 }
 
@@ -43,12 +50,11 @@ mod tests {
     }
 
     #[test]
-    fn sherpa_engine_refuses_until_phase_3() {
+    fn sherpa_engine_with_missing_model_dir_refuses_to_arm() {
         let mut cfg = example_cfg();
         cfg.detector.engine = EngineKind::SherpaKws;
-        assert!(matches!(
-            build_detector(&cfg),
-            Err(DetectorBuildError::NotImplemented(EngineKind::SherpaKws))
-        ));
+        cfg.detector.sherpa_kws =
+            Some(toml::from_str(r#"model_dir = "/nonexistent/model/dir""#).unwrap());
+        assert!(matches!(build_detector(&cfg), Err(DetectorBuildError::SherpaKws(_))));
     }
 }

@@ -13,11 +13,12 @@ pub struct EnergyStubDetector {
     threshold_rms: f32,
     refractory_chunks: u32,
     cooldown: u32,
+    samples_seen: u64,
 }
 
 impl EnergyStubDetector {
     pub fn new(threshold_rms: f32, refractory_chunks: u32) -> Self {
-        EnergyStubDetector { threshold_rms, refractory_chunks, cooldown: 0 }
+        EnergyStubDetector { threshold_rms, refractory_chunks, cooldown: 0, samples_seen: 0 }
     }
 
     /// Tuned for `FixtureSpec::standard()`: fires once per 500 ms burst.
@@ -36,6 +37,8 @@ impl EnergyStubDetector {
 
 impl Detector for EnergyStubDetector {
     fn process(&mut self, chunk: &AudioChunk) -> SmallVec<[Detection; 2]> {
+        let chunk_start_ms = self.samples_seen * 1000 / chunk.sample_rate_hz.max(1) as u64;
+        self.samples_seen += chunk.pcm.len() as u64;
         if self.cooldown > 0 {
             self.cooldown -= 1;
             return SmallVec::new();
@@ -48,6 +51,7 @@ impl Detector for EnergyStubDetector {
                 tier: Tier::Fast,
                 audio_ts: chunk.first_capture_ts,
                 emit_ts: MonotonicNs::now(),
+                audio_pos_ms: chunk_start_ms,
             }];
         }
         SmallVec::new()
