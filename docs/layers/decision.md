@@ -26,6 +26,11 @@ the executor.
 ## Obligations
 - O(1) lookup, no allocation on the miss path; the table is compiled once
   from `config::KeywordConfig` at arm time (`DecisionTable::from_keywords`).
+- Confidence gate BEFORE any state transition: `det.confidence <
+  min_confidence_fast/_confirmed` (per tier, from config; default 0.0 =
+  pass everything) returns `None` without consuming the one-shot machine.
+  Engines without real scores (sherpa_kws) emit confidence 1.0, so the
+  gates compose but default off.
 - State machine per keyword: `Armed → FastFired → Done` (two_tier) or
   `Armed → Done` (single-tier). Once `Done`, further detections return
   `None` forever (one-shot; repeats are logged and ignored).
