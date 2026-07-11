@@ -17,6 +17,7 @@ use earshot::kalshi::executor::{prestage_orders, run_executor, ExecCtx};
 use earshot::kalshi::rest::{OrderBodyV2, RestClient, ORDERS_ENDPOINT};
 use earshot::kalshi::validator::{m2_live_gate, LiveMarketValidator};
 use earshot::kalshi::KalshiEnv;
+use earshot::pipeline::preproc::PreprocCfg;
 use earshot::pipeline::run_pipeline;
 use earshot::risk::{spawn_kill_watcher, RiskConfig, RiskGate};
 use earshot::source::replay::ReplaySource;
@@ -128,7 +129,8 @@ fn run(command: Command) -> Result<(), AnyErr> {
             let source = replay_source(&cfg, &config, speed)?;
             let detector = detector_factory::build_detector(&cfg)?;
             let table = DecisionTable::from_keywords(&cfg.keywords);
-            let out = run_pipeline(&cfg.event.id, cfg.pipeline.chunk_ms, source, detector, table, None)?;
+            let preproc_cfg = PreprocCfg { resample_to_hz: cfg.pipeline.resample_to_hz };
+            let out = run_pipeline(&cfg.event.id, cfg.pipeline.chunk_ms, preproc_cfg, source, detector, table, None)?;
             print!("\n{}", out.render_table());
             out.write_json(&report)?;
             println!("\nreport written to {}", report.display());
@@ -325,8 +327,9 @@ async fn arm(config_path: PathBuf, report_path: PathBuf, i_am_live: bool, speed:
     let table = DecisionTable::from_keywords(&cfg.keywords);
     let event_id = cfg.event.id.clone();
     let chunk_ms = cfg.pipeline.chunk_ms;
+    let preproc_cfg = PreprocCfg { resample_to_hz: cfg.pipeline.resample_to_hz };
     let mut report = tokio::task::spawn_blocking(move || {
-        run_pipeline(&event_id, chunk_ms, source, detector, table, Some(intent_tx))
+        run_pipeline(&event_id, chunk_ms, preproc_cfg, source, detector, table, Some(intent_tx))
     })
     .await??;
 

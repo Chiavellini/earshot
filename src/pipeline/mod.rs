@@ -22,6 +22,7 @@ const CHUNK_RING_CAP: usize = 64;
 pub fn run_pipeline(
     event_id: &str,
     chunk_ms: u32,
+    preproc_cfg: preproc::PreprocCfg,
     source: Box<dyn AudioSource>,
     mut detector: Box<dyn Detector>,
     mut table: DecisionTable,
@@ -37,7 +38,7 @@ pub fn run_pipeline(
 
     let preproc_thread = std::thread::Builder::new()
         .name("preproc".into())
-        .spawn(move || preproc::run(preproc_rx, preproc_tx))
+        .spawn(move || preproc::run(preproc_rx, preproc_tx, preproc_cfg))
         .expect("spawn preproc");
 
     let chunker_thread = std::thread::Builder::new()

@@ -7,6 +7,7 @@ use earshot::config::{KeywordConfig, Policy};
 use earshot::decision::DecisionTable;
 use earshot::detector::stub::EnergyStubDetector;
 use earshot::fixture::{Burst, FixtureSpec};
+use earshot::pipeline::preproc::PreprocCfg;
 use earshot::pipeline::run_pipeline;
 use earshot::source::replay::ReplaySource;
 use earshot::telemetry::PipelineReport;
@@ -37,7 +38,7 @@ fn run(spec: &FixtureSpec, speed: f32) -> PipelineReport {
     let source = Box::new(ReplaySource::from_wav(&wav, speed, SourceId(0)).unwrap());
     let detector = Box::new(EnergyStubDetector::for_standard_fixture());
     let table = DecisionTable::from_keywords(&keywords());
-    run_pipeline("e2e", 160, source, detector, table, None).unwrap()
+    run_pipeline("e2e", 160, PreprocCfg::default(), source, detector, table, None).unwrap()
 }
 
 fn assert_report_sane(report: &PipelineReport, expected_detections: usize) {
