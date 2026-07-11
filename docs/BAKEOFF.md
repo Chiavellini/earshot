@@ -99,6 +99,23 @@ If the holdout misses the latency bar with everything else passing, the
 pre-declared next step is the custom streaming-CTC prefix spotter
 (0–80 ms lookahead) behind the same `Detector` trait — not a bar adjustment.
 
+## Corpus v1 (splits pre-committed 2026-07-11, before any engine run)
+
+Public earnings-call replays (yt-dlp, personal research use). Target
+keywords chosen from words that recur in live Kalshi earnings-mention
+markets (e.g. KXEARNINGSMENTIONNFLX lists Acquisition / Partnership /
+Competition-style words): **recession, guidance, tariff, acquisition,
+partnership**.
+
+| call id | company | split | rationale |
+|---|---|---|---|
+| TSLA-Q1-2026 | Tesla | dev | |
+| SBUX-Q2-2026 | Starbucks | dev | |
+| SNOW-Q2-FY26 | Snowflake | dev | |
+| SBUX-Q1-2026 | Starbucks | holdout | same company, different call |
+| SNOW-Q3-FY26 | Snowflake | holdout | same company, different call |
+| GM-Q1-2026 | GM | holdout | company never seen in dev |
+
 ## Results log
 
 | date | split | config | outcome |
