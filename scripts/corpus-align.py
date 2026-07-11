@@ -41,10 +41,13 @@ def main() -> None:
     ap.add_argument("--model", default="small.en", help="faster-whisper model size")
     args = ap.parse_args()
 
-    from faster_whisper import WhisperModel  # deferred: import cost + optional dep
+    from faster_whisper import BatchedInferencePipeline, WhisperModel  # deferred: optional dep
 
     model = WhisperModel(args.model, device="auto", compute_type="int8")
-    segments, _info = model.transcribe(args.audio, word_timestamps=True, language="en")
+    batched = BatchedInferencePipeline(model=model)
+    segments, _info = batched.transcribe(
+        args.audio, word_timestamps=True, language="en", batch_size=8
+    )
 
     phrases = [p.strip().lower() for p in args.phrases.split(",") if p.strip()]
     # Collect the word stream once (segments is a generator).

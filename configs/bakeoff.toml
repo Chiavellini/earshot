@@ -1,0 +1,86 @@
+# M1 bake-off keyword config (docs/BAKEOFF.md). Used by bench-detector only —
+# tickers are placeholders, nothing here touches Kalshi. Thresholds are the
+# DEV-TUNING surface; the holdout runs whatever is frozen here at the time.
+#
+# Prefix → token cuts (from the full word's encoding, kws_compile):
+#   reces   → ▁RE CE S        (of ▁RE CE S S ION)
+#   guid    → ▁GU ID          (of ▁GU ID ANCE)
+#   tari    → ▁TA RI          (of ▁TA RI FF)
+#   acquis  → ▁A C QU IS      (of ▁A C QU IS ITION)
+#   partner → ▁PART N ER      (of ▁PART N ER SHIP)
+
+[event]
+id        = "M1-BAKEOFF"
+starts_at = "2026-07-30T21:00:00Z"
+
+[pipeline]
+chunk_ms       = 160
+resample_to_hz = 16000
+
+[detector]
+engine = "sherpa_kws"
+
+[detector.sherpa_kws]
+model_dir         = "models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
+num_threads       = 1
+max_active_paths  = 4
+default_threshold = 0.20
+default_boost     = 2.0
+refractory_ms     = 2000
+
+[[sources]]                      # unused by bench-detector (corpus supplies audio)
+kind = "replay"
+path = "unused.wav"
+
+[kalshi]
+series = "KXEARNINGSMENTION"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-RECESSION"
+phrase           = "recession"
+variants         = ["recession", "recessions"]
+max_price_cents  = 97
+budget_contracts = 200
+policy           = "two_tier"
+fast_prefixes    = ["reces"]
+fast_threshold   = 0.08
+
+[[keywords]]
+market_ticker    = "KX-BENCH-GUIDANCE"
+phrase           = "guidance"
+variants         = ["guidance"]
+max_price_cents  = 97
+budget_contracts = 200
+policy           = "two_tier"
+fast_prefixes    = ["guid"]
+fast_threshold   = 0.08
+
+[[keywords]]
+market_ticker    = "KX-BENCH-TARIFF"
+phrase           = "tariff"
+variants         = ["tariff", "tariffs"]
+max_price_cents  = 97
+budget_contracts = 200
+policy           = "two_tier"
+fast_prefixes    = ["tari"]
+fast_threshold   = 0.08
+
+[[keywords]]
+market_ticker    = "KX-BENCH-ACQUISITION"
+phrase           = "acquisition"
+variants         = ["acquisition", "acquisitions"]
+max_price_cents  = 97
+budget_contracts = 200
+policy           = "two_tier"
+fast_prefixes    = ["acquis"]
+fast_threshold   = 0.08
+
+[[keywords]]
+market_ticker    = "KX-BENCH-PARTNERSHIP"
+phrase           = "partnership"
+variants         = ["partnership", "partnerships"]
+max_price_cents  = 97
+budget_contracts = 200
+policy           = "two_tier"
+fast_prefixes    = ["partner"]
+fast_threshold   = 0.08
