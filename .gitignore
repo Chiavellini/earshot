@@ -1,0 +1,9 @@
+/target
+report.json
+*.wav
+# secrets — Kalshi keys live in env vars or files outside the repo, never here
+*.pem
+*.key
+.env
+.env.*
+state/

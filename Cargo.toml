@@ -1,0 +1,51 @@
+[package]
+name = "earshot"
+version = "0.1.0"
+edition = "2021"
+description = "Audio-signal latency trader for Kalshi mention markets (M0 skeleton)"
+publish = false
+
+[dependencies]
+async-trait = "0.1"
+clap = { version = "4", features = ["derive"] }
+hdrhistogram = "7"
+hound = "3"
+libc = "0.2"
+rtrb = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+smallvec = { version = "1", features = ["serde"] }
+thiserror = "2"
+tokio = { version = "1", features = ["rt", "time", "macros", "sync"] }
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+# sign_probe is verify-pass tooling, not hot-path code; its deps stay out of the binary.
+[dependencies.reqwest]
+version = "0.12"
+features = ["json", "blocking"]
+optional = true
+
+[dependencies.rsa]
+version = "0.9"
+features = ["sha2"]
+optional = true
+
+[dependencies.base64]
+version = "0.22"
+optional = true
+
+[features]
+probe = ["dep:reqwest", "dep:rsa", "dep:base64"]
+
+[[example]]
+name = "sign_probe"
+required-features = ["probe"]
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

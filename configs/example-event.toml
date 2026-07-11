@@ -1,0 +1,26 @@
+# Example event config (spec §5.5). M0 uses the replay source variant;
+# sip/hls variants parse but their adapters land in M2/M3.
+
+[event]
+id        = "AAPL-Q3-2026"
+starts_at = "2026-07-30T21:00:00Z"
+
+[pipeline]
+chunk_ms = 160
+
+[[sources]]
+kind  = "replay"
+path  = "fixture.wav"
+speed = 1.0                       # 0 = as fast as possible (tests)
+
+[kalshi]
+series = "KXAAPLMENTION"
+
+[[keywords]]
+market_ticker           = "KXAAPLMENTION-26Q3-AI"
+phrase                  = "artificial intelligence"
+variants                = ["artificial intelligence", "artificial intelligences"]
+max_price_cents         = 97
+budget_contracts        = 200
+policy                  = "two_tier"        # fast_only | confirmed_only | two_tier
+rule_risk_haircut_cents = 2
