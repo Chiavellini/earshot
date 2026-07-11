@@ -38,5 +38,8 @@ cargo run --release -- book --ticker <T> --secs 10                   # read-only
 source ~/.kalshi/earshot_env                 # credentials (never in repo)
 ```
 
-Milestone state: M0 ✅ M2 ✅ (live-validated) — next is M1 (detector
-bake-off) and M3 (SIP/HLS capture). See the meta-spec for the roadmap.
+Milestone state: M0 ✅ M2 ✅ (live-validated) M1 ✅ (sherpa_kws engine +
+corpus + bake-off run; holdout results and the pre-declared follow-on —
+a custom low-lookahead spotter for the latency bar — in `docs/BAKEOFF.md`).
+Next: M3 (SIP/HLS capture) and the low-latency detector milestone. See the
+meta-spec for the roadmap.

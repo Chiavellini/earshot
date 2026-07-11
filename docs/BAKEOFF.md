@@ -163,4 +163,68 @@ only (no positive samples yet); telephony band costs tariff ~2/9 recall
 | date | split | config | outcome |
 |---|---|---|---|
 | 2026-07-11 | dev ×4 rounds | configs/bakeoff.toml (frozen at r4) | tuning log above |
-| _(holdout pending)_ | | | |
+| 2026-07-11 | holdout (single run, frozen config) | chunk 80, sherpa_kws | accuracy below; paced latency on CAT below |
+
+### Holdout accuracy (2.68 h, unseen companies: WMT / CAT / GIS)
+
+| phrase | tier | recall | precision | FA/h | vs bar |
+|---|---|---|---|---|---|
+| acquisition | Confirmed | 1.00 (2/2) | 1.00 | 0.00 | ✓ |
+| guidance | Confirmed | 0.96 (22/23) | 0.79 | 2.24 | ✗ FA bar (≤1/h) |
+| tariff | Confirmed | 0.89 (41/46) | 0.98 | 0.37 | ✗ recall bar by ONE occurrence (needs 0.90) |
+| tariff | Fast | 0.54 | 0.96 | 0.37 | (no Fast recall bar) |
+| recession (FA control) | Confirmed | — | — | 0.37 | ✓ |
+| recession (FA control) | Fast | — | — | 3.36 | ✓ (≤4/h) |
+
+Aggregate Confirmed recall 65/71 = **0.915**.
+
+**Holdout FA autopsy (post-hoc, reporting only — config unchanged):** the
+FAs are phonetic neighbors or ground-truth errors, not noise: recession
+fires on "re-cips" (CAT engine-product jargon, ×4), "receive your
+question", operator boilerplate ("question and answer session"); guidance
+on "the guide" (true FA per Q4) and on clips whose wideband transcript is
+garbled; the single tariff "FA" sits on audio transcribed as "for the
+**terrorists** introduced in the beginning" — i.e. the ALIGNER misheard
+"tariffs", the detector was right, ground truth was wrong. Measured FA
+rates are therefore upper bounds, and guidance's 2.24/h likely overstates.
+
+### Holdout paced latency (CAT-Q1-2026, 1.05 h real-time, chunk 80)
+
+| phrase | tier | n | p50 | p95 |
+|---|---|---|---|---|
+| tariff | Fast | 21 | 926 ms | 1066 ms |
+| tariff | Confirmed | 34 | 961 ms | 1136 ms |
+| guidance | Confirmed | 2 | 688 ms | 1386 ms |
+| acquisition | Fast=Confirmed | 1 | 856 ms | 856 ms |
+
+(Latency = word ONSET → detection emitted, wall clock, real-time replay.)
+
+## M1 verdict against the pre-registered criteria (2026-07-11)
+
+| criterion | bar | measured | verdict |
+|---|---|---|---|
+| Confirmed recall | ≥ 0.90 | 0.915 aggregate; tariff 0.89, guidance 0.96, acquisition 1.00 | **marginal** (tariff one occurrence short) |
+| Confirmed FA | ≤ 1/h | tariff 0.37, acquisition 0.00, recession-control 0.37; guidance 2.24 (upper bound — autopsy shows ground-truth errors inside) | **guidance fails** |
+| Fast p95 onset→emit | ≤ 350 ms | **1066 ms** (tariff, n=21) | **fails, decisively** |
+| Fast FA | ≤ 4/h | 3.79 max (recession control) | ✓ |
+
+Interpretation, as pre-declared: precision is production-grade (0.95–1.00)
+and Confirmed accuracy is within touching distance of the bars on unseen
+companies, but the latency bar is unreachable with this engine — the
+gigaspeech KWS model's chunk-16-left-64 export bakes in ~320 ms lookahead
+and ~0.4–0.5 s decode lag, and no threshold tuning changes that. The Fast
+prefix mechanism works exactly as designed (fires before the full word,
+40–300 ms earlier depending on how many tokens the prefix cuts) but it is
+riding on top of a model whose floor is ~3× the bar.
+
+**Pre-declared consequence (not a bar adjustment): the next detector
+milestone is the custom low-lookahead streaming spotter** (Zipformer-CTC or
+small-chunk transducer, 0–80 ms lookahead, own prefix-firing logic on frame
+posteriors) behind the same `Detector` trait, benchmarked by this same
+harness on this same corpus. Until then the sherpa_kws engine is usable in
+Confirmed-weighted mode where ~1 s from word onset still beats human
+listeners reacting to the same audio feed.
+
+Secondary follow-ups: corpus v2 (more calls; positive "recession" samples;
+by-ear verification pass), guidance FA re-scoring after fixing the aligner
+misses, per-keyword `min_confidence` gates once an engine exposes scores.
