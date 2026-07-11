@@ -1,6 +1,8 @@
 /target
 report.json
 *.wav
+# ASR models — fetched by scripts/fetch-models.sh, never committed
+models/
 # secrets — Kalshi keys live in env vars or files outside the repo, never here
 *.pem
 *.key

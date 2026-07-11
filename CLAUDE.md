@@ -30,6 +30,7 @@ written so you can work on one layer without reading the rest of the system.
 
 ```
 cargo test                                   # unit + mock-integration + e2e
+scripts/fetch-models.sh                      # M1 detector models → models/ (gitignored)
 cargo run --release -- replay --config configs/example-event.toml
 cargo run --release -- arm --config configs/m2-drill.toml            # dry-run
 cargo run --release -- book --ticker <T> --secs 10                   # read-only

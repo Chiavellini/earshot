@@ -44,9 +44,13 @@ sizing — a `Detection` is a pure acoustic event.
   session with a dead detector must page, not idle).
 
 ## How to replace or edit this layer
-- New engine = new file in `src/detector/` implementing `Detector`, plus
-  construction where detectors are built (`main.rs` today; engine selection
-  becomes config in M1). Nothing else changes.
+- New engine = new file in `src/detector/` implementing `Detector`, plus a
+  match arm in `detector::factory::build_detector` (the single construction
+  point; both `main.rs` wiring sites call it) and an `EngineKind` variant in
+  `src/config.rs` (`[detector] engine = "..."` selects it). Nothing else
+  changes.
+- Factory failure = refuse to arm (`DetectorBuildError`), never a fallback
+  engine.
 - Contract: the trait signature, `Detection` field semantics (especially the
   two timestamps), stable-partial emission.
 - `EnergyStubDetector` (`stub.rs`) is permanent: it is the pipeline self-test

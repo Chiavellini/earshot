@@ -338,6 +338,12 @@ mod tests {
             budget_contracts: 200,
             policy: crate::config::Policy::TwoTier,
             rule_risk_haircut_cents: 2,
+            fast_prefixes: vec![],
+            fast_threshold: None,
+            confirmed_threshold: None,
+            boost: None,
+            min_confidence_fast: 0.0,
+            min_confidence_confirmed: 0.0,
         }];
         let map = prestage_orders("EV", &kws);
         assert!(map.contains_key(&(0, Tier::Fast, 60)));
@@ -366,6 +372,12 @@ mod tests {
             budget_contracts: 1,
             policy: crate::config::Policy::FastOnly,
             rule_risk_haircut_cents: 0,
+            fast_prefixes: vec![],
+            fast_threshold: None,
+            confirmed_threshold: None,
+            boost: None,
+            min_confidence_fast: 0.0,
+            min_confidence_confirmed: 0.0,
         };
         let map = prestage_orders("EV", std::slice::from_ref(&kw));
         // fast_only releases the FULL budget on the Fast tier.

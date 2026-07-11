@@ -21,6 +21,12 @@ fn keywords() -> Vec<KeywordConfig> {
         budget_contracts: 200,
         policy: Policy::TwoTier,
         rule_risk_haircut_cents: 2,
+        fast_prefixes: vec![],
+        fast_threshold: None,
+        confirmed_threshold: None,
+        boost: None,
+        min_confidence_fast: 0.0,
+        min_confidence_confirmed: 0.0,
     }]
 }
 

@@ -5,6 +5,7 @@
 //! internal thread and still present this synchronous surface, which is called
 //! on a dedicated pinned OS thread.
 
+pub mod factory;
 pub mod stub;
 
 use smallvec::SmallVec;

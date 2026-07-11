@@ -9,7 +9,7 @@ use clap::{Parser, Subcommand};
 use earshot::clock::MonotonicNs;
 use earshot::config::{self, SourceConfig};
 use earshot::decision::DecisionTable;
-use earshot::detector::stub::EnergyStubDetector;
+use earshot::detector::factory as detector_factory;
 use earshot::fixture::FixtureSpec;
 use earshot::kalshi::auth::{Presigner, Signer};
 use earshot::kalshi::book::{run_ws, BookCache};
@@ -126,7 +126,7 @@ fn run(command: Command) -> Result<(), AnyErr> {
         Command::Replay { config, report, speed } => {
             let cfg = config::load(&config)?;
             let source = replay_source(&cfg, &config, speed)?;
-            let detector = Box::new(EnergyStubDetector::for_standard_fixture());
+            let detector = detector_factory::build_detector(&cfg)?;
             let table = DecisionTable::from_keywords(&cfg.keywords);
             let out = run_pipeline(&cfg.event.id, cfg.pipeline.chunk_ms, source, detector, table, None)?;
             print!("\n{}", out.render_table());
@@ -321,7 +321,7 @@ async fn arm(config_path: PathBuf, report_path: PathBuf, i_am_live: bool, speed:
     // Audio pipeline runs on its own OS threads (it owns a current-thread
     // runtime for the source, so it must not run inside this runtime).
     let source = replay_source(&cfg, &config_path, speed)?;
-    let detector = Box::new(EnergyStubDetector::for_standard_fixture());
+    let detector = detector_factory::build_detector(&cfg)?;
     let table = DecisionTable::from_keywords(&cfg.keywords);
     let event_id = cfg.event.id.clone();
     let chunk_ms = cfg.pipeline.chunk_ms;

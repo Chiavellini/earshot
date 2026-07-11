@@ -296,6 +296,27 @@ other systems**. Any cancel logic must be scoped to the session's own order
 ids (`OrderRegistry`) — an account-wide cancel-all would destroy unrelated
 positions. This is now hard-coded policy in `rest.rs::cancel_orders`.
 
+## M1 detector pins (2026-07-11)
+
+**Claim:** The sherpa-onnx streaming KWS model
+`sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01` (Zipformer transducer,
+GigaSpeech English, BPE-500, 16 kHz, chunk-16-left-64) is downloadable from
+the `kws-models` GitHub release of k2-fsa/sherpa-onnx; tarball sha256
+`f170013b4716e41b62b9bfd809687c207cef798ef9bc6534d524e17af9b6561a`
+(17,626,723 bytes), Apache-2.0.
+**Source:** https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01.tar.bz2
+**Evidence:** downloaded + unpacked 2026-07-11; contents: encoder/decoder/
+joiner `-epoch-12-avg-2-chunk-16-left-64` in fp32 **and** int8 ONNX,
+`tokens.txt`, `bpe.model` (SentencePiece), sample `keywords.txt` /
+`keywords_raw.txt`, `test_wavs/`.
+**Implication:** `scripts/fetch-models.sh` pins this sha256. The model's
+algorithmic lookahead is fixed by its chunk-16-left-64 export — the bake-off
+varies our pipeline `chunk_ms` on top of it, not the model's internal chunk.
+The bundled `bpe.model` may let keyword compilation use SentencePiece
+directly instead of a hand-rolled greedy tokenizer (verify in M1 phase 3).
+**Confidence:** high (local artifact).
+**Re-verify:** only if the release asset is re-uploaded (sha mismatch).
+
 ## Open items carried forward
 
 1. ~~Clock-skew tolerance~~ — RESOLVED: ±30 s, measured (see Q3).

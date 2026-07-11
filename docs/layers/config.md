@@ -12,13 +12,25 @@ risk gate).
 - **Mechanism:** `config::load(path) -> Result<EventConfig, ConfigError>`
   (`src/config.rs`): parse (serde, `deny_unknown_fields` everywhere) then
   local validation (≥1 source, ≥1 keyword, chunk_ms 1..=1000, unique
-  tickers, non-empty variants, cap 1..=99, budget > 0).
+  tickers, non-empty variants, cap 1..=99, budget > 0,
+  `resample_to_hz` = 16000 only, `engine = "sherpa_kws"` requires its
+  `[detector.sherpa_kws]` section, each `fast_prefixes` entry is a strict
+  case-insensitive prefix of some variant, thresholds in (0, 1],
+  `min_confidence_*` in [0, 1]).
 
 ## Exit door
-- **Type:** `EventConfig { event, pipeline, sources: Vec<SourceConfig>,
-  kalshi: KalshiSection, risk: risk::RiskConfig, keywords:
-  Vec<KeywordConfig> }`.
-- **Consumers:** `main.rs` wires sources; `DecisionTable::from_keywords` and
+- **Type:** `EventConfig { event, pipeline, detector: DetectorSection,
+  sources: Vec<SourceConfig>, kalshi: KalshiSection, risk: risk::RiskConfig,
+  keywords: Vec<KeywordConfig> }`. `DetectorSection { engine: EngineKind
+  (stub | sherpa_kws, default stub), sherpa_kws: Option<SherpaKwsConfig> }`;
+  `PipelineSection` carries `resample_to_hz: Option<u32>` (preproc upsample
+  target, absent = passthrough); `KeywordConfig` carries the M1 detector
+  tuning fields (`fast_prefixes`, `fast_threshold`, `confirmed_threshold`,
+  `boost`) and decision gates (`min_confidence_fast`,
+  `min_confidence_confirmed`), all defaulted for back-compat.
+- **Consumers:** `main.rs` wires sources;
+  `detector::factory::build_detector` selects and constructs the engine
+  from `[detector]` + `[[keywords]]`; `DecisionTable::from_keywords` and
   `executor::prestage_orders` compile the keyword table (index order IS
   `KeywordId`); `RiskGate::new` clamps the `[risk]` block;
   `LiveMarketValidator::validate` checks it against live Kalshi at arm time

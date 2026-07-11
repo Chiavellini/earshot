@@ -15,6 +15,8 @@ pub struct EventConfig {
     pub event: EventSection,
     #[serde(default)]
     pub pipeline: PipelineSection,
+    #[serde(default)]
+    pub detector: DetectorSection,
     pub sources: Vec<SourceConfig>,
     pub kalshi: KalshiSection,
     #[serde(default)]
@@ -32,13 +34,79 @@ pub struct EventSection {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PipelineSection {
+    #[serde(default = "default_chunk_ms")]
     pub chunk_ms: u32,
+    /// Preproc upsamples any source below this rate (M1: 16 kHz only, for
+    /// 16 kHz-native ASR models fed by 8 kHz telephony). Absent = passthrough.
+    #[serde(default)]
+    pub resample_to_hz: Option<u32>,
+}
+
+fn default_chunk_ms() -> u32 {
+    160
 }
 
 impl Default for PipelineSection {
     fn default() -> Self {
-        PipelineSection { chunk_ms: 160 }
+        PipelineSection { chunk_ms: 160, resample_to_hz: None }
     }
+}
+
+/// `[detector]` — engine selection (spec §5.4: the M1 bake-off dial).
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DetectorSection {
+    #[serde(default)]
+    pub engine: EngineKind,
+    /// Required iff `engine = "sherpa_kws"`.
+    pub sherpa_kws: Option<SherpaKwsConfig>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EngineKind {
+    /// RMS-threshold pipeline self-test (fires on the tone fixture).
+    #[default]
+    Stub,
+    /// sherpa-onnx streaming keyword spotter (Zipformer transducer).
+    SherpaKws,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SherpaKwsConfig {
+    /// Unpacked model directory (see `scripts/fetch-models.sh`): encoder /
+    /// decoder / joiner .onnx + tokens.txt.
+    pub model_dir: std::path::PathBuf,
+    #[serde(default = "default_num_threads")]
+    pub num_threads: u32,
+    #[serde(default = "default_max_active_paths")]
+    pub max_active_paths: u32,
+    /// Per-keyword-entry firing threshold unless overridden on the keyword.
+    #[serde(default = "default_kws_threshold")]
+    pub default_threshold: f32,
+    /// Acoustic boost applied to keyword token paths during search.
+    #[serde(default = "default_kws_boost")]
+    pub default_boost: f32,
+    /// Duplicate suppression per (keyword, tier), in stream-time ms.
+    #[serde(default = "default_refractory_ms")]
+    pub refractory_ms: u64,
+}
+
+fn default_num_threads() -> u32 {
+    1
+}
+fn default_max_active_paths() -> u32 {
+    4
+}
+fn default_kws_threshold() -> f32 {
+    0.25
+}
+fn default_kws_boost() -> f32 {
+    2.0
+}
+fn default_refractory_ms() -> u64 {
+    2000
 }
 
 #[derive(Debug, Deserialize)]
@@ -102,6 +170,23 @@ pub struct KeywordConfig {
     pub policy: Policy,
     #[serde(default)]
     pub rule_risk_haircut_cents: u8,
+    /// Partial-word prefixes that fire `Tier::Fast` before the word completes
+    /// (e.g. "reces" for "recession"). Each must be a strict case-insensitive
+    /// prefix of some variant. Empty ⇒ the engine emits no Fast tier.
+    #[serde(default)]
+    pub fast_prefixes: Vec<String>,
+    /// Engine firing thresholds; None ⇒ `[detector.sherpa_kws]` defaults.
+    #[serde(default)]
+    pub fast_threshold: Option<f32>,
+    #[serde(default)]
+    pub confirmed_threshold: Option<f32>,
+    #[serde(default)]
+    pub boost: Option<f32>,
+    /// Decision-layer confidence gates per tier; 0.0 = no gating (M0 behavior).
+    #[serde(default)]
+    pub min_confidence_fast: f32,
+    #[serde(default)]
+    pub min_confidence_confirmed: f32,
 }
 
 #[derive(Debug, Error)]
@@ -143,6 +228,27 @@ fn validate(cfg: &EventConfig) -> Result<(), ConfigError> {
             cfg.pipeline.chunk_ms
         ));
     }
+    if let Some(hz) = cfg.pipeline.resample_to_hz {
+        if hz != 16_000 {
+            return fail(format!(
+                "pipeline.resample_to_hz: only 16000 is supported in M1 (2x from 8 kHz telephony), got {hz}"
+            ));
+        }
+    }
+    if cfg.detector.engine == EngineKind::SherpaKws && cfg.detector.sherpa_kws.is_none() {
+        return fail("detector.engine = \"sherpa_kws\" requires a [detector.sherpa_kws] section".into());
+    }
+    if let Some(sk) = &cfg.detector.sherpa_kws {
+        if !(0.0..=1.0).contains(&sk.default_threshold) || sk.default_threshold == 0.0 {
+            return fail(format!(
+                "detector.sherpa_kws.default_threshold must be in (0, 1], got {}",
+                sk.default_threshold
+            ));
+        }
+        if sk.num_threads == 0 {
+            return fail("detector.sherpa_kws.num_threads must be > 0".into());
+        }
+    }
 
     let mut seen = std::collections::HashSet::new();
     for kw in &cfg.keywords {
@@ -160,6 +266,37 @@ fn validate(cfg: &EventConfig) -> Result<(), ConfigError> {
         }
         if kw.budget_contracts == 0 {
             return fail(format!("keyword {:?}: budget_contracts must be > 0", kw.phrase));
+        }
+        for p in &kw.fast_prefixes {
+            let p_lc = p.to_lowercase();
+            let is_strict_prefix = kw
+                .variants
+                .iter()
+                .any(|v| v.to_lowercase().starts_with(&p_lc) && v.len() > p.len());
+            if !is_strict_prefix {
+                return fail(format!(
+                    "keyword {:?}: fast_prefix {p:?} is not a strict prefix of any variant (typo?)",
+                    kw.phrase
+                ));
+            }
+        }
+        for (name, t) in [
+            ("fast_threshold", kw.fast_threshold),
+            ("confirmed_threshold", kw.confirmed_threshold),
+        ] {
+            if let Some(t) = t {
+                if !(t > 0.0 && t <= 1.0) {
+                    return fail(format!("keyword {:?}: {name} must be in (0, 1], got {t}", kw.phrase));
+                }
+            }
+        }
+        for (name, c) in [
+            ("min_confidence_fast", kw.min_confidence_fast),
+            ("min_confidence_confirmed", kw.min_confidence_confirmed),
+        ] {
+            if !(0.0..=1.0).contains(&c) {
+                return fail(format!("keyword {:?}: {name} must be in [0, 1], got {c}", kw.phrase));
+            }
         }
     }
     Ok(())
@@ -222,6 +359,76 @@ mod tests {
         let text = base_toml().replace(
             "variants                = [\"artificial intelligence\", \"artificial intelligences\"]",
             "variants                = []",
+        );
+        let cfg: EventConfig = toml::from_str(&text).unwrap();
+        assert!(validate(&cfg).is_err());
+    }
+
+    #[test]
+    fn detector_defaults_to_stub() {
+        let cfg = load(&example_path()).unwrap();
+        assert_eq!(cfg.detector.engine, EngineKind::Stub);
+        assert!(cfg.detector.sherpa_kws.is_none());
+        assert_eq!(cfg.pipeline.resample_to_hz, None);
+        assert!(cfg.keywords[0].fast_prefixes.is_empty());
+        assert_eq!(cfg.keywords[0].min_confidence_fast, 0.0);
+    }
+
+    #[test]
+    fn sherpa_engine_requires_its_section() {
+        let text = base_toml() + "\n[detector]\nengine = \"sherpa_kws\"\n";
+        let cfg: EventConfig = toml::from_str(&text).unwrap();
+        let err = validate(&cfg).unwrap_err().to_string();
+        assert!(err.contains("[detector.sherpa_kws]"), "{err}");
+    }
+
+    #[test]
+    fn sherpa_section_parses_with_defaults() {
+        let text = base_toml()
+            + "\n[detector]\nengine = \"sherpa_kws\"\n[detector.sherpa_kws]\nmodel_dir = \"models/kws\"\n";
+        let cfg: EventConfig = toml::from_str(&text).unwrap();
+        validate(&cfg).unwrap();
+        let sk = cfg.detector.sherpa_kws.unwrap();
+        assert_eq!(sk.num_threads, 1);
+        assert_eq!(sk.max_active_paths, 4);
+        assert_eq!(sk.default_threshold, 0.25);
+        assert_eq!(sk.default_boost, 2.0);
+        assert_eq!(sk.refractory_ms, 2000);
+    }
+
+    #[test]
+    fn rejects_non_16k_resample_target() {
+        let text = base_toml().replace("chunk_ms = 160", "chunk_ms = 160\nresample_to_hz = 44100");
+        let cfg: EventConfig = toml::from_str(&text).unwrap();
+        assert!(validate(&cfg).is_err());
+    }
+
+    #[test]
+    fn rejects_fast_prefix_that_matches_no_variant() {
+        let text = base_toml().replace(
+            "policy                  = \"two_tier\"",
+            "policy                  = \"two_tier\"\nfast_prefixes           = [\"artifishul\"]",
+        );
+        let cfg: EventConfig = toml::from_str(&text).unwrap();
+        let err = validate(&cfg).unwrap_err().to_string();
+        assert!(err.contains("fast_prefix"), "{err}");
+    }
+
+    #[test]
+    fn accepts_valid_fast_prefix_case_insensitive() {
+        let text = base_toml().replace(
+            "policy                  = \"two_tier\"",
+            "policy                  = \"two_tier\"\nfast_prefixes           = [\"Artificial intel\"]",
+        );
+        let cfg: EventConfig = toml::from_str(&text).unwrap();
+        validate(&cfg).unwrap();
+    }
+
+    #[test]
+    fn rejects_out_of_range_min_confidence() {
+        let text = base_toml().replace(
+            "policy                  = \"two_tier\"",
+            "policy                  = \"two_tier\"\nmin_confidence_fast     = 1.5",
         );
         let cfg: EventConfig = toml::from_str(&text).unwrap();
         assert!(validate(&cfg).is_err());

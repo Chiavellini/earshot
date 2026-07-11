@@ -34,6 +34,12 @@ fn keyword(cap: u8, budget: u32) -> KeywordConfig {
         budget_contracts: budget,
         policy: Policy::TwoTier,
         rule_risk_haircut_cents: 0,
+        fast_prefixes: vec![],
+        fast_threshold: None,
+        confirmed_threshold: None,
+        boost: None,
+        min_confidence_fast: 0.0,
+        min_confidence_confirmed: 0.0,
     }
 }
 
