@@ -53,6 +53,20 @@ impl FixtureSpec {
         pcm
     }
 
+    /// Ground-truth occurrences for the bench scorer: each burst is one
+    /// "occurrence" of `phrase`. Gives the harness a model-free self-test
+    /// (stub detector + this manifest ⇒ recall 1.0, FA 0).
+    pub fn occurrences(&self, phrase: &str) -> Vec<crate::bench::manifest::Occurrence> {
+        self.bursts
+            .iter()
+            .map(|b| crate::bench::manifest::Occurrence {
+                phrase: phrase.to_string(),
+                onset_ms: b.onset_ms as u64,
+                end_ms: (b.onset_ms + b.dur_ms) as u64,
+            })
+            .collect()
+    }
+
     pub fn write_wav(&self, path: &Path) -> Result<(), hound::Error> {
         let spec = hound::WavSpec {
             channels: 1,

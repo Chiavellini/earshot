@@ -20,7 +20,9 @@ layer — it never sits between two stages.
   (`RUST_LOG`), JSON mode for machine ingestion.
 
 ## Exit door
-- **Type:** `PipelineReport` — event id, frame/chunk counts, per-edge
+- **Type:** `PipelineReport` — event id, frame/chunk counts,
+  `first_capture_ts` (capture time of chunk seq 0 — anchors wall clock to
+  the content timeline for the bench's paced onset→emit latency), per-edge
   `EdgeStats` (count + p50/p90/p95/p99/max in µs; zero-count edges omitted
   by `snapshot()`), `DetectionRecord`s, `DropCounters`. `main.rs::arm`
   extends the JSON with `orders` (OrderRecords) and `lost_races`.

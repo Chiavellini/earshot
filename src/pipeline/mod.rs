@@ -54,7 +54,11 @@ pub fn run_pipeline(
             let mut recorder = LatencyRecorder::new();
             let mut records: Vec<DetectionRecord> = Vec::new();
             let mut chunks = 0u64;
+            let mut first_capture_ts = None;
             while let Some(chunk) = detect_rx.recv() {
+                if chunk.seq == 0 {
+                    first_capture_ts = Some(chunk.first_capture_ts);
+                }
                 chunks += 1;
                 let detections = detector.process(&chunk);
                 let after = MonotonicNs::now();
@@ -113,7 +117,7 @@ pub fn run_pipeline(
                     });
                 }
             }
-            (recorder, records, chunks)
+            (recorder, records, chunks, first_capture_ts)
         })
         .expect("spawn detect");
 
@@ -128,7 +132,8 @@ pub fn run_pipeline(
 
     let frames_in = preproc_thread.join().expect("preproc thread panicked");
     let chunks_from_chunker = chunker_thread.join().expect("chunker thread panicked");
-    let (recorder, detections, chunks_in) = detect_thread.join().expect("detect thread panicked");
+    let (recorder, detections, chunks_in, first_capture_ts) =
+        detect_thread.join().expect("detect thread panicked");
     debug_assert_eq!(chunks_from_chunker, chunks_in);
 
     use std::sync::atomic::Ordering;
@@ -137,6 +142,7 @@ pub fn run_pipeline(
         chunk_ms,
         frames_in,
         chunks_in,
+        first_capture_ts,
         edges: recorder.snapshot(),
         detections,
         drops: DropCounters {

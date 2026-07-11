@@ -101,6 +101,34 @@ enum Command {
         #[arg(long)]
         ticker: Option<String>,
     },
+    /// M1 bake-off: run engine × chunk_ms grids over the ground-truth corpus
+    /// and score precision/recall/FA-per-hour (and latency with --paced).
+    BenchDetector {
+        /// Keyword/engine config (sources section is ignored; the corpus
+        /// supplies the audio).
+        #[arg(long)]
+        config: PathBuf,
+        /// Corpus root containing manifests/ and the audio they reference.
+        #[arg(long, default_value = "corpus")]
+        corpus: PathBuf,
+        /// Comma-separated: stub,sherpa_kws
+        #[arg(long, value_delimiter = ',', default_value = "sherpa_kws")]
+        engines: Vec<String>,
+        /// Comma-separated chunk sizes in ms.
+        #[arg(long, value_delimiter = ',', default_value = "160")]
+        chunk_ms: Vec<u32>,
+        /// dev = tuning surface; holdout = run ONCE with the frozen config.
+        #[arg(long, default_value = "dev")]
+        split: String,
+        /// Real-time replay for wall-clock onset→emit latency (slow: 1×).
+        #[arg(long)]
+        paced: bool,
+        /// Optional comma-separated call-id filter (subset paced runs).
+        #[arg(long, value_delimiter = ',')]
+        calls: Option<Vec<String>>,
+        #[arg(long, default_value = "bench-report.json")]
+        out: PathBuf,
+    },
 }
 
 fn main() -> ExitCode {
@@ -153,6 +181,34 @@ fn run(command: Command) -> Result<(), AnyErr> {
             println!("cancelled: {}", serde_json::to_string_pretty(&resp)?);
             Ok(())
         }),
+        Command::BenchDetector { config, corpus, engines, chunk_ms, split, paced, calls, out } => {
+            let engines = engines
+                .iter()
+                .map(|e| match e.as_str() {
+                    "stub" => Ok(earshot::config::EngineKind::Stub),
+                    "sherpa_kws" => Ok(earshot::config::EngineKind::SherpaKws),
+                    other => Err(format!("unknown engine {other:?} (stub | sherpa_kws)")),
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let split = match split.as_str() {
+                "dev" => earshot::bench::manifest::Split::Dev,
+                "holdout" => earshot::bench::manifest::Split::Holdout,
+                other => return Err(format!("unknown split {other:?} (dev | holdout)").into()),
+            };
+            let report = earshot::bench::run_bench(&earshot::bench::BenchArgs {
+                config_path: config,
+                corpus,
+                engines,
+                chunk_ms,
+                split,
+                paced,
+                calls,
+            })?;
+            print!("\n{}", report.render_table());
+            std::fs::write(&out, serde_json::to_string_pretty(&report)?)?;
+            println!("\nreport written to {}", out.display());
+            Ok(())
+        }
         Command::Orders { ticker } => rt()?.block_on(async {
             let (_signer, rest) = connect_live().await?;
             let open = rest.open_orders().await?;

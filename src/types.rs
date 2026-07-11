@@ -37,7 +37,7 @@ pub struct AudioChunk {
     pub seq: u64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 pub enum Tier {
     Fast,
     Confirmed,

@@ -1,6 +1,7 @@
 //! Earshot — audio-signal latency trader for Kalshi mention markets.
 //! M0: replay → pipeline → stub detection → decision intents + latency report.
 
+pub mod bench;
 pub mod clock;
 pub mod config;
 pub mod decision;

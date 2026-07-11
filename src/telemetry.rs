@@ -130,6 +130,10 @@ pub struct PipelineReport {
     pub chunk_ms: u32,
     pub frames_in: u64,
     pub chunks_in: u64,
+    /// Capture time of the stream's first frame (chunk seq 0). In paced
+    /// replays this anchors the wall clock to the content timeline, letting
+    /// the bench compute onset→emit latency; `None` if no chunk arrived.
+    pub first_capture_ts: Option<crate::clock::MonotonicNs>,
     pub edges: BTreeMap<String, EdgeStats>,
     pub detections: Vec<DetectionRecord>,
     pub drops: DropCounters,

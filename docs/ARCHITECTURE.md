@@ -69,6 +69,12 @@ and `main.rs::arm` (doors 6–8 + planes). Nothing else may connect layers.
    wire formats are fixed-point strings built by `rest::cents_to_dollar_str`
    / `rest::count_to_fp_str`. Floats never touch prices.
 
+## Benchmarking
+
+The M1 detector bake-off (corpus design, dev/holdout protocol,
+pre-registered sign-off criteria, `bench-detector` usage) is documented in
+`docs/BAKEOFF.md`; the harness lives in `src/bench/`.
+
 ## Definition of done for a layer change
 
 A layer change is complete when: (a) its unit tests pass, (b) the e2e replay
