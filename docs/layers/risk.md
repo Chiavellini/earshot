@@ -49,6 +49,17 @@ for: EV/fee economics (executor) or market validation (validator).
   by real per-event notional budgets — that is a reviewed code change here
   plus an update to this doc and the executor doc.
 
+## Live postures (category gates live in `src/kalshi/validator.rs`)
+The RiskGate envelope is identical in both; only the market-category gate
+selected by `arm`/`probe-order` differs:
+- **Probe (default, M2):** `m2_live_gate` — cap ≤ 1¢ AND non-Mentions only.
+- **Mention-probe (`--allow-mention`):** `mention_probe_gate` — cap ≤ 1¢,
+  Mentions-category permitted (the verification run). `probe-order
+  --allow-mention` additionally requires IOC and a price strictly below the
+  best ask (`assert_non_crossing`) so the drill provably cannot fill.
+  Larger size on mention markets is the M4 decision, made only after a
+  verified live run.
+
 ## How to test in isolation
 - Pure unit tests with tempdir state (see `risk.rs` tests: clamping,
   refusal ordering, ledger cap + persistence across gates).

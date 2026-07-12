@@ -107,6 +107,50 @@ pub fn m2_live_gate(markets: &[ValidatedMarket], max_cap_cents: u8) -> Result<()
     Ok(())
 }
 
+/// The mention-probe gate (verification posture): the spend envelope stays
+/// the M2 drill's (cap ≤ 1¢, probe ledger binding), but Mentions-category
+/// markets are permitted — the point of the verification run is to prove
+/// order acceptance and reaction timing on a real mention market. Logs
+/// early-close capability per market: a mention strike that cannot close
+/// early will not behave like a mention market (VERIFICATIONS §Q4).
+pub fn mention_probe_gate(markets: &[ValidatedMarket], max_cap_cents: u8) -> Result<(), KalshiError> {
+    if max_cap_cents > 1 {
+        return Err(KalshiError::Risk(format!(
+            "mention-probe gate: cap {max_cap_cents}¢ > 1¢ — larger size is an M4 decision, not this posture"
+        )));
+    }
+    for m in markets {
+        tracing::info!(
+            ticker = %m.ticker,
+            category = m.category.as_deref().unwrap_or("?"),
+            can_close_early = ?m.can_close_early,
+            "mention-probe target"
+        );
+        if m.can_close_early == Some(false) {
+            tracing::warn!(
+                ticker = %m.ticker,
+                "can_close_early=false — this market will NOT resolve early on utterance"
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Guaranteed-no-fill guard for the mention probe drill: refuse to send a
+/// buy-YES order that would cross the current best ask. `None` ask (empty
+/// book or missing field) is refused — unknown is dangerous (P3).
+pub fn assert_non_crossing(yes_ask_cents: Option<u64>, price_cents: u32) -> Result<(), KalshiError> {
+    match yes_ask_cents {
+        None => Err(KalshiError::Risk(
+            "no best ask visible — refusing to send (cannot prove the order won't fill)".into(),
+        )),
+        Some(ask) if u64::from(price_cents) >= ask => Err(KalshiError::Risk(format!(
+            "price {price_cents}¢ would cross best ask {ask}¢ — mention probe must be non-marketable"
+        ))),
+        Some(_) => Ok(()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -128,5 +172,33 @@ mod tests {
         assert!(m2_live_gate(std::slice::from_ref(&non_mention), 1).is_ok());
         assert!(m2_live_gate(std::slice::from_ref(&non_mention), 2).is_err());
         assert!(m2_live_gate(&[non_mention, mention], 1).is_err());
+    }
+
+    #[test]
+    fn mention_probe_gate_allows_mentions_but_keeps_probe_cap() {
+        let mention = ValidatedMarket {
+            ticker: "KXFEDMENTION-X".into(),
+            status: "active".into(),
+            category: Some("Mentions".into()),
+            can_close_early: Some(true),
+        };
+        // Mentions category is the point of this posture.
+        assert!(mention_probe_gate(std::slice::from_ref(&mention), 1).is_ok());
+        // The spend cap does NOT loosen with the category.
+        assert!(mention_probe_gate(std::slice::from_ref(&mention), 2).is_err());
+        // A market that can't close early is warned about, not refused.
+        let no_early = ValidatedMarket { can_close_early: Some(false), ..mention };
+        assert!(mention_probe_gate(&[no_early], 1).is_ok());
+    }
+
+    #[test]
+    fn non_crossing_guard() {
+        // Below the ask: safe (IOC auto-cancels unfilled).
+        assert!(assert_non_crossing(Some(5), 1).is_ok());
+        // At or above the ask: would fill — refused.
+        assert!(assert_non_crossing(Some(1), 1).is_err());
+        assert!(assert_non_crossing(Some(1), 2).is_err());
+        // Unknown ask: refused (P3 — never guess).
+        assert!(assert_non_crossing(None, 1).is_err());
     }
 }

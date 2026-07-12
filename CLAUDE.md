@@ -24,7 +24,10 @@ written so you can work on one layer without reading the rest of the system.
   unrelated resting orders from other systems. Never widen that scope.
 - Live testing: `probe-order`/`kill-drill` are hard-limited to 1¢ ×1
   contract, non-mention markets, $1 cumulative ledger
-  (`state/probe_ledger.json`). Real mention trading is gated until M4.
+  (`state/probe_ledger.json`). `--allow-mention` (arm/probe-order) is the
+  mention-probe posture: same envelope but Mentions-category permitted;
+  probe orders must be non-crossing (guaranteed no fill). Real-size mention
+  trading is gated until M4.
 
 ## Quick commands
 
@@ -41,5 +44,6 @@ source ~/.kalshi/earshot_env                 # credentials (never in repo)
 Milestone state: M0 ✅ M2 ✅ (live-validated) M1 ✅ (sherpa_kws engine +
 corpus + bake-off run; holdout results and the pre-declared follow-on —
 a custom low-lookahead spotter for the latency bar — in `docs/BAKEOFF.md`).
-Next: M3 (SIP/HLS capture) and the low-latency detector milestone. See the
-meta-spec for the roadmap.
+Next: M3 (Twilio Media Streams dial-in capture — `docs/TWILIO.md`), the
+mention-probe live posture (1¢ verification run on a real call), then the
+low-latency detector milestone. See the meta-spec for the roadmap.

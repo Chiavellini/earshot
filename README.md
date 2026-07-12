@@ -1,9 +1,13 @@
 # earshot
 
 Audio-signal latency trader for Kalshi mention markets. **M0** (replay
-pipeline + latency chain) and **M2** (Kalshi execution layer) are complete
-and live-validated; next milestones are M1 (detector bake-off) and M3
-(SIP/HLS live capture).
+pipeline + latency chain), **M2** (Kalshi execution layer, live-validated)
+and **M1** (detector bake-off) are complete. M1 holdout verdict (unseen
+companies, frozen config): precision 0.95–1.00, Confirmed recall 0.915,
+Fast p95 onset→emit 1066 ms vs the 350 ms bar — the sherpa_kws engine runs
+live **Confirmed-weighted** (~1 s from word onset); the pre-declared
+follow-on is a custom low-lookahead spotter (`docs/BAKEOFF.md`). Next: M3
+(Twilio Media Streams dial-in capture) and that spotter.
 
 New here (human or agent)? **Read `docs/ARCHITECTURE.md`** — every layer has
 a documented typed door and can be edited in isolation. Conventions in
@@ -11,11 +15,13 @@ a documented typed door and can be edited in isolation. Conventions in
 `VERIFICATIONS.md`.
 
 ```
-cargo test                                                    # 48 tests: unit + mock + e2e
+cargo test                                                    # 79 tests: unit + mock + e2e
 cargo run --release -- gen-fixture --out configs/fixture.wav
 cargo run --release -- replay --config configs/example-event.toml   # M0 pipeline
 cargo run --release -- arm --config configs/m2-drill.toml           # + executor, DRY-RUN
 cargo run --release -- book --ticker KXBTCD-... --secs 10           # live WS soak (read-only)
+cargo run --release -- bench-detector --config configs/bakeoff.toml \
+      --corpus corpus/ --engines sherpa_kws --split dev             # M1 harness (docs/BAKEOFF.md)
 ```
 
 Live order paths (`arm --i-am-live`, `probe-order`, `kill-drill`) are gated:
@@ -23,10 +29,12 @@ allowlist + non-mention markets + 1¢ cap + $1 cumulative probe ledger. The
 kill switch (`touch state/STOP` or SIGINT) cancels this session's orders
 only — measured 140 ms STOP→cancelled.
 
-Measured on production (2026-07-10, from a laptop): full chain fixture-audio
-→ real fill in 231 ms — detection 137 ms (chunk-size dominated, the M1
-dial), decision 8 µs, executor 71 µs, order build+headers 352 µs
-(pre-signed/pre-staged), network send→ack 93.5 ms (region move is M5).
+Measured on production — **M2 acceptance run** (2026-07-10, from a laptop):
+full chain fixture-audio → real fill in 231 ms — detection 137 ms
+(chunk-size dominated; real speech via sherpa_kws adds ~1 s to word onset,
+see the M1 verdict above), decision 8 µs, executor 71 µs, order
+build+headers 352 µs (pre-signed/pre-staged), network send→ack 93.5 ms
+(region move is M5).
 
 ```
 edge (µs)             count        p50        p95        p99

@@ -15,7 +15,7 @@ use earshot::kalshi::auth::{Presigner, Signer};
 use earshot::kalshi::book::{run_ws, BookCache};
 use earshot::kalshi::executor::{prestage_orders, run_executor, ExecCtx};
 use earshot::kalshi::rest::{OrderBodyV2, RestClient, ORDERS_ENDPOINT};
-use earshot::kalshi::validator::{m2_live_gate, LiveMarketValidator};
+use earshot::kalshi::validator::{assert_non_crossing, m2_live_gate, mention_probe_gate, LiveMarketValidator};
 use earshot::kalshi::KalshiEnv;
 use earshot::pipeline::preproc::PreprocCfg;
 use earshot::pipeline::run_pipeline;
@@ -63,6 +63,10 @@ enum Command {
         i_am_live: bool,
         #[arg(long)]
         speed: Option<f32>,
+        /// Mention-probe posture: permit Mentions-category markets while
+        /// keeping the full probe envelope (1¢ cap, $1 ledger).
+        #[arg(long)]
+        allow_mention: bool,
     },
     /// Bounded-loss live order probe: 1 contract at 1¢ (worst case $0.01),
     /// non-mention markets only, $1 cumulative ledger cap.
@@ -74,6 +78,10 @@ enum Command {
         /// Resting post-only bid instead of IOC (for the kill drill)
         #[arg(long)]
         post_only: bool,
+        /// Permit a Mentions-category market — IOC only, and refused unless
+        /// the price is strictly below the best ask (guaranteed no fill).
+        #[arg(long)]
+        allow_mention: bool,
     },
     /// Kill-switch drill: place a resting 1¢ bid, trip state/STOP, verify
     /// cancel-all + disarm in under a second.
@@ -167,10 +175,12 @@ fn run(command: Command) -> Result<(), AnyErr> {
             }
             Ok(())
         }
-        Command::Arm { config, report, i_am_live, speed } => rt()?.block_on(arm(config, report, i_am_live, speed)),
-        Command::ProbeOrder { ticker, price_cents, post_only } => {
+        Command::Arm { config, report, i_am_live, speed, allow_mention } => {
+            rt()?.block_on(arm(config, report, i_am_live, speed, allow_mention))
+        }
+        Command::ProbeOrder { ticker, price_cents, post_only, allow_mention } => {
             rt()?.block_on(async {
-                probe_order(&ticker, price_cents, post_only, false).await.map(|_| ())
+                probe_order(&ticker, price_cents, post_only, allow_mention, false).await.map(|_| ())
             })
         }
         Command::KillDrill { ticker, auto } => rt()?.block_on(kill_drill(&ticker, auto)),
@@ -304,7 +314,13 @@ async fn wait_for_books(cache: &BookCache, tickers: &[String], timeout: Duration
     }
 }
 
-async fn arm(config_path: PathBuf, report_path: PathBuf, i_am_live: bool, speed: Option<f32>) -> Result<(), AnyErr> {
+async fn arm(
+    config_path: PathBuf,
+    report_path: PathBuf,
+    i_am_live: bool,
+    speed: Option<f32>,
+    allow_mention: bool,
+) -> Result<(), AnyErr> {
     let cfg = config::load(&config_path)?;
     let state_dir = Path::new("state");
     let (signer, rest) = connect_live().await?;
@@ -317,12 +333,22 @@ async fn arm(config_path: PathBuf, report_path: PathBuf, i_am_live: bool, speed:
     let gate = Arc::new(RiskGate::new(cfg.risk.clone(), state_dir)?);
     if i_am_live {
         let max_cap = cfg.keywords.iter().map(|k| k.max_price_cents).max().unwrap_or(0);
-        m2_live_gate(&markets, max_cap)?;
+        if allow_mention {
+            mention_probe_gate(&markets, max_cap)?;
+        } else {
+            m2_live_gate(&markets, max_cap)?;
+        }
         if gate.cfg().allowlist_tickers.is_empty() {
             return Err("--i-am-live requires a non-empty [risk].allowlist_tickers".into());
         }
         gate.arm();
-        tracing::warn!("ARMED for live orders (M2 gates: allowlist, non-mention, cap ≤ 1¢)");
+        if allow_mention {
+            tracing::warn!(
+                "ARMED for live orders — MENTION-PROBE posture (allowlist, Mentions permitted, cap ≤ 1¢, $1 ledger)"
+            );
+        } else {
+            tracing::warn!("ARMED for live orders (M2 gates: allowlist, non-mention, cap ≤ 1¢)");
+        }
     } else {
         tracing::info!("dry-run: orders will be computed and journaled, never sent");
     }
@@ -418,12 +444,15 @@ async fn arm(config_path: PathBuf, report_path: PathBuf, i_am_live: bool, speed:
 }
 
 /// Guard shared by probe-order and kill-drill: this command spends real
-/// money, so it is 1 contract at 1¢ on a non-mention market, ledger-capped.
+/// money, so it is 1 contract at 1¢, ledger-capped. Non-mention markets
+/// only, unless `allow_mention` — then IOC-only and strictly below the best
+/// ask (guaranteed no fill: proves mention-category order acceptance at $0).
 /// Returns the server order id (for the session-scoped kill drill).
 async fn probe_order(
     ticker: &str,
     price_cents: u32,
     post_only: bool,
+    allow_mention: bool,
     quiet: bool,
 ) -> Result<Option<String>, AnyErr> {
     if price_cents != 1 {
@@ -431,19 +460,28 @@ async fn probe_order(
     }
     let (_signer, rest) = connect_live().await?;
 
-    // Non-mention check (M2 rule).
     let market = rest.market(ticker).await?;
     let series_ticker = ticker.split('-').next().unwrap_or(ticker);
     let series = rest.series(series_ticker).await?;
     let category = series["series"]["category"].as_str().unwrap_or("?");
     if category == "Mentions" {
-        return Err(format!("{ticker} is a Mentions market — refused in M2").into());
+        if !allow_mention {
+            return Err(format!("{ticker} is a Mentions market — pass --allow-mention for the no-fill drill").into());
+        }
+        if post_only {
+            return Err("mention probe is IOC-only (a resting bid could fill later)".into());
+        }
+        // Refuse anything that could actually fill. yes_ask is integer cents
+        // in the market object; 0/absent = no ask visible.
+        let yes_ask = market["market"]["yes_ask"].as_u64().filter(|&a| a > 0);
+        assert_non_crossing(yes_ask, price_cents)?;
+        tracing::info!(ticker, ?yes_ask, "mention probe: price below ask — guaranteed no fill");
     }
     let status = market["market"]["status"].as_str().unwrap_or("?");
     if status != "active" {
         return Err(format!("{ticker} status is {status:?}, not active").into());
     }
-    tracing::info!(ticker, category, "probe target validated (non-mention, active)");
+    tracing::info!(ticker, category, "probe target validated (active)");
 
     let gate = RiskGate::new(
         RiskConfig { allowlist_tickers: vec![ticker.to_string()], ..Default::default() },
@@ -488,7 +526,7 @@ async fn kill_drill(ticker: &str, auto: bool) -> Result<(), AnyErr> {
 
     // Place the resting 1¢ bid (goes through every probe guard) and register
     // it as THIS SESSION's order — the only thing the kill switch may touch.
-    let order_id = probe_order(ticker, 1, true, true)
+    let order_id = probe_order(ticker, 1, true, false, true)
         .await?
         .ok_or("resting probe order returned no order_id")?;
     let registry = earshot::kalshi::OrderRegistry::default();
