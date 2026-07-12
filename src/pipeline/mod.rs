@@ -121,10 +121,10 @@ pub fn run_pipeline(
         })
         .expect("spawn detect");
 
-    // Drive the source on a current-thread runtime; network-heavy sources
-    // (SIP/HLS) later share a multi-thread runtime owned by the caller.
+    // Drive the source on a current-thread runtime. IO is enabled because
+    // network sources (Twilio WS) run here too, not just file replay.
     let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_time()
+        .enable_all()
         .build()
         .expect("tokio runtime");
     let exit = rt.block_on(source.run(src_tx))?;

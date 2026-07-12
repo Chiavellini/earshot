@@ -21,6 +21,7 @@ use earshot::pipeline::preproc::PreprocCfg;
 use earshot::pipeline::run_pipeline;
 use earshot::risk::{spawn_kill_watcher, RiskConfig, RiskGate};
 use earshot::source::replay::ReplaySource;
+use earshot::source::twilio_ws::TwilioWsSource;
 use earshot::telemetry;
 use earshot::types::SourceId;
 
@@ -162,7 +163,7 @@ fn run(command: Command) -> Result<(), AnyErr> {
         }
         Command::Replay { config, report, speed } => {
             let cfg = config::load(&config)?;
-            let source = replay_source(&cfg, &config, speed)?;
+            let source = build_source(&cfg, &config, speed)?;
             let detector = detector_factory::build_detector(&cfg)?;
             let table = DecisionTable::from_keywords(&cfg.keywords);
             let preproc_cfg = PreprocCfg { resample_to_hz: cfg.pipeline.resample_to_hz };
@@ -251,32 +252,39 @@ fn rt() -> std::io::Result<tokio::runtime::Runtime> {
         .build()
 }
 
-fn replay_source(
+/// Single construction point for the audio source: first source in the
+/// config wins. Replay honors `--speed`; TwilioStream binds its WS listener
+/// here so a taken port refuses before anything arms (P3).
+fn build_source(
     cfg: &config::EventConfig,
     config_path: &Path,
     speed_override: Option<f32>,
-) -> Result<Box<ReplaySource>, AnyErr> {
-    let (path, cfg_speed) = cfg
-        .sources
-        .iter()
-        .find_map(|s| match s {
-            SourceConfig::Replay { path, speed } => Some((path.clone(), *speed)),
-            _ => None,
-        })
-        .ok_or("no replay source in config (live capture sources land in M3)")?;
-    let wav_path = {
-        let p = PathBuf::from(&path);
-        if p.is_absolute() {
-            p
-        } else {
-            config_path.parent().unwrap_or_else(|| Path::new(".")).join(p)
+) -> Result<Box<dyn earshot::source::AudioSource>, AnyErr> {
+    let src = cfg.sources.first().ok_or("config has no sources")?;
+    match src {
+        SourceConfig::Replay { path, speed } => {
+            let wav_path = {
+                let p = PathBuf::from(path);
+                if p.is_absolute() {
+                    p
+                } else {
+                    config_path.parent().unwrap_or_else(|| Path::new(".")).join(p)
+                }
+            };
+            Ok(Box::new(ReplaySource::from_wav(
+                &wav_path,
+                speed_override.unwrap_or(*speed),
+                SourceId(0),
+            )?))
         }
-    };
-    Ok(Box::new(ReplaySource::from_wav(
-        &wav_path,
-        speed_override.unwrap_or(cfg_speed),
-        SourceId(0),
-    )?))
+        SourceConfig::TwilioStream { bind } => {
+            let src = TwilioWsSource::bind(bind, SourceId(0))?;
+            tracing::info!(addr = %src.local_addr()?, "twilio stream source bound — dial after arming");
+            Ok(Box::new(src))
+        }
+        SourceConfig::Sip { .. } => Err("raw SIP adapter not built — use twilio_stream".into()),
+        SourceConfig::Hls { .. } => Err("HLS adapter not built — use twilio_stream".into()),
+    }
 }
 
 /// Shared bring-up for live-connected commands: signer + REST client + skew
@@ -404,7 +412,7 @@ async fn arm(
 
     // Audio pipeline runs on its own OS threads (it owns a current-thread
     // runtime for the source, so it must not run inside this runtime).
-    let source = replay_source(&cfg, &config_path, speed)?;
+    let source = build_source(&cfg, &config_path, speed)?;
     let detector = detector_factory::build_detector(&cfg)?;
     let table = DecisionTable::from_keywords(&cfg.keywords);
     let event_id = cfg.event.id.clone();

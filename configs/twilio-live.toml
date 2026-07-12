@@ -1,0 +1,82 @@
+# First live verification run — JPMorgan Q2 2026 earnings call,
+# Tuesday 2026-07-14 8:30 AM ET (dial-in 888-324-3618, passcode 1364784#,
+# static/no registration — pinned by the 2026-07-11 call inventory).
+#
+# Posture: mention-probe (arm --i-am-live --allow-mention). 1¢ IOC × 1
+# contract per tranche, $1 cumulative ledger. The point is timing + order
+# acceptance on a real mention market, not P&L.
+#
+# Detector: sherpa_kws Confirmed-only — the M1 holdout verdict says Fast-tier
+# latency is not competitive (p95 1066 ms) and confirmed precision is
+# 0.95–1.0. tariff/recession thresholds are the FROZEN bake-off values;
+# variants must be re-checked against state/rules/*.json after the dry-run
+# arm fetches the real market rules (drill 4).
+
+[event]
+id        = "JPM-Q2-2026"
+starts_at = "2026-07-14T12:30:00Z"
+
+[pipeline]
+chunk_ms       = 160
+resample_to_hz = 16000
+
+[detector]
+engine = "sherpa_kws"
+
+[detector.sherpa_kws]
+model_dir         = "models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
+num_threads       = 1
+max_active_paths  = 4
+default_threshold = 0.20
+default_boost     = 2.0
+refractory_ms     = 2000
+
+[[sources]]
+kind = "twilio_stream"
+bind = "127.0.0.1:8080"          # ngrok fronts this; Twilio connects wss://
+
+[kalshi]
+series = "KXEARNINGSMENTIONJPM"
+
+[risk]
+max_order_notional_cents = 100
+max_event_notional_cents = 100
+book_stale_ms            = 2000
+audio_stale_ms           = 2000   # detection sits ~1 chunk behind capture; 1 s default is too tight
+allowlist_tickers = [
+  "KXEARNINGSMENTIONJPM-26JUL14-TARI",
+  "KXEARNINGSMENTIONJPM-26JUL14-RECE",
+  "KXEARNINGSMENTIONJPM-26JUL14-INFL",
+]
+
+# Corpus-validated keyword (holdout precision 1.0 at these thresholds).
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONJPM-26JUL14-TARI"
+phrase           = "tariff"
+variants         = ["tariff", "tariffs"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+confirmed_threshold = 0.10
+boost            = 3.0
+
+# Corpus false-alarm control in the bake-off; positive-recall untested but
+# precision-safe at the frozen threshold.
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONJPM-26JUL14-RECE"
+phrase           = "recession"
+variants         = ["recession", "recessions"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+confirmed_threshold = 0.28
+
+# NOT corpus-tuned — running at engine defaults to gather live data; still
+# 1¢ bounded like everything else.
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONJPM-26JUL14-INFL"
+phrase           = "inflation"
+variants         = ["inflation"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"

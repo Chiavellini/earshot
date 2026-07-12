@@ -9,12 +9,26 @@ detection/trading concern.
 
 ## Entry door
 - **Type:** a `config::SourceConfig` variant (`Replay { path, speed }`,
-  `Sip {…}`, `Hls {…}`) plus the external media itself.
+  `TwilioStream { bind }`, `Sip {…}`, `Hls {…}`) plus the external media
+  itself.
 - **Mechanism:** constructor (e.g. `ReplaySource::from_wav(path, speed,
-  SourceId)`), then the pipeline calls
-  `AudioSource::run(self: Box<Self>, tx: RingSender<AudioFrame>)` (async,
-  `src/source/mod.rs`).
+  SourceId)`, `TwilioWsSource::bind(addr, SourceId)`), then the pipeline
+  calls `AudioSource::run(self: Box<Self>, tx: RingSender<AudioFrame>)`
+  (async, `src/source/mod.rs`).
 - **Cadence:** `run` is called once; it owns the feed until end-of-stream.
+
+### Adapter #2: `TwilioWsSource` (`src/source/twilio_ws.rs`, M3)
+We are the WS **server**; Twilio Media Streams connects to us after
+`scripts/twilio-dial.sh` places the dial-in call (`<Start><Stream>` TwiML).
+Message shapes and the capture path are pinned in `docs/TWILIO.md`. Each
+`media` message: base64 G.711 μ-law, 8 kHz mono, nominally 20 ms → decoded
+via a const LUT (`decode_ulaw`) into one `AudioFrame` stamped at arrival
+(clock domain "network" — includes WS transit, excludes the PSTN leg).
+`accept_timeout` (call never lands) and `idle_timeout` (dead call) both
+fail loud. Twilio `sequenceNumber` gaps are warned (network loss
+visibility); our own `seq` stays dense. μ-law decode lives HERE because
+μ-law is this source's codec (the "decoding beyond its own codec"
+exclusion refers to downstream resampling/VAD, which stay in preproc).
 
 ## Exit door
 - **Type:** `types::AudioFrame` — `pcm: Arc<[i16]>` (mono), `sample_rate_hz`,
@@ -32,22 +46,26 @@ detection/trading concern.
 - Stamp `capture_ts = MonotonicNs::now()` at the instant bytes arrive
   (replay: at emit — never backdated to the file timeline).
 - `seq` strictly increasing per source; frames in capture order.
-- 20 ms frames (`replay::FRAME_MS`); pace with absolute deadlines
-  (`sleep_until(start + n·dur)`) so timer error never accumulates.
+- 20 ms frames (`replay::FRAME_MS`); replay paces with absolute deadlines
+  (`sleep_until(start + n·dur)`) so timer error never accumulates. Network
+  sources emit at arrival cadence (Twilio nominally delivers 20 ms frames;
+  frame length is whatever the message carried — the chunker accumulates by
+  sample count, not frame count).
 - Per-frame `Arc<[i16]>` allocation is accepted for now; the pool seam is
   noted in `replay.rs`.
 
 ## Failure policy
 - Unreadable/malformed media → error from the constructor, before any frame
-  flows (fail cheap).
+  flows (fail cheap). Twilio: a taken bind port refuses at construction.
 - Mid-stream I/O error → return `Err(SourceError)`; the pipeline tears down.
-- Never silently resample or downmix: wrong format = constructor error
-  (mono 16-bit or bust, until a real decoder lands here).
+- Never silently resample or downmix: wrong format = error (replay:
+  constructor; Twilio: `SourceError::Protocol` on any `start.mediaFormat`
+  other than audio/x-mulaw 8 kHz mono).
 
 ## How to replace or edit this layer
 - New source = new file in `src/source/` implementing `AudioSource` + a new
   `SourceConfig` variant + a match arm where sources are constructed
-  (`main.rs::replay_source` today; the arbiter later). Nothing else changes.
+  (`main.rs::build_source` today; the arbiter later). Nothing else changes.
 - Contract (do NOT change without updating every layer doc): the
   `AudioSource` trait shape, `AudioFrame` field semantics, ingress drop
   policy.
@@ -59,3 +77,8 @@ detection/trading concern.
   `fixture::FixtureSpec` — no pipeline needed.
 - `cargo test source::` and the e2e replay test cover pacing fidelity
   (wall-clock ±5%).
+- Twilio: μ-law LUT unit tests in `src/source/twilio_ws.rs`;
+  `tests/twilio_source.rs` runs a synthetic in-process WS client speaking
+  the pinned message protocol against a bound source. Live: the loopback
+  rehearsal (docs/TWILIO.md — a second Twilio number `<Play>`s the fixture
+  WAV into a real call).

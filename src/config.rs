@@ -118,14 +118,18 @@ pub enum SourceConfig {
         #[serde(default = "default_speed")]
         speed: f32, // 0 = as fast as possible
     },
-    /// Earnings-call dial-in (adapter lands in M2/M3; parses now).
+    /// Earnings-call dial-in via Twilio Media Streams (M3): we run the WS
+    /// server, Twilio's <Stream> connects to it (docs/TWILIO.md). The dial
+    /// itself happens out-of-band (scripts/twilio-dial.sh).
+    TwilioStream { bind: String },
+    /// Raw SIP dial-in (adapter not built; parses now).
     Sip {
         number: String,
         #[serde(default)]
         dtmf: String,
         dial_at: String,
     },
-    /// Webcast fallback (adapter lands in M3; parses now).
+    /// Webcast fallback (adapter not built; parses now).
     Hls { url: String },
 }
 
@@ -218,6 +222,15 @@ fn validate(cfg: &EventConfig) -> Result<(), ConfigError> {
 
     if cfg.sources.is_empty() {
         return fail("at least one source is required".into());
+    }
+    for s in &cfg.sources {
+        if let SourceConfig::TwilioStream { bind } = s {
+            if bind.parse::<std::net::SocketAddr>().is_err() {
+                return fail(format!(
+                    "twilio_stream.bind {bind:?} is not a socket address (e.g. \"127.0.0.1:8080\")"
+                ));
+            }
+        }
     }
     if cfg.keywords.is_empty() {
         return fail("at least one keyword is required".into());
@@ -335,6 +348,33 @@ mod tests {
         assert_eq!(cfg.keywords.len(), 1);
         assert_eq!(cfg.keywords[0].max_price_cents, 97);
         assert_eq!(cfg.keywords[0].policy, Policy::TwoTier);
+    }
+
+    #[test]
+    fn parses_checked_in_twilio_live_config_verbatim() {
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("configs/twilio-live.toml");
+        let cfg = load(&path).unwrap();
+        assert!(matches!(cfg.sources[0], SourceConfig::TwilioStream { .. }));
+        assert_eq!(cfg.detector.engine, EngineKind::SherpaKws);
+        // Mention-probe posture invariants: every keyword 1¢ × 1 contract,
+        // confirmed-only, and allowlisted.
+        for kw in &cfg.keywords {
+            assert_eq!(kw.max_price_cents, 1, "{}", kw.market_ticker);
+            assert_eq!(kw.budget_contracts, 1, "{}", kw.market_ticker);
+            assert_eq!(kw.policy, Policy::ConfirmedOnly, "{}", kw.market_ticker);
+            assert!(cfg.risk.allowlist_tickers.contains(&kw.market_ticker));
+        }
+    }
+
+    #[test]
+    fn rejects_bad_twilio_bind() {
+        let text = base_toml().replace(
+            "kind  = \"replay\"\npath  = \"fixture.wav\"\nspeed = 1.0                       # 0 = as fast as possible (tests)",
+            "kind = \"twilio_stream\"\nbind = \"not-an-addr\"",
+        );
+        let cfg: EventConfig = toml::from_str(&text).unwrap();
+        assert!(super::validate(&cfg).is_err());
     }
 
     fn base_toml() -> String {

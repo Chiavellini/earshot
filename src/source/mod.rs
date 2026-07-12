@@ -5,6 +5,7 @@
 //! `SourceConfig` variant; the pipeline is unchanged.
 
 pub mod replay;
+pub mod twilio_ws;
 
 use async_trait::async_trait;
 
@@ -48,6 +49,8 @@ pub enum SourceError {
     Io(#[from] std::io::Error),
     #[error("wav decode: {0}")]
     Wav(#[from] hound::Error),
+    #[error("stream protocol: {0}")]
+    Protocol(String),
 }
 
 #[async_trait]
