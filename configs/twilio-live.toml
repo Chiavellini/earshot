@@ -8,9 +8,14 @@
 #
 # Detector: sherpa_kws Confirmed-only — the M1 holdout verdict says Fast-tier
 # latency is not competitive (p95 1066 ms) and confirmed precision is
-# 0.95–1.0. tariff/recession thresholds are the FROZEN bake-off values;
-# variants must be re-checked against state/rules/*.json after the dry-run
-# arm fetches the real market rules (drill 4).
+# 0.95–1.0. tariff/recession thresholds are the FROZEN bake-off values.
+#
+# Variants VERIFIED against state/rules/*.json (drill 4, 2026-07-12): all
+# three are single-utterance markets ("If X is said ... resolves to Yes",
+# no "said N times" strike → one-shot decision table applies), all
+# can_close_early=true, and the rules count "the exact word or a plural or
+# possessive form" — so tariff/tariffs, recession/recessions, inflation are
+# the right coverage (spoken possessive ≡ plural to the KWS tokenizer).
 
 [event]
 id        = "JPM-Q2-2026"
