@@ -208,6 +208,20 @@ text extracted from the PDF's content streams):
 lists scheduled changes), or if `GET /exchange/series-fee-changes` flags an
 armed series.
 
+### Q5a — REST market-object price fields are dollars-only (pinned 2026-07-12)
+
+**Claim:** On prod REST `GET /markets/{ticker}`, the integer-cent price
+fields (`yes_ask`, `yes_bid`, `last_price`, …) come back **null**; prices
+are only populated in the fixed-point dollar-string fields
+(`yes_ask_dollars`, `yes_bid_dollars`, `last_price_dollars`, …) — same
+protocol drift as the WS book feed (see Q1/book pins).
+**Evidence:** `probe-order --allow-mention` on
+KXEARNINGSMENTIONJPM-26JUL14-TARI refused with "no best ask visible"
+while the market showed ask $0.16 (2026-07-12 drill); fixed by parsing
+`yes_ask_dollars` via `book::dollars_to_cents`.
+**Implication:** never read integer price fields from REST market objects.
+**Confidence:** high (live). **Re-verify:** on API version announcements.
+
 ## Q6 — Demo/live parity
 
 **Claim:** Base URLs — production REST `https://external-api.kalshi.com/trade-api/v2`,

@@ -112,7 +112,7 @@ struct Ladders {
 }
 
 /// "0.9900" → 99¢. Integer parsing only; None for anything outside 0–100¢.
-fn dollars_to_cents(s: &str) -> Option<u32> {
+pub fn dollars_to_cents(s: &str) -> Option<u32> {
     let (int, frac) = s.split_once('.').unwrap_or((s, ""));
     let dollars: u32 = int.parse().ok()?;
     let frac2 = format!("{:0<2}", frac.chars().take(2).collect::<String>());

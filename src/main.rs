@@ -479,9 +479,19 @@ async fn probe_order(
         if post_only {
             return Err("mention probe is IOC-only (a resting bid could fill later)".into());
         }
-        // Refuse anything that could actually fill. yes_ask is integer cents
-        // in the market object; 0/absent = no ask visible.
-        let yes_ask = market["market"]["yes_ask"].as_u64().filter(|&a| a > 0);
+        // Refuse anything that could actually fill. The REST market object's
+        // integer price fields are NULL on prod (pinned 2026-07-12) — prices
+        // arrive only as *_dollars fixed-point strings.
+        let m = &market["market"];
+        let yes_ask = m["yes_ask"]
+            .as_u64()
+            .or_else(|| {
+                m["yes_ask_dollars"]
+                    .as_str()
+                    .and_then(earshot::kalshi::book::dollars_to_cents)
+                    .map(u64::from)
+            })
+            .filter(|&a| a > 0);
         assert_non_crossing(yes_ask, price_cents)?;
         tracing::info!(ticker, ?yes_ask, "mention probe: price below ask — guaranteed no fill");
     }
