@@ -213,10 +213,21 @@ pub async fn run_ws(
     cache: Arc<BookCache>,
     tickers: Vec<String>,
 ) {
+    run_ws_url(env.ws_url.to_string(), signer, cache, tickers).await
+}
+
+/// URL-parameterized reader — the testable seam (`tests/ws_book.rs` points
+/// it at a local ws:// server; prod always enters via `run_ws`).
+pub async fn run_ws_url(
+    ws_url: String,
+    signer: Arc<Signer>,
+    cache: Arc<BookCache>,
+    tickers: Vec<String>,
+) {
     let mut attempt = 0u32;
     loop {
         attempt += 1;
-        match connect_and_stream(&env, &signer, &cache, &tickers).await {
+        match connect_and_stream(&ws_url, &signer, &cache, &tickers).await {
             Ok(()) => tracing::info!("ws stream ended cleanly"),
             Err(e) => tracing::warn!(attempt, "ws error: {e}; reconnecting"),
         }
@@ -225,21 +236,21 @@ pub async fn run_ws(
 }
 
 async fn connect_and_stream(
-    env: &KalshiEnv,
+    ws_url: &str,
     signer: &Arc<Signer>,
     cache: &Arc<BookCache>,
     tickers: &[String],
 ) -> Result<(), KalshiError> {
     let path = "/trade-api/ws/v2";
-    let host = env
-        .ws_url
+    let host = ws_url
         .trim_start_matches("wss://")
+        .trim_start_matches("ws://")
         .split('/')
         .next()
         .unwrap()
         .to_string();
     let mut req = tokio_tungstenite::tungstenite::http::Request::builder()
-        .uri(env.ws_url)
+        .uri(ws_url)
         .header("Host", host)
         .header("Upgrade", "websocket")
         .header("Connection", "Upgrade")

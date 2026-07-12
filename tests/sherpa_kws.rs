@@ -17,6 +17,8 @@ fn model_dir() -> Option<PathBuf> {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join(MODEL_DIR);
     if dir.exists() {
         Some(dir)
+    } else if std::env::var_os("EARSHOT_REQUIRE_MODELS").is_some() {
+        panic!("EARSHOT_REQUIRE_MODELS set but {MODEL_DIR} missing — run scripts/fetch-models.sh");
     } else {
         eprintln!("==== SKIP sherpa_kws integration: {MODEL_DIR} missing — run scripts/fetch-models.sh ====");
         None

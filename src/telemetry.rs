@@ -57,7 +57,10 @@ impl LatencyRecorder {
     #[inline]
     pub fn record(&mut self, edge: &'static str, nanos: u64) {
         if let Some(h) = self.hists.get_mut(edge) {
-            h.record(nanos.max(1)).ok(); // saturates at 60 s; loud in report via max
+            // saturating: a stalled stage must show up as a loud 60 s max,
+            // not vanish (plain record() ERRORS above the bound and would
+            // silently drop exactly the samples that matter most).
+            h.saturating_record(nanos.max(1));
         }
     }
 
@@ -194,5 +197,67 @@ pub fn init_logging(json: bool) {
         tracing_subscriber::fmt().with_env_filter(filter).json().init();
     } else {
         tracing_subscriber::fmt().with_env_filter(filter).init();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// hdrhistogram guarantees 3 significant digits — quantile values may be
+    /// off by up to 0.1%, so assert within that.
+    fn close(got: u64, want: u64) -> bool {
+        let tol = (want / 500).max(1); // ±0.2% (two sig-digit buckets), min 1 µs
+        got.abs_diff(want) <= tol
+    }
+
+    #[test]
+    fn known_values_produce_correct_quantiles() {
+        let mut r = LatencyRecorder::new();
+        // 1..=100 ms in nanos: p50 = 50 ms, p95 = 95 ms, max = 100 ms.
+        for ms in 1..=100u64 {
+            r.record("send→ack", ms * 1_000_000);
+        }
+        let snap = r.snapshot();
+        let s = &snap["send→ack"];
+        assert_eq!(s.count, 100);
+        assert!(close(s.p50_us, 50_000), "p50 {} µs", s.p50_us);
+        assert!(close(s.p95_us, 95_000), "p95 {} µs", s.p95_us);
+        assert!(close(s.max_us, 100_000), "max {} µs", s.max_us);
+    }
+
+    #[test]
+    fn empty_edges_are_omitted_and_unknown_edges_are_noops() {
+        let mut r = LatencyRecorder::new();
+        r.record("capture→ack", 1000);
+        r.record("not-an-edge", 1000); // silently ignored, never panics
+        let snap = r.snapshot();
+        assert_eq!(snap.len(), 1);
+        assert!(snap.contains_key("capture→ack"));
+    }
+
+    #[test]
+    fn zero_clamps_and_sixty_seconds_saturates() {
+        let mut r = LatencyRecorder::new();
+        r.record("exec→send", 0); // clamped to 1 ns, still counted
+        r.record("exec→send", 120_000_000_000); // > 60 s bound: saturates, no panic
+        let s = &r.snapshot()["exec→send"];
+        assert_eq!(s.count, 2);
+        assert!(s.max_us >= 60_000_000, "saturated max {} µs", s.max_us);
+    }
+
+    #[test]
+    fn merge_folds_counts_across_recorders() {
+        // The exact arm-time fold: executor recorder merged into pipeline's.
+        let mut pipeline = LatencyRecorder::new();
+        let mut exec = LatencyRecorder::new();
+        pipeline.record("capture→decision", 5_000_000);
+        exec.record("send→ack", 90_000_000);
+        exec.record("send→ack", 100_000_000);
+        pipeline.merge(&exec);
+        let snap = pipeline.snapshot();
+        assert_eq!(snap["capture→decision"].count, 1);
+        assert_eq!(snap["send→ack"].count, 2);
+        assert!(close(snap["send→ack"].max_us, 100_000));
     }
 }

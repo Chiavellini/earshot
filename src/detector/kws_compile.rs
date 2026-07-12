@@ -308,6 +308,9 @@ mod tests {
             .join(MODEL_DIR)
             .join("bpe.model");
         if !path.exists() {
+            if std::env::var_os("EARSHOT_REQUIRE_MODELS").is_some() {
+                panic!("EARSHOT_REQUIRE_MODELS set but {} missing — run scripts/fetch-models.sh", path.display());
+            }
             eprintln!("SKIP: {} not present — run scripts/fetch-models.sh", path.display());
             return None;
         }

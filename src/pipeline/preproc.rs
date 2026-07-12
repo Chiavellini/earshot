@@ -146,6 +146,14 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "only 2x supported")]
+    fn non_2x_rate_panics_loud_not_silent() {
+        let mut f = frame(sine_8k(440.0, 160, 10_000.0), 0);
+        f.sample_rate_hz = 44_100; // neither 8 k nor 16 k: a wiring bug
+        run_stage(vec![f], PreprocCfg { resample_to_hz: Some(16_000) });
+    }
+
+    #[test]
     fn passthrough_when_unconfigured() {
         let pcm = sine_8k(440.0, 160, 10_000.0);
         let out = run_stage(vec![frame(pcm.clone(), 0)], PreprocCfg::default());

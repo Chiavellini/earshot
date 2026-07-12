@@ -14,6 +14,7 @@ use super::rest::RestClient;
 use super::KalshiError;
 use crate::config::EventConfig;
 
+#[derive(Debug)]
 pub struct ValidatedMarket {
     pub ticker: String,
     pub status: String,

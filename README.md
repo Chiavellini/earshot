@@ -15,7 +15,7 @@ a documented typed door and can be edited in isolation. Conventions in
 `VERIFICATIONS.md`.
 
 ```
-cargo test                                                    # 79 tests: unit + mock + e2e
+cargo test                                                    # 109 tests: unit + mock + e2e (+5 perf budgets, --ignored)
 cargo run --release -- gen-fixture --out configs/fixture.wav
 cargo run --release -- replay --config configs/example-event.toml   # M0 pipeline
 cargo run --release -- arm --config configs/m2-drill.toml           # + executor, DRY-RUN

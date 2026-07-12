@@ -33,6 +33,8 @@ written so you can work on one layer without reading the rest of the system.
 
 ```
 cargo test                                   # unit + mock-integration + e2e
+EARSHOT_REQUIRE_MODELS=1 cargo test          # model tests FAIL instead of skipping (use on boxes with models/)
+cargo test --release -- --ignored perf_      # speed budgets (tests/perf_budget.rs); prints measured numbers
 scripts/fetch-models.sh                      # M1 detector models → models/ (gitignored)
 cargo run --release -- replay --config configs/example-event.toml
 cargo run --release -- bench-detector --config <cfg> --corpus corpus/   # see docs/BAKEOFF.md

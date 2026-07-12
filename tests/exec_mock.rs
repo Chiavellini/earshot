@@ -44,11 +44,15 @@ fn keyword(cap: u8, budget: u32) -> KeywordConfig {
 }
 
 fn intent(tranche: u32, tier: Tier) -> DecisionIntent {
+    intent_for(0, 90, tranche, tier)
+}
+
+fn intent_for(kw: u16, price: u8, tranche: u32, tier: Tier) -> DecisionIntent {
     let now = MonotonicNs::now();
     DecisionIntent {
-        keyword: KeywordId(0),
+        keyword: KeywordId(kw),
         market_ticker: TICKER.into(),
-        max_price_cents: 90,
+        max_price_cents: price,
         tranche_contracts: tranche,
         tier,
         audio_ts: now,
@@ -62,6 +66,10 @@ struct Rig {
 }
 
 async fn rig(server: &MockServer, cap: u8, budget: u32, dry_run: bool, timeout: Duration) -> Rig {
+    rig_kws(server, vec![keyword(cap, budget)], dry_run, timeout).await
+}
+
+async fn rig_kws(server: &MockServer, kws: Vec<KeywordConfig>, dry_run: bool, timeout: Duration) -> Rig {
     let signer = test_signer();
     let rest = RestClient::with_base_and_timeout(server.uri(), signer.clone(), timeout).unwrap();
     let cache = BookCache::new(&[TICKER.to_string()]);
@@ -83,7 +91,7 @@ async fn rig(server: &MockServer, cap: u8, budget: u32, dry_run: bool, timeout: 
     .unwrap();
     gate.arm();
     let presigner = Presigner::new(signer, "POST", "/trade-api/v2/portfolio/events/orders".into());
-    let kws = vec![keyword(cap, budget)];
+    let haircuts: HashMap<u16, u32> = (0..kws.len() as u16).map(|i| (i, 0u32)).collect();
     Rig {
         ctx: Arc::new(ExecCtx {
             rest,
@@ -91,7 +99,7 @@ async fn rig(server: &MockServer, cap: u8, budget: u32, dry_run: bool, timeout: 
             cache,
             gate: Arc::new(gate),
             prestaged: prestage_orders("EV", &kws),
-            haircuts: HashMap::from([(0u16, 0u32)]),
+            haircuts,
             dry_run,
             registry: earshot::kalshi::OrderRegistry::default(),
         }),
@@ -220,6 +228,88 @@ async fn ambiguous_timeout_queries_status_and_never_reposts() {
     assert_eq!(o.order_status.as_deref(), Some("canceled"));
     // Ledger debited despite the ambiguous send — worst case counts.
     assert_eq!(rig.ctx.gate.ledger_spent_cents(), 90);
+}
+
+#[tokio::test]
+async fn burst_intents_overlap_not_serialize() {
+    let server = MockServer::start().await;
+    // Every POST takes 200 ms. Six intents fired in one burst must complete
+    // in ~one delay (spawned concurrently), not six (serialized).
+    Mock::given(method("POST"))
+        .and(path("/portfolio/events/orders"))
+        .respond_with(
+            ResponseTemplate::new(201)
+                .set_delay(Duration::from_millis(200))
+                .set_body_json(serde_json::json!({"order": {"order_id": "srv-b", "status": "canceled"}})),
+        )
+        .expect(6)
+        .mount(&server)
+        .await;
+
+    // 6 keywords at 15¢ × 1 contract: 90¢ total stays inside the $1 ledger.
+    let kws: Vec<KeywordConfig> = (0..6).map(|_| keyword(15, 1)).collect();
+    let rig = rig_kws(&server, kws, false, Duration::from_secs(5)).await;
+    // Ask must sit under the 15¢ cap for the sweep to be marketable.
+    rig.ctx.cache.publish(
+        TICKER,
+        Book { yes_bids: vec![(5, 100)], yes_asks: vec![(10, 500)], seq: 2, as_of: MonotonicNs::now() },
+    );
+
+    let (tx, rx) = tokio::sync::mpsc::channel(8);
+    for kw in 0..6u16 {
+        tx.send(intent_for(kw, 15, 1, Tier::Confirmed)).await.unwrap();
+    }
+    drop(tx);
+    let t0 = std::time::Instant::now();
+    let report = run_executor(rx, rig.ctx.clone()).await;
+    let wall = t0.elapsed();
+
+    assert_eq!(report.orders.len(), 6);
+    assert!(
+        wall < Duration::from_millis(700),
+        "6 × 200 ms intents took {wall:?} — executor is serializing the burst"
+    );
+    assert!(wall >= Duration::from_millis(200), "mock delay never happened?");
+    // Distinct idempotency keys per keyword, and exact ledger math under
+    // concurrent record_send calls.
+    let mut ids: Vec<&str> = report.orders.iter().map(|o| o.client_order_id.as_str()).collect();
+    ids.sort();
+    ids.dedup();
+    assert_eq!(ids.len(), 6, "client_order_ids must be distinct across the burst");
+    assert_eq!(rig.ctx.gate.ledger_spent_cents(), 90); // 6 × 15¢, no lost updates
+}
+
+#[tokio::test]
+async fn burst_with_mixed_outcomes_accounts_exactly() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/portfolio/events/orders"))
+        .respond_with(ResponseTemplate::new(201).set_body_json(
+            serde_json::json!({"order": {"order_id": "srv-m", "status": "canceled"}}),
+        ))
+        .expect(1) // only the marketable keyword may POST
+        .mount(&server)
+        .await;
+
+    // kw0 cap 15¢ ≥ ask 10¢ → fires; kw1 cap 5¢ < ask → LOST_RACE.
+    let rig = rig_kws(&server, vec![keyword(15, 1), keyword(5, 1)], false, Duration::from_secs(5)).await;
+    rig.ctx.cache.publish(
+        TICKER,
+        Book { yes_bids: vec![(2, 100)], yes_asks: vec![(10, 500)], seq: 2, as_of: MonotonicNs::now() },
+    );
+
+    let (tx, rx) = tokio::sync::mpsc::channel(8);
+    tx.send(intent_for(0, 15, 1, Tier::Confirmed)).await.unwrap();
+    tx.send(intent_for(1, 5, 1, Tier::Confirmed)).await.unwrap();
+    drop(tx);
+    let report = run_executor(rx, rig.ctx.clone()).await;
+
+    assert_eq!(report.orders.len(), 2);
+    assert_eq!(report.lost_races, 1);
+    let fired: Vec<_> = report.orders.iter().filter(|o| !o.lost_race).collect();
+    assert_eq!(fired.len(), 1);
+    assert_eq!(fired[0].order_id.as_deref(), Some("srv-m"));
+    assert_eq!(rig.ctx.gate.ledger_spent_cents(), 15, "only the fired order debits");
 }
 
 #[tokio::test]
