@@ -188,11 +188,25 @@ sampled mention series.
 at a 97¢ sweep price the fee is ~ceil(0.07×0.97×0.03) ≈ 0.3¢/contract — fees
 are nearly negligible exactly where this strategy buys. Spec's "~7¢ × P×(1−P)"
 formula confirmed.
-**Confidence:** high for Feb 2026 edition; **medium for today** — a
-"Fee Schedule for July 2026 - 7.7.26 Update" exists (Google-indexed) but
-kalshi.com blocks non-browser fetches (Vercel checkpoint / 429).
-**Re-verify:** ⚠ OPEN — fetch https://kalshi.com/docs/kalshi-fee-schedule.pdf
-from a real browser and diff against the above before M2's EV gate is coded.
+**July 7, 2026 update — verified 2026-07-12** from the live PDF ("Fee
+Schedule for July 2026 - 7.7.26 Update", fetched in a real Chrome session;
+text extracted from the PDF's content streams):
+- Taker formula UNCHANGED: `fees = roundup(M × 0.07 × C × P × (1−P))`,
+  default M = 1; "roundup rounds up such that the fee + position cost is
+  rounded to a cent" (consistent with the live `average_fee_paid: 0.0007`
+  evidence in §M2). `fee_cents` in `src/kalshi/executor.rs` remains correct.
+- Maker fee formalized: `roundup(M × 0.0175 × C × P × (1−P))` with
+  **default M = 0** — only series listed in the "Non-Standard Fees" table
+  with a maker multiplier ≥ 1 pay maker fees.
+- The Non-Standard Fees table (per-series maker/taker multipliers, e.g.
+  KXBTCY 0/0, KXCPI 1/1) contains **no earnings-mention series** (searched
+  all extracted pages for "mention", case-insensitive: zero hits) → mention
+  markets keep taker M = 1, maker M = 0.
+- Still no settlement fee, no membership fee.
+**Confidence:** high (live PDF, 2026-07-12).
+**Re-verify:** at the next dated schedule update (kalshi.com/fee-schedule
+lists scheduled changes), or if `GET /exchange/series-fee-changes` flags an
+armed series.
 
 ## Q6 — Demo/live parity
 
@@ -367,10 +381,9 @@ transcripts), 2026-07-11.
 ## Open items carried forward
 
 1. ~~Clock-skew tolerance~~ — RESOLVED: ±30 s, measured (see Q3).
-2. **July 2026 fee-schedule update (7.7.26)** — fetch
-   https://kalshi.com/docs/kalshi-fee-schedule.pdf from a real browser
-   (Vercel blocks bots); diff vs Feb 2026 formulas above. Before coding the
-   M2 EV gate.
+2. ~~July 2026 fee-schedule update (7.7.26)~~ — RESOLVED 2026-07-12: taker
+   0.07 unchanged, maker 0.0175 default-M=0, no mention series in the
+   non-standard table (see Q5).
 3. **Demo credentials** — the key on this box is live-only; create a demo
    account/key before M2 demo order round-trips, then run `sign_probe demo`.
 4. **Exact max batch size** — undocumented; bounded by write bucket only.
