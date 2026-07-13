@@ -392,6 +392,76 @@ never match.
 transcripts), 2026-07-11.
 **Confidence:** high. **Re-verify:** on sherpa-onnx crate upgrade.
 
+## streaming_ctc engine pins (2026-07-12)
+
+**Claim:** `ort` (onnxruntime bindings) and `sherpa-onnx` **cannot both static-
+link onnxruntime** in one binary — use `ort` `load-dynamic` + a runtime dylib.
+**Source:** live build/test on this box (aarch64-apple-darwin), 2026-07-12.
+**Evidence:** `sherpa-onnx-sys` 1.13.4 statically links onnxruntime **1.24.2**
+(API 24; `SHERPA_ONNX_STATIC_LIBS` includes `onnxruntime`). `ort` 2.0.0-rc.12
+requests API **27**. With both static, the linker resolves the shared `Ort*`
+symbols to one copy per binary: the `tests/sherpa_kws` binary picked 1.24.2 →
+`"requested API version [27] is not available … Current ORT Version is: 1.24.2"`
+→ **SIGSEGV**; the lib-test binary picked ort's 1.27 and worked (fragile/
+nondeterministic). Fix: `ort = { features = ["ndarray", "load-dynamic"] }` (keep
+defaults — `default-features=false` fails ort's own compile on a missing VitisAI
+EP field). ort then dlopens onnxruntime from `ORT_DYLIB_PATH`; sherpa keeps its
+static 1.24.2; no clash. Verified: full suite green (88 lib + all integration
+incl. sherpa_kws) with `ORT_DYLIB_PATH` → `libonnxruntime.1.27.1.dylib`.
+**Implication:** vendor `onnxruntime-osx-arm64-1.27.1` (tgz sha256
+`e42b77a7281cc6e55141bf44fcfbac2c782b823a491bbb6ac33c781dd991f8a6`);
+`scripts/fetch-models.sh` downloads it and prints
+the `export ORT_DYLIB_PATH`. Only the streaming_ctc engine needs it (lazy load on
+first Session); sherpa_kws-only runs are unaffected. Linux/CI needs the matching
+`onnxruntime-linux-*-1.27.x` dylib.
+**Confidence:** high. **Re-verify:** on `ort` or `sherpa-onnx` crate upgrade
+(check the onnxruntime versions still differ / API bump).
+
+**Claim:** The streaming zipformer2-CTC ONNX exposes CTC **frame posteriors** and
+a fully self-describing streaming-state signature; fbank matches via pure-Rust
+`kaldi-native-fbank`.
+**Source:** `sherpa-onnx-streaming-zipformer-small-ctc-zh-int8-2025-04-01`
+(Apache-2.0) driven via `ort`, 2026-07-12 (Chinese stand-in for plumbing only).
+**Evidence:** inputs `x [N,77,80]` + 74 state tensors; output `log_probs
+[N,T',1000]` = per-frame log-posteriors. Metadata: `model_type=zipformer2`,
+`T=77`, `decode_chunk_len=64`. Feeding: 77-frame window, advance 64; caches
+carried (`new_X`→`X`). Init states derived generically from the signature (batch
+dim → 1, zero-fill). Greedy decode: silence→0 tokens, 0.wav→31, 1.wav→26
+(content-dependent ⇒ posteriors correct). `kaldi-native-fbank` 0.1.0 is pure Rust
+(the C++ `knf-rs` binding fails to build — CommandLineTools libc++ headers
+unresolvable) with exact HTK mel `1127·ln(1+f/700)`; config: 80-bin, use_energy
+false, dither 0, snip_edges false. Geometry here: `decode_chunk_len=64`→640 ms
+chunk step, `T−chunk=13`→~130 ms right-context (NOT ≤80 ms — this is a plumbing
+proxy; the English model needs small `decode_chunk_len`).
+**Implication:** the English model is a drop-in provided it exports the same
+signature (an icefall causal `--decode-chunk-len ~8` zipformer-CTC does).
+Re-derive `kws_compile` pinned vectors if its BPE vocab ≠ gigaspeech-500.
+**Confidence:** high (plumbing); the ≤350 ms latency number awaits the English
+model + paced bake-off.
+
+## Q-M3 — Twilio Media Streams request signature
+
+**Claim:** Twilio signs each request with
+`X-Twilio-Signature = base64(HMAC-SHA1(authToken, URL + concat(sorted POST params)))`,
+where `URL` is the exact request URL (for `<Stream>`, the `wss://…` stream URL)
+and params are each `key`+`value` concatenated in lexicographic key order. A WS
+upgrade is a GET with no body params, so the signed string is the URL alone;
+Media Streams `<Parameter>`s are delivered in the `start` message, not the URL,
+and do not participate in the upgrade-request signature.
+**Source:** Twilio "Validating requests" security docs (HMAC-SHA1 scheme,
+official as of 2026-07-12); RustCrypto `hmac`+`sha1` for the primitive.
+**Evidence:** the HMAC-SHA1 primitive is pinned by an RFC 2202 known-answer
+vector (`hmac_sha1_matches_rfc2202_vector`); the URL-concat scheme + constant-
+time compare are round-trip tested (`signature_round_trips_and_rejects_tampering`).
+**Implication:** `TwilioWsSource` validates in the `accept_hdr_async` handshake
+(`valid_twilio_signature`); mismatch → 403. Token from `TWILIO_AUTH_TOKEN`; the
+exact configured stream URL may be pinned via `TWILIO_STREAM_URL` (else rebuilt
+from `Host` + request target).
+**Confidence:** high on the crypto; the reconstructed-URL byte-for-byte match
+behind ngrok is **not yet confirmed against a live Twilio handshake**.
+**Re-verify:** the loopback rehearsal — capture a real upgrade request, confirm
+the reconstructed URL matches the signed URL, upgrade this pin to live-verified.
+
 ## Open items carried forward
 
 1. ~~Clock-skew tolerance~~ — RESOLVED: ±30 s, measured (see Q3).

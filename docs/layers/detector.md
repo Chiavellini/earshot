@@ -91,6 +91,47 @@ sizing — a `Detection` is a pure acoustic event.
   configs/kws-smoke.wav`, then
   `cargo run -- replay --config configs/m1-kws-example.toml`.
 
+## Engine: streaming_ctc (`streaming_ctc.rs` + `ctc_scorer.rs`)
+The custom low-lookahead spotter — the detector latency milestone (BAKEOFF.md:
+sherpa_kws's gigaspeech export floors at ~1 s onset→emit, ~3× the ≤350 ms bar).
+Drives a streaming-CTC encoder ONNX **directly via `ort`** (16 kHz; wrong input
+rate is an assert), so it reads raw CTC **frame posteriors** — which the sherpa
+KWS C API does not expose. Two wins over sherpa_kws: real per-hit `confidence`
+(not a constant 1.0), and latency set by the *model's* lookahead, not a baked-in
+~320 ms.
+- **`StreamingCtcModel`** — reusable inference core: pure-Rust kaldi fbank
+  (`kaldi-native-fbank`, 80-bin HTK mel, no energy, dither 0, snip_edges false —
+  matches sherpa's feature config) → encoder forward over a fixed `T`-frame
+  window advanced by `decode_chunk_len` each step. The 74 streaming cache tensors
+  (`cached_{key,nonlin_attn,val1,val2,conv1,conv2}`×12 + `embed_states` +
+  `processed_lens`) are carried across calls: each `new_X` output → next call's
+  `X` input. **Init states + shapes are read straight off the ONNX signature**
+  (batch dim `-1` → 1, zero-filled; i64 for `processed_lens`), so the same code
+  drives any sherpa/k2 zipformer2-style streaming-CTC export — the English model
+  is a drop-in. `T` from the `x` input shape, `decode_chunk_len` from ONNX
+  metadata, `vocab` from the `log_probs` output.
+- **Prefix-firing** (`ctc_scorer.rs`): one start-anytime **Viterbi** forward
+  variable per compiled entry over the CTC lattice `[blank, t0, blank, t1, …]`;
+  fires when the best path reaches the final token (`max(alpha[L-2], alpha[L-1])`)
+  with `confidence = exp(score / k)` ≥ threshold — the frame the last token
+  peaks, never endpointing. Fast entries carry the *cut prefix* token target, so
+  Fast fires earlier than Confirmed from the SAME single posterior stream (no
+  second decoder — unlike sherpa_kws's two spotters).
+- **Keyword compilation**: reuses `kws_compile::compile` (same tier/prefix token
+  logic) for piece strings, then maps them to this model's `tokens.txt` ids.
+  Thresholds come from `[detector.streaming_ctc]` / per-keyword overrides
+  (CTC-confidence scale, tuned in Phase 4 — NOT sherpa's threshold scale).
+- **`audio_pos_ms`** = output-frame index × (fbank shift × subsampling), the
+  subsampling measured from the first inference (`out_per_chunk`). Refractory
+  (`refractory_ms`) converted to frames.
+- **BUILD/RUNTIME — `ORT_DYLIB_PATH` required.** `ort` is configured
+  `load-dynamic`: it dlopens onnxruntime (1.27) at runtime rather than static-
+  linking it, because `sherpa-onnx` statically links onnxruntime 1.24.2 and two
+  static copies clash (linker picks one → the other's API request SIGSEGVs; see
+  VERIFICATIONS streaming_ctc pin). Only this engine needs the dylib (loaded
+  lazily on first Session) — sherpa_kws-only runs are unaffected. `scripts/
+  fetch-models.sh` fetches the dylib and prints the `export ORT_DYLIB_PATH=…`.
+
 ## How to test in isolation
 - Feed synthetic `AudioChunk`s directly (see `stub.rs` tests: silence never
   fires, tone fires once, refractory respected).
@@ -100,3 +141,11 @@ sizing — a `Detection` is a pure acoustic event.
   Keyword compilation vectors are unit tests in `kws_compile.rs`.
 - M1 engines: benchmark on the recorded-call corpus (8 kHz telephony), never
   on clean speech — latency distribution, precision, recall per chunk size.
+- streaming_ctc: `ctc_scorer.rs` unit tests cover the firing logic on synthetic
+  posteriors (silence/wrong-token/low-confidence never fire; Fast prefix fires
+  while Confirmed waits for the last token; CTC repeat-token rule; refractory) —
+  no model needed. `streaming_ctc.rs` integration tests drive a real streaming-
+  CTC model end-to-end: set `EARSHOT_CTC_MODEL_DIR` to a model dir (the Chinese
+  `sherpa-onnx-streaming-zipformer-small-ctc` stand-in works — it exercises fbank
+  + ort + cache + scorer identically) and `ORT_DYLIB_PATH` to the onnxruntime
+  dylib; they SKIP loudly when unset.

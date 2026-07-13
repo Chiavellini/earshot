@@ -13,6 +13,8 @@ use crate::detector::Detector;
 pub enum DetectorBuildError {
     #[error("sherpa_kws: {0}")]
     SherpaKws(String),
+    #[error("streaming_ctc: {0}")]
+    StreamingCtc(String),
 }
 
 /// Refuse-to-arm on any failure (P3: never start a session with a dead or
@@ -29,6 +31,15 @@ pub fn build_detector(cfg: &EventConfig) -> Result<Box<dyn Detector>, DetectorBu
                 );
             }
             Ok(Box::new(crate::detector::sherpa_kws::SherpaKwsDetector::new(sk, &cfg.keywords)?))
+        }
+        EngineKind::StreamingCtc => {
+            let sc = cfg.detector.streaming_ctc.as_ref().expect("validated config");
+            if cfg.pipeline.resample_to_hz != Some(16_000) {
+                tracing::warn!(
+                    "streaming_ctc without pipeline.resample_to_hz = 16000: only valid if every source is 16 kHz-native"
+                );
+            }
+            Ok(Box::new(crate::detector::streaming_ctc::StreamingCtcDetector::new(sc, &cfg.keywords)?))
         }
     }
 }
