@@ -138,6 +138,39 @@ enum Command {
         #[arg(long, default_value = "bench-report.json")]
         out: PathBuf,
     },
+    /// Region/edge RTT probe (docs/INGRESS-BAKEOFF.md §2): TCP-handshake RTT +
+    /// loss from this box to each target, to pick the compute region before a
+    /// vendor is chosen. Targets are host or host:port (default :443).
+    Latprobe {
+        #[arg(long, value_delimiter = ',')]
+        targets: Vec<String>,
+        #[arg(long, default_value_t = 20)]
+        samples: u32,
+        #[arg(long, default_value_t = 1000)]
+        timeout_ms: u64,
+        #[arg(long, default_value = "latprobe.json")]
+        out: PathBuf,
+    },
+    /// Ingress bake-off (docs/INGRESS-BAKEOFF.md): capture every configured
+    /// [[sources]] leg concurrently against the same call, record PCM, and
+    /// report per-leg jitter (p50/p95/p99), stalls, and the cross-stream delta.
+    CaptureBakeoff {
+        #[arg(long)]
+        config: PathBuf,
+        /// Safety cap on capture wall-time; replay/hangup ends sooner.
+        #[arg(long, default_value_t = 120)]
+        secs: u64,
+        /// Write per-leg <label>.wav + .jsonl here (non-production tap).
+        #[arg(long)]
+        record_dir: Option<PathBuf>,
+        /// Jitter-buffer sweep value (ms). Wired for the SIP/RTP path where we
+        /// own the buffer; a no-op until that adapter lands (Twilio buffers
+        /// itself). Logged so the chosen value is on the record.
+        #[arg(long)]
+        jitter_buffer_ms: Option<u64>,
+        #[arg(long, default_value = "capture-bakeoff.json")]
+        out: PathBuf,
+    },
 }
 
 fn main() -> ExitCode {
@@ -198,7 +231,8 @@ fn run(command: Command) -> Result<(), AnyErr> {
                 .map(|e| match e.as_str() {
                     "stub" => Ok(earshot::config::EngineKind::Stub),
                     "sherpa_kws" => Ok(earshot::config::EngineKind::SherpaKws),
-                    other => Err(format!("unknown engine {other:?} (stub | sherpa_kws)")),
+                    "streaming_ctc" => Ok(earshot::config::EngineKind::StreamingCtc),
+                    other => Err(format!("unknown engine {other:?} (stub | sherpa_kws | streaming_ctc)")),
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             let split = match split.as_str() {
@@ -215,6 +249,49 @@ fn run(command: Command) -> Result<(), AnyErr> {
                 paced,
                 calls,
             })?;
+            print!("\n{}", report.render_table());
+            std::fs::write(&out, serde_json::to_string_pretty(&report)?)?;
+            println!("\nreport written to {}", out.display());
+            Ok(())
+        }
+        Command::Latprobe { targets, samples, timeout_ms, out } => {
+            if targets.is_empty() {
+                return Err("latprobe needs --targets host[:port],host[:port],…".into());
+            }
+            let report = rt()?.block_on(earshot::latprobe::run_latprobe(
+                &earshot::latprobe::LatprobeArgs {
+                    targets,
+                    samples,
+                    connect_timeout: Duration::from_millis(timeout_ms),
+                },
+            ));
+            print!("\n{}", report.render_table());
+            std::fs::write(&out, serde_json::to_string_pretty(&report)?)?;
+            println!("\nreport written to {}", out.display());
+            Ok(())
+        }
+        Command::CaptureBakeoff { config, secs, record_dir, jitter_buffer_ms, out } => {
+            let cfg = config::load(&config)?;
+            if cfg.sources.len() < 2 {
+                return Err("capture-bakeoff needs at least 2 [[sources]] legs".into());
+            }
+            if let Some(jb) = jitter_buffer_ms {
+                tracing::warn!(jitter_buffer_ms = jb, "jitter-buffer sweep is a no-op until the SIP/RTP adapter lands (Twilio owns its buffer)");
+            }
+            let mut legs = Vec::with_capacity(cfg.sources.len());
+            let mut labels = Vec::with_capacity(cfg.sources.len());
+            for (i, s) in cfg.sources.iter().enumerate() {
+                legs.push(build_leg(s, &config, None, SourceId(i as u16))?);
+                labels.push(source_label(s));
+            }
+            let report = earshot::capture_bakeoff::run_capture_bakeoff(
+                earshot::capture_bakeoff::CaptureArgs {
+                    legs,
+                    labels,
+                    max_secs: secs,
+                    record_dir,
+                },
+            )?;
             print!("\n{}", report.render_table());
             std::fs::write(&out, serde_json::to_string_pretty(&report)?)?;
             println!("\nreport written to {}", out.display());
@@ -252,15 +329,51 @@ fn rt() -> std::io::Result<tokio::runtime::Runtime> {
         .build()
 }
 
-/// Single construction point for the audio source: first source in the
-/// config wins. Replay honors `--speed`; TwilioStream binds its WS listener
-/// here so a taken port refuses before anything arms (P3).
+/// Single construction point for the audio source. One source → the direct
+/// path (zero behavior change). Two or more → a `SourceArbiter` (dual dial-in,
+/// spec §5.2) wrapping each leg. Replay honors `--speed`; TwilioStream binds
+/// its WS listener here so a taken port refuses before anything arms (P3).
 fn build_source(
     cfg: &config::EventConfig,
     config_path: &Path,
     speed_override: Option<f32>,
 ) -> Result<Box<dyn earshot::source::AudioSource>, AnyErr> {
-    let src = cfg.sources.first().ok_or("config has no sources")?;
+    if cfg.sources.is_empty() {
+        return Err("config has no sources".into());
+    }
+    if cfg.sources.len() == 1 {
+        return build_leg(&cfg.sources[0], config_path, speed_override, SourceId(0));
+    }
+    // Dual dial-in: each configured source becomes an arbiter leg. Distinct
+    // SourceIds so per-leg sequence/gap logging stays attributable.
+    let mut legs = Vec::with_capacity(cfg.sources.len());
+    for (i, s) in cfg.sources.iter().enumerate() {
+        legs.push(build_leg(s, config_path, speed_override, SourceId(i as u16))?);
+    }
+    let params = earshot::source::arbiter::ArbiterParams {
+        mode: match cfg.arbiter.mode {
+            config::ArbiterMode::Failover => earshot::source::arbiter::ArbiterMode::Failover,
+            config::ArbiterMode::TakeFirst => earshot::source::arbiter::ArbiterMode::TakeFirst,
+        },
+        switch: Duration::from_millis(cfg.arbiter.switch_ms),
+        align: Duration::from_millis(cfg.arbiter.align_ms),
+    };
+    tracing::info!(legs = legs.len(), mode = ?cfg.arbiter.mode, "dual dial-in: arbiter source");
+    Ok(Box::new(earshot::source::arbiter::SourceArbiter::new(
+        legs,
+        params,
+        SourceId(0),
+    )?))
+}
+
+/// Build one concrete leg (used directly for a single source, or per-leg by
+/// the arbiter).
+fn build_leg(
+    src: &SourceConfig,
+    config_path: &Path,
+    speed_override: Option<f32>,
+    source_id: SourceId,
+) -> Result<Box<dyn earshot::source::AudioSource>, AnyErr> {
     match src {
         SourceConfig::Replay { path, speed } => {
             let wav_path = {
@@ -274,16 +387,32 @@ fn build_source(
             Ok(Box::new(ReplaySource::from_wav(
                 &wav_path,
                 speed_override.unwrap_or(*speed),
-                SourceId(0),
+                source_id,
             )?))
         }
         SourceConfig::TwilioStream { bind } => {
-            let src = TwilioWsSource::bind(bind, SourceId(0))?;
+            let src = TwilioWsSource::bind(bind, source_id)?;
             tracing::info!(addr = %src.local_addr()?, "twilio stream source bound — dial after arming");
             Ok(Box::new(src))
         }
-        SourceConfig::Sip { .. } => Err("raw SIP adapter not built — use twilio_stream".into()),
+        SourceConfig::Sip { carrier, sip_uri, .. } => Err(format!(
+            "raw SIP adapter is gated behind the ingress bake-off (carrier={carrier:?}, \
+             sip_uri={sip_uri:?}) — see docs/INGRESS-BAKEOFF.md; use twilio_stream until a \
+             winner is chosen"
+        )
+        .into()),
         SourceConfig::Hls { .. } => Err("HLS adapter not built — use twilio_stream".into()),
+    }
+}
+
+/// Provider label for the bake-off report / provider→lead table.
+fn source_label(s: &SourceConfig) -> String {
+    match s {
+        SourceConfig::Replay { .. } => "replay".into(),
+        SourceConfig::TwilioStream { .. } => "twilio".into(),
+        SourceConfig::Sip { carrier, .. } if !carrier.is_empty() => carrier.clone(),
+        SourceConfig::Sip { .. } => "sip".into(),
+        SourceConfig::Hls { .. } => "hls".into(),
     }
 }
 

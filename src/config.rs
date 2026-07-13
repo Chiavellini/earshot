@@ -18,6 +18,10 @@ pub struct EventConfig {
     #[serde(default)]
     pub detector: DetectorSection,
     pub sources: Vec<SourceConfig>,
+    /// Dual dial-in arbitration across multiple `sources` (spec §5.2). Ignored
+    /// when a single source is configured. Defaults to failover.
+    #[serde(default)]
+    pub arbiter: ArbiterConfig,
     pub kalshi: KalshiSection,
     #[serde(default)]
     pub risk: crate::risk::RiskConfig,
@@ -60,6 +64,8 @@ pub struct DetectorSection {
     pub engine: EngineKind,
     /// Required iff `engine = "sherpa_kws"`.
     pub sherpa_kws: Option<SherpaKwsConfig>,
+    /// Required iff `engine = "streaming_ctc"`.
+    pub streaming_ctc: Option<StreamingCtcConfig>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
@@ -70,6 +76,9 @@ pub enum EngineKind {
     Stub,
     /// sherpa-onnx streaming keyword spotter (Zipformer transducer).
     SherpaKws,
+    /// Custom low-lookahead streaming-CTC spotter (own prefix-firing on frame
+    /// posteriors via `ort`); the latency-milestone engine.
+    StreamingCtc,
 }
 
 #[derive(Debug, Deserialize)]
@@ -109,6 +118,34 @@ fn default_refractory_ms() -> u64 {
     2000
 }
 
+/// `[detector.streaming_ctc]` — the custom low-lookahead spotter. Drives a
+/// streaming-CTC encoder ONNX directly via `ort` and fires keywords with its own
+/// prefix-firing logic on frame posteriors (`detector::streaming_ctc`).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StreamingCtcConfig {
+    /// Model directory: encoder `*.onnx` + `tokens.txt` (+ `bpe.model` for
+    /// text→token compilation). See `scripts/fetch-models.sh`.
+    pub model_dir: std::path::PathBuf,
+    #[serde(default = "default_num_threads")]
+    pub num_threads: u32,
+    /// CTC blank token id (0 for k2/sherpa exports).
+    #[serde(default)]
+    pub blank_id: u32,
+    /// Default per-entry firing confidence in (0, 1] unless overridden on the
+    /// keyword. Confidence is the geometric-mean per-token posterior along the
+    /// best CTC path (`ctc_scorer`).
+    #[serde(default = "default_ctc_threshold")]
+    pub default_threshold: f32,
+    /// Duplicate suppression per (keyword, tier), in stream-time ms.
+    #[serde(default = "default_refractory_ms")]
+    pub refractory_ms: u64,
+}
+
+fn default_ctc_threshold() -> f32 {
+    0.5
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SourceConfig {
@@ -122,11 +159,25 @@ pub enum SourceConfig {
     /// server, Twilio's <Stream> connects to it (docs/TWILIO.md). The dial
     /// itself happens out-of-band (scripts/twilio-dial.sh).
     TwilioStream { bind: String },
-    /// Raw SIP dial-in (adapter not built; parses now).
+    /// Raw SIP/RTP dial-in via a low-latency carrier (Telnyx/Bandwidth) or a
+    /// bridge SIP URI directly (Option C). The adapter is GATED behind the
+    /// live ingress bake-off (docs/INGRESS-BAKEOFF.md): the config parses and
+    /// slots into the arbiter today, but `build_source` refuses to construct
+    /// it until the bake-off names a winning carrier. No RTP code yet.
     Sip {
+        /// PSTN number to dial (carrier path), if any.
+        #[serde(default)]
         number: String,
+        /// Direct bridge SIP URI (Option C: skips the PSTN carrier, may
+        /// negotiate wideband G.722/Opus). Checked per-event as a pre-flight.
+        #[serde(default)]
+        sip_uri: String,
+        /// Carrier label for the provider→lead table / arbiter accounting.
+        #[serde(default)]
+        carrier: String,
         #[serde(default)]
         dtmf: String,
+        #[serde(default)]
         dial_at: String,
     },
     /// Webcast fallback (adapter not built; parses now).
@@ -135,6 +186,43 @@ pub enum SourceConfig {
 
 fn default_speed() -> f32 {
     1.0
+}
+
+/// `[arbiter]` — how multiple `sources` are combined (spec §5.2).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArbiterConfig {
+    #[serde(default)]
+    pub mode: ArbiterMode,
+    /// Failover: max quiet gap on the active leg before switching (ms).
+    #[serde(default = "default_switch_ms")]
+    pub switch_ms: u64,
+    /// TakeFirst: audio buffered per leg before estimating the inter-leg lag (ms).
+    #[serde(default = "default_align_ms")]
+    pub align_ms: u64,
+}
+
+impl Default for ArbiterConfig {
+    fn default() -> Self {
+        ArbiterConfig { mode: ArbiterMode::default(), switch_ms: 200, align_ms: 2000 }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ArbiterMode {
+    /// Primary + standby failover (robust default).
+    #[default]
+    Failover,
+    /// Per-position first-arrival wins after cross-correlation alignment.
+    TakeFirst,
+}
+
+fn default_switch_ms() -> u64 {
+    200
+}
+fn default_align_ms() -> u64 {
+    2000
 }
 
 #[derive(Debug, Deserialize)]
@@ -232,6 +320,9 @@ fn validate(cfg: &EventConfig) -> Result<(), ConfigError> {
             }
         }
     }
+    if cfg.arbiter.switch_ms == 0 || cfg.arbiter.align_ms == 0 {
+        return fail("arbiter.switch_ms and arbiter.align_ms must be > 0".into());
+    }
     if cfg.keywords.is_empty() {
         return fail("at least one keyword is required".into());
     }
@@ -260,6 +351,22 @@ fn validate(cfg: &EventConfig) -> Result<(), ConfigError> {
         }
         if sk.num_threads == 0 {
             return fail("detector.sherpa_kws.num_threads must be > 0".into());
+        }
+    }
+    if cfg.detector.engine == EngineKind::StreamingCtc && cfg.detector.streaming_ctc.is_none() {
+        return fail(
+            "detector.engine = \"streaming_ctc\" requires a [detector.streaming_ctc] section".into(),
+        );
+    }
+    if let Some(sc) = &cfg.detector.streaming_ctc {
+        if !(0.0..=1.0).contains(&sc.default_threshold) || sc.default_threshold == 0.0 {
+            return fail(format!(
+                "detector.streaming_ctc.default_threshold must be in (0, 1], got {}",
+                sc.default_threshold
+            ));
+        }
+        if sc.num_threads == 0 {
+            return fail("detector.streaming_ctc.num_threads must be > 0".into());
         }
     }
 
@@ -472,6 +579,33 @@ mod tests {
         );
         let cfg: EventConfig = toml::from_str(&text).unwrap();
         assert!(validate(&cfg).is_err());
+    }
+
+    #[test]
+    fn arbiter_defaults_to_failover_and_parses_take_first() {
+        // Absent [arbiter] → failover defaults.
+        let cfg = load(&example_path()).unwrap();
+        assert_eq!(cfg.arbiter.mode, ArbiterMode::Failover);
+        assert_eq!(cfg.arbiter.switch_ms, 200);
+        assert_eq!(cfg.arbiter.align_ms, 2000);
+
+        // Explicit [arbiter] parses.
+        let text = base_toml()
+            + "\n[arbiter]\nmode = \"take_first\"\nswitch_ms = 120\nalign_ms = 1500\n";
+        let cfg: EventConfig = toml::from_str(&text).unwrap();
+        validate(&cfg).unwrap();
+        assert_eq!(cfg.arbiter.mode, ArbiterMode::TakeFirst);
+        assert_eq!(cfg.arbiter.switch_ms, 120);
+    }
+
+    #[test]
+    fn parses_gated_sip_leg_with_carrier() {
+        let text = base_toml()
+            + "\n[[sources]]\nkind = \"sip\"\ncarrier = \"telnyx\"\nsip_uri = \"sip:bridge@x\"\n";
+        let cfg: EventConfig = toml::from_str(&text).unwrap();
+        validate(&cfg).unwrap();
+        assert_eq!(cfg.sources.len(), 2);
+        assert!(matches!(&cfg.sources[1], SourceConfig::Sip { carrier, .. } if carrier == "telnyx"));
     }
 
     #[test]

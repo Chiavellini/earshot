@@ -20,6 +20,22 @@ bridge (PSTN) ── Twilio outbound call ── <Start><Stream>
 - `scripts/twilio-hangup.sh <CallSid>` sets `Status=completed` — the
   audio-side kill switch (orders side is `state/STOP`).
 
+## Request authenticity — `X-Twilio-Signature`
+
+We are a public WS server, so the upgrade request is validated before it
+becomes an audio source. Twilio signs each request:
+`X-Twilio-Signature = base64(HMAC-SHA1(authToken, streamURL + sorted params))`.
+The WS upgrade is a GET with no body params (Media Streams `<Parameter>`s
+arrive in the `start` message, not the URL), so the signed string is just the
+`<Stream url="wss://…">`. `TwilioWsSource` checks it in the `accept_hdr_async`
+handshake callback and rejects a mismatch with 403.
+- Token from `TWILIO_AUTH_TOKEN`; the exact configured URL may be pinned in
+  `TWILIO_STREAM_URL` (else reconstructed from the `Host` header + request
+  target). Never in repo.
+- No token set ⇒ validation skipped with a loud warn (dev/loopback only).
+- Scheme is from official docs (pinned in `VERIFICATIONS.md`); confirm the
+  reconstructed-URL bytes against a live handshake in the loopback rehearsal.
+
 ## Message shapes (source: Twilio Media Streams docs — PENDING live capture)
 
 All messages are JSON over WS text frames. Confidence: from official docs,
@@ -65,5 +81,8 @@ the strategy's structural edge.
   preamble — upgrade the account before the rehearsal.
 - Listen-only, real-identity registration where a bridge requires it, and
   NO audio recording anywhere in the pipeline (frames are in-memory only).
+  The one exception is `earshot capture-bakeoff --record-dir` — an explicit,
+  opt-in ingress diagnostic (docs/INGRESS-BAKEOFF.md), never part of the
+  serving path; do not point it at a production trading run.
 - ngrok free-tier hostnames rotate per session; grab the current one before
   each dial. Reserved domain (or a VPS) if the rehearsal shows instability.

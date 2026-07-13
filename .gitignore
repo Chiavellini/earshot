@@ -13,3 +13,4 @@ corpus/telephony/
 .env
 .env.*
 state/
+vendor/

@@ -57,8 +57,8 @@ impl SherpaKwsDetector {
         let dir = &cfg.model_dir;
         let table = TokenTable::from_bpe_model(&dir.join("bpe.model"))
             .map_err(|e| DetectorBuildError::SherpaKws(e.to_string()))?;
-        let entries =
-            compile(keywords, &table, cfg).map_err(|e| DetectorBuildError::SherpaKws(e.to_string()))?;
+        let entries = compile(keywords, &table, cfg.default_threshold, cfg.default_boost)
+            .map_err(|e| DetectorBuildError::SherpaKws(e.to_string()))?;
         let fast: Vec<&CompiledEntry> = entries.iter().filter(|e| e.tier == Tier::Fast).collect();
         let conf: Vec<&CompiledEntry> = entries.iter().filter(|e| e.tier == Tier::Confirmed).collect();
         let label_map: HashMap<String, (KeywordId, Tier)> =
