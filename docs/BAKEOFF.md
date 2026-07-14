@@ -323,3 +323,23 @@ encoder harness) are still needed to isolate the rest. Cheap action: set
 `[detector.sherpa_kws] fp32 = true` in the live configs (recall win, no precision
 or meaningful latency cost). Samples are still modest (n=9, n=39) — confirm on full
 dev+holdout before treating the magnitudes as final.
+
+### Full-dictionary regression (all 6 calls, all 5 keywords, int8 vs fp32)
+
+| keyword | tier | int8 recall/FA | fp32 recall/FA | Δ | live-traded |
+|---------|------|----------------|----------------|---|-------------|
+| tariff | Confirmed | 0.85 / 2 | **0.90 / 1** | recall +0.04, FA −1 | yes |
+| recession (FA ctrl) | Confirmed | — / 4 | — / **3** | FA −1 | yes |
+| guidance | Confirmed | 1.00 / 6 | 1.00 / **7** | FA **+1** | no |
+| acquisition | Confirmed | 0.75 / 2 | 0.75 / **4** | FA **+2** | no |
+| partnership | Confirmed | 0.75 / 1 | 0.75 / 1 | flat | no |
+
+Aggregate Confirmed triggers 83 → 86 (+3, all on non-traded words). **Both
+real-money keywords (tariff, recession) improved on BOTH axes** (tariff recall up +
+FA down; recession FA down). fp32 regressed FA on two NON-traded keywords
+(acquisition +2, guidance +1) — phonetic-neighbour false alarms the higher-fidelity
+encoder surfaces. Per the deployment guard ("no FA regression on ANY keyword"), the
+global live flip was HELD for review: fp32 is not universally FA-neutral, so the
+untested live words (inflation + event-specific, no corpus positives) could also
+see more FAs. Decision deferred to the operator; the `fp32` toggle stays available
+per-config in the meantime.
