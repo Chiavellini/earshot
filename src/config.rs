@@ -104,6 +104,12 @@ pub struct SherpaKwsConfig {
     /// Duplicate suppression per (keyword, tier), in stream-time ms.
     #[serde(default = "default_refractory_ms")]
     pub refractory_ms: u64,
+    /// Load the fp32 encoder + joiner instead of the default int8 pair (decoder is
+    /// fp32 either way). Diagnostic knob for the quantization arm of the
+    /// miss-autopsy (docs/TELEPHONY-DETECTION-SPEC.md §10). Default false = the
+    /// shipped int8 encoder/joiner + fp32 decoder.
+    #[serde(default)]
+    pub fp32: bool,
 }
 
 fn default_num_threads() -> u32 {

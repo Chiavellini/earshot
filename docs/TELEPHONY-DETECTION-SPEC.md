@@ -256,8 +256,12 @@ p=0.14, recall 0.89, FA λ≈0.37/h over a 1 h call:
 
 ### 10.2 Rewritten conclusions (supersede §3, §6, §7)
 - §6-1 "Recall is model/acoustic-bound, not tunable" → threshold/boost don't recover
-  the misses; **acoustic representation, quantization (int8 vs fp32), tokenization,
-  beam, model capacity (3.3M), and streaming behavior remain UNISOLATED.**
+  the misses; the cause is multi-factor. **UPDATE (miss-autopsy cell 1, 2026-07-14):
+  INT8 QUANTIZATION is isolated as a real contributor — fp32 encoder recovers tariff
+  Confirmed recall AAPL 0.78→0.89 and CAT holdout 0.87→0.90 at zero precision cost and
+  ~1.5% compute cost (`docs/BAKEOFF.md`). So "acoustic-bound" is partially refuted.**
+  A residual gap remains; acoustic representation, tokenization, beam, model capacity
+  (3.3M), and streaming behavior are still UNISOLATED (remaining autopsy cells).
 - §3/§7 "band-limit domain mismatch dominates; cues absent >3.4 kHz" → **leading
   hypothesis, not yet isolated;** usable cues remain below 3.4 kHz (humans + ASR
   read these words on the same audio) — **distribution shift, not erasure.**

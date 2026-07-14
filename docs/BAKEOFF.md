@@ -296,3 +296,30 @@ recall (0.78→0.67 with AGC off) — the model is already fairly level-robust, 
 there is little for gain to recover. AGC code was REVERTED (no dead knob). A
 stateful/smoothed AGC is unproven and low-priority; the dominant lever is temporal
 (model), per Finding 1.
+
+## Miss-autopsy cell 1 — int8 vs fp32 encoder (2026-07-14): quantization IS a contributor
+
+First (cheapest) rung of the miss-autopsy (`docs/TELEPHONY-DETECTION-SPEC.md` §10.5).
+Identical corpus/config/keyword-graph/streaming; the ONLY variable is encoder+joiner
+precision (shipped int8 vs fp32), via the new `[detector.sherpa_kws] fp32` toggle
+(decoder is fp32 in both). tariff Confirmed recall:
+
+| call | n | int8 | fp32 | precision (both) |
+|------|---|------|------|------------------|
+| AAPL-Q2-2026 (dev) | 9 | 0.78 (7/9) | **0.89 (8/9)** | 1.00 |
+| CAT-Q1-2026 (holdout) | 39 | 0.87 (34/39) | **0.90 (35/39)** | 0.97 |
+
+Fast tier also rose (AAPL 0.67→0.78; CAT 0.54→0.59). **fp32 recovers misses at ZERO
+precision cost**, and the compute penalty is negligible — CAT wall-clock 329 s (fp32)
+vs 324 s (int8), ~11× real-time, well inside `perf_detector_rtf` (>3×). So the
+"int8 encoder for compute" tradeoff buys ~nothing on this workload while costing
+recall.
+
+**Conclusion:** part of the tariff recall gap is INT8 QUANTIZATION, not a pure
+acoustic ceiling — the earlier "acoustic-bound" claim is partially refuted. A
+residual gap remains (CAT 4/39 misses at fp32), so the remaining autopsy cells
+(channel / beam / tokenization / streaming-offset / speed, via the offline ONNX
+encoder harness) are still needed to isolate the rest. Cheap action: set
+`[detector.sherpa_kws] fp32 = true` in the live configs (recall win, no precision
+or meaningful latency cost). Samples are still modest (n=9, n=39) — confirm on full
+dev+holdout before treating the magnitudes as final.
