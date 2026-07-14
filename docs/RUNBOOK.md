@@ -81,6 +81,36 @@ cargo run --release -- arm --config configs/twilio-live.toml --allow-mention
   unhealthy at T−5 (drops climbing, gaps, silence) restart the call leg or
   fall back to a shadow session.
 
+> **Two events at once (relay/parallel calls):** this timeline is single-event.
+> To run two simultaneous calls on two separate Kalshi + Twilio accounts, use
+> `scripts/launch-event.sh` once per event (each with its own config, account
+> env file, `--bind-port`, and `--state-dir state/<id>`) instead of the manual
+> arm/dial above — see `docs/MULTI-EVENT.md` §8 for the full setup + checklist.
+
+## Event-prep + tiered fill (auto-config, M3+)
+
+Instead of hand-cloning a config, generate it from the Kalshi event:
+
+```
+earshot prepare --event-ticker KXEARNINGSMENTION<ISSUER>-<YYMMMDD> --fillable
+  # → configs/twilio-live-<issuer>.toml. TIERED: only precision-vetted words
+  #   (tariff, recession — the tuned_library) fill at the live ask; every other
+  #   word is 1¢ observe (logs fires, spends nothing, can't starve the $1 ledger).
+  # Review: set [event].starts_at, research the dial-in, sanity-check variants.
+```
+
+Live: `arm --config <cfg> --i-am-live --allow-mention --fillable`. Fillable
+orders cross the ask up to `MENTION_FILL_CAP_CENTS` (50¢), bounded by the config
+notional caps + the $1 probe ledger. `--fill-all` makes EVERY word fillable —
+deliberate only (false-alarm + ledger-starvation risk on unvalidated words).
+
+Post-call, promote unvalidated words WITHOUT recording (respects "do not record"
+below): `scripts/validate-from-log.py --log <arm.log> --config <cfg> --transcript
+<public-transcript>` → per-word precision/recall from the observe-mode fire log.
+A word that fires cleanly (~0 false alarms) graduates into `prepare::tuned_library`
+and auto-fills next call. The rigorous path (record → corpus v2 → `bench-detector`)
+is the durable follow-on for the recall ceiling.
+
 ## Kill criteria — any one → `touch state/STOP` then `scripts/twilio-hangup.sh <CallSid>`
 
 - an order fires on a word you did not hear;

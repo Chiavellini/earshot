@@ -16,12 +16,24 @@ risk gate).
   `resample_to_hz` = 16000 only, `engine = "sherpa_kws"` requires its
   `[detector.sherpa_kws]` section, each `fast_prefixes` entry is a strict
   case-insensitive prefix of some variant, thresholds in (0, 1],
-  `min_confidence_*` in [0, 1]).
+  `min_confidence_*` in [0, 1], `[kalshi]` `key_id`/`private_key_path`
+  all-or-nothing with `expected_key_id` == `key_id` when set and
+  `expected_key_id` requiring that pair, `[twilio]` `stream_url` is a
+  `wss://` URL).
 
 ## Exit door
 - **Type:** `EventConfig { event, pipeline, detector: DetectorSection,
-  sources: Vec<SourceConfig>, kalshi: KalshiSection, risk: risk::RiskConfig,
-  keywords: Vec<KeywordConfig> }`. `DetectorSection { engine: EngineKind
+  sources: Vec<SourceConfig>, kalshi: KalshiSection,
+  twilio: Option<TwilioSection>, risk: risk::RiskConfig,
+  keywords: Vec<KeywordConfig> }`. `KalshiSection` carries optional
+  per-account credential binding (`key_id`, `private_key_path`,
+  `expected_key_id`) and `TwilioSection` the per-account Twilio binding
+  (`auth_token_path`, `stream_url`, `account_sid`, `from_number` — the last two
+  consumed by `scripts/launch-event.sh`, not the binary) — both for concurrent
+  multi-event isolation (`docs/MULTI-EVENT.md` §8); absent → env fallback. The
+  credential-source *behavior* (from_pem vs from_env) is owned by
+  `docs/layers/auth.md`.
+  `DetectorSection { engine: EngineKind
   (stub | sherpa_kws, default stub), sherpa_kws: Option<SherpaKwsConfig> }`;
   `PipelineSection` carries `resample_to_hz: Option<u32>` (preproc upsample
   target, absent = passthrough); `KeywordConfig` carries the M1 detector
@@ -42,8 +54,11 @@ risk gate).
   cite the rules (see VERIFICATIONS Q4 for what counts as a mention).
 - Keyword order is load-bearing: `KeywordId(i)` = index in `[[keywords]]`.
 - Risk values only tighten: `RiskConfig::clamped()` runs in `RiskGate::new`.
-- Secrets NEVER appear here — credentials come from env
-  (`KALSHI_API_KEY_ID`, `KALSHI_PRIVATE_KEY_PATH`), see `~/.kalshi/`.
+- Secrets NEVER appear here — the config carries only *paths* to key material
+  (`[kalshi].private_key_path`, `[twilio].auth_token_path`, resolved relative
+  to the config) or, when those are absent, credentials come from env
+  (`KALSHI_API_KEY_ID`, `KALSHI_PRIVATE_KEY_PATH`, `TWILIO_AUTH_TOKEN`), see
+  `~/.kalshi/`. `key_id` is an access-key id, not a secret.
 
 ## Failure policy
 - Any parse/validation failure → refuse to start (fail cheap). Unknown TOML
@@ -58,3 +73,7 @@ risk gate).
 ## How to test in isolation
 - Unit tests in `config.rs` parse the checked-in example verbatim and assert
   rejection cases (unknown source kind, cap=100, empty variants, dup ticker).
+- Multi-event credential binding: `kalshi_full_binding_parses_and_validates`,
+  `kalshi_key_id_without_key_path_rejected`, `kalshi_expected_key_id_mismatch_rejected`,
+  `kalshi_expected_key_id_without_binding_rejected`, `twilio_section_parses_and_requires_wss`,
+  and `parses_checked_in_twilio_live_config_verbatim`.

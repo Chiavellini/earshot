@@ -404,6 +404,7 @@ dependencies = [
  "hdrhistogram",
  "hmac",
  "hound",
+ "http",
  "kaldi-native-fbank",
  "libc",
  "ndarray 0.16.1",

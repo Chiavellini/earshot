@@ -32,10 +32,14 @@ exclusion refers to downstream resampling/VAD, which stay in preproc).
 
 `X-Twilio-Signature` is validated during the WS handshake (`accept_hdr_async`
 callback → `valid_twilio_signature`, HMAC-SHA1 over the stream URL): a spoofed
-dialer never becomes an audio source. The auth token comes from
-`TWILIO_AUTH_TOKEN` (never in repo); with no token set, validation is skipped
-with a loud warn — a dev/loopback-only posture. Scheme pinned in
-`VERIFICATIONS.md`.
+dialer never becomes an audio source. The auth token comes from the config's
+`[twilio]` section when present (per-account binding for concurrent events —
+`build_leg` reads `auth_token_path` and pins it + `stream_url` via
+`TwilioWsSource::with_auth`; see `docs/MULTI-EVENT.md` §8), otherwise from the
+`TWILIO_AUTH_TOKEN` / `TWILIO_STREAM_URL` env pair (never in repo). With no
+token set, validation is skipped with a loud warn — a dev/loopback-only
+posture. Two distinct account tokens make this a cryptographic boundary between
+two events. Scheme pinned in `VERIFICATIONS.md`.
 
 ### Adapter combiner: `SourceArbiter` (`src/source/arbiter.rs`)
 Dual dial-in (spec §5.2). The arbiter *is itself* an `AudioSource`: it wraps

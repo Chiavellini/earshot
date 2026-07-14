@@ -19,7 +19,7 @@ use crate::types::{DecisionIntent, Detection};
 /// renders in this order instead). The M2 execution edges live in the same
 /// recorder space; a run that never fires an order simply leaves them at
 /// count 0 (hidden by the renderer).
-pub const EDGES: [&str; 11] = [
+pub const EDGES: [&str; 13] = [
     "capture→preproc",
     "preproc→chunk",
     "chunk→detect",
@@ -28,6 +28,11 @@ pub const EDGES: [&str; 11] = [
     "decision→exec",
     "presign_age",
     "exec→send",
+    // send→ack split at TTFB: send→hdrs is network + matching-engine time,
+    // hdrs→ack is HTTP body read + JSON parse. send→ack is kept as the
+    // end-to-end aggregate (p95 of a sum ≠ sum of p95s).
+    "send→hdrs",
+    "hdrs→ack",
     "send→ack",
     "decision→ack",
     "capture→ack",

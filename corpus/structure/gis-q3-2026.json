@@ -1,0 +1,56 @@
+{
+  "id": "GIS-Q3-2026",
+  "transcript": "corpus/transcripts/gis-q3-2026.txt",
+  "char_len": 35878,
+  "model": "rule-based-heuristic",
+  "sections": [
+    {
+      "order": 0,
+      "section_type": "operator_intro",
+      "title": "operator intro",
+      "boundary_marker": "",
+      "opening_quote": "Good morning and welcome to General Mills' third quarter fiscal",
+      "char_offset": 0
+    },
+    {
+      "order": 1,
+      "section_type": "safe_harbor",
+      "title": "safe harbor",
+      "boundary_marker": "forward-looking statement",
+      "opening_quote": "forward-looking statements that are based on management's current views and",
+      "char_offset": 916
+    },
+    {
+      "order": 2,
+      "section_type": "ceo_remarks",
+      "title": "ceo remarks",
+      "boundary_marker": "turn it over to",
+      "opening_quote": "turn it over to Jeff for some opening remarks. Thanks,",
+      "char_offset": 1379
+    },
+    {
+      "order": 3,
+      "section_type": "guidance_outlook",
+      "title": "guidance outlook",
+      "boundary_marker": "our guidance",
+      "opening_quote": "our guidance for fiscal 26. As a reminder, as we",
+      "char_offset": 1868
+    },
+    {
+      "order": 4,
+      "section_type": "qa",
+      "title": "qa",
+      "boundary_marker": "our first question",
+      "opening_quote": "Our first question comes from Andrew Lazar from Barclays. Please",
+      "char_offset": 5079
+    },
+    {
+      "order": 5,
+      "section_type": "closing",
+      "title": "closing",
+      "boundary_marker": "this concludes",
+      "opening_quote": "This concludes today's conference call. Thank you for your participation.",
+      "char_offset": 35781
+    }
+  ]
+}

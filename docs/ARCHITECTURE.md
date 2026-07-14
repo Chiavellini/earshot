@@ -26,6 +26,12 @@ Cross-cutting planes (not layers — they touch everything by design):
 **telemetry** (latency recorders + report) and **config** (arm-time only,
 never consulted on the hot path).
 
+Running two live events at once (two Kalshi + two Twilio accounts, one process
+each) is isolated via per-event config credential binding (`[kalshi]`/`[twilio]`
+sections), the `--state-dir` flag, and `scripts/launch-event.sh` — see
+`docs/MULTI-EVENT.md` (invariant #5, per-session kill scope, is the anchor it
+extends per event). The signing/credential layer is `docs/layers/auth.md`.
+
 ## Door table
 
 | # | Layer | Entry door (exact type, mechanism) | Exit door (exact type, mechanism) | Thread | Source file |

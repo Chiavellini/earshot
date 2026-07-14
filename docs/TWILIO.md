@@ -29,9 +29,11 @@ The WS upgrade is a GET with no body params (Media Streams `<Parameter>`s
 arrive in the `start` message, not the URL), so the signed string is just the
 `<Stream url="wss://…">`. `TwilioWsSource` checks it in the `accept_hdr_async`
 handshake callback and rejects a mismatch with 403.
-- Token from `TWILIO_AUTH_TOKEN`; the exact configured URL may be pinned in
-  `TWILIO_STREAM_URL` (else reconstructed from the `Host` header + request
-  target). Never in repo.
+- Token from the config's `[twilio] auth_token_path` (a file) and URL from
+  `[twilio] stream_url` when a `[twilio]` section is present — the per-account
+  binding for concurrent events (see `docs/MULTI-EVENT.md` §8). Otherwise the env
+  fallback: token from `TWILIO_AUTH_TOKEN`, URL pinned by `TWILIO_STREAM_URL` (else
+  reconstructed from the `Host` header + request target). Never in repo.
 - No token set ⇒ validation skipped with a loud warn (dev/loopback only).
 - Scheme is from official docs (pinned in `VERIFICATIONS.md`); confirm the
   reconstructed-URL bytes against a live handshake in the loopback rehearsal.
@@ -79,6 +81,13 @@ the strategy's structural edge.
 
 - Trial accounts restrict outbound calls to verified numbers and inject a
   preamble — upgrade the account before the rehearsal.
+- A new-account compliance/fraud review hold can block outbound calling even
+  when the read-only Account API still reports `status=active`. Confirm the
+  account is actually clear before the rehearsal with
+  `scripts/twilio-status.sh` (read-only snapshot) and, definitively,
+  `scripts/twilio-status.sh --probe --probe-to +1...` — it places a
+  self-hanging-up test call and reports LIFTED (CallSid returned) or STILL
+  BLOCKED (Twilio error code). `--watch` polls until the hold lifts.
 - Listen-only, real-identity registration where a bridge requires it, and
   NO audio recording anywhere in the pipeline (frames are in-memory only).
   The one exception is `earshot capture-bakeoff --record-dir` — an explicit,

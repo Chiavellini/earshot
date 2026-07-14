@@ -23,6 +23,10 @@ pub struct EventConfig {
     #[serde(default)]
     pub arbiter: ArbiterConfig,
     pub kalshi: KalshiSection,
+    /// Per-account Twilio binding (multi-event isolation). Optional; env-based
+    /// signature material is used when absent.
+    #[serde(default)]
+    pub twilio: Option<TwilioSection>,
     #[serde(default)]
     pub risk: crate::risk::RiskConfig,
     pub keywords: Vec<KeywordConfig>,
@@ -233,6 +237,47 @@ pub struct KalshiSection {
     pub env: String, // "prod" | "demo"
     #[serde(default = "default_heartbeat")]
     pub heartbeat_secs: u64,
+    /// Per-account credential binding (multi-event isolation, docs/MULTI-EVENT.md).
+    /// When `key_id` + `private_key_path` are BOTH set, `arm` builds this event's
+    /// Kalshi signer from THIS config — never from ambient env — so two concurrent
+    /// events on two accounts can never sign with each other's key. When both are
+    /// absent, `arm` falls back to the `KALSHI_API_KEY_ID` / `KALSHI_PRIVATE_KEY_PATH`
+    /// env pair (the single-account posture; keeps every existing config working).
+    #[serde(default)]
+    pub key_id: Option<String>,
+    /// Path to the RSA private-key PEM, resolved relative to the config file.
+    #[serde(default)]
+    pub private_key_path: Option<String>,
+    /// Optional tripwire: when set, `arm` refuses unless it equals `key_id`,
+    /// catching a config whose key was swapped without updating the declared
+    /// intent. NOTE: this is a config-internal consistency check; the proof that
+    /// the (key_id, key) pair is a real, coherent Kalshi credential comes from the
+    /// signed `balance()` self-test in `connect_live_for`. Proving the key belongs
+    /// to a SPECIFIC expected account is the remote-probe tier (out of scope here).
+    #[serde(default)]
+    pub expected_key_id: Option<String>,
+}
+
+/// `[twilio]` — per-account Twilio Media Streams binding (multi-event isolation).
+/// Optional. When present, `arm` pins the WS signature material from THIS config
+/// instead of the process-global `TWILIO_AUTH_TOKEN` / `TWILIO_STREAM_URL`, so a
+/// stream signed by the wrong account's auth token is rejected with a 403
+/// (`src/source/twilio_ws.rs` `check_signature`). `account_sid` / `from_number`
+/// are consumed by `scripts/launch-event.sh`, not the binary.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TwilioSection {
+    /// Path (resolved relative to the config) to a file holding the account auth
+    /// token — kept out of the repo, same posture as the Kalshi key.
+    pub auth_token_path: String,
+    /// The exact `wss://…` `<Stream url>` Twilio is configured with. Pinning it
+    /// here means the signature base is never reconstructed from the client
+    /// `Host` header, removing ngrok-host ambiguity between two events.
+    pub stream_url: String,
+    #[serde(default)]
+    pub account_sid: Option<String>,
+    #[serde(default)]
+    pub from_number: Option<String>,
 }
 
 fn default_env() -> String {
@@ -322,6 +367,32 @@ fn validate(cfg: &EventConfig) -> Result<(), ConfigError> {
     }
     if cfg.arbiter.switch_ms == 0 || cfg.arbiter.align_ms == 0 {
         return fail("arbiter.switch_ms and arbiter.align_ms must be > 0".into());
+    }
+    // Per-account Kalshi binding: key_id and private_key_path are all-or-nothing,
+    // and expected_key_id (a tripwire) is meaningless without a key_id to check.
+    match (&cfg.kalshi.key_id, &cfg.kalshi.private_key_path) {
+        (Some(_), None) | (None, Some(_)) => {
+            return fail("[kalshi] key_id and private_key_path must be set together".into());
+        }
+        (None, None) if cfg.kalshi.expected_key_id.is_some() => {
+            return fail("[kalshi] expected_key_id requires key_id + private_key_path".into());
+        }
+        _ => {}
+    }
+    if let (Some(exp), Some(key_id)) = (&cfg.kalshi.expected_key_id, &cfg.kalshi.key_id) {
+        if exp != key_id {
+            return fail(format!(
+                "[kalshi] expected_key_id {exp:?} != key_id {key_id:?} (config tripwire)"
+            ));
+        }
+    }
+    if let Some(tw) = &cfg.twilio {
+        if !tw.stream_url.starts_with("wss://") {
+            return fail(format!(
+                "[twilio] stream_url must be a wss:// URL, got {:?}",
+                tw.stream_url
+            ));
+        }
     }
     if cfg.keywords.is_empty() {
         return fail("at least one keyword is required".into());
@@ -616,5 +687,71 @@ mod tests {
         text.push_str(&dup);
         let cfg: EventConfig = toml::from_str(&text).unwrap();
         assert!(validate(&cfg).is_err());
+    }
+
+    // --- multi-event account binding (docs/MULTI-EVENT.md) ---
+
+    /// Inject lines under the example's `[kalshi]` section.
+    fn with_kalshi(extra: &str) -> EventConfig {
+        let text = base_toml()
+            .replace("series = \"KXAAPLMENTION\"", &format!("series = \"KXAAPLMENTION\"\n{extra}"));
+        toml::from_str(&text).unwrap()
+    }
+
+    #[test]
+    fn kalshi_creds_absent_is_env_posture() {
+        // The unchanged example (no key_id) must still validate — env fallback.
+        let cfg = load(&example_path()).unwrap();
+        assert!(cfg.kalshi.key_id.is_none());
+        assert!(cfg.kalshi.private_key_path.is_none());
+        validate(&cfg).unwrap();
+    }
+
+    #[test]
+    fn kalshi_full_binding_parses_and_validates() {
+        let cfg = with_kalshi(
+            "key_id = \"acct-A\"\nprivate_key_path = \"keys/a.pem\"\nexpected_key_id = \"acct-A\"",
+        );
+        validate(&cfg).unwrap();
+        assert_eq!(cfg.kalshi.key_id.as_deref(), Some("acct-A"));
+        assert_eq!(cfg.kalshi.private_key_path.as_deref(), Some("keys/a.pem"));
+    }
+
+    #[test]
+    fn kalshi_key_id_without_key_path_rejected() {
+        let cfg = with_kalshi("key_id = \"acct-A\"");
+        let err = validate(&cfg).unwrap_err().to_string();
+        assert!(err.contains("must be set together"), "{err}");
+    }
+
+    #[test]
+    fn kalshi_expected_key_id_mismatch_rejected() {
+        let cfg = with_kalshi(
+            "key_id = \"acct-A\"\nprivate_key_path = \"keys/a.pem\"\nexpected_key_id = \"acct-B\"",
+        );
+        let err = validate(&cfg).unwrap_err().to_string();
+        assert!(err.contains("expected_key_id"), "{err}");
+    }
+
+    #[test]
+    fn kalshi_expected_key_id_without_binding_rejected() {
+        let cfg = with_kalshi("expected_key_id = \"acct-A\"");
+        let err = validate(&cfg).unwrap_err().to_string();
+        assert!(err.contains("expected_key_id requires"), "{err}");
+    }
+
+    #[test]
+    fn twilio_section_parses_and_requires_wss() {
+        let ok = base_toml()
+            + "\n[twilio]\nauth_token_path = \"tok.txt\"\nstream_url = \"wss://a.ngrok.io/media\"\n";
+        let cfg: EventConfig = toml::from_str(&ok).unwrap();
+        validate(&cfg).unwrap();
+        assert_eq!(cfg.twilio.as_ref().unwrap().stream_url, "wss://a.ngrok.io/media");
+
+        let bad = base_toml()
+            + "\n[twilio]\nauth_token_path = \"tok.txt\"\nstream_url = \"https://a.ngrok.io/media\"\n";
+        let cfg: EventConfig = toml::from_str(&bad).unwrap();
+        let err = validate(&cfg).unwrap_err().to_string();
+        assert!(err.contains("wss://"), "{err}");
     }
 }

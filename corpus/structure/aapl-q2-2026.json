@@ -1,0 +1,56 @@
+{
+  "id": "AAPL-Q2-2026",
+  "transcript": "corpus/transcripts/aapl-q2-2026.txt",
+  "char_len": 51651,
+  "model": "rule-based-heuristic",
+  "sections": [
+    {
+      "order": 0,
+      "section_type": "operator_intro",
+      "title": "operator intro",
+      "boundary_marker": "",
+      "opening_quote": "Good afternoon and welcome to the Apple Q2 Fiscal Year",
+      "char_offset": 0
+    },
+    {
+      "order": 1,
+      "section_type": "safe_harbor",
+      "title": "safe harbor",
+      "boundary_marker": "forward-looking statement",
+      "opening_quote": "forward-looking statements including, without limitation, those regarding revenue, gross margin,",
+      "char_offset": 493
+    },
+    {
+      "order": 2,
+      "section_type": "ceo_remarks",
+      "title": "ceo remarks",
+      "boundary_marker": "turn the call over to",
+      "opening_quote": "turn the call over to Tim for introductory remarks. Thank",
+      "char_offset": 1535
+    },
+    {
+      "order": 3,
+      "section_type": "cfo_remarks",
+      "title": "cfo remarks",
+      "boundary_marker": "turn it over to",
+      "opening_quote": "turn it over to Kevin. Thanks Tim and good afternoon",
+      "char_offset": 17525
+    },
+    {
+      "order": 4,
+      "section_type": "guidance_outlook",
+      "title": "guidance outlook",
+      "boundary_marker": "our guidance",
+      "opening_quote": "our guidance range, and up 110 basis points sequentially. Products",
+      "char_offset": 18692
+    },
+    {
+      "order": 5,
+      "section_type": "qa",
+      "title": "qa",
+      "boundary_marker": "first question,",
+      "opening_quote": "first question, please? We'll go ahead and take our first",
+      "char_offset": 26834
+    }
+  ]
+}

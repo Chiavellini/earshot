@@ -6,6 +6,11 @@ models/
 # corpus audio (manifests/ IS committed) + alignment venv
 corpus/raw/
 corpus/telephony/
+# call-structure spike: raw transcripts stay local; corpus/structure/ IS committed
+corpus/transcripts/
+# generated adversarial (fast/quiet) corpora — reproducible via scripts/corpus-degrade.sh
+corpus-t*/
+corpus-quiet/
 .venv-corpus/
 # secrets — Kalshi keys live in env vars or files outside the repo, never here
 *.pem

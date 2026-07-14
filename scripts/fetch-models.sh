@@ -69,4 +69,35 @@ fetch \
   "https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01.tar.bz2" \
   "f170013b4716e41b62b9bfd809687c207cef798ef9bc6534d524e17af9b6561a"
 
+# --- streaming_ctc models -----------------------------------------------------
+# The streaming_ctc engine is model-agnostic (shapes read off the ONNX
+# signature), so it needs a streaming zipformer2 CTC export (model.onnx +
+# tokens.txt [+ bpe.model], decode_chunk_len in ONNX metadata).
+#
+# ENGLISH model (the M4 detector-latency unlock) does NOT exist off-the-shelf:
+# the sherpa "online-ctc" release page lists only Chinese CTC exports; English
+# streaming zipformers on the shelf are transducers with no CTC head. Obtaining
+# one is an icefall export (a checkpoint trained with --use-ctc 1, exported via
+# export-onnx-ctc). Pin its URL/sha here + in VERIFICATIONS.md once produced:
+#   fetch "sherpa-onnx-streaming-zipformer-ctc-en-<date>" "<url>" "<sha256>"
+#
+# CHINESE STAND-IN (opt-in): exercises fbank + ort + cache + scorer identically
+# to the English model — used by the streaming_ctc integration tests
+# (EARSHOT_CTC_MODEL_DIR), which build keyword targets from the model's OWN
+# token ids (from_targets), so English text is not required. Not fetched by
+# default (large; English-only boxes don't need it). Prints the sha256 for
+# pinning rather than trusting an unverified one.
+fetch_ctc_standin() {
+  local name="sherpa-onnx-streaming-zipformer-small-ctc-zh-int8-2025-04-01"
+  local url="https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/$name.tar.bz2"
+  if [ -d "$name" ]; then echo "models/$name already present — skipping"; return; fi
+  echo "fetching CTC stand-in $name …"
+  curl -fL --retry 3 -o "$name.tar.bz2" "$url"
+  echo "  sha256 (pin this in VERIFICATIONS.md): $(shasum -a 256 "$name.tar.bz2" | awk '{print $1}')"
+  tar xjf "$name.tar.bz2"; rm -f "$name.tar.bz2"
+  echo "unpacked models/$name"
+  echo "  streaming_ctc tests:  EARSHOT_CTC_MODEL_DIR=\"$PWD/$name\" (with ORT_DYLIB_PATH set)"
+}
+[ "${FETCH_CTC_STANDIN:-0}" = "1" ] && fetch_ctc_standin
+
 echo "done."

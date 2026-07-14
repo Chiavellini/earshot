@@ -254,8 +254,12 @@ pub fn compile(
 
 /// First token boundary whose accumulated text covers the prefix. Token text
 /// counts `▁` as the inter-word space; the leading `▁` of the first word is
-/// not part of the prefix text.
-fn prefix_cut(tokens: &[String], prefix: &str) -> usize {
+/// not part of the prefix text. Returns `tokens.len() + 1` when the prefix is
+/// not covered by any boundary shorter than the full word (the `compile`
+/// callers treat `cut >= tokens.len()` as `PrefixNotShorter`). Public so the
+/// `compile-keywords` diagnostic can report per-candidate cuts without running
+/// the whole `compile` (which aborts on the first bad prefix).
+pub fn prefix_cut(tokens: &[String], prefix: &str) -> usize {
     let target: usize = prefix.trim().to_uppercase().chars().count();
     let mut covered = 0usize; // prefix chars covered (spaces count once)
     for (i, tok) in tokens.iter().enumerate() {

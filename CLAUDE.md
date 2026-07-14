@@ -40,6 +40,7 @@ cargo run --release -- replay --config configs/example-event.toml
 cargo run --release -- bench-detector --config <cfg> --corpus corpus/   # see docs/BAKEOFF.md
 cargo run --release -- arm --config configs/m2-drill.toml            # dry-run
 cargo run --release -- book --ticker <T> --secs 10                   # read-only
+scripts/launch-event.sh --config <cfg> --account <env> --bind-port <p> --to +1…  # one isolated event; run per event for concurrent calls (docs/MULTI-EVENT.md §8)
 source ~/.kalshi/earshot_env                 # credentials (never in repo)
 ```
 
@@ -49,3 +50,6 @@ a custom low-lookahead spotter for the latency bar — in `docs/BAKEOFF.md`).
 Next: M3 (Twilio Media Streams dial-in capture — `docs/TWILIO.md`), the
 mention-probe live posture (1¢ verification run on a real call), then the
 low-latency detector milestone. See the meta-spec for the roadmap.
+Concurrent multi-event (two Kalshi + two Twilio accounts, one process per event)
+isolation machinery is implemented — `docs/MULTI-EVENT.md` §8; a live two-event
+run is downstream of M3.

@@ -11,6 +11,7 @@ pub mod fixture;
 pub mod kalshi;
 pub mod latprobe;
 pub mod pipeline;
+pub mod prepare;
 pub mod ring;
 pub mod risk;
 pub mod source;

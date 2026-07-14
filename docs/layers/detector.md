@@ -133,6 +133,12 @@ KWS C API does not expose. Two wins over sherpa_kws: real per-hit `confidence`
   fetch-models.sh` fetches the dylib and prints the `export ORT_DYLIB_PATH=…`.
 
 ## How to test in isolation
+- **Inspect keyword token-cuts** with `earshot compile-keywords --config <cfg>
+  [--model-dir <dir>]`: prints each keyword's Confirmed tokens per variant and,
+  per `fast_prefixes` candidate, the cut tokens or the rejection reason. Reads
+  `bpe.model` only (no inference); `--model-dir` analyzes another model's
+  tokenizer. This is Gate (a) of the prefix-safety method (`docs/PREFIX-SAFETY.md`)
+  and reuses `kws_compile::{compile, prefix_cut, render_keywords, TokenTable}`.
 - Feed synthetic `AudioChunk`s directly (see `stub.rs` tests: silence never
   fires, tone fires once, refractory respected).
 - sherpa_kws: `tests/sherpa_kws.rs` runs the engine against the model's

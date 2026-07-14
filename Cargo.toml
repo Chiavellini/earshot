@@ -13,6 +13,7 @@ bytes = "1"
 clap = { version = "4", features = ["derive"] }
 futures-util = "0.3"
 hdrhistogram = "7"
+http = "1"
 hmac = "0.12"
 hound = "3"
 sha1 = "0.10"
@@ -24,7 +25,7 @@ ndarray = "0.16"
 # clash with sherpa-onnx's bundled static onnxruntime 1.24.2 (they can't share:
 # ort needs API 27). See docs/layers/streaming_ctc.md.
 ort = { version = "2.0.0-rc.12", features = ["ndarray", "load-dynamic"] }
-reqwest = { version = "0.12", features = ["json", "blocking"] }
+reqwest = { version = "0.12", features = ["json", "blocking", "http2"] }
 rsa = { version = "0.9", features = ["sha2"] }
 rtrb = "0.3"
 serde = { version = "1", features = ["derive"] }

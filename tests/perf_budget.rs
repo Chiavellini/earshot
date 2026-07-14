@@ -346,3 +346,23 @@ fn perf_recorder_overhead() {
     println!("LatencyRecorder.record(): {per_op_ns} ns/op");
     assert!(per_op_ns < 100, "recorder {per_op_ns} ns/op — too hot for the detect loop");
 }
+
+/// `record_send` sits on the fire path (executor.rs, inside the exec→send
+/// edge). Post-ST1 it must be pure in-memory work — the disk write is deferred
+/// to the background persister. This is the objective proof no blocking I/O
+/// slid back onto the path.
+#[test]
+#[ignore]
+fn perf_risk_record_send() {
+    let dir = tempfile::tempdir().unwrap();
+    let gate = RiskGate::new(RiskConfig::default(), dir.path()).unwrap();
+    gate.arm();
+    let n = 100_000u64;
+    let t0 = Instant::now();
+    for _ in 0..n {
+        gate.record_send(1, 1);
+    }
+    let per_op_ns = t0.elapsed().as_nanos() as u64 / n;
+    println!("RiskGate.record_send(): {per_op_ns} ns/op");
+    assert!(per_op_ns < 200, "record_send {per_op_ns} ns/op — blocking I/O back on the fire path?");
+}

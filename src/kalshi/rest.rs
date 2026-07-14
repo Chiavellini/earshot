@@ -16,6 +16,11 @@ use crate::clock::MonotonicNs;
 
 pub const ORDERS_ENDPOINT: &str = "/portfolio/events/orders";
 
+/// How often the connection warmer touches the orders origin to keep a hot
+/// TLS/h2 connection pooled. Strictly below `pool_idle_timeout` (90 s) so the
+/// socket is never reaped between a quiet arm and the first fire.
+const CONN_WARM_INTERVAL: Duration = Duration::from_secs(60);
+
 #[derive(Clone)]
 pub struct RestClient {
     /// Full REST base including /trade-api/v2 (host may be a test mock; the
@@ -106,7 +111,12 @@ pub struct OrderAck {
     pub order_id: Option<String>,
     pub order_status: Option<String>,
     pub raw: Value,
+    /// Stamped when response headers arrive (`req.send()` resolves) — the TTFB
+    /// split point between network+matching and body read+parse.
+    pub hdrs_ts: MonotonicNs,
     pub ack_ts: MonotonicNs,
+    /// Negotiated wire protocol (h1 vs h2). Copy — no hot-path allocation.
+    pub http_version: http::Version,
 }
 
 impl RestClient {
@@ -129,12 +139,47 @@ impl RestClient {
             .timeout(timeout)
             .pool_idle_timeout(Duration::from_secs(90))
             .tcp_keepalive(Duration::from_secs(30))
+            // Nagle off: an order is one small packet; coalescing buys nothing
+            // but latency. Explicit (self-documenting; guards a reqwest default
+            // change) — see VERIFICATIONS.md.
+            .tcp_nodelay(true)
+            // Keep a negotiated h2 connection alive between orders so a burst
+            // multiplexes on one warm socket instead of opening N cold ones.
+            // ALPN still negotiates — do NOT force prior-knowledge (it would
+            // break the h1 wiremock tests and any h1 endpoint).
+            .http2_keep_alive_interval(Duration::from_secs(30))
+            .http2_keep_alive_while_idle(true)
             .build()?;
         Ok(RestClient { base, client, signer })
     }
 
     pub fn signer(&self) -> &Arc<Signer> {
         &self.signer
+    }
+
+    /// Touch the orders origin to keep a hot TLS/h2 connection pooled (response
+    /// dropped). `/exchange/status` is public and avoids order-relevant
+    /// rate-limit token cost (VERIFICATIONS Q2). Never on the fire path.
+    pub async fn warm(&self) {
+        match self.client.get(format!("{}/exchange/status", self.base)).send().await {
+            Ok(resp) => tracing::debug!(version = ?resp.version(), "connection warm ping ok"),
+            Err(e) => tracing::debug!("connection warm ping failed: {e}"),
+        }
+    }
+
+    /// Spawn the connection warmer: every `CONN_WARM_INTERVAL`, ping the orders
+    /// origin so the pooled connection never goes cold between arm and the first
+    /// fire. Mirrors `Presigner::spawn_refresher`; wired only in `main.rs::arm`.
+    pub fn spawn_conn_warmer(&self, handle: &tokio::runtime::Handle) -> tokio::task::JoinHandle<()> {
+        let client = self.clone();
+        handle.spawn(async move {
+            let mut tick = tokio::time::interval(CONN_WARM_INTERVAL);
+            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            loop {
+                tick.tick().await;
+                client.warm().await;
+            }
+        })
     }
 
     fn signed_path(endpoint: &str) -> String {
@@ -170,6 +215,31 @@ impl RestClient {
 
     pub async fn series(&self, series_ticker: &str) -> Result<Value, KalshiError> {
         self.signed_get(&format!("/series/{series_ticker}")).await
+    }
+
+    /// List ALL markets in an event, following the cursor. Read-only. Each
+    /// returned object is a full market (includes `yes_sub_title`,
+    /// `yes_ask_dollars`, `rules_primary`/`rules_secondary`, `can_close_early`).
+    /// The query string is not signed (`signed_path` strips it), so the cursor
+    /// is safe to append. Used by the event-prep stage (`earshot prepare`).
+    pub async fn event_markets(&self, event_ticker: &str) -> Result<Vec<Value>, KalshiError> {
+        let mut out = Vec::new();
+        let mut cursor: Option<String> = None;
+        loop {
+            let mut ep = format!("/markets?event_ticker={event_ticker}&limit=200");
+            if let Some(c) = &cursor {
+                ep.push_str(&format!("&cursor={c}"));
+            }
+            let v = self.signed_get(&ep).await?;
+            if let Some(arr) = v["markets"].as_array() {
+                out.extend(arr.iter().cloned());
+            }
+            match v["cursor"].as_str() {
+                Some(c) if !c.is_empty() => cursor = Some(c.to_string()),
+                _ => break,
+            }
+        }
+        Ok(out)
     }
 
     pub async fn account_limits(&self) -> Result<Value, KalshiError> {
@@ -211,11 +281,16 @@ impl RestClient {
         }
         let send_ts = MonotonicNs::now();
         let resp = req.send().await?;
+        // Headers/TTFB have arrived — the natural split between network+matching
+        // (send→hdrs) and body read+parse (hdrs→ack).
+        let hdrs_ts = MonotonicNs::now();
         let status_code = resp.status().as_u16();
-        let http_version = format!("{:?}", resp.version());
+        let http_version = resp.version();
         let raw: Value = resp.json().await.unwrap_or(Value::Null);
         let ack_ts = MonotonicNs::now();
-        tracing::debug!(status_code, %http_version, "order ack");
+        // `?` defers Debug formatting to the subscriber — zero alloc when the
+        // debug level is off (the hot path).
+        tracing::debug!(status_code, http_version = ?http_version, "order ack");
         if status_code >= 300 {
             return Err(KalshiError::Api { status: status_code, body: raw.to_string() });
         }
@@ -238,7 +313,9 @@ impl RestClient {
                 order_id: order["order_id"].as_str().map(String::from),
                 order_status,
                 raw: raw.clone(),
+                hdrs_ts,
                 ack_ts,
+                http_version,
             },
             send_ts,
         ))

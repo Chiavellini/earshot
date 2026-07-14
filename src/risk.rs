@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
@@ -17,6 +17,15 @@ pub const HARD_DAILY_LOSS_CENTS: u64 = 100_000; // $1,000
 /// M2 posture: cumulative real-money spend across ALL live drills/sessions
 /// is capped at $1.00, enforced here and persisted across runs.
 pub const PROBE_LEDGER_CAP_CENTS: u64 = 100;
+/// Fillable mention posture (the deliberate step past the 1¢ no-fill probe):
+/// a single order's price may cross a real ask up to this ceiling so the
+/// executor can actually fill. This is a per-order PRICE bound only — real
+/// spend stays clamped by the config notional caps AND the $1 probe ledger
+/// (`PROBE_LEDGER_CAP_CENTS`), which remain the money backstops. Chosen to
+/// cover the cheap mention strikes (~20–30¢ asks) while staying far under the
+/// $500 hard order cap. Gated behind `arm --i-am-live --allow-mention
+/// --fillable`; never reached by the default probe posture.
+pub const MENTION_FILL_CAP_CENTS: u64 = 50;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -96,13 +105,52 @@ struct Ledger {
     spent_cents: u64,
 }
 
+/// Owns the persisted probe ledger and drives its disk writes OFF the fire
+/// path. `record_send` only touches the in-memory `ledger` (the authoritative
+/// in-session cap) and pokes `dirty`; a background persister (spawned in
+/// `main.rs::arm`) coalesces those pokes into disk writes. Single-shot CLI
+/// commands and tests spawn no persister — the `Drop` flush is what makes the
+/// debit durable for them. Totals are monotonic, so any persist writes a value
+/// no older than the last, keeping last-write/concurrent persists safe.
+struct LedgerStore {
+    path: PathBuf,
+    ledger: Mutex<Ledger>,
+    dirty: tokio::sync::Notify,
+}
+
+impl LedgerStore {
+    /// Serialize the current total (brief lock) and write it. Never on the
+    /// fire path. Preserves the `{"spent_cents": N}` on-disk shape.
+    fn persist(&self) {
+        let json = {
+            let ledger = self.ledger.lock().unwrap();
+            serde_json::to_string_pretty(&*ledger)
+        };
+        match json {
+            Ok(json) => {
+                if let Err(e) = std::fs::write(&self.path, json) {
+                    tracing::error!("probe ledger persist failed: {e}");
+                }
+            }
+            Err(e) => tracing::error!("probe ledger serialize failed: {e}"),
+        }
+    }
+}
+
+impl Drop for LedgerStore {
+    fn drop(&mut self) {
+        // Final synchronous flush (teardown, not the hot path): guarantees the
+        // last debit reaches disk even when no persister task ran.
+        self.persist();
+    }
+}
+
 pub struct RiskGate {
     cfg: RiskConfig,
     armed: AtomicBool,
     killed: AtomicBool,
     event_spent_cents: AtomicU64,
-    ledger_path: PathBuf,
-    ledger: Mutex<Ledger>,
+    store: Arc<LedgerStore>,
 }
 
 impl RiskGate {
@@ -118,8 +166,11 @@ impl RiskGate {
             armed: AtomicBool::new(false),
             killed: AtomicBool::new(false),
             event_spent_cents: AtomicU64::new(0),
-            ledger_path,
-            ledger: Mutex::new(ledger),
+            store: Arc::new(LedgerStore {
+                path: ledger_path,
+                ledger: Mutex::new(ledger),
+                dirty: tokio::sync::Notify::new(),
+            }),
         })
     }
 
@@ -141,7 +192,7 @@ impl RiskGate {
     }
 
     pub fn ledger_spent_cents(&self) -> u64 {
-        self.ledger.lock().unwrap().spent_cents
+        self.store.ledger.lock().unwrap().spent_cents
     }
 
     /// Full pre-send check. `book_age_ns`/`audio_age_ns` are u64::MAX when
@@ -179,7 +230,7 @@ impl RiskGate {
         if would_event > self.cfg.max_event_notional_cents {
             return Err(Refusal::EventNotional { would: would_event, cap: self.cfg.max_event_notional_cents });
         }
-        let ledger = self.ledger.lock().unwrap();
+        let ledger = self.store.ledger.lock().unwrap();
         let would_ledger = ledger.spent_cents + notional;
         if would_ledger > PROBE_LEDGER_CAP_CENTS {
             return Err(Refusal::ProbeLedger { would: would_ledger, cap: PROBE_LEDGER_CAP_CENTS });
@@ -188,17 +239,38 @@ impl RiskGate {
     }
 
     /// Debit worst-case notional the moment an order is sent (before the ack:
-    /// an ambiguous timeout must still count as spent).
+    /// an ambiguous timeout must still count as spent). The in-memory debit is
+    /// synchronous and authoritative; the disk write is deferred to the
+    /// background persister (or the `Drop` flush) so NO I/O sits on the fire
+    /// path.
     pub fn record_send(&self, price_cents: u32, count: u32) {
         let notional = price_cents as u64 * count as u64;
         self.event_spent_cents.fetch_add(notional, Ordering::SeqCst);
-        let mut ledger = self.ledger.lock().unwrap();
-        ledger.spent_cents += notional;
-        if let Ok(json) = serde_json::to_string_pretty(&*ledger) {
-            if let Err(e) = std::fs::write(&self.ledger_path, json) {
-                tracing::error!("probe ledger persist failed: {e}");
-            }
+        {
+            let mut ledger = self.store.ledger.lock().unwrap();
+            ledger.spent_cents += notional;
         }
+        self.store.dirty.notify_one();
+    }
+
+    /// Spawn the background ledger persister: wake on each `record_send` and
+    /// write the current total off the fire path (a burst coalesces into one
+    /// write). Mirrors `Presigner::spawn_refresher`. Wired only in
+    /// `main.rs::arm`; single-shot commands rely on the `Drop` flush instead.
+    pub fn spawn_persister(&self, handle: &tokio::runtime::Handle) -> tokio::task::JoinHandle<()> {
+        let store = Arc::clone(&self.store);
+        handle.spawn(async move {
+            loop {
+                store.dirty.notified().await;
+                store.persist();
+            }
+        })
+    }
+
+    /// Force a synchronous ledger write. Used at teardown (`main.rs::arm`) to
+    /// guarantee the final total is durable before the persister is aborted.
+    pub fn flush(&self) {
+        self.store.persist();
     }
 }
 

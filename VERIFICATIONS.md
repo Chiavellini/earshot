@@ -173,6 +173,27 @@ all sampled `fee_type: quadratic, fee_multiplier: 1`.
 **Implication:** Series discovery is API-driven; standard taker fee applies.
 **Confidence:** high. **Re-verify:** `GET /exchange/series-fee-changes` per series at arm.
 
+**Claim (2026-07-14):** `GET /markets?event_ticker=<E>` returns each market with
+the resolution text INLINE — `rules_primary`/`rules_secondary`, plus
+`yes_sub_title` (the mention WORD), `yes_ask_dollars`, `can_close_early` — so the
+event-prep stage needs no per-market fetch. Integer price fields (`yes_ask`) are
+null; the `_dollars` string fields carry the price (consistent with the
+mention-probe `yes_ask_dollars` pin). Verified event `KXEARNINGSMENTIONMS-26JUL15`
+(Morgan Stanley, 2026-07-15): 14 markets, all `status=active`, none "said-N-times";
+words incl. Tariff (ask $0.14), Recession ($0.36), Oil ($0.16), Middle East/Iran,
+Buyback, Galaxy Digital, Tokenized, Zero Hash. Also `KXEARNINGSMENTIONC-26JUL14`
+(Citi): 14 markets, Tariff $0.28 / Recession $0.21 / Inflation $1.00.
+**Source:** live production API, consumed by `RestClient::event_markets` /
+`earshot prepare`.
+**Implication:** Event configs are auto-generated (`earshot prepare
+--event-ticker`), not hand-typed. `earshot prepare --fillable` sets each cap to
+`min(live ask, MENTION_FILL_CAP_CENTS=50)` — the smallest cap that crosses the
+ask. A 1¢ mention order rests strictly below the ask (non-crossing, no fill); to
+FILL requires the `mention_fill_gate` (`--fillable`), price ≥ ask, bounded by the
+$1 probe ledger + notional caps.
+**Confidence:** high (live, multi-event). **Re-verify:** per event at prep time
+(strike suffix set + asks are per-event).
+
 ## Q5 — Fee schedule
 
 **Claim:** Taker fee = `ceil_cent(0.07 × C × P × (1−P))` per order; maker fee
@@ -324,6 +345,28 @@ other systems**. Any cancel logic must be scoped to the session's own order
 ids (`OrderRegistry`) — an account-wide cancel-all would destroy unrelated
 positions. This is now hard-coded policy in `rest.rs::cancel_orders`.
 
+**Claim (code landed 2026-07-13; empirical numbers PENDING — see Open item 6):**
+The orders `RestClient` now sets `tcp_nodelay(true)` (Nagle off) and h2
+keep-alive (`http2_keep_alive_interval` 30 s + `_while_idle`), and
+`main.rs::arm` keeps the orders connection warm — a one-shot pre-warm after
+`wait_for_books` plus a 60 s `GET /exchange/status` keep-warm ping, both under
+the 90 s `pool_idle_timeout` — so the first live POST never pays a cold
+TLS+TCP handshake. ALPN is left to negotiate (NOT `http2_prior_knowledge`,
+which would break the h1 wiremock tests). Separately, `send→ack` is now split
+at TTFB into `send→hdrs` (network + matching engine) and `hdrs→ack` (body read
++ JSON parse), and the ledger disk write was removed from the fire path
+(`record_send` measured 27 ns/op, `perf_risk_record_send`), so `exec→send` no
+longer contains a blocking write.
+**Evidence (code):** `src/kalshi/rest.rs` builder + `warm`/`spawn_conn_warmer`;
+`src/main.rs::arm` wiring; `tests/perf_budget.rs::perf_risk_record_send`.
+**Pending (live):** negotiated wire version to the orders origin (h1 vs h2),
+connection reuse across orders, and the `send→hdrs`/`hdrs→ack` split — captured
+by `probe-order --allow-mention` (now prints `send→hdrs / hdrs→ack / send→ack
+[VERSION]`).
+**Confidence:** medium (code landed + unit/mock-verified; live wire numbers
+pending). **Re-verify:** reqwest upgrade / Cloudflare edge change / any
+first-order latency regression.
+
 ## M1 detector pins (2026-07-11)
 
 **Claim:** The sherpa-onnx streaming KWS model
@@ -436,6 +479,15 @@ proxy; the English model needs small `decode_chunk_len`).
 **Implication:** the English model is a drop-in provided it exports the same
 signature (an icefall causal `--decode-chunk-len ~8` zipformer-CTC does).
 Re-derive `kws_compile` pinned vectors if its BPE vocab ≠ gigaspeech-500.
+**Sourcing (scoped 2026-07-14, `docs/CTC-MODEL-SOURCING.md`):** the export script
+`icefall/egs/librispeech/ASR/zipformer/export-onnx-streaming-ctc.py` already emits
+this exact signature — the gap is purely a **checkpoint** trained `--causal 1
+--use-ctc 1`. No published English streaming×CTC checkpoint found (shelf English
+streaming models are transducers; shelf English CTC checkpoints are non-causal).
+Effort tiers: T0 hours/CPU if such a checkpoint is found, T1 GPU-hours to finetune
+a CTC head onto a causal transducer, T2 GPU-days from scratch. `bench-detector
+--engines streaming_ctc` panic-safe as of 2026-07-14 (bench configs now carry a
+`[detector.streaming_ctc]` section).
 **Confidence:** high (plumbing); the ≤350 ms latency number awaits the English
 model + paced bake-off.
 
@@ -473,3 +525,9 @@ the reconstructed URL matches the signed URL, upgrade this pin to live-verified.
 4. **Exact max batch size** — undocumented; bounded by write bucket only.
 5. §12 Q7 (Rust SIP story) and Q8 (conference-provider landscape) — M3
    concerns, deliberately not researched yet.
+6. **Order-connection latency evidence** — run `probe-order --allow-mention`
+   against an active Mentions market to capture the negotiated HTTP version,
+   connection reuse, and the `send→hdrs`/`hdrs→ack` split; fold the numbers
+   into the 2026-07-13 connection-tuning pin above (code + docs already
+   landed). Ideally a cold run (order is the first request) vs a warm run to
+   quantify the pre-warm win.
