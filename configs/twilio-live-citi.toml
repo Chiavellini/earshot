@@ -29,6 +29,7 @@ max_active_paths  = 4
 default_threshold = 0.20
 default_boost     = 2.0
 refractory_ms     = 2000
+fp32              = true          # fp32 encoder: recall win, FA down on tariff/recession (docs/BAKEOFF.md)
 
 [[sources]]
 kind = "twilio_stream"
