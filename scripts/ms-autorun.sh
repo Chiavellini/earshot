@@ -15,11 +15,8 @@ set -u  # NOT -e: unattended — every failure must reach the report, not die si
 export PATH="/opt/homebrew/bin:$HOME/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 export HOME="${HOME:-/Users/bernardodelrio}"
 REPO="/Users/bernardodelrio/Code/ear"
-EVENT_ID="KXEARNINGSMENTIONMS-26JUL15"
-STATE_DIR="$REPO/state/$EVENT_ID"
-LOG="$STATE_DIR/autorun.log"
-SUMMARY="$STATE_DIR/autorun-summary.txt"
-PIDFILE="$STATE_DIR/autorun.pid"
+CONFIG_PATH="configs/twilio-live-ms.toml"
+TO_NUMBER="+18448862200"
 LABEL="com.earshot.ms-autorun"
 TICKERS="BASE BUYB GALA HEAD INVE MIDD OIL PRIV PRIVC RECE TAIL TARI TOKE ZERO"
 
@@ -29,6 +26,20 @@ TEST="${EARSHOT_AUTORUN_TEST:-0}"
 # was read as a real event failure).
 SUBJ_TAG=""; [[ "$TEST" == 1 ]] && SUBJ_TAG="[TEST] "
 cd "$REPO" || exit 1
+
+# Rehearsal knobs (TEST mode only — the live path is deliberately rigid):
+# a dress rehearsal points at a different config (active markets, dry-run)
+# and dials the TTS loopback, NEVER the real bridge. Its state (log, ledger,
+# pids, STOP) then lives in that config's own state dir.
+if [[ "$TEST" == 1 && -n "${EARSHOT_AUTORUN_TEST_CONFIG:-}" ]]; then
+  CONFIG_PATH="$EARSHOT_AUTORUN_TEST_CONFIG"
+fi
+EVENT_ID=$(sed -n '/^\[event\]/,/^\[/s/^id[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$CONFIG_PATH" 2>/dev/null | head -1)
+EVENT_ID="${EVENT_ID:-KXEARNINGSMENTIONMS-26JUL15}"
+STATE_DIR="$REPO/state/$EVENT_ID"
+LOG="$STATE_DIR/autorun.log"
+SUMMARY="$STATE_DIR/autorun-summary.txt"
+PIDFILE="$STATE_DIR/autorun.pid"
 mkdir -p "$STATE_DIR"
 exec >> "$LOG" 2>&1
 ts() { date "+%Y-%m-%d %H:%M:%S"; }
@@ -112,13 +123,21 @@ if [[ "$TEST" == 1 ]]; then
   LIVE_FLAGS="--allow-mention"          # dry-run: orders computed, never sent
   MAX_ATTEMPTS=2
   END_HHMM=$((10#$(date -v+8M "+%H%M"))) # test window: ~8 minutes from now
-  LONG_STREAM_S=99999                   # test: never "call complete" — forces the redial path
+  LONG_STREAM_S="${EARSHOT_AUTORUN_TEST_LONG_S:-99999}" # default: never "call complete" — forces the redial path
   MIN_FRAMES=1
   # Test mode places NO real call unless explicitly asked — the loop/report
-  # mechanics don't need to ring a real bridge (EARSHOT_AUTORUN_TEST_DIAL=1
-  # restores the full dial rehearsal).
+  # mechanics don't need to ring anything (EARSHOT_AUTORUN_TEST_DIAL=1
+  # restores the dial). A test dial additionally REQUIRES an explicit
+  # EARSHOT_AUTORUN_TEST_TO target: a drill must never ring the real bridge.
   DIAL_FLAG="--no-dial"
-  [[ "${EARSHOT_AUTORUN_TEST_DIAL:-0}" == 1 ]] && DIAL_FLAG=""
+  if [[ "${EARSHOT_AUTORUN_TEST_DIAL:-0}" == 1 ]]; then
+    if [[ -n "${EARSHOT_AUTORUN_TEST_TO:-}" ]]; then
+      DIAL_FLAG=""
+      TO_NUMBER="$EARSHOT_AUTORUN_TEST_TO"
+    else
+      log "TEST_DIAL requested without EARSHOT_AUTORUN_TEST_TO — refusing to dial the real bridge from a drill; continuing with --no-dial"
+    fi
+  fi
   MODE="TEST/dry-run"
 else
   LIVE_FLAGS="--i-am-live --allow-mention --fillable"
@@ -200,10 +219,10 @@ while :; do
   t0=$(date +%s)
   attempt_log_start=$(wc -l < "$LOG")
   scripts/launch-event.sh \
-    --config configs/twilio-live-ms.toml \
+    --config "$CONFIG_PATH" \
     --account "$HOME/.earshot/ms.env" \
     --bind-port 8080 \
-    --to +18448862200 --dtmf "$DTMF" \
+    --to "$TO_NUMBER" --dtmf "$DTMF" \
     ${BIN_ARGS[@]+"${BIN_ARGS[@]}"} $DIAL_FLAG \
     $LIVE_FLAGS &
   LAUNCH_PID=$!
@@ -281,6 +300,9 @@ done
 # ── Post-run report ───────────────────────────────────────────────────────
 log "building report"
 STRIKES="$STATE_DIR/strike-close.json"
+if [[ "$TEST" == 1 ]]; then
+  log "test mode: skipping strike-close fetch (tickers are event-specific)"
+else
 python3 - "$STRIKES" <<PY || log "strike-close fetch failed (non-fatal)"
 import json, sys, urllib.request
 out = {}
@@ -294,6 +316,7 @@ for suf in "$TICKERS".split():
         out[t] = {"error": str(e)}
 json.dump(out, open(sys.argv[1], "w"), indent=1)
 PY
+fi
 
 {
   echo "EARSHOT MS-26JUL15 autonomous run — $(ts)  (mode: $MODE)"

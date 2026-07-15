@@ -49,6 +49,30 @@ auto-redial against the bridge, and a launchd-fired dry-run (runs=1, exit 0).
 
 ### Hardening added 2026-07-15 (post-run audit — applies to EVERY future unattended event)
 
+**DRESS-REHEARSED 2026-07-15 (production mechanisms, per the CLAUDE.md
+convention).** Three launchd-fired runs against `configs/rehearsal-nflx.toml`
+(active NFLX mention markets, dry-run, real Twilio calls to the dedicated
+auto-answering TTS number **+1 762 721 2978** — voice webhook plays the
+keyword script; bought 2026-07-15, ~$1.15/mo, reusable for every preflight).
+Evidence in `state/KXEARNINGSMENTIONNFLX-26JUL02/autorun.log`:
+- launchd fire + pinned binary (sha in `pinned.info`, clean commit) armed in
+  <1 s — no fire-time compile;
+- real 8 kHz μ-law stream, live detections (gaming/hollywood/acquisition),
+  executor consulted the live book (centi-contract quantities visible);
+- **SIGTERM mid-live-stream**: kill switch ran orders-cancel + disarm +
+  ledger flush in 6 ms, exit 143, supervisor alerted + redialed;
+- **STOP mid-attempt**: arm cancel/flush in 152 ms AND the supervisor watcher
+  hung up the call leg and stopped the loop;
+- **frames evidence**: two long zero-frame attempts were refused as "call
+  complete" (no-audio alert + redial); the real 180 s / 7126-frame stream
+  was accepted;
+- **TERM→KILL escalation fired for real**: a post-STOP arm ignored SIGTERM
+  (orphaned handler — follow-up 5 below) and was SIGKILLed by cleanup;
+- rehearsal also caught `prepare` emitting a phrase the detector cannot
+  BPE-encode ("warner bros." — the period): arm REFUSES the whole config.
+  **Preflight/operator must test-arm any newly generated config** until
+  prepare sanitizes phrases (follow-up 6).
+
 - **Preflight is REQUIRED the night before**: `scripts/preflight-event.sh
   --config <cfg> --account <env> --fire-hhmm <HHMM>`. It builds and PINS the
   binary into the event state dir (`earshot-pinned` + `pinned.info` with
@@ -81,8 +105,21 @@ Deferred follow-ups from the same audit (tracked, deliberately NOT done yet):
 3. Event windows (`END_HHMM`, the 07:10 gate, the date guard) are hard-coded
    per event in `ms-autorun.sh` — generalize to per-event config when the next
    event is scheduled (the supervisor should be `prepare`-generated, not edited).
-4. Test-mode rehearsals share the LIVE event's state dir (they append to its
-   log and rewrite the summary) — give rehearsals their own state dir.
+4. ~~Test-mode rehearsals share the LIVE event's state dir~~ DONE 2026-07-15:
+   `EARSHOT_AUTORUN_TEST_CONFIG` gives rehearsals their own event id/state dir.
+5. After a STOP-triggered kill, the still-running disarmed arm is
+   SIGTERM-immune (the kill watcher task returned; the installed handler's
+   stream is orphaned, so TERM is swallowed). The supervisor's TERM→KILL
+   escalation covers it (fired for real in the 2026-07-15 rehearsal), but the
+   watcher should either keep draining signals or exit the process after a
+   STOP kill.
+6. `prepare` can emit detector-unencodable phrases (e.g. "warner bros." —
+   "BROS." not in the BPE vocab) and arm then refuses the entire config at
+   fire time. Sanitize/validate phrases in `prepare` (encode-check against
+   the model vocab) or add a preflight test-arm step.
+7. `notify()` sends are single-shot; one rehearsal SUMMARY email failed
+   (SMTP throttle after ~12 sends that day) — logged + summary file intact,
+   but add one retry with backoff for event-day robustness.
 
 ## Morning checklist (manual fallback) — ⚠ call is **6:30 AM local (CDMX, UTC-6)** = 8:30 ET
 
