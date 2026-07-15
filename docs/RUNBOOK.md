@@ -39,6 +39,9 @@ The bridge IVR disconnects silent callers after ~60 s pre-conference
 (measured); if that happens pre-6:25, the script's dial can be re-run —
 `scripts/twilio-dial.sh` line is printed on exit. Do NOT dial before ~6:15.
 
+Second device: public MS webcast open before 6:30 — the Phase-0 resolver-race
+measurement below is REQUIRED this run (wall-clock notes only; no recording).
+
 Kill (either leg, any time):
 - `touch state/KXEARNINGSMENTIONMS-26JUL15/STOP`  → orders: cancel + disarm
 - `scripts/twilio-hangup.sh <CallSid printed at dial>` → audio leg
@@ -63,6 +66,46 @@ expect live:
   corpus positives — live recall unproven.
 - middle east/iran, oil (2nd mention), tailwind (2nd) correctly suppressed
   by refractory/budget after the first hit.
+
+## Phase-0 measurement — resolver race + warm path (REQUIRED this run)
+
+The JPM template's "thesis measurement" (below) stays in force. This section
+adds the **webcast leg**, which answers the single most important open
+question (TELEPHONY-DETECTION-SPEC §10.3): do Kalshi resolvers act at
+webcast speed (~10–30 s behind our PSTN feed → recall is the product) or at
+PSTN speed (→ every 100 ms matters)? The answer steers the next milestone
+(docs/ROADMAP.md, Phase 2 vs 2.5).
+
+**No call-audio recording on any leg** — the standing policy (item 5 of the
+thesis measurement) applies to the webcast too. Everything below is
+wall-clock notes + data the system already writes.
+
+1. **Webcast leg (second device, required).** Before the call, open the
+   public MS webcast player and confirm audio. During the call, for each
+   armed keyword you hear ON THE WEBCAST, note wall-clock to the second
+   (paper or a text file with `date` pasted per line). The arm log's
+   `decision intent` tracing lines carry our detection wall-clock for the
+   same words on the PSTN leg.
+   → **PSTN lead ≈ webcast-heard time − detection-log time** (our detector
+   adds ~1–1.2 s after the PSTN utterance; subtract that mentally). First
+   real measurement of the structural cushion (TWILIO.md pins it at an
+   unverified ~10–30 s research estimate).
+2. **Strike-close interval.** Post-call (already thesis step 3): for every
+   strike that fired or should have, `GET /markets/{ticker}` →
+   `close_time`. Tabulate per keyword: webcast-heard t, detection t, our
+   ack t (report.json edges are monotonic; use the log line wall-clock),
+   strike close t.
+3. **Decision rule.** If strike-close consistently trails our ack by
+   **> 5 s**, resolvers are webcast-speed → the recall workstream leads the
+   next milestone. If closes land within ~1–2 s of our ack, the race is
+   PSTN-speed → latency work leads. Pin the table + verdict in
+   VERIFICATIONS.md as a dated entry.
+4. **Warm-path pin.** Keep `report.json`. Post-call, read `send→hdrs`,
+   `hdrs→ack`, `send→ack`, `presign_age` — this run is the first warm-path
+   sample from an armed process (cold CLI probes were 128–134 ms send→ack;
+   VERIFICATIONS open item 6). Pin the numbers and, if `RUST_LOG` included
+   `earshot::kalshi::rest=debug`, the negotiated `http_version` to the
+   orders origin.
 
 ---
 
