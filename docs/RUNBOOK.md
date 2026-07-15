@@ -14,7 +14,8 @@ the generated 14¢ cap could never fill) may cross the ask and FILL; the other
 event notional cap and the per-event $1 ledger (fresh:
 `state/KXEARNINGSMENTIONMS-26JUL15/probe_ledger.json` = 0¢).
 
-- **Call**: Wednesday 2026-07-15 **8:30 AM ET** (results ~7:30 AM ET).
+- **Call**: Wednesday 2026-07-15 **8:30 AM ET = 6:30 AM CDMX local**
+  (results ~7:30 AM ET = 5:30 AM local).
 - **Dial-in** (primary source morganstanley.com IR, verified 2026-07-14):
   **+1-844-886-2200** (intl +1-646-307-1096), passcode **400700#**.
 - **Markets**: `KXEARNINGSMENTIONMS-26JUL15` — 14 active (verified via API
@@ -22,32 +23,46 @@ event notional cap and the per-event $1 ledger (fresh:
 - **Account env**: `~/.earshot/ms.env` (Twilio + Kalshi combined, created
   2026-07-14, mode 600).
 
-## Morning checklist (fits 10 minutes; call at 8:30 ET = 7:30 CST)
+## Morning checklist — ⚠ call is **6:30 AM local (CDMX, UTC-6)** = 8:30 ET
+
+This box runs America/Mexico_City (UTC-6, no DST). Operator arrives 6:20 →
+**10-minute window**. ONE command does everything (cleanup → sanity → launch
+→ dial); it was dress-rehearsed end-to-end the night before:
 
 ```
-cd ~/Code/ear
-# 1. Sanity (~2 min): clock, markets, no stale STOP
-sntp -sS time.apple.com 2>/dev/null || true   # or trust arm's own NTP check
-rm -f state/KXEARNINGSMENTIONMS-26JUL15/STOP state/STOP
-cargo run --release -- book --ticker KXEARNINGSMENTIONMS-26JUL15-TARI --secs 5
-# 2. Launch (arm validates everything; dial fires automatically once the
-#    WS listener is up — target launch ~8:10-8:15 ET, bridge opens early):
-scripts/launch-event.sh \
-  --config configs/twilio-live-ms.toml \
-  --account ~/.earshot/ms.env \
-  --bind-port 8080 \
-  --to +18448862200 --dtmf "400700#" \
-  --i-am-live --allow-mention --fillable
-# 3. Kill (either leg, any time):
-#    touch state/KXEARNINGSMENTIONMS-26JUL15/STOP        # orders: cancel + disarm
-#    scripts/twilio-hangup.sh <CallSid printed at dial>  # audio leg
-# 4. After the call: report at state/KXEARNINGSMENTIONMS-26JUL15/report.json
+cd ~/Code/ear && scripts/ms-morning.sh        # at 6:20:00 sharp
 ```
+
+Timeline: ~6:20 launch → arm validates 14 markets + books (~40 s) → tunnel +
+dial → "stream started" by ~6:22 → bridge hold until the 6:30 call start.
+The bridge IVR disconnects silent callers after ~60 s pre-conference
+(measured); if that happens pre-6:25, the script's dial can be re-run —
+`scripts/twilio-dial.sh` line is printed on exit. Do NOT dial before ~6:15.
+
+Kill (either leg, any time):
+- `touch state/KXEARNINGSMENTIONMS-26JUL15/STOP`  → orders: cancel + disarm
+- `scripts/twilio-hangup.sh <CallSid printed at dial>` → audio leg
+Report after the call: `state/KXEARNINGSMENTIONMS-26JUL15/report.json`.
 
 If the DTMF passcode isn't accepted (bridge prompt timing), hang up and
 re-dial manually with more leading waits: `--dtmf "wwww400700#"` (each w =
 0.5 s). The dress rehearsal confirmed the bridge answers and streams audio;
 passcode acceptance can only be proven when the conference is open.
+
+### Keyword rehearsal results (TTS through real Twilio, night of 07-14)
+
+All 14 words produced ≥1 Confirmed detection via the live detector settings
+(fp32, chunk 80 ms). Detect latency 64–127 ms past capture. Caveats to
+expect live:
+- **tariff** (fillable, cap 45¢): fired on mid-sentence "tariff"/"tariffs";
+  MISSED sentence-initial "Tariff…" after silence, twice. Matches the known
+  onset weakness (corpus recall 0.90). A missed first mention may be caught
+  on a later mention — budget stays armed until filled.
+- **tailwind** (observe 1¢): 2/3 phrasings fired; weakest of the 14.
+- **recession** (fillable, cap 26¢): fired cleanly on TTS; still has zero
+  corpus positives — live recall unproven.
+- middle east/iran, oil (2nd mention), tailwind (2nd) correctly suppressed
+  by refractory/budget after the first hit.
 
 ---
 
