@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 # Originate the dial-in call and fork its inbound audio to our WS server.
 #
-#   twilio-dial.sh --to +18883243618 --dtmf "1364784#" --stream-url wss://<ngrok-host>/media
+#   twilio-dial.sh --to +18883243618 --dtmf "1364784#" --stream-url wss://<ngrok-host>/media \
+#                  [--sid-file <path>]   # write the CallSid here for supervisors
 #
-# Requires ~/.twilio/earshot_env exporting TWILIO_ACCOUNT_SID,
-# TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER (a voice-capable Twilio number).
+# Credentials: uses TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_FROM_NUMBER
+# from the CALLER's environment when set (launch-event.sh sources the per-event
+# --account file — that must win, or multi-event isolation breaks); falls back
+# to ~/.twilio/earshot_env only when they are absent.
 #
 # TwiML notes (docs/TWILIO.md):
 #   <Start><Stream>  forks inbound audio asynchronously — listen-only, the
@@ -18,19 +21,25 @@
 # scripts/twilio-hangup.sh <CallSid> (printed below) or state/STOP for orders.
 set -euo pipefail
 
-TO="" DTMF="" STREAM_URL=""
+TO="" DTMF="" STREAM_URL="" SID_FILE=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --to)         TO="$2"; shift 2 ;;
     --dtmf)       DTMF="$2"; shift 2 ;;
     --stream-url) STREAM_URL="$2"; shift 2 ;;
+    --sid-file)   SID_FILE="$2"; shift 2 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
-[[ -n "$TO" && -n "$STREAM_URL" ]] || { echo "usage: $0 --to +1... [--dtmf 1234#] --stream-url wss://host/media" >&2; exit 2; }
+[[ -n "$TO" && -n "$STREAM_URL" ]] || { echo "usage: $0 --to +1... [--dtmf 1234#] --stream-url wss://host/media [--sid-file <path>]" >&2; exit 2; }
 
-# shellcheck disable=SC1090
-source ~/.twilio/earshot_env
+# Per-event credentials from the caller WIN; the global file is only a
+# fallback for manual use. Sourcing it unconditionally overrode the
+# --account isolation (audit F5, 2026-07-15).
+if [[ -z "${TWILIO_ACCOUNT_SID:-}" || -z "${TWILIO_AUTH_TOKEN:-}" || -z "${TWILIO_FROM_NUMBER:-}" ]]; then
+  # shellcheck disable=SC1090
+  source ~/.twilio/earshot_env
+fi
 : "${TWILIO_ACCOUNT_SID:?}" "${TWILIO_AUTH_TOKEN:?}" "${TWILIO_FROM_NUMBER:?}"
 
 PLAY_DIGITS=""
@@ -52,3 +61,5 @@ if [[ "$SID" == "ERROR" || -z "$SID" ]]; then
 fi
 echo "call placed: CallSid=${SID}"
 echo "hang up with: scripts/twilio-hangup.sh ${SID}"
+[[ -n "$SID_FILE" ]] && echo "$SID" > "$SID_FILE"
+exit 0

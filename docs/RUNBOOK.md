@@ -41,7 +41,48 @@ auto-redial against the bridge, and a launchd-fired dry-run (runs=1, exit 0).
   strike-close table (step 2) and warm-path report.json pin (step 4) are
   captured automatically.
 - The job self-disarms (bootout) after the live run; a date guard in the
-  script is the backstop.
+  script is the backstop. Self-disarm is the script's **final act** — booting
+  out its own label SIGTERMs the script, so nothing may run after it. Before
+  the 2026-07-15 fix this ran before `finished=1`, so a live run sent a
+  spurious "FAILED (script died)" email right after the SUMMARY email (the
+  2026-07-15 MS run itself completed fine).
+
+### Hardening added 2026-07-15 (post-run audit — applies to EVERY future unattended event)
+
+- **Preflight is REQUIRED the night before**: `scripts/preflight-event.sh
+  --config <cfg> --account <env> --fire-hhmm <HHMM>`. It builds and PINS the
+  binary into the event state dir (`earshot-pinned` + `pinned.info` with
+  commit/sha256), live-probes Twilio + Kalshi auth, checks disk ≥ 5 GiB,
+  tools, timezone, a USER-scheduled `pmset` wake before fire time, and
+  live-tests the mailer. The supervisor runs the pin — never a fire-time
+  `cargo run` (a dirty tree / cold build / full disk at 06:05 is unrecoverable
+  with nobody watching; the disk hit 100% TWICE this week).
+- **Mid-window alerting**: every early-exit guard (wrong date, already
+  running, window already closed) emails; the first failed attempt and every
+  5th consecutive failure email WITH the log tail; a long call leg with no
+  audio frames emails and keeps redialing ("wall time ≠ audio" — a dead
+  tunnel parked on `<Pause>` looks like a 90-min success otherwise).
+- **STOP now works mid-call**: a watcher hangs up the recorded CallSid
+  (`state/<event>/call.sid`) and SIGTERMs the launcher; arm's kill watcher
+  (which now handles SIGTERM — the supervisor's actual kill signal) cancels
+  session orders, flushes the ledger, writes a last-words report, and exits.
+- **Cleanup kills recorded PIDs only** (`arm.pid`/`ngrok.pid`, TERM→5 s→KILL),
+  with a logged port-8080 sweep as last resort.
+- **Test mode places no real call** by default (`--no-dial`);
+  `EARSHOT_AUTORUN_TEST_DIAL=1` restores the full dial rehearsal.
+
+Deferred follow-ups from the same audit (tracked, deliberately NOT done yet):
+1. Mid-call stream recovery: a 30 s audio stall or socket close ends the whole
+   run (`twilio_ws.rs` idle/EndOfStream); recovery is a full shell redial that
+   re-pays ~30 s of warmup. Consider in-process re-accept within a call window.
+2. Warm-path order latency: the one real send this run showed `send→hdrs`
+   102 ms and `presign_age` 1.17 s — connection/presign reuse is a LOST_RACE
+   lever; belongs to the low-latency detector milestone.
+3. Event windows (`END_HHMM`, the 07:10 gate, the date guard) are hard-coded
+   per event in `ms-autorun.sh` — generalize to per-event config when the next
+   event is scheduled (the supervisor should be `prepare`-generated, not edited).
+4. Test-mode rehearsals share the LIVE event's state dir (they append to its
+   log and rewrite the summary) — give rehearsals their own state dir.
 
 ## Morning checklist (manual fallback) — ⚠ call is **6:30 AM local (CDMX, UTC-6)** = 8:30 ET
 

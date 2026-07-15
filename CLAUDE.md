@@ -22,6 +22,14 @@ written so you can work on one layer without reading the rest of the system.
 - Risk hard caps in `src/risk.rs` are code constants; config only tightens.
   The kill switch cancels ONLY `OrderRegistry` ids — this account carries
   unrelated resting orders from other systems. Never widen that scope.
+- **An unattended path counts as validated only when rehearsed with the exact
+  production mechanism**: launchd-fired (not a manual run), killed with the
+  real signal (SIGTERM — what `kill`/launchd/traps send — not the STOP file),
+  under launchd's minimal env. Equivalent-looking manual drills validated the
+  wrong paths before the 2026-07-15 MS run (see `docs/RUNBOOK.md` hardening
+  notes + the SIGTERM test `tests/kill_sigterm.rs`). Event runs REQUIRE
+  `scripts/preflight-event.sh` the night before (pins the binary; live-probes
+  creds, mailer, disk, scheduled wake).
 - Live testing: `probe-order`/`kill-drill` are hard-limited to 1¢ ×1
   contract, non-mention markets, $1 cumulative ledger
   (`state/probe_ledger.json`). `--allow-mention` (arm/probe-order) is the
