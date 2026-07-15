@@ -23,7 +23,27 @@ event notional cap and the per-event $1 ledger (fresh:
 - **Account env**: `~/.earshot/ms.env` (Twilio + Kalshi combined, created
   2026-07-14, mode 600).
 
-## Morning checklist — ⚠ call is **6:30 AM local (CDMX, UTC-6)** = 8:30 ET
+## ⚡ AUTONOMOUS MODE — ARMED (operator asleep is OK)
+
+`launchd` job `com.earshot.ms-autorun` fires **06:05 local** on 2026-07-15 and
+runs `scripts/ms-autorun.sh` unattended: launch → dial → auto-redial on the
+bridge's ~60 s pre-conference disconnect (DTMF wait variants cycle per
+attempt) → redial window closes 07:40 → strike-close table fetched → SUMMARY
+email to MAIL_TO. LAUNCHED and SUMMARY/FAILED emails bracket the run. All
+output: `state/KXEARNINGSMENTIONMS-26JUL15/autorun.log` (+ summary + strike-close.json).
+Verified the night before: mailer live-tested, full dry-run with a REAL
+auto-redial against the bridge, and a launchd-fired dry-run (runs=1, exit 0).
+- Abort before 06:05: `launchctl bootout gui/$(id -u)/com.earshot.ms-autorun`
+- Abort mid-run: `touch state/KXEARNINGSMENTIONMS-26JUL15/STOP` (cancels
+  orders + stops redials), then `scripts/twilio-hangup.sh <CallSid in log>`
+- Requires: AC power + lid open (box never sleeps — resident caffeinates).
+- Phase-0 note: the **webcast leg is skipped** (needs a human); the
+  strike-close table (step 2) and warm-path report.json pin (step 4) are
+  captured automatically.
+- The job self-disarms (bootout) after the live run; a date guard in the
+  script is the backstop.
+
+## Morning checklist (manual fallback) — ⚠ call is **6:30 AM local (CDMX, UTC-6)** = 8:30 ET
 
 This box runs America/Mexico_City (UTC-6, no DST). Operator arrives 6:20 →
 **10-minute window**. ONE command does everything (cleanup → sanity → launch

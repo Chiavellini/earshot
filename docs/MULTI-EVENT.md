@@ -103,9 +103,11 @@ current, with a `→ §8` marker where the item is now addressed.
   a single STOP — or one SIGINT — tripped *every* event; under `--state-dir` each event
   has its own `state/<id>/STOP`.
 
-- **Fixed audio ingress.** `TwilioWsSource` holds one `TcpListener` and calls
-  `accept()` exactly once — there is no accept loop (`src/source/twilio_ws.rs:250`), so
-  a second Twilio dial to the same port is never serviced. Every checked-in config
+- **Fixed audio ingress.** `TwilioWsSource` holds one `TcpListener` and serves
+  exactly ONE stream: it accepts until the first connection completes the WS
+  handshake (failed handshakes are dropped and it keeps waiting — 2026-07-14
+  hardening), then never accepts again, so a second Twilio dial to the same
+  port is never serviced as a second source. Every checked-in config
   binds `127.0.0.1:8080` (`configs/twilio-live.toml:41`), fronted by one ngrok tunnel,
   dialed from one `TWILIO_FROM_NUMBER`.
 
