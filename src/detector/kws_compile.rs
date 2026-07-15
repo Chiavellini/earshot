@@ -18,7 +18,7 @@ use std::path::Path;
 
 use thiserror::Error;
 
-use crate::config::{KeywordConfig, SherpaKwsConfig};
+use crate::config::KeywordConfig;
 use crate::types::{KeywordId, Tier};
 
 #[derive(Debug, Error)]
@@ -204,18 +204,19 @@ pub struct CompiledEntry {
 pub fn compile(
     keywords: &[KeywordConfig],
     table: &TokenTable,
-    defaults: &SherpaKwsConfig,
+    default_threshold: f32,
+    default_boost: f32,
 ) -> Result<Vec<CompiledEntry>, CompileError> {
     let mut entries = Vec::new();
     for (i, kw) in keywords.iter().enumerate() {
         let id = KeywordId(i as u16);
-        let boost = kw.boost.unwrap_or(defaults.default_boost);
+        let boost = kw.boost.unwrap_or(default_boost);
         for (v, variant) in kw.variants.iter().enumerate() {
             entries.push(CompiledEntry {
                 keyword: id,
                 tier: Tier::Confirmed,
                 tokens: table.encode(&kw.phrase, variant)?,
-                threshold: kw.confirmed_threshold.unwrap_or(defaults.default_threshold),
+                threshold: kw.confirmed_threshold.unwrap_or(default_threshold),
                 boost,
                 label: format!("kw{i}_conf{v}"),
             });
@@ -242,7 +243,7 @@ pub fn compile(
                 keyword: id,
                 tier: Tier::Fast,
                 tokens: full[..cut].to_vec(),
-                threshold: kw.fast_threshold.unwrap_or(defaults.default_threshold),
+                threshold: kw.fast_threshold.unwrap_or(default_threshold),
                 boost,
                 label: format!("kw{i}_fast{p}"),
             });
@@ -253,8 +254,12 @@ pub fn compile(
 
 /// First token boundary whose accumulated text covers the prefix. Token text
 /// counts `▁` as the inter-word space; the leading `▁` of the first word is
-/// not part of the prefix text.
-fn prefix_cut(tokens: &[String], prefix: &str) -> usize {
+/// not part of the prefix text. Returns `tokens.len() + 1` when the prefix is
+/// not covered by any boundary shorter than the full word (the `compile`
+/// callers treat `cut >= tokens.len()` as `PrefixNotShorter`). Public so the
+/// `compile-keywords` diagnostic can report per-candidate cuts without running
+/// the whole `compile` (which aborts on the first bad prefix).
+pub fn prefix_cut(tokens: &[String], prefix: &str) -> usize {
     let target: usize = prefix.trim().to_uppercase().chars().count();
     let mut covered = 0usize; // prefix chars covered (spaces count once)
     for (i, tok) in tokens.iter().enumerate() {
@@ -360,15 +365,11 @@ mod tests {
         }
     }
 
-    fn defaults() -> SherpaKwsConfig {
-        toml::from_str(r#"model_dir = "models/x""#).unwrap()
-    }
-
     #[test]
     fn fast_entry_is_token_prefix_of_confirmed_never_reencoded() {
         let Some(t) = table() else { return };
         let entries =
-            compile(&[kw("recession", &["recession", "recessions"], &["reces"])], &t, &defaults())
+            compile(&[kw("recession", &["recession", "recessions"], &["reces"])], &t, 0.25, 2.0)
                 .unwrap();
         assert_eq!(entries.len(), 3);
         let conf: Vec<_> = entries.iter().filter(|e| e.tier == Tier::Confirmed).collect();
@@ -384,7 +385,8 @@ mod tests {
         let entries = compile(
             &[kw("ai", &["artificial intelligence"], &["artificial intel"])],
             &t,
-            &defaults(),
+            0.25,
+            2.0,
         )
         .unwrap();
         let fast: Vec<_> = entries.iter().filter(|e| e.tier == Tier::Fast).collect();
@@ -394,14 +396,14 @@ mod tests {
     #[test]
     fn prefix_covering_whole_variant_is_rejected() {
         let Some(t) = table() else { return };
-        let err = compile(&[kw("go", &["go"], &["go"])], &t, &defaults()).unwrap_err();
+        let err = compile(&[kw("go", &["go"], &["go"])], &t, 0.25, 2.0).unwrap_err();
         assert!(matches!(err, CompileError::PrefixNotShorter { .. }), "{err}");
     }
 
     #[test]
     fn render_and_label_round_trip() {
         let Some(t) = table() else { return };
-        let entries = compile(&[kw("recession", &["recession"], &["reces"])], &t, &defaults()).unwrap();
+        let entries = compile(&[kw("recession", &["recession"], &["reces"])], &t, 0.25, 2.0).unwrap();
         let rendered = render_keywords(&entries);
         assert!(rendered.contains("▁RE CE S S ION :2 #0.25 @kw0_conf0\n"), "{rendered}");
         assert!(rendered.contains("▁RE CE S :2 #0.15 @kw0_fast0\n"), "{rendered}");

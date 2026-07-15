@@ -3,8 +3,12 @@
 #   twilio-hangup.sh <CallSid>
 set -euo pipefail
 SID="${1:?usage: twilio-hangup.sh <CallSid>}"
-# shellcheck disable=SC1090
-source ~/.twilio/earshot_env
+# Per-event credentials from the caller WIN (same isolation rule as
+# twilio-dial.sh); the global file is a fallback for manual use.
+if [[ -z "${TWILIO_ACCOUNT_SID:-}" || -z "${TWILIO_AUTH_TOKEN:-}" ]]; then
+  # shellcheck disable=SC1090
+  source ~/.twilio/earshot_env
+fi
 : "${TWILIO_ACCOUNT_SID:?}" "${TWILIO_AUTH_TOKEN:?}"
 
 curl -s -X POST "https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls/${SID}.json" \

@@ -173,6 +173,27 @@ all sampled `fee_type: quadratic, fee_multiplier: 1`.
 **Implication:** Series discovery is API-driven; standard taker fee applies.
 **Confidence:** high. **Re-verify:** `GET /exchange/series-fee-changes` per series at arm.
 
+**Claim (2026-07-14):** `GET /markets?event_ticker=<E>` returns each market with
+the resolution text INLINE — `rules_primary`/`rules_secondary`, plus
+`yes_sub_title` (the mention WORD), `yes_ask_dollars`, `can_close_early` — so the
+event-prep stage needs no per-market fetch. Integer price fields (`yes_ask`) are
+null; the `_dollars` string fields carry the price (consistent with the
+mention-probe `yes_ask_dollars` pin). Verified event `KXEARNINGSMENTIONMS-26JUL15`
+(Morgan Stanley, 2026-07-15): 14 markets, all `status=active`, none "said-N-times";
+words incl. Tariff (ask $0.14), Recession ($0.36), Oil ($0.16), Middle East/Iran,
+Buyback, Galaxy Digital, Tokenized, Zero Hash. Also `KXEARNINGSMENTIONC-26JUL14`
+(Citi): 14 markets, Tariff $0.28 / Recession $0.21 / Inflation $1.00.
+**Source:** live production API, consumed by `RestClient::event_markets` /
+`earshot prepare`.
+**Implication:** Event configs are auto-generated (`earshot prepare
+--event-ticker`), not hand-typed. `earshot prepare --fillable` sets each cap to
+`min(live ask, MENTION_FILL_CAP_CENTS=50)` — the smallest cap that crosses the
+ask. A 1¢ mention order rests strictly below the ask (non-crossing, no fill); to
+FILL requires the `mention_fill_gate` (`--fillable`), price ≥ ask, bounded by the
+$1 probe ledger + notional caps.
+**Confidence:** high (live, multi-event). **Re-verify:** per event at prep time
+(strike suffix set + asks are per-event).
+
 ## Q5 — Fee schedule
 
 **Claim:** Taker fee = `ceil_cent(0.07 × C × P × (1−P))` per order; maker fee
@@ -313,6 +334,23 @@ bid). Also: a quiet market sends no frames for seconds — feed liveness must
 be measured with pings, not message arrival.
 **Confidence:** high (pinned live).
 
+**Claim (2026-07-15): Kalshi quantities are FRACTIONAL contracts (hundredths),
+and sub-cent price structures exist.** The 2026-07-10 assumption that `*_fp`
+quantities are whole contracts ("23844.00") has drifted: the live MS run
+(state/KXEARNINGSMENTIONMS-26JUL15/autorun.log, 06:05–07:30 CDMX) logged
+thousands of fractional book quantities ("0.77", "0.30", "9888.38"), and REST
+market objects now carry `*_fp` sizes plus `price_level_structure` +
+`price_ranges`: KXEARNINGSMENTIONMS-26JUL15-RECE shows `volume_fp: "3075.67"`
+and `price_level_structure: "linear_cent"` (step 0.0100); KXMVE* markets show
+`"deci_cent"` (step 0.0010 = 0.1¢ price levels). Consequences (both landed
+2026-07-15): book quantities parse EXACTLY as centi-contracts
+(`book.rs::fp_to_centi_contracts` — the old whole-contract truncation deleted
+sub-1.0 levels and let deltas drift; it cost us the true best-ask during the
+MS run), and the arm-time validator REFUSES any market whose
+`price_level_structure` is present and not `linear_cent` (the book prices in
+integer cents).
+**Confidence:** high (pinned live, both wire layers).
+
 **Claim:** Measured order-path latency from this laptop: send→ack ~90–94 ms
 (RTT-dominated), exec→send 352 µs with pre-signed headers + pre-staged body
 (spec §3 stage-7 "<1 ms" target confirmed achievable). The ≤60 ms
@@ -323,6 +361,28 @@ detection→ack gate is judged from the M5 region, not from here.
 other systems**. Any cancel logic must be scoped to the session's own order
 ids (`OrderRegistry`) — an account-wide cancel-all would destroy unrelated
 positions. This is now hard-coded policy in `rest.rs::cancel_orders`.
+
+**Claim (code landed 2026-07-13; empirical numbers PENDING — see Open item 6):**
+The orders `RestClient` now sets `tcp_nodelay(true)` (Nagle off) and h2
+keep-alive (`http2_keep_alive_interval` 30 s + `_while_idle`), and
+`main.rs::arm` keeps the orders connection warm — a one-shot pre-warm after
+`wait_for_books` plus a 60 s `GET /exchange/status` keep-warm ping, both under
+the 90 s `pool_idle_timeout` — so the first live POST never pays a cold
+TLS+TCP handshake. ALPN is left to negotiate (NOT `http2_prior_knowledge`,
+which would break the h1 wiremock tests). Separately, `send→ack` is now split
+at TTFB into `send→hdrs` (network + matching engine) and `hdrs→ack` (body read
++ JSON parse), and the ledger disk write was removed from the fire path
+(`record_send` measured 27 ns/op, `perf_risk_record_send`), so `exec→send` no
+longer contains a blocking write.
+**Evidence (code):** `src/kalshi/rest.rs` builder + `warm`/`spawn_conn_warmer`;
+`src/main.rs::arm` wiring; `tests/perf_budget.rs::perf_risk_record_send`.
+**Pending (live):** negotiated wire version to the orders origin (h1 vs h2),
+connection reuse across orders, and the `send→hdrs`/`hdrs→ack` split — captured
+by `probe-order --allow-mention` (now prints `send→hdrs / hdrs→ack / send→ack
+[VERSION]`).
+**Confidence:** medium (code landed + unit/mock-verified; live wire numbers
+pending). **Re-verify:** reqwest upgrade / Cloudflare edge change / any
+first-order latency regression.
 
 ## M1 detector pins (2026-07-11)
 
@@ -392,6 +452,95 @@ never match.
 transcripts), 2026-07-11.
 **Confidence:** high. **Re-verify:** on sherpa-onnx crate upgrade.
 
+## streaming_ctc engine pins (2026-07-12)
+
+**Claim:** `ort` (onnxruntime bindings) and `sherpa-onnx` **cannot both static-
+link onnxruntime** in one binary — use `ort` `load-dynamic` + a runtime dylib.
+**Source:** live build/test on this box (aarch64-apple-darwin), 2026-07-12.
+**Evidence:** `sherpa-onnx-sys` 1.13.4 statically links onnxruntime **1.24.2**
+(API 24; `SHERPA_ONNX_STATIC_LIBS` includes `onnxruntime`). `ort` 2.0.0-rc.12
+requests API **27**. With both static, the linker resolves the shared `Ort*`
+symbols to one copy per binary: the `tests/sherpa_kws` binary picked 1.24.2 →
+`"requested API version [27] is not available … Current ORT Version is: 1.24.2"`
+→ **SIGSEGV**; the lib-test binary picked ort's 1.27 and worked (fragile/
+nondeterministic). Fix: `ort = { features = ["ndarray", "load-dynamic"] }` (keep
+defaults — `default-features=false` fails ort's own compile on a missing VitisAI
+EP field). ort then dlopens onnxruntime from `ORT_DYLIB_PATH`; sherpa keeps its
+static 1.24.2; no clash. Verified: full suite green (88 lib + all integration
+incl. sherpa_kws) with `ORT_DYLIB_PATH` → `libonnxruntime.1.27.1.dylib`.
+**Implication:** vendor `onnxruntime-osx-arm64-1.27.1` (tgz sha256
+`e42b77a7281cc6e55141bf44fcfbac2c782b823a491bbb6ac33c781dd991f8a6`);
+`scripts/fetch-models.sh` downloads it and prints
+the `export ORT_DYLIB_PATH`. Only the streaming_ctc engine needs it (lazy load on
+first Session); sherpa_kws-only runs are unaffected. Linux/CI needs the matching
+`onnxruntime-linux-*-1.27.x` dylib.
+**Confidence:** high. **Re-verify:** on `ort` or `sherpa-onnx` crate upgrade
+(check the onnxruntime versions still differ / API bump).
+
+**Claim:** The streaming zipformer2-CTC ONNX exposes CTC **frame posteriors** and
+a fully self-describing streaming-state signature; fbank matches via pure-Rust
+`kaldi-native-fbank`.
+**Source:** `sherpa-onnx-streaming-zipformer-small-ctc-zh-int8-2025-04-01`
+(Apache-2.0) driven via `ort`, 2026-07-12 (Chinese stand-in for plumbing only).
+**Evidence:** inputs `x [N,77,80]` + 74 state tensors; output `log_probs
+[N,T',1000]` = per-frame log-posteriors. Metadata: `model_type=zipformer2`,
+`T=77`, `decode_chunk_len=64`. Feeding: 77-frame window, advance 64; caches
+carried (`new_X`→`X`). Init states derived generically from the signature (batch
+dim → 1, zero-fill). Greedy decode: silence→0 tokens, 0.wav→31, 1.wav→26
+(content-dependent ⇒ posteriors correct). `kaldi-native-fbank` 0.1.0 is pure Rust
+(the C++ `knf-rs` binding fails to build — CommandLineTools libc++ headers
+unresolvable) with exact HTK mel `1127·ln(1+f/700)`; config: 80-bin, use_energy
+false, dither 0, snip_edges false. Geometry here: `decode_chunk_len=64`→640 ms
+chunk step, `T−chunk=13`→~130 ms right-context (NOT ≤80 ms — this is a plumbing
+proxy; the English model needs small `decode_chunk_len`).
+**Implication:** the English model is a drop-in provided it exports the same
+signature (an icefall causal `--decode-chunk-len ~8` zipformer-CTC does).
+Re-derive `kws_compile` pinned vectors if its BPE vocab ≠ gigaspeech-500.
+**Sourcing (scoped 2026-07-14, `docs/CTC-MODEL-SOURCING.md`):** the export script
+`icefall/egs/librispeech/ASR/zipformer/export-onnx-streaming-ctc.py` already emits
+this exact signature — the gap is purely a **checkpoint** trained `--causal 1
+--use-ctc 1`. No published English streaming×CTC checkpoint found (shelf English
+streaming models are transducers; shelf English CTC checkpoints are non-causal).
+Effort tiers: T0 hours/CPU if such a checkpoint is found, T1 GPU-hours to finetune
+a CTC head onto a causal transducer, T2 GPU-days from scratch. `bench-detector
+--engines streaming_ctc` panic-safe as of 2026-07-14 (bench configs now carry a
+`[detector.streaming_ctc]` section).
+**Confidence:** high (plumbing); the ≤350 ms latency number awaits the English
+model + paced bake-off.
+
+## Q-M3 — Twilio Media Streams request signature
+
+**Claim:** Twilio signs each request with
+`X-Twilio-Signature = base64(HMAC-SHA1(authToken, URL + concat(sorted POST params)))`,
+where `URL` is the exact request URL (for `<Stream>`, the `wss://…` stream URL)
+and params are each `key`+`value` concatenated in lexicographic key order. A WS
+upgrade is a GET with no body params, so the signed string is the URL alone;
+Media Streams `<Parameter>`s are delivered in the `start` message, not the URL,
+and do not participate in the upgrade-request signature.
+**Source:** Twilio "Validating requests" security docs (HMAC-SHA1 scheme,
+official as of 2026-07-12); RustCrypto `hmac`+`sha1` for the primitive.
+**Evidence:** the HMAC-SHA1 primitive is pinned by an RFC 2202 known-answer
+vector (`hmac_sha1_matches_rfc2202_vector`); the URL-concat scheme + constant-
+time compare are round-trip tested (`signature_round_trips_and_rejects_tampering`).
+**Implication:** `TwilioWsSource` validates in the `accept_hdr_async` handshake
+(`valid_twilio_signature`); mismatch → 403. Token from `TWILIO_AUTH_TOKEN`; the
+exact configured stream URL may be pinned via `TWILIO_STREAM_URL` (else rebuilt
+from `Host` + request target).
+**Confidence:** **live-verified 2026-07-14** (loopback rehearsal, ngrok-fronted):
+three real Twilio streams accepted with `TWILIO_STREAM_URL` pinned as the
+signature base — "X-Twilio-Signature verified" on every handshake, no 403s.
+Evidence CallSids `CA919fb7…` (outbound_track TTS rehearsal, 1280 frames, 3/3
+keyword detections), `CA5831c4…` (inbound_track vs the real MS bridge via
+`twilio-dial.sh` + DTMF, 3585 frames, 0 drops), `CA2dfec9…` (full
+`launch-event.sh` chain, 2674 frames, 0 drops, clean STOP+hangup teardown,
+report.json written). Message shapes (`connected`/`start` with
+mediaFormat audio/x-mulaw 8 kHz mono/`media`/`stop`) matched the pinned docs
+shapes on all three calls (`docs/TWILIO.md` stamped live-verified).
+**Also live-found 2026-07-14:** a TCP connection that fails the WS handshake
+used to kill the armed pipeline (single-accept). Fixed: the listener now drops
+failed handshakes and keeps waiting until `accept_timeout`
+(`tests/twilio_source.rs::stray_connection_does_not_kill_the_listener`).
+
 ## Open items carried forward
 
 1. ~~Clock-skew tolerance~~ — RESOLVED: ±30 s, measured (see Q3).
@@ -403,3 +552,11 @@ transcripts), 2026-07-11.
 4. **Exact max batch size** — undocumented; bounded by write bucket only.
 5. §12 Q7 (Rust SIP story) and Q8 (conference-provider landscape) — M3
    concerns, deliberately not researched yet.
+6. ~~Order-connection latency evidence~~ — RESOLVED 2026-07-14: `probe-order
+   --allow-mention` against live Mentions markets (KXEARNINGSMENTIONMS-26JUL15-
+   TARI and -RECE, both active): negotiated **HTTP/1.1**, cold single-shot CLI
+   runs measured `build+sign` 2.6–3.3 ms, `send→hdrs` 128–134 ms,
+   `hdrs→ack` 26–31 µs (send→ack ≈ 128–134 ms). These are COLD numbers (each
+   CLI invocation opens a fresh TLS+TCP connection); the armed pipeline's
+   pre-warmed connection should shave the handshake share — capture a warm
+   sample from tomorrow's live run report.

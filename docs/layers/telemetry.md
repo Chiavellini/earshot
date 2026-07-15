@@ -10,7 +10,9 @@ layer — it never sits between two stages.
   u64)` (`src/telemetry.rs`). Edge names are the fixed `EDGES` list —
   pipeline: `capture→preproc`, `preproc→chunk`, `chunk→detect`,
   `detect→decision`, `capture→decision`; execution: `decision→exec`,
-  `presign_age`, `exec→send`, `send→ack`, `decision→ack`, `capture→ack`.
+  `presign_age`, `exec→send`, `send→hdrs`, `hdrs→ack`, `send→ack`,
+  `decision→ack`, `capture→ack` (`send→hdrs`/`hdrs→ack` split `send→ack` at
+  TTFB — see the executor doc).
 - **Ownership rule:** each recorder is owned by exactly one thread/task (the
   detect thread owns the pipeline recorder; the executor owns its own) —
   recording is lock-free-by-ownership (~20 ns into a pre-allocated

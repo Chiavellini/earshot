@@ -1,0 +1,92 @@
+# streaming_ctc variant of the JPM live config (configs/twilio-live.toml).
+#
+# PURPOSE: drop-in-ready skeleton for the low-lookahead detector. The custom
+# streaming-CTC spotter (0–80 ms lookahead, real per-frame confidence) is the
+# only engine on which prefix (Fast-tier) firing actually pays off — sherpa_kws
+# bakes in ~320 ms lookahead so a token-early Fast hit saves ~35–70 ms
+# (docs/BAKEOFF.md M1 verdict). This config is DARK until an English
+# streaming-Zipformer-CTC ONNX exists (the M4 detector-latency blocker — no
+# off-the-shelf English CTC export; see the model-sourcing scoping note).
+#
+# WHAT'S DELIBERATELY LEFT AS TODO (all model-specific — cannot be filled
+# without the English model's tokenizer + a dev-corpus tuning pass):
+#   1. detector.streaming_ctc.model_dir  → real English CTC model dir.
+#   2. per-keyword fast_prefixes          → recompute the token-boundary cut on
+#      THIS model's BPE via `earshot compile-keywords --config <this> ` and the
+#      3-gate method in docs/PREFIX-SAFETY.md. The sherpa cuts (tari/recess) do
+#      NOT transfer — different tokenizer.
+#   3. thresholds                         → the CTC confidence scale is a real
+#      geometric-mean posterior in (0,1], NOT sherpa's boosted internal score.
+#      Retune fast_/confirmed_threshold + min_confidence_* on the dev split.
+#
+# Risk envelope is unchanged from twilio-live.toml: 1¢ IOC × 1 contract per
+# tranche, --allow-mention non-crossing, $1 cumulative ledger.
+
+[event]
+id        = "JPM-Q2-2026-CTC"
+starts_at = "2026-07-14T12:30:00Z"
+
+[pipeline]
+# 80 ms (spec production value): for a low-lookahead engine, chunk accumulation
+# is the dominant remaining latency term, so smaller chunks pay off here (unlike
+# sherpa, where internal lookahead dominates). Consider 40 ms after an RTF check.
+chunk_ms       = 80
+resample_to_hz = 16000          # asserted by the streaming_ctc engine
+
+[detector]
+engine = "streaming_ctc"
+
+[detector.streaming_ctc]
+model_dir         = "models/sherpa-onnx-streaming-zipformer-ctc-en-TBD"  # TODO
+num_threads       = 1
+blank_id          = 0           # k2/sherpa CTC exports use 0
+default_threshold = 0.5         # TODO retune on CTC confidence scale
+refractory_ms     = 2000
+
+[[sources]]
+kind = "twilio_stream"
+bind = "127.0.0.1:8080"
+
+[kalshi]
+series = "KXEARNINGSMENTIONJPM"
+
+[risk]
+max_order_notional_cents = 100
+max_event_notional_cents = 100
+book_stale_ms            = 2000
+audio_stale_ms           = 2000
+allowlist_tickers = [
+  "KXEARNINGSMENTIONJPM-26JUL14-TARI",
+  "KXEARNINGSMENTIONJPM-26JUL14-RECE",
+  "KXEARNINGSMENTIONJPM-26JUL14-INFL",
+]
+
+# Start confirmed_only (like the sherpa live config). Enable two_tier per word
+# ONLY after its fast_prefix is validated on this model (token boundary + FA
+# autopsy + market-outcome safety, docs/PREFIX-SAFETY.md).
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONJPM-26JUL14-TARI"
+phrase           = "tariff"
+variants         = ["tariff", "tariffs"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+# fast_prefixes  = ["<recompute on CTC vocab>"]   # TODO
+# fast_threshold = 0.5                             # TODO
+# confirmed_threshold = 0.5                        # TODO
+
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONJPM-26JUL14-RECE"
+phrase           = "recession"
+variants         = ["recession", "recessions"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONJPM-26JUL14-INFL"
+phrase           = "inflation"
+variants         = ["inflation"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"

@@ -110,8 +110,8 @@ async fn subscribes_and_populates_cache() {
     ws.send(Message::Text(snapshot(&[(40, 100)], &[(55, 200)], 3))).await.unwrap();
     wait_for_seq(&cache, 3).await;
     let book = cache.read(TICKER).unwrap();
-    assert_eq!(book.best_bid(), Some((40, 100)));
-    assert_eq!(book.best_ask(), Some((45, 200))); // no 55 ≡ yes ask 45
+    assert_eq!(book.best_bid(), Some((40, 10_000)));
+    assert_eq!(book.best_ask(), Some((45, 20_000))); // no 55 ≡ yes ask 45
     assert!(cache.feed_age_ns() < 1_000_000_000);
 
     ws.send(Message::Text(delta("no", 55, -200, 4))).await.unwrap();
@@ -141,8 +141,8 @@ async fn reconnects_and_resubscribes_after_server_drop() {
     ws2.send(Message::Text(snapshot(&[(60, 7)], &[(30, 9)], 2))).await.unwrap();
     wait_for_seq(&cache, 2).await;
     let book = cache.read(TICKER).unwrap();
-    assert_eq!(book.best_bid(), Some((60, 7)));
-    assert_eq!(book.best_ask(), Some((70, 9)));
+    assert_eq!(book.best_bid(), Some((60, 700)));
+    assert_eq!(book.best_ask(), Some((70, 900)));
     assert_eq!(book.yes_bids.len(), 1, "old levels must not survive the reconnect");
     client.abort();
 }
@@ -194,6 +194,6 @@ async fn error_message_does_not_poison_the_cache() {
     ws.send(Message::Text("not json at all".into())).await.unwrap();
     ws.send(Message::Text(snapshot(&[(40, 100)], &[], 9))).await.unwrap();
     wait_for_seq(&cache, 9).await;
-    assert_eq!(cache.read(TICKER).unwrap().best_bid(), Some((40, 100)));
+    assert_eq!(cache.read(TICKER).unwrap().best_bid(), Some((40, 10_000)));
     client.abort();
 }

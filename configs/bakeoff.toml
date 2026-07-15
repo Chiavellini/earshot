@@ -28,6 +28,20 @@ default_threshold = 0.20
 default_boost     = 2.0
 refractory_ms     = 2000
 
+# Present so `bench-detector --engines streaming_ctc` can BUILD the detector
+# without panicking: bench `run_cell` overrides only `detector.engine`, and
+# `factory::build_detector` does `streaming_ctc.as_ref().expect(...)` — with no
+# section that expect panics (src/bench/mod.rs, src/detector/factory.rs).
+# validate() permits this section alongside sherpa_kws (engine stays sherpa_kws
+# for the sherpa cells). The streaming_ctc cell needs an ENGLISH streaming-CTC
+# model whose tokens.txt covers these keyword pieces; until that exists the cell
+# errors cleanly ("token piece … not in tokens.txt"), it does not panic.
+# model_dir is a TBD placeholder — the model is the M4 detector-latency blocker.
+[detector.streaming_ctc]
+model_dir         = "models/sherpa-onnx-streaming-zipformer-ctc-en-TBD"
+num_threads       = 1
+default_threshold = 0.5
+
 [[sources]]                      # unused by bench-detector (corpus supplies audio)
 kind = "replay"
 path = "unused.wav"

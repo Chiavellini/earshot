@@ -22,7 +22,15 @@ id        = "JPM-Q2-2026"
 starts_at = "2026-07-14T12:30:00Z"
 
 [pipeline]
-chunk_ms       = 160
+# 80 ms, not 160: chunk accumulation is the dominant BUDGETED pipeline latency
+# (capture→decision p95 ≈ one chunk; tests/perf_budget.rs perf_full_chain_paced
+# bounds it at chunk+10ms), so halving the chunk removes ~80 ms from every
+# detection. chunk_ms is a pure latency dial — re-verified 2026-07-14 on
+# AAPL-Q2-2026: tariff Confirmed recall 0.89 / prec 1.00 / 0 FA is bit-identical
+# at chunk 40/80/160 (docs/BAKEOFF.md). 80 is the spec production value; the
+# earlier 160 here was a regression. (40 is also accuracy-safe, pending an RTF
+# check — perf_detector_rtf.)
+chunk_ms       = 80
 resample_to_hz = 16000
 
 [detector]
@@ -35,6 +43,7 @@ max_active_paths  = 4
 default_threshold = 0.20
 default_boost     = 2.0
 refractory_ms     = 2000
+fp32              = true          # fp32 encoder: recall win, FA down on tariff/recession (docs/BAKEOFF.md)
 
 [[sources]]
 kind = "twilio_stream"

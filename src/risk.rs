@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
@@ -17,6 +17,15 @@ pub const HARD_DAILY_LOSS_CENTS: u64 = 100_000; // $1,000
 /// M2 posture: cumulative real-money spend across ALL live drills/sessions
 /// is capped at $1.00, enforced here and persisted across runs.
 pub const PROBE_LEDGER_CAP_CENTS: u64 = 100;
+/// Fillable mention posture (the deliberate step past the 1¢ no-fill probe):
+/// a single order's price may cross a real ask up to this ceiling so the
+/// executor can actually fill. This is a per-order PRICE bound only — real
+/// spend stays clamped by the config notional caps AND the $1 probe ledger
+/// (`PROBE_LEDGER_CAP_CENTS`), which remain the money backstops. Chosen to
+/// cover the cheap mention strikes (~20–30¢ asks) while staying far under the
+/// $500 hard order cap. Gated behind `arm --i-am-live --allow-mention
+/// --fillable`; never reached by the default probe posture.
+pub const MENTION_FILL_CAP_CENTS: u64 = 50;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -96,30 +105,87 @@ struct Ledger {
     spent_cents: u64,
 }
 
+/// Owns the persisted probe ledger and drives its disk writes OFF the fire
+/// path. `record_send` only touches the in-memory `ledger` (the authoritative
+/// in-session cap) and pokes `dirty`; a background persister (spawned in
+/// `main.rs::arm`) coalesces those pokes into disk writes. Single-shot CLI
+/// commands and tests spawn no persister — the `Drop` flush is what makes the
+/// debit durable for them. Totals are monotonic, so any persist writes a value
+/// no older than the last, keeping last-write/concurrent persists safe.
+struct LedgerStore {
+    path: PathBuf,
+    ledger: Mutex<Ledger>,
+    dirty: tokio::sync::Notify,
+}
+
+impl LedgerStore {
+    /// Serialize the current total (brief lock) and write it ATOMICALLY
+    /// (temp+rename — a kill mid-write must never truncate the money
+    /// backstop; see `RiskGate::new`'s corrupt-file refusal). Never on the
+    /// fire path. Preserves the `{"spent_cents": N}` on-disk shape.
+    fn persist(&self) {
+        let json = {
+            let ledger = self.ledger.lock().unwrap();
+            serde_json::to_string_pretty(&*ledger)
+        };
+        match json {
+            Ok(json) => {
+                if let Err(e) = crate::fsio::write_atomic(&self.path, json.as_bytes()) {
+                    tracing::error!("probe ledger persist failed: {e}");
+                }
+            }
+            Err(e) => tracing::error!("probe ledger serialize failed: {e}"),
+        }
+    }
+}
+
+impl Drop for LedgerStore {
+    fn drop(&mut self) {
+        // Final synchronous flush (teardown, not the hot path): guarantees the
+        // last debit reaches disk even when no persister task ran.
+        self.persist();
+    }
+}
+
 pub struct RiskGate {
     cfg: RiskConfig,
     armed: AtomicBool,
     killed: AtomicBool,
     event_spent_cents: AtomicU64,
-    ledger_path: PathBuf,
-    ledger: Mutex<Ledger>,
+    store: Arc<LedgerStore>,
 }
 
 impl RiskGate {
     pub fn new(cfg: RiskConfig, state_dir: &Path) -> std::io::Result<Self> {
         std::fs::create_dir_all(state_dir)?;
         let ledger_path = state_dir.join("probe_ledger.json");
-        let ledger: Ledger = std::fs::read_to_string(&ledger_path)
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default();
+        // Missing file = fresh event, start at zero. A PRESENT file that does
+        // not parse is refused loudly: defaulting a corrupt ledger to zero
+        // would silently erase the cross-run $1 spend backstop.
+        let ledger: Ledger = match std::fs::read_to_string(&ledger_path) {
+            Ok(s) => serde_json::from_str(&s).map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!(
+                        "corrupt probe ledger {} ({e}) — REFUSING to start: this file is the \
+                         cumulative money backstop; inspect and restore it, never delete blindly",
+                        ledger_path.display()
+                    ),
+                )
+            })?,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ledger::default(),
+            Err(e) => return Err(e),
+        };
         Ok(RiskGate {
             cfg: cfg.clamped(),
             armed: AtomicBool::new(false),
             killed: AtomicBool::new(false),
             event_spent_cents: AtomicU64::new(0),
-            ledger_path,
-            ledger: Mutex::new(ledger),
+            store: Arc::new(LedgerStore {
+                path: ledger_path,
+                ledger: Mutex::new(ledger),
+                dirty: tokio::sync::Notify::new(),
+            }),
         })
     }
 
@@ -141,7 +207,7 @@ impl RiskGate {
     }
 
     pub fn ledger_spent_cents(&self) -> u64 {
-        self.ledger.lock().unwrap().spent_cents
+        self.store.ledger.lock().unwrap().spent_cents
     }
 
     /// Full pre-send check. `book_age_ns`/`audio_age_ns` are u64::MAX when
@@ -179,7 +245,7 @@ impl RiskGate {
         if would_event > self.cfg.max_event_notional_cents {
             return Err(Refusal::EventNotional { would: would_event, cap: self.cfg.max_event_notional_cents });
         }
-        let ledger = self.ledger.lock().unwrap();
+        let ledger = self.store.ledger.lock().unwrap();
         let would_ledger = ledger.spent_cents + notional;
         if would_ledger > PROBE_LEDGER_CAP_CENTS {
             return Err(Refusal::ProbeLedger { would: would_ledger, cap: PROBE_LEDGER_CAP_CENTS });
@@ -188,36 +254,84 @@ impl RiskGate {
     }
 
     /// Debit worst-case notional the moment an order is sent (before the ack:
-    /// an ambiguous timeout must still count as spent).
+    /// an ambiguous timeout must still count as spent). The in-memory debit is
+    /// synchronous and authoritative; the disk write is deferred to the
+    /// background persister (or the `Drop` flush) so NO I/O sits on the fire
+    /// path.
     pub fn record_send(&self, price_cents: u32, count: u32) {
         let notional = price_cents as u64 * count as u64;
         self.event_spent_cents.fetch_add(notional, Ordering::SeqCst);
-        let mut ledger = self.ledger.lock().unwrap();
-        ledger.spent_cents += notional;
-        if let Ok(json) = serde_json::to_string_pretty(&*ledger) {
-            if let Err(e) = std::fs::write(&self.ledger_path, json) {
-                tracing::error!("probe ledger persist failed: {e}");
-            }
+        {
+            let mut ledger = self.store.ledger.lock().unwrap();
+            ledger.spent_cents += notional;
         }
+        self.store.dirty.notify_one();
+    }
+
+    /// Spawn the background ledger persister: wake on each `record_send` and
+    /// write the current total off the fire path (a burst coalesces into one
+    /// write). Mirrors `Presigner::spawn_refresher`. Wired only in
+    /// `main.rs::arm`; single-shot commands rely on the `Drop` flush instead.
+    pub fn spawn_persister(&self, handle: &tokio::runtime::Handle) -> tokio::task::JoinHandle<()> {
+        let store = Arc::clone(&self.store);
+        handle.spawn(async move {
+            loop {
+                store.dirty.notified().await;
+                store.persist();
+            }
+        })
+    }
+
+    /// Force a synchronous ledger write. Used at teardown (`main.rs::arm`) to
+    /// guarantee the final total is durable before the persister is aborted.
+    pub fn flush(&self) {
+        self.store.persist();
     }
 }
 
+/// Test hook: the SIGTERM path ends in `process::exit`, which would kill the
+/// test runner — `tests/kill_sigterm.rs` flips this off to observe the kill
+/// sequence in-process. Always true in production.
+#[doc(hidden)]
+pub static SIGTERM_EXITS: AtomicBool = AtomicBool::new(true);
+
 /// Kill-switch watcher: polls `state/STOP` every 200 ms and listens for
-/// SIGINT/SIGTERM. On trigger, runs `on_kill` (cancel-all) then flips the
-/// gate. Returns the poller JoinHandle.
-pub fn spawn_kill_watcher<F, Fut>(
+/// SIGINT and SIGTERM. On any trigger: flip the gate, run `on_kill`
+/// (cancel-all), force a durable ledger flush.
+///
+/// STOP/SIGINT then let the process live (the pipeline winds down disarmed —
+/// operator-driven, the supervisor keeps its report path). SIGTERM is the
+/// UNATTENDED kill (launchd, `launch-event.sh`'s trap, the supervisor's
+/// port cleanup): after the kill sequence it runs `on_terminate` (last-words
+/// reporting) and exits the process with 143, because the sender expects
+/// termination — swallowing SIGTERM would leak the process and wedge the
+/// port. Returns the poller JoinHandle.
+pub fn spawn_kill_watcher<F, Fut, G>(
     gate: std::sync::Arc<RiskGate>,
     stop_file: PathBuf,
     on_kill: F,
+    on_terminate: G,
 ) -> tokio::task::JoinHandle<()>
 where
     F: Fn() -> Fut + Send + Sync + 'static,
     Fut: std::future::Future<Output = ()> + Send,
+    G: FnOnce() + Send + 'static,
 {
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(std::time::Duration::from_millis(200));
         let ctrl_c = tokio::signal::ctrl_c();
         tokio::pin!(ctrl_c);
+        // Install failure would leave SIGTERM at its default (instant death,
+        // no cancel) — degrade loudly to STOP/SIGINT-only rather than
+        // panicking the watcher (a dead watcher is a dead kill switch).
+        let mut sigterm = match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(s) => Some(s),
+            Err(e) => {
+                tracing::error!("SIGTERM handler install FAILED ({e}) — unattended kills will not cancel orders");
+                None
+            }
+        };
+        let mut terminated = false;
         loop {
             tokio::select! {
                 _ = tick.tick() => {
@@ -230,15 +344,34 @@ where
                     tracing::error!("SIGINT — killing");
                     break;
                 }
+                _ = async {
+                    match sigterm.as_mut() {
+                        Some(s) => { s.recv().await; }
+                        None => std::future::pending::<()>().await,
+                    }
+                } => {
+                    tracing::error!("SIGTERM — killing, then exiting");
+                    terminated = true;
+                    break;
+                }
             }
         }
         let t0 = MonotonicNs::now();
         gate.kill();
         on_kill().await;
+        // Kill is an emergency: make the ledger durable NOW — on SIGTERM
+        // neither the persister nor the Drop flush will get another chance.
+        gate.flush();
         tracing::info!(
             kill_to_cancel_ms = MonotonicNs::now().saturating_since(t0) / 1_000_000,
-            "kill switch complete: orders cancelled, disarmed"
+            "kill switch complete: orders cancelled, disarmed, ledger flushed"
         );
+        if terminated {
+            on_terminate();
+            if SIGTERM_EXITS.load(Ordering::SeqCst) {
+                std::process::exit(143);
+            }
+        }
     })
 }
 
@@ -310,6 +443,35 @@ mod tests {
         assert!(matches!(g.check_order("T", 2, 1, 0, 0), Err(Refusal::ProbeLedger { .. })));
         g.record_send(1, 1);
         assert!(matches!(g.check_order("T", 1, 1, 0, 0), Err(Refusal::ProbeLedger { .. })));
+    }
+
+    #[test]
+    fn corrupt_ledger_refuses_to_start() {
+        // A truncated/garbage ledger must NEVER default to zero spend — that
+        // would erase the cross-run money backstop (post-mortem 2026-07-15).
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("probe_ledger.json"), "{\"spent_c").unwrap();
+        let err = RiskGate::new(permissive(), dir.path()).map(|_| ()).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+        // Missing file stays fine: fresh event starts at zero.
+        let dir2 = tempfile::tempdir().unwrap();
+        assert_eq!(RiskGate::new(permissive(), dir2.path()).unwrap().ledger_spent_cents(), 0);
+    }
+
+    #[test]
+    fn ledger_persist_is_atomic_no_temp_residue() {
+        let dir = tempfile::tempdir().unwrap();
+        let g = RiskGate::new(permissive(), dir.path()).unwrap();
+        g.record_send(1, 30);
+        g.flush();
+        let names: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        assert_eq!(names, vec!["probe_ledger.json"], "unexpected files: {names:?}");
+        // And the flushed file round-trips.
+        let g2 = RiskGate::new(permissive(), dir.path()).unwrap();
+        assert_eq!(g2.ledger_spent_cents(), 30);
     }
 
     #[test]

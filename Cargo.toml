@@ -13,9 +13,19 @@ bytes = "1"
 clap = { version = "4", features = ["derive"] }
 futures-util = "0.3"
 hdrhistogram = "7"
+http = "1"
+hmac = "0.12"
 hound = "3"
+sha1 = "0.10"
+kaldi-native-fbank = "0.1"
 libc = "0.2"
-reqwest = { version = "0.12", features = ["json", "blocking"] }
+ndarray = "0.16"
+# load-dynamic: ort dlopens its own onnxruntime (1.27) at runtime via
+# ORT_DYLIB_PATH, so it does NOT statically link onnxruntime — avoiding a symbol
+# clash with sherpa-onnx's bundled static onnxruntime 1.24.2 (they can't share:
+# ort needs API 27). See docs/layers/streaming_ctc.md.
+ort = { version = "2.0.0-rc.12", features = ["ndarray", "load-dynamic"] }
+reqwest = { version = "0.12", features = ["json", "blocking", "http2"] }
 rsa = { version = "0.9", features = ["sha2"] }
 rtrb = "0.3"
 serde = { version = "1", features = ["derive"] }

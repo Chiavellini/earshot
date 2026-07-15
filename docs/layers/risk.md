@@ -11,8 +11,10 @@ for: EV/fee economics (executor) or market validation (validator).
     audio_age_ns) -> Result<(), Refusal>` — check order, in order:
     killed? → armed? → allowlist → book stale → audio stale → order notional
     → event notional → probe ledger.
-  - `RiskGate::record_send(price_cents, count)` — worst-case debit, called
-    BEFORE every send.
+  - `RiskGate::record_send(price_cents, count)` — worst-case in-memory debit,
+    called BEFORE every send (disk write is off-path — see Obligations).
+  - `RiskGate::spawn_persister(handle)` — background ledger writer;
+    `RiskGate::flush()` forces one synchronous write at teardown.
   - `RiskGate::arm() / kill() / is_killed()`.
 - Constructed once per session: `RiskGate::new(RiskConfig, state_dir)`
   (`src/risk.rs`); `RiskConfig` deserializes from the `[risk]` TOML block and
@@ -20,20 +22,43 @@ for: EV/fee economics (executor) or market validation (validator).
 
 ## Exit door
 - **Type:** `Result<(), risk::Refusal>` verdicts (typed reasons, rendered
-  into OrderRecords), plus side effects: `state/probe_ledger.json`
+  into OrderRecords), plus side effects: `<state-dir>/probe_ledger.json`
   (cumulative real-money spend, survives restarts) and the kill watcher.
-- **Kill watcher:** `spawn_kill_watcher(gate, stop_file, on_kill)` — polls
-  `state/STOP` every 200 ms + SIGINT; on trigger runs `on_kill` (cancel the
-  session's orders) then flips the gate. Measured STOP→cancelled: 140 ms.
+  `RiskGate::new` takes the state dir as a `&Path`; `arm`'s `--state-dir` flag
+  (default `state/`) sets it, so concurrent events each get their own ledger +
+  STOP and never collide (`docs/MULTI-EVENT.md` §8).
+- **Kill watcher:** `spawn_kill_watcher(gate, stop_file, on_kill, on_terminate)`
+  — polls `<state-dir>/STOP` every 200 ms + SIGINT + SIGTERM; on any trigger
+  flips the gate, runs `on_kill` (cancel the session's orders), then forces a
+  durable ledger `flush()`. STOP/SIGINT let the process live (pipeline winds
+  down disarmed). SIGTERM is the UNATTENDED kill (launchd, launch-event.sh's
+  trap, the supervisor's port cleanup): it additionally runs `on_terminate`
+  (last-words report in `main.rs::arm`) and exits the process with 143 —
+  swallowing SIGTERM would leak the process and wedge the bind port.
+  Measured STOP→cancelled: 140 ms.
 
 ## Obligations
 - Hard consts (`HARD_MAX_ORDER_NOTIONAL_CENTS`, `HARD_MAX_EVENT_…`,
-  `HARD_DAILY_LOSS_…`, `PROBE_LEDGER_CAP_CENTS = 100` for M2) are NOT
+  `HARD_DAILY_LOSS_…`, `PROBE_LEDGER_CAP_CENTS = 100` for M2,
+  `MENTION_FILL_CAP_CENTS = 50` for the fill posture) are NOT
   user-overridable upward at runtime (spec §11). Raising one is a code
   change with review, never a config change.
 - Unknown staleness (`u64::MAX`) is stale — refuse (P3).
-- Ledger is debited before sends and persisted synchronously; an ambiguous
-  order outcome still counts as spent.
+- The in-memory ledger debit (`record_send`) is synchronous and BEFORE every
+  send — the authoritative in-session cap; an ambiguous order outcome still
+  counts as spent. The DISK write is OFF the fire path: `record_send` only
+  pokes a `Notify`, and `spawn_persister` (wired in `main.rs::arm`) coalesces
+  those into writes. Single-shot commands and tests carry no persister — a
+  `Drop`/`flush()` synchronous write makes their debit durable. The kill
+  watcher also flushes on every trigger (on SIGTERM neither the persister nor
+  `Drop` gets another chance). Worst case, a crash between a send and the next
+  persist double-counts a few cents against the $1 probe cap; the in-memory
+  total is never lost within a session.
+- Ledger disk writes are ATOMIC (`fsio::write_atomic`, temp+rename) and a
+  PRESENT-but-corrupt `probe_ledger.json` makes `RiskGate::new` refuse to
+  start (missing file = fresh event = zero). Never default corrupt money
+  state to zero — that silently erases the cross-run backstop
+  (post-mortem 2026-07-15).
 - The kill path must cancel ONLY the session's `OrderRegistry` ids — the
   account carries ~52 unrelated resting orders from other systems
   (VERIFICATIONS, operational note). Never widen to account-wide.
@@ -57,11 +82,23 @@ selected by `arm`/`probe-order` differs:
   Mentions-category permitted (the verification run). `probe-order
   --allow-mention` additionally requires IOC and a price strictly below the
   best ask (`assert_non_crossing`) so the drill provably cannot fill.
-  Larger size on mention markets is the M4 decision, made only after a
-  verified live run.
+- **Mention-FILL (`--i-am-live --allow-mention --fillable`):** `mention_fill_gate`
+  — Mentions permitted AND a per-order price cap up to
+  `MENTION_FILL_CAP_CENTS` (= 50, `src/risk.rs`), so an order may cross a real
+  ask and actually fill. This is the deliberate step past the no-fill probe.
+  It relaxes ONLY the per-order price ceiling; real spend stays bounded by the
+  config notional caps and the unchanged $1 `PROBE_LEDGER_CAP_CENTS` (both
+  enforced in `check_order`). `--fillable` requires both `--i-am-live` and
+  `--allow-mention` (guarded in `main.rs::arm`). Raising the ceiling itself is
+  a code change with review, never per-run. Event-prep (`earshot prepare
+  --fillable`) sets each keyword's `max_price_cents = min(live ask, ceiling)`
+  — the smallest cap that fills.
 
 ## How to test in isolation
 - Pure unit tests with tempdir state (see `risk.rs` tests: clamping,
-  refusal ordering, ledger cap + persistence across gates).
+  refusal ordering, ledger cap + persistence across gates, corrupt-ledger
+  refusal, atomic-persist residue).
 - Kill watcher: `tests/exec_mock.rs::kill_switch_stop_file_cancels_and_disarms`
-  (tokio test, no network). Live: `earshot kill-drill --auto`.
+  (STOP path) and `tests/kill_sigterm.rs` (REAL SIGTERM raised at the test
+  process — the production kill path; own binary because the handler is
+  process-global). Live: `earshot kill-drill --auto`.

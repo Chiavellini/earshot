@@ -57,8 +57,8 @@ impl SherpaKwsDetector {
         let dir = &cfg.model_dir;
         let table = TokenTable::from_bpe_model(&dir.join("bpe.model"))
             .map_err(|e| DetectorBuildError::SherpaKws(e.to_string()))?;
-        let entries =
-            compile(keywords, &table, cfg).map_err(|e| DetectorBuildError::SherpaKws(e.to_string()))?;
+        let entries = compile(keywords, &table, cfg.default_threshold, cfg.default_boost)
+            .map_err(|e| DetectorBuildError::SherpaKws(e.to_string()))?;
         let fast: Vec<&CompiledEntry> = entries.iter().filter(|e| e.tier == Tier::Fast).collect();
         let conf: Vec<&CompiledEntry> = entries.iter().filter(|e| e.tier == Tier::Confirmed).collect();
         let label_map: HashMap<String, (KeywordId, Tier)> =
@@ -124,10 +124,12 @@ impl TierEngine {
 
         let mut sc = KeywordSpotterConfig::default();
         // int8 encoder/joiner + fp32 decoder: the combination sherpa's own
-        // examples ship; encoder dominates compute.
-        sc.model_config.transducer.encoder = Some(find_model("encoder", true)?);
+        // examples ship; encoder dominates compute. `cfg.fp32` flips the
+        // encoder/joiner to fp32 for the quantization arm of the miss-autopsy.
+        let quant = !cfg.fp32;
+        sc.model_config.transducer.encoder = Some(find_model("encoder", quant)?);
         sc.model_config.transducer.decoder = Some(find_model("decoder", false)?);
-        sc.model_config.transducer.joiner = Some(find_model("joiner", true)?);
+        sc.model_config.transducer.joiner = Some(find_model("joiner", quant)?);
         sc.model_config.tokens = Some(dir.join("tokens.txt").display().to_string());
         sc.model_config.num_threads = cfg.num_threads as i32;
         sc.max_active_paths = cfg.max_active_paths as i32;

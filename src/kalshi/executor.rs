@@ -115,8 +115,11 @@ pub struct OrderRecord {
     pub decision_ts: u64,
     pub exec_ts: u64,
     pub send_ts: Option<u64>,
+    /// Response-headers/TTFB timestamp (send→hdrs vs hdrs→ack forensics).
+    pub hdrs_ts: Option<u64>,
     pub ack_ts: Option<u64>,
     /// Book snapshot at decision time (LOST_RACE forensics, spec §5.6).
+    /// (price_cents, qty_centi_contracts) at decision time — forensic only.
     pub best_ask: Option<(u32, u32)>,
 }
 
@@ -212,6 +215,7 @@ async fn handle_intent(
         decision_ts: intent.decision_ts.0,
         exec_ts: exec_ts.0,
         send_ts: None,
+        hdrs_ts: None,
         ack_ts: None,
         best_ask: None,
     };
@@ -270,6 +274,7 @@ async fn handle_intent(
     match ctx.rest.create_order_presigned(staged.body.clone(), headers).await {
         Ok((ack, send_ts)) => {
             record.send_ts = Some(send_ts.0);
+            record.hdrs_ts = Some(ack.hdrs_ts.0);
             record.ack_ts = Some(ack.ack_ts.0);
             record.order_status = ack.order_status;
             record.order_id = ack.order_id;
@@ -278,6 +283,10 @@ async fn handle_intent(
             }
             let mut rec = recorder.lock().unwrap();
             rec.record("exec→send", send_ts.saturating_since(exec_ts));
+            // TTFB split of send→ack (all three recorded on the success path so
+            // e2e's all-edges-populated assertion holds).
+            rec.record("send→hdrs", ack.hdrs_ts.saturating_since(send_ts));
+            rec.record("hdrs→ack", ack.ack_ts.saturating_since(ack.hdrs_ts));
             rec.record("send→ack", ack.ack_ts.saturating_since(send_ts));
             rec.record("decision→ack", ack.ack_ts.saturating_since(intent.decision_ts));
             rec.record("capture→ack", ack.ack_ts.saturating_since(intent.audio_ts));

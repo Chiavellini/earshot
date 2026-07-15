@@ -1,0 +1,56 @@
+{
+  "id": "MSFT-Q3-2026",
+  "transcript": "corpus/transcripts/msft-q3-2026.txt",
+  "char_len": 55738,
+  "model": "rule-based-heuristic",
+  "sections": [
+    {
+      "order": 0,
+      "section_type": "operator_intro",
+      "title": "operator intro",
+      "boundary_marker": "",
+      "opening_quote": "Greetings, and welcome to the Microsoft Fiscal Year 2026 Third",
+      "char_offset": 0
+    },
+    {
+      "order": 1,
+      "section_type": "safe_harbor",
+      "title": "safe harbor",
+      "boundary_marker": "forward-looking statement",
+      "opening_quote": "forward-looking statements, which are predictions, projections, or other statements about",
+      "char_offset": 2458
+    },
+    {
+      "order": 2,
+      "section_type": "ceo_remarks",
+      "title": "ceo remarks",
+      "boundary_marker": "turn the call over to",
+      "opening_quote": "turn the call over to Satya. Thank you very much,",
+      "char_offset": 3047
+    },
+    {
+      "order": 3,
+      "section_type": "cfo_remarks",
+      "title": "cfo remarks",
+      "boundary_marker": "turn it over to",
+      "opening_quote": "turn it over to Amy to walk through our financial",
+      "char_offset": 15884
+    },
+    {
+      "order": 4,
+      "section_type": "qa",
+      "title": "qa",
+      "boundary_marker": "our first question",
+      "opening_quote": "our first question comes from the line of Keith Weiss",
+      "char_offset": 32888
+    },
+    {
+      "order": 5,
+      "section_type": "closing",
+      "title": "closing",
+      "boundary_marker": "thank you for joining",
+      "opening_quote": "Thank you for joining us today, and we look forward",
+      "char_offset": 55521
+    }
+  ]
+}

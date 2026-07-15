@@ -1,0 +1,56 @@
+{
+  "id": "QCOM-Q2-2026",
+  "transcript": "corpus/transcripts/qcom-q2-2026.txt",
+  "char_len": 40073,
+  "model": "rule-based-heuristic",
+  "sections": [
+    {
+      "order": 0,
+      "section_type": "operator_intro",
+      "title": "operator intro",
+      "boundary_marker": "",
+      "opening_quote": "Ladies and gentlemen, thank you for standing by. Welcome to",
+      "char_offset": 0
+    },
+    {
+      "order": 1,
+      "section_type": "safe_harbor",
+      "title": "safe harbor",
+      "boundary_marker": "forward-looking statement",
+      "opening_quote": "forward-looking statements including projections and estimates of future events, business",
+      "char_offset": 1498
+    },
+    {
+      "order": 2,
+      "section_type": "ceo_remarks",
+      "title": "ceo remarks",
+      "boundary_marker": "turn the call over to",
+      "opening_quote": "turn the call over to Akash, I want to note",
+      "char_offset": 11494
+    },
+    {
+      "order": 3,
+      "section_type": "guidance_outlook",
+      "title": "guidance outlook",
+      "boundary_marker": "our guidance",
+      "opening_quote": "our guidance. QTL revenues of $1.4 billion and EBT margin",
+      "char_offset": 12134
+    },
+    {
+      "order": 4,
+      "section_type": "qa",
+      "title": "qa",
+      "boundary_marker": "our first question",
+      "opening_quote": "Our first question comes from the line of Joshua Buckhalter",
+      "char_offset": 16717
+    },
+    {
+      "order": 5,
+      "section_type": "closing",
+      "title": "closing",
+      "boundary_marker": "that concludes",
+      "opening_quote": "That concludes today's question and answer session. Mr. Ramon, do",
+      "char_offset": 39212
+    }
+  ]
+}

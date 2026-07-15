@@ -30,6 +30,38 @@ visibility); our own `seq` stays dense. μ-law decode lives HERE because
 μ-law is this source's codec (the "decoding beyond its own codec"
 exclusion refers to downstream resampling/VAD, which stay in preproc).
 
+The listener accepts until one connection COMPLETES the WS handshake
+(deadline = `accept_timeout`): a stray scanner, health probe, or spoofed
+dialer that fails the handshake is logged and dropped, and the listener
+keeps waiting — a garbage TCP connect must never deny service while armed
+on a public tunnel URL (live-found 2026-07-14; regression:
+`tests/twilio_source.rs::stray_connection_does_not_kill_the_listener`).
+
+`X-Twilio-Signature` is validated during the WS handshake (`accept_hdr_async`
+callback → `valid_twilio_signature`, HMAC-SHA1 over the stream URL): a spoofed
+dialer never becomes an audio source. The auth token comes from the config's
+`[twilio]` section when present (per-account binding for concurrent events —
+`build_leg` reads `auth_token_path` and pins it + `stream_url` via
+`TwilioWsSource::with_auth`; see `docs/MULTI-EVENT.md` §8), otherwise from the
+`TWILIO_AUTH_TOKEN` / `TWILIO_STREAM_URL` env pair (never in repo). With no
+token set, validation is skipped with a loud warn — a dev/loopback-only
+posture. Two distinct account tokens make this a cryptographic boundary between
+two events. Scheme pinned in `VERIFICATIONS.md`.
+
+### Adapter combiner: `SourceArbiter` (`src/source/arbiter.rs`)
+Dual dial-in (spec §5.2). The arbiter *is itself* an `AudioSource`: it wraps
+N inner sources (each run as a task feeding a private ring) and re-emits one
+`AudioFrame` stream under a dense arbiter-local `seq`, so `run_pipeline` and
+the `AudioFrame` contract are unchanged. Each forwarded frame keeps its own
+`capture_ts` (the winning leg's true arrival — the quantity being minimized).
+Two modes:
+- **Failover** (default): forward the primary; on stall > `switch_ms` or leg
+  death, switch to a live standby. A dropped call no longer kills the event.
+- **TakeFirst**: cross-correlate the legs at startup (`xcorr::best_lag`) to
+  recover the fixed inter-leg lag, then forward whichever copy of each audio
+  position lands first, deduping the later. Falls back to Failover if the legs
+  don't correlate. Configured via `[arbiter]` (`mode`, `switch_ms`, `align_ms`).
+
 ## Exit door
 - **Type:** `types::AudioFrame` — `pcm: Arc<[i16]>` (mono), `sample_rate_hz`,
   `capture_ts: MonotonicNs`, `source: SourceId`, `seq: u64`,
@@ -61,15 +93,29 @@ exclusion refers to downstream resampling/VAD, which stay in preproc).
 - Never silently resample or downmix: wrong format = error (replay:
   constructor; Twilio: `SourceError::Protocol` on any `start.mediaFormat`
   other than audio/x-mulaw 8 kHz mono).
+- Twilio: a bad/missing `X-Twilio-Signature` fails the WS handshake (403);
+  the rejected connection is dropped and the listener keeps waiting (a
+  spoofer or scanner must not kill the armed pipeline).
+- Arbiter: needs ≥ 2 inners (constructor error otherwise). It returns
+  `EndOfStream` once all legs end; only if *every* leg errors before producing
+  a frame does it surface the first error (one dead leg must not tear down).
 
 ## How to replace or edit this layer
 - New source = new file in `src/source/` implementing `AudioSource` + a new
-  `SourceConfig` variant + a match arm where sources are constructed
-  (`main.rs::build_source` today; the arbiter later). Nothing else changes.
+  `SourceConfig` variant + a `main.rs::build_leg` match arm. One source →
+  the direct path; ≥ 2 sources → `main.rs::build_source` wraps them in a
+  `SourceArbiter`. Nothing downstream changes.
+- **Raw SIP/RTP is gated** (Work Order deliverable #6): `SourceConfig::Sip`
+  (`number`, `sip_uri`, `carrier`, `dtmf`, `dial_at`) parses and slots into the
+  arbiter, but `build_leg` refuses to construct it until the ingress bake-off
+  names a winning carrier (`docs/INGRESS-BAKEOFF.md`). When built, the SIP
+  adapter owns its jitter buffer (sweepable, start ~40 ms — UDP/RTP is where we
+  control buffering, unlike Twilio's WS); its own `AudioFrame`/drop obligations
+  are identical to the adapters above.
 - Contract (do NOT change without updating every layer doc): the
   `AudioSource` trait shape, `AudioFrame` field semantics, ingress drop
   policy.
-- Free to change: internal buffering, pacing, codec handling.
+- Free to change: internal buffering, pacing, codec handling, arbiter modes.
 
 ## How to test in isolation
 - Unit tests in `src/source/replay.rs` drive `run()` on a current-thread
@@ -77,8 +123,14 @@ exclusion refers to downstream resampling/VAD, which stay in preproc).
   `fixture::FixtureSpec` — no pipeline needed.
 - `cargo test source::` and the e2e replay test cover pacing fidelity
   (wall-clock ±5%).
-- Twilio: μ-law LUT unit tests in `src/source/twilio_ws.rs`;
-  `tests/twilio_source.rs` runs a synthetic in-process WS client speaking
-  the pinned message protocol against a bound source. Live: the loopback
-  rehearsal (docs/TWILIO.md — a second Twilio number `<Play>`s the fixture
-  WAV into a real call).
+- Twilio: μ-law LUT + `X-Twilio-Signature` (RFC 2202 HMAC-SHA1 known-answer +
+  round-trip) unit tests in `src/source/twilio_ws.rs`; `tests/twilio_source.rs`
+  runs a synthetic in-process WS client speaking the pinned message protocol
+  against a bound source. Live: the loopback rehearsal (docs/TWILIO.md — a
+  second Twilio number `<Play>`s the fixture WAV into a real call).
+- Arbiter: `src/source/arbiter.rs` unit tests (failover switch, take-first
+  dedup, single-source rejection) + `tests/arbiter.rs` (two ReplaySource legs
+  → arbiter → real pipeline). `xcorr::best_lag` has its own known-lag tests.
+- Ingress bake-off: `src/capture_bakeoff/` unit tests (known cross-delta,
+  WAV/JSONL recording). Run live via `earshot capture-bakeoff`
+  (docs/INGRESS-BAKEOFF.md); region choice via `earshot latprobe`.

@@ -142,6 +142,38 @@ async fn twilio_seq_gap_warns_but_streams_on() {
 }
 
 #[tokio::test]
+async fn stray_connection_does_not_kill_the_listener() {
+    let (src, url) = bound_source(5, 5);
+    let (tx, mut rx) = ring::ring::<AudioFrame>(64);
+    let run = tokio::spawn(src.run(tx));
+    let consumer = std::thread::spawn(move || {
+        let mut n = 0;
+        while rx.recv().is_some() {
+            n += 1;
+        }
+        n
+    });
+
+    // A scanner/health-probe style connection: raw TCP, no WS handshake.
+    // Public tunnel URLs see these constantly; they must not deny service.
+    let addr = url.trim_start_matches("ws://").to_string();
+    let mut stray = tokio::net::TcpStream::connect(&addr).await.unwrap();
+    tokio::io::AsyncWriteExt::write_all(&mut stray, b"GET / HTTP/1.1\r\nHost: x\r\n\r\n")
+        .await
+        .unwrap();
+    drop(stray);
+
+    // The real (synthetic-Twilio) session must still be accepted afterwards.
+    let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    ws.send(Message::Text(start_msg("audio/x-mulaw", 8000, 1))).await.unwrap();
+    ws.send(Message::Text(media_msg(2, &[0xFF; 160]))).await.unwrap();
+    ws.send(Message::Text(json!({"event":"stop","streamSid":"MZtest"}).to_string())).await.unwrap();
+
+    assert_eq!(run.await.unwrap().unwrap(), SourceExit::EndOfStream);
+    assert_eq!(consumer.join().unwrap(), 1, "frame delivered after stray connection");
+}
+
+#[tokio::test]
 async fn no_connection_times_out_loud() {
     let (mut src, _url) = { bound_source(1, 1) };
     src.accept_timeout = Duration::from_millis(200);

@@ -4,6 +4,7 @@
 //! (SIP dial-in, HLS webcast, local capture) implement the trait and add a
 //! `SourceConfig` variant; the pipeline is unchanged.
 
+pub mod arbiter;
 pub mod replay;
 pub mod twilio_ws;
 

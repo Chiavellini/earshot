@@ -13,6 +13,17 @@
 //!   delta:    msg.{price_dollars, delta_fp, side: "yes"|"no"}
 //! Conversion done here: a NO bid at p¢ IS a YES ask at (100−p)¢. All prices
 //! integer cents internally, never floats.
+//!
+//! Quantities (re-pinned live 2026-07-15, VERIFICATIONS.md): Kalshi supports
+//! FRACTIONAL contracts — `*_fp` sizes/deltas carry hundredths ("0.77",
+//! "3075.67"). Quantities are therefore integer CENTI-contracts internally
+//! (qty 77 = 0.77 contracts): exact, so deltas never drift, and a 0.77-
+//! contract level is never rounded out of the ladder (that truncation cost
+//! us the real best-ask during the 2026-07-15 MS run). Prices: mention
+//! markets are `price_level_structure: "linear_cent"`; `deci_cent` (0.1¢
+//! steps) exists on other market classes and is REFUSED at arm time by the
+//! validator — this parser drops sub-cent price levels loudly if one ever
+//! appears.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -29,10 +40,11 @@ use crate::clock::MonotonicNs;
 
 #[derive(Debug, Clone, Default)]
 pub struct Book {
-    /// (price_cents, qty), best (highest) first.
+    /// (price_cents, qty_centi_contracts), best (highest) first.
+    /// qty 100 = 1 whole contract; fractional wire sizes stay exact.
     pub yes_bids: Vec<(u32, u32)>,
-    /// (price_cents, qty), best (lowest) first — from the no side, already
-    /// yes-leg priced via use_yes_price.
+    /// (price_cents, qty_centi_contracts), best (lowest) first — from the no
+    /// side, already yes-leg priced via use_yes_price.
     pub yes_asks: Vec<(u32, u32)>,
     pub seq: u64,
     pub as_of: MonotonicNs,
@@ -45,7 +57,7 @@ impl Book {
     pub fn best_bid(&self) -> Option<(u32, u32)> {
         self.yes_bids.first().copied()
     }
-    /// Total quantity offered at or below `cap_cents`.
+    /// Total quantity (centi-contracts) offered at or below `cap_cents`.
     pub fn depth_at_or_below(&self, cap_cents: u32) -> u32 {
         self.yes_asks
             .iter()
@@ -103,7 +115,7 @@ impl BookCache {
     }
 }
 
-/// Mutable scratch state owned by the WS task.
+/// Mutable scratch state owned by the WS task. Quantities in centi-contracts.
 #[derive(Default)]
 struct Ladders {
     yes_bids: BTreeMap<u32, u32>,
@@ -112,26 +124,40 @@ struct Ladders {
 }
 
 /// "0.9900" → 99¢. Integer parsing only; None for anything outside 0–100¢.
+/// A SUB-CENT price (deci_cent structure, e.g. "0.3355") is refused loudly —
+/// truncating it would merge distinct wire levels and corrupt delta
+/// bookkeeping. The arm-time validator refuses deci_cent markets outright,
+/// so live never reaches this; None here drops the level, P3-style.
 pub fn dollars_to_cents(s: &str) -> Option<u32> {
     let (int, frac) = s.split_once('.').unwrap_or((s, ""));
     let dollars: u32 = int.parse().ok()?;
+    if frac.chars().skip(2).any(|c| c != '0') {
+        tracing::error!(price = s, "sub-cent price level (deci_cent?) — dropping level; validator should have refused this market");
+        return None;
+    }
     let frac2 = format!("{:0<2}", frac.chars().take(2).collect::<String>());
     let cents_part: u32 = frac2.parse().ok()?;
     let cents = dollars * 100 + cents_part;
     (cents <= 100).then_some(cents)
 }
 
-/// Fixed-point quantity ("23844.00", "-11429.00") → whole contracts.
-/// Fractional remainders are logged loudly, never silently truncated.
-fn fp_to_contracts(s: &str) -> Option<i64> {
+/// Fixed-point quantity ("23844.00", "-11429.00", "0.77") → CENTI-contracts
+/// (hundredths), exact. Kalshi supports fractional contracts (pinned
+/// 2026-07-15); parsing must be exact or deltas drift and sub-1.0 levels
+/// vanish. Digits beyond hundredths are logged loudly if nonzero (a new
+/// precision drift would recreate the 2026-07-15 bug class).
+fn fp_to_centi_contracts(s: &str) -> Option<i64> {
     let neg = s.starts_with('-');
     let s = s.trim_start_matches('-');
-    let (int, frac) = s.split_once('.').unwrap_or((s, "0"));
+    let (int, frac) = s.split_once('.').unwrap_or((s, ""));
     let whole: i64 = int.parse().ok()?;
-    if frac.trim_end_matches('0') != "" {
-        tracing::warn!(qty = s, "fractional contract quantity — truncating");
+    let frac2 = format!("{:0<2}", frac.chars().take(2).collect::<String>());
+    let centi_part: i64 = frac2.parse().ok()?;
+    if frac.chars().skip(2).any(|c| c != '0') {
+        tracing::warn!(qty = s, "quantity finer than centi-contracts — truncating beyond hundredths");
     }
-    Some(if neg { -whole } else { whole })
+    let centi = whole.checked_mul(100)?.checked_add(centi_part)?;
+    Some(if neg { -centi } else { centi })
 }
 
 impl Ladders {
@@ -181,7 +207,7 @@ fn apply_message(scratch: &mut HashMap<String, Ladders>, msg: &Value) -> Option<
                 if let Some(levels) = m[key].as_array() {
                     for level in levels {
                         let price = level[0].as_str().and_then(dollars_to_cents);
-                        let qty = level[1].as_str().and_then(fp_to_contracts);
+                        let qty = level[1].as_str().and_then(fp_to_centi_contracts);
                         if let (Some(p), Some(q)) = (price, qty) {
                             ladders.apply_level(side, p, q, false);
                         }
@@ -193,7 +219,7 @@ fn apply_message(scratch: &mut HashMap<String, Ladders>, msg: &Value) -> Option<
         }
         "orderbook_delta" => {
             let price = m["price_dollars"].as_str().and_then(dollars_to_cents)?;
-            let delta = m["delta_fp"].as_str().and_then(fp_to_contracts)?;
+            let delta = m["delta_fp"].as_str().and_then(fp_to_centi_contracts)?;
             let side = m["side"].as_str()?;
             ladders.apply_level(side, price, delta, true);
             ladders.seq = msg["seq"].as_u64().unwrap_or(ladders.seq + 1);
@@ -330,6 +356,8 @@ mod tests {
     }
 
     /// Wire-exact snapshot: sides in their OWN legs (no side = NO prices).
+    /// Quantities given in WHOLE contracts (the wire's "N.00"); parsed books
+    /// hold centi-contracts, so expectations below are ×100.
     fn snapshot(ticker: &str, yes: &[(u32, u32)], no: &[(u32, u32)], seq: u64) -> Value {
         json!({
             "type": "orderbook_snapshot", "sid": 1, "seq": seq,
@@ -357,8 +385,52 @@ mod tests {
         assert_eq!(dollars_to_cents("0.01"), Some(1));
         assert_eq!(dollars_to_cents("1.00"), Some(100));
         assert_eq!(dollars_to_cents("1.01"), None); // out of contract range
-        assert_eq!(fp_to_contracts("23844.00"), Some(23844));
-        assert_eq!(fp_to_contracts("-11429.00"), Some(-11429));
+        assert_eq!(dollars_to_cents("0.3355"), None); // sub-cent (deci_cent) refused
+        assert_eq!(fp_to_centi_contracts("23844.00"), Some(2_384_400));
+        assert_eq!(fp_to_centi_contracts("-11429.00"), Some(-1_142_900));
+        // Fractional contracts (pinned live 2026-07-15) are EXACT.
+        assert_eq!(fp_to_centi_contracts("0.77"), Some(77));
+        assert_eq!(fp_to_centi_contracts("-0.30"), Some(-30));
+        assert_eq!(fp_to_centi_contracts("9888.38"), Some(988_838));
+    }
+
+    #[test]
+    fn fractional_levels_survive_and_deltas_never_drift() {
+        let mut scratch = HashMap::new();
+        // A 0.77-contract NO bid at 74¢ ≡ YES ask at 26¢ — the level the old
+        // whole-contract truncation deleted (2026-07-15 MS run).
+        apply_message(
+            &mut scratch,
+            &json!({
+                "type": "orderbook_snapshot", "sid": 1, "seq": 1,
+                "msg": {
+                    "market_ticker": "T",
+                    "yes_dollars_fp": [["0.2000", "0.30"]],
+                    "no_dollars_fp": [["0.7400", "0.77"]],
+                }
+            }),
+        );
+        let book = scratch["T"].to_book();
+        assert_eq!(book.best_ask(), Some((26, 77)));
+        assert_eq!(book.best_bid(), Some((20, 30)));
+
+        // Ten −0.03 deltas exactly empty the 0.30 yes level; the old parser
+        // truncated each to 0 and left phantom liquidity forever.
+        for seq in 2..12 {
+            apply_message(
+                &mut scratch,
+                &json!({
+                    "type": "orderbook_delta", "sid": 1, "seq": seq,
+                    "msg": {
+                        "market_ticker": "T", "side": "yes",
+                        "price_dollars": "0.2000", "delta_fp": "-0.03",
+                    }
+                }),
+            );
+        }
+        let book = scratch["T"].to_book();
+        assert_eq!(book.best_bid(), None, "exactly-drained level must be gone");
+        assert_eq!(book.best_ask(), Some((26, 77)), "untouched fractional level stays");
     }
 
     #[test]
@@ -370,16 +442,16 @@ mod tests {
             &snapshot("T", &[(40, 100), (39, 50)], &[(55, 200), (50, 10)], 7),
         );
         let book = scratch["T"].to_book();
-        assert_eq!(book.best_bid(), Some((40, 100)));
-        assert_eq!(book.best_ask(), Some((45, 200)));
+        assert_eq!(book.best_bid(), Some((40, 10_000)));
+        assert_eq!(book.best_ask(), Some((45, 20_000)));
         assert_eq!(book.seq, 7);
 
         // NO bid at 55 removed → YES ask at 45 gone; YES bid at 40 reduced.
         apply_message(&mut scratch, &delta("T", "no", 55, -200, 8));
         apply_message(&mut scratch, &delta("T", "yes", 40, -60, 9));
         let book = scratch["T"].to_book();
-        assert_eq!(book.best_ask(), Some((50, 10)));
-        assert_eq!(book.best_bid(), Some((40, 40)));
+        assert_eq!(book.best_ask(), Some((50, 1_000)));
+        assert_eq!(book.best_bid(), Some((40, 4_000)));
         assert_eq!(book.seq, 9);
     }
 
@@ -392,7 +464,7 @@ mod tests {
             &snapshot("T", &[], &[(97, 10), (95, 20), (3, 500), (1, 1000)], 1),
         );
         let book = scratch["T"].to_book();
-        assert_eq!(book.depth_at_or_below(97), 530);
+        assert_eq!(book.depth_at_or_below(97), 53_000);
         assert_eq!(book.depth_at_or_below(2), 0);
     }
 

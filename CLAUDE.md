@@ -22,12 +22,24 @@ written so you can work on one layer without reading the rest of the system.
 - Risk hard caps in `src/risk.rs` are code constants; config only tightens.
   The kill switch cancels ONLY `OrderRegistry` ids — this account carries
   unrelated resting orders from other systems. Never widen that scope.
+- **An unattended path counts as validated only when rehearsed with the exact
+  production mechanism**: launchd-fired (not a manual run), killed with the
+  real signal (SIGTERM — what `kill`/launchd/traps send — not the STOP file),
+  under launchd's minimal env. Equivalent-looking manual drills validated the
+  wrong paths before the 2026-07-15 MS run (see `docs/RUNBOOK.md` hardening
+  notes + the SIGTERM test `tests/kill_sigterm.rs`). Event runs REQUIRE
+  `scripts/preflight-event.sh` the night before (pins the binary; live-probes
+  creds, mailer, disk, scheduled wake).
 - Live testing: `probe-order`/`kill-drill` are hard-limited to 1¢ ×1
   contract, non-mention markets, $1 cumulative ledger
   (`state/probe_ledger.json`). `--allow-mention` (arm/probe-order) is the
   mention-probe posture: same envelope but Mentions-category permitted;
-  probe orders must be non-crossing (guaranteed no fill). Real-size mention
-  trading is gated until M4.
+  probe orders must be non-crossing (guaranteed no fill).
+  `--fillable` (requires `--i-am-live --allow-mention`) is the mention-FILL
+  posture: orders on Mentions markets may cross the ask up to
+  `MENTION_FILL_CAP_CENTS` (50¢/order price bound); real spend stays clamped
+  by the config notional caps AND the $1 ledger. Removing the ledger/notional
+  clamps (real-size trading) stays gated until M4.
 
 ## Quick commands
 
@@ -40,12 +52,19 @@ cargo run --release -- replay --config configs/example-event.toml
 cargo run --release -- bench-detector --config <cfg> --corpus corpus/   # see docs/BAKEOFF.md
 cargo run --release -- arm --config configs/m2-drill.toml            # dry-run
 cargo run --release -- book --ticker <T> --secs 10                   # read-only
+scripts/launch-event.sh --config <cfg> --account <env> --bind-port <p> --to +1…  # one isolated event; run per event for concurrent calls (docs/MULTI-EVENT.md §8)
 source ~/.kalshi/earshot_env                 # credentials (never in repo)
 ```
 
 Milestone state: M0 ✅ M2 ✅ (live-validated) M1 ✅ (sherpa_kws engine +
 corpus + bake-off run; holdout results and the pre-declared follow-on —
-a custom low-lookahead spotter for the latency bar — in `docs/BAKEOFF.md`).
-Next: M3 (Twilio Media Streams dial-in capture — `docs/TWILIO.md`), the
-mention-probe live posture (1¢ verification run on a real call), then the
-low-latency detector milestone. See the meta-spec for the roadmap.
+a custom low-lookahead spotter for the latency bar — in `docs/BAKEOFF.md`)
+M3 ✅ (2026-07-14: Twilio capture live-verified — loopback rehearsal passed,
+3 real streams incl. the actual MS bridge via the full `launch-event.sh`
+chain; pins upgraded in `docs/TWILIO.md` + `VERIFICATIONS.md` Q-M3).
+Next: the first live event run (Morgan Stanley 2026-07-15, mention-fill
+tiered posture — `docs/RUNBOOK.md`), then the low-latency detector
+milestone. See the meta-spec for the roadmap.
+Concurrent multi-event (two Kalshi + two Twilio accounts, one process per event)
+isolation machinery is implemented — `docs/MULTI-EVENT.md` §8; a live two-event
+run is downstream of M3.

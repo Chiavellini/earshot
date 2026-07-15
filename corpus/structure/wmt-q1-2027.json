@@ -1,0 +1,48 @@
+{
+  "id": "WMT-Q1-2027",
+  "transcript": "corpus/transcripts/wmt-q1-2027.txt",
+  "char_len": 56648,
+  "model": "rule-based-heuristic",
+  "sections": [
+    {
+      "order": 0,
+      "section_type": "operator_intro",
+      "title": "operator intro",
+      "boundary_marker": "",
+      "opening_quote": "Greetings. Welcome to Walmart's first quarter fiscal 27 earnings call.",
+      "char_offset": 0
+    },
+    {
+      "order": 1,
+      "section_type": "safe_harbor",
+      "title": "safe harbor",
+      "boundary_marker": "forward-looking statement",
+      "opening_quote": "forward-looking statements. These statements are subject to risks and uncertainty",
+      "char_offset": 1170
+    },
+    {
+      "order": 2,
+      "section_type": "ceo_remarks",
+      "title": "ceo remarks",
+      "boundary_marker": "hand the call over to",
+      "opening_quote": "hand the call over to John David. Thanks, John. I'd",
+      "char_offset": 9481
+    },
+    {
+      "order": 3,
+      "section_type": "guidance_outlook",
+      "title": "guidance outlook",
+      "boundary_marker": "our guidance",
+      "opening_quote": "our guidance range by 120 basis points, and we continue",
+      "char_offset": 9881
+    },
+    {
+      "order": 4,
+      "section_type": "qa",
+      "title": "qa",
+      "boundary_marker": "our first question",
+      "opening_quote": "our first question is from the line of Simeon Gutman.",
+      "char_offset": 19468
+    }
+  ]
+}

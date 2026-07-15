@@ -18,7 +18,15 @@ pub struct EventConfig {
     #[serde(default)]
     pub detector: DetectorSection,
     pub sources: Vec<SourceConfig>,
+    /// Dual dial-in arbitration across multiple `sources` (spec §5.2). Ignored
+    /// when a single source is configured. Defaults to failover.
+    #[serde(default)]
+    pub arbiter: ArbiterConfig,
     pub kalshi: KalshiSection,
+    /// Per-account Twilio binding (multi-event isolation). Optional; env-based
+    /// signature material is used when absent.
+    #[serde(default)]
+    pub twilio: Option<TwilioSection>,
     #[serde(default)]
     pub risk: crate::risk::RiskConfig,
     pub keywords: Vec<KeywordConfig>,
@@ -60,6 +68,8 @@ pub struct DetectorSection {
     pub engine: EngineKind,
     /// Required iff `engine = "sherpa_kws"`.
     pub sherpa_kws: Option<SherpaKwsConfig>,
+    /// Required iff `engine = "streaming_ctc"`.
+    pub streaming_ctc: Option<StreamingCtcConfig>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
@@ -70,6 +80,9 @@ pub enum EngineKind {
     Stub,
     /// sherpa-onnx streaming keyword spotter (Zipformer transducer).
     SherpaKws,
+    /// Custom low-lookahead streaming-CTC spotter (own prefix-firing on frame
+    /// posteriors via `ort`); the latency-milestone engine.
+    StreamingCtc,
 }
 
 #[derive(Debug, Deserialize)]
@@ -91,6 +104,12 @@ pub struct SherpaKwsConfig {
     /// Duplicate suppression per (keyword, tier), in stream-time ms.
     #[serde(default = "default_refractory_ms")]
     pub refractory_ms: u64,
+    /// Load the fp32 encoder + joiner instead of the default int8 pair (decoder is
+    /// fp32 either way). Diagnostic knob for the quantization arm of the
+    /// miss-autopsy (docs/TELEPHONY-DETECTION-SPEC.md §10). Default false = the
+    /// shipped int8 encoder/joiner + fp32 decoder.
+    #[serde(default)]
+    pub fp32: bool,
 }
 
 fn default_num_threads() -> u32 {
@@ -109,6 +128,34 @@ fn default_refractory_ms() -> u64 {
     2000
 }
 
+/// `[detector.streaming_ctc]` — the custom low-lookahead spotter. Drives a
+/// streaming-CTC encoder ONNX directly via `ort` and fires keywords with its own
+/// prefix-firing logic on frame posteriors (`detector::streaming_ctc`).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StreamingCtcConfig {
+    /// Model directory: encoder `*.onnx` + `tokens.txt` (+ `bpe.model` for
+    /// text→token compilation). See `scripts/fetch-models.sh`.
+    pub model_dir: std::path::PathBuf,
+    #[serde(default = "default_num_threads")]
+    pub num_threads: u32,
+    /// CTC blank token id (0 for k2/sherpa exports).
+    #[serde(default)]
+    pub blank_id: u32,
+    /// Default per-entry firing confidence in (0, 1] unless overridden on the
+    /// keyword. Confidence is the geometric-mean per-token posterior along the
+    /// best CTC path (`ctc_scorer`).
+    #[serde(default = "default_ctc_threshold")]
+    pub default_threshold: f32,
+    /// Duplicate suppression per (keyword, tier), in stream-time ms.
+    #[serde(default = "default_refractory_ms")]
+    pub refractory_ms: u64,
+}
+
+fn default_ctc_threshold() -> f32 {
+    0.5
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SourceConfig {
@@ -122,11 +169,25 @@ pub enum SourceConfig {
     /// server, Twilio's <Stream> connects to it (docs/TWILIO.md). The dial
     /// itself happens out-of-band (scripts/twilio-dial.sh).
     TwilioStream { bind: String },
-    /// Raw SIP dial-in (adapter not built; parses now).
+    /// Raw SIP/RTP dial-in via a low-latency carrier (Telnyx/Bandwidth) or a
+    /// bridge SIP URI directly (Option C). The adapter is GATED behind the
+    /// live ingress bake-off (docs/INGRESS-BAKEOFF.md): the config parses and
+    /// slots into the arbiter today, but `build_source` refuses to construct
+    /// it until the bake-off names a winning carrier. No RTP code yet.
     Sip {
+        /// PSTN number to dial (carrier path), if any.
+        #[serde(default)]
         number: String,
+        /// Direct bridge SIP URI (Option C: skips the PSTN carrier, may
+        /// negotiate wideband G.722/Opus). Checked per-event as a pre-flight.
+        #[serde(default)]
+        sip_uri: String,
+        /// Carrier label for the provider→lead table / arbiter accounting.
+        #[serde(default)]
+        carrier: String,
         #[serde(default)]
         dtmf: String,
+        #[serde(default)]
         dial_at: String,
     },
     /// Webcast fallback (adapter not built; parses now).
@@ -137,6 +198,43 @@ fn default_speed() -> f32 {
     1.0
 }
 
+/// `[arbiter]` — how multiple `sources` are combined (spec §5.2).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArbiterConfig {
+    #[serde(default)]
+    pub mode: ArbiterMode,
+    /// Failover: max quiet gap on the active leg before switching (ms).
+    #[serde(default = "default_switch_ms")]
+    pub switch_ms: u64,
+    /// TakeFirst: audio buffered per leg before estimating the inter-leg lag (ms).
+    #[serde(default = "default_align_ms")]
+    pub align_ms: u64,
+}
+
+impl Default for ArbiterConfig {
+    fn default() -> Self {
+        ArbiterConfig { mode: ArbiterMode::default(), switch_ms: 200, align_ms: 2000 }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ArbiterMode {
+    /// Primary + standby failover (robust default).
+    #[default]
+    Failover,
+    /// Per-position first-arrival wins after cross-correlation alignment.
+    TakeFirst,
+}
+
+fn default_switch_ms() -> u64 {
+    200
+}
+fn default_align_ms() -> u64 {
+    2000
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct KalshiSection {
@@ -145,6 +243,47 @@ pub struct KalshiSection {
     pub env: String, // "prod" | "demo"
     #[serde(default = "default_heartbeat")]
     pub heartbeat_secs: u64,
+    /// Per-account credential binding (multi-event isolation, docs/MULTI-EVENT.md).
+    /// When `key_id` + `private_key_path` are BOTH set, `arm` builds this event's
+    /// Kalshi signer from THIS config — never from ambient env — so two concurrent
+    /// events on two accounts can never sign with each other's key. When both are
+    /// absent, `arm` falls back to the `KALSHI_API_KEY_ID` / `KALSHI_PRIVATE_KEY_PATH`
+    /// env pair (the single-account posture; keeps every existing config working).
+    #[serde(default)]
+    pub key_id: Option<String>,
+    /// Path to the RSA private-key PEM, resolved relative to the config file.
+    #[serde(default)]
+    pub private_key_path: Option<String>,
+    /// Optional tripwire: when set, `arm` refuses unless it equals `key_id`,
+    /// catching a config whose key was swapped without updating the declared
+    /// intent. NOTE: this is a config-internal consistency check; the proof that
+    /// the (key_id, key) pair is a real, coherent Kalshi credential comes from the
+    /// signed `balance()` self-test in `connect_live_for`. Proving the key belongs
+    /// to a SPECIFIC expected account is the remote-probe tier (out of scope here).
+    #[serde(default)]
+    pub expected_key_id: Option<String>,
+}
+
+/// `[twilio]` — per-account Twilio Media Streams binding (multi-event isolation).
+/// Optional. When present, `arm` pins the WS signature material from THIS config
+/// instead of the process-global `TWILIO_AUTH_TOKEN` / `TWILIO_STREAM_URL`, so a
+/// stream signed by the wrong account's auth token is rejected with a 403
+/// (`src/source/twilio_ws.rs` `check_signature`). `account_sid` / `from_number`
+/// are consumed by `scripts/launch-event.sh`, not the binary.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TwilioSection {
+    /// Path (resolved relative to the config) to a file holding the account auth
+    /// token — kept out of the repo, same posture as the Kalshi key.
+    pub auth_token_path: String,
+    /// The exact `wss://…` `<Stream url>` Twilio is configured with. Pinning it
+    /// here means the signature base is never reconstructed from the client
+    /// `Host` header, removing ngrok-host ambiguity between two events.
+    pub stream_url: String,
+    #[serde(default)]
+    pub account_sid: Option<String>,
+    #[serde(default)]
+    pub from_number: Option<String>,
 }
 
 fn default_env() -> String {
@@ -232,6 +371,35 @@ fn validate(cfg: &EventConfig) -> Result<(), ConfigError> {
             }
         }
     }
+    if cfg.arbiter.switch_ms == 0 || cfg.arbiter.align_ms == 0 {
+        return fail("arbiter.switch_ms and arbiter.align_ms must be > 0".into());
+    }
+    // Per-account Kalshi binding: key_id and private_key_path are all-or-nothing,
+    // and expected_key_id (a tripwire) is meaningless without a key_id to check.
+    match (&cfg.kalshi.key_id, &cfg.kalshi.private_key_path) {
+        (Some(_), None) | (None, Some(_)) => {
+            return fail("[kalshi] key_id and private_key_path must be set together".into());
+        }
+        (None, None) if cfg.kalshi.expected_key_id.is_some() => {
+            return fail("[kalshi] expected_key_id requires key_id + private_key_path".into());
+        }
+        _ => {}
+    }
+    if let (Some(exp), Some(key_id)) = (&cfg.kalshi.expected_key_id, &cfg.kalshi.key_id) {
+        if exp != key_id {
+            return fail(format!(
+                "[kalshi] expected_key_id {exp:?} != key_id {key_id:?} (config tripwire)"
+            ));
+        }
+    }
+    if let Some(tw) = &cfg.twilio {
+        if !tw.stream_url.starts_with("wss://") {
+            return fail(format!(
+                "[twilio] stream_url must be a wss:// URL, got {:?}",
+                tw.stream_url
+            ));
+        }
+    }
     if cfg.keywords.is_empty() {
         return fail("at least one keyword is required".into());
     }
@@ -260,6 +428,22 @@ fn validate(cfg: &EventConfig) -> Result<(), ConfigError> {
         }
         if sk.num_threads == 0 {
             return fail("detector.sherpa_kws.num_threads must be > 0".into());
+        }
+    }
+    if cfg.detector.engine == EngineKind::StreamingCtc && cfg.detector.streaming_ctc.is_none() {
+        return fail(
+            "detector.engine = \"streaming_ctc\" requires a [detector.streaming_ctc] section".into(),
+        );
+    }
+    if let Some(sc) = &cfg.detector.streaming_ctc {
+        if !(0.0..=1.0).contains(&sc.default_threshold) || sc.default_threshold == 0.0 {
+            return fail(format!(
+                "detector.streaming_ctc.default_threshold must be in (0, 1], got {}",
+                sc.default_threshold
+            ));
+        }
+        if sc.num_threads == 0 {
+            return fail("detector.streaming_ctc.num_threads must be > 0".into());
         }
     }
 
@@ -475,6 +659,33 @@ mod tests {
     }
 
     #[test]
+    fn arbiter_defaults_to_failover_and_parses_take_first() {
+        // Absent [arbiter] → failover defaults.
+        let cfg = load(&example_path()).unwrap();
+        assert_eq!(cfg.arbiter.mode, ArbiterMode::Failover);
+        assert_eq!(cfg.arbiter.switch_ms, 200);
+        assert_eq!(cfg.arbiter.align_ms, 2000);
+
+        // Explicit [arbiter] parses.
+        let text = base_toml()
+            + "\n[arbiter]\nmode = \"take_first\"\nswitch_ms = 120\nalign_ms = 1500\n";
+        let cfg: EventConfig = toml::from_str(&text).unwrap();
+        validate(&cfg).unwrap();
+        assert_eq!(cfg.arbiter.mode, ArbiterMode::TakeFirst);
+        assert_eq!(cfg.arbiter.switch_ms, 120);
+    }
+
+    #[test]
+    fn parses_gated_sip_leg_with_carrier() {
+        let text = base_toml()
+            + "\n[[sources]]\nkind = \"sip\"\ncarrier = \"telnyx\"\nsip_uri = \"sip:bridge@x\"\n";
+        let cfg: EventConfig = toml::from_str(&text).unwrap();
+        validate(&cfg).unwrap();
+        assert_eq!(cfg.sources.len(), 2);
+        assert!(matches!(&cfg.sources[1], SourceConfig::Sip { carrier, .. } if carrier == "telnyx"));
+    }
+
+    #[test]
     fn rejects_duplicate_ticker() {
         let mut text = base_toml();
         let dup = text[text.find("[[keywords]]").unwrap()..].to_string();
@@ -482,5 +693,71 @@ mod tests {
         text.push_str(&dup);
         let cfg: EventConfig = toml::from_str(&text).unwrap();
         assert!(validate(&cfg).is_err());
+    }
+
+    // --- multi-event account binding (docs/MULTI-EVENT.md) ---
+
+    /// Inject lines under the example's `[kalshi]` section.
+    fn with_kalshi(extra: &str) -> EventConfig {
+        let text = base_toml()
+            .replace("series = \"KXAAPLMENTION\"", &format!("series = \"KXAAPLMENTION\"\n{extra}"));
+        toml::from_str(&text).unwrap()
+    }
+
+    #[test]
+    fn kalshi_creds_absent_is_env_posture() {
+        // The unchanged example (no key_id) must still validate — env fallback.
+        let cfg = load(&example_path()).unwrap();
+        assert!(cfg.kalshi.key_id.is_none());
+        assert!(cfg.kalshi.private_key_path.is_none());
+        validate(&cfg).unwrap();
+    }
+
+    #[test]
+    fn kalshi_full_binding_parses_and_validates() {
+        let cfg = with_kalshi(
+            "key_id = \"acct-A\"\nprivate_key_path = \"keys/a.pem\"\nexpected_key_id = \"acct-A\"",
+        );
+        validate(&cfg).unwrap();
+        assert_eq!(cfg.kalshi.key_id.as_deref(), Some("acct-A"));
+        assert_eq!(cfg.kalshi.private_key_path.as_deref(), Some("keys/a.pem"));
+    }
+
+    #[test]
+    fn kalshi_key_id_without_key_path_rejected() {
+        let cfg = with_kalshi("key_id = \"acct-A\"");
+        let err = validate(&cfg).unwrap_err().to_string();
+        assert!(err.contains("must be set together"), "{err}");
+    }
+
+    #[test]
+    fn kalshi_expected_key_id_mismatch_rejected() {
+        let cfg = with_kalshi(
+            "key_id = \"acct-A\"\nprivate_key_path = \"keys/a.pem\"\nexpected_key_id = \"acct-B\"",
+        );
+        let err = validate(&cfg).unwrap_err().to_string();
+        assert!(err.contains("expected_key_id"), "{err}");
+    }
+
+    #[test]
+    fn kalshi_expected_key_id_without_binding_rejected() {
+        let cfg = with_kalshi("expected_key_id = \"acct-A\"");
+        let err = validate(&cfg).unwrap_err().to_string();
+        assert!(err.contains("expected_key_id requires"), "{err}");
+    }
+
+    #[test]
+    fn twilio_section_parses_and_requires_wss() {
+        let ok = base_toml()
+            + "\n[twilio]\nauth_token_path = \"tok.txt\"\nstream_url = \"wss://a.ngrok.io/media\"\n";
+        let cfg: EventConfig = toml::from_str(&ok).unwrap();
+        validate(&cfg).unwrap();
+        assert_eq!(cfg.twilio.as_ref().unwrap().stream_url, "wss://a.ngrok.io/media");
+
+        let bad = base_toml()
+            + "\n[twilio]\nauth_token_path = \"tok.txt\"\nstream_url = \"https://a.ngrok.io/media\"\n";
+        let cfg: EventConfig = toml::from_str(&bad).unwrap();
+        let err = validate(&cfg).unwrap_err().to_string();
+        assert!(err.contains("wss://"), "{err}");
     }
 }

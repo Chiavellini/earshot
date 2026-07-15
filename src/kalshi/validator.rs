@@ -53,16 +53,31 @@ impl LiveMarketValidator<'_> {
                 )));
             }
 
+            // Price-level structure gate (pinned 2026-07-15): the book cache
+            // prices in integer cents; `deci_cent` markets (0.1¢ steps) would
+            // silently corrupt the ladders. Absent field = older wire = cent
+            // levels; anything else present must be linear_cent.
+            if let Some(pls) = market["price_level_structure"].as_str() {
+                if pls != "linear_cent" {
+                    return Err(KalshiError::Validation(format!(
+                        "market {} price_level_structure is {pls:?} (not linear_cent) — \
+                         the book cache prices in integer cents; refusing to arm",
+                        kw.market_ticker
+                    )));
+                }
+            }
+
             // Audit trail: store the rules text alongside the session state.
             let rules = serde_json::json!({
                 "ticker": kw.market_ticker,
                 "rules_primary": market["rules_primary"],
                 "rules_secondary": market["rules_secondary"],
                 "early_close_condition": market["early_close_condition"],
+                "price_level_structure": market["price_level_structure"],
                 "fetched": "arm-time",
             });
             let path = rules_dir.join(format!("{}.json", kw.market_ticker));
-            std::fs::write(&path, serde_json::to_string_pretty(&rules).unwrap())
+            crate::fsio::write_atomic(&path, serde_json::to_string_pretty(&rules).unwrap().as_bytes())
                 .map_err(|e| KalshiError::Validation(format!("store rules: {e}")))?;
 
             let category = self.category_of(market).await;
@@ -137,6 +152,38 @@ pub fn mention_probe_gate(markets: &[ValidatedMarket], max_cap_cents: u8) -> Res
     Ok(())
 }
 
+/// The mention-FILL gate (the deliberate posture past the 1¢ no-fill probe):
+/// permits Mentions-category markets AND a per-order price cap up to
+/// `MENTION_FILL_CAP_CENTS`, so the executor can actually cross a real ask and
+/// fill. This is the only gate that lets a mention order be marketable; real
+/// spend stays bounded by the config notional caps and the $1 probe ledger
+/// (enforced in `RiskGate::check_order`), which are unchanged. Same early-close
+/// logging as the probe gate.
+pub fn mention_fill_gate(markets: &[ValidatedMarket], max_cap_cents: u8) -> Result<(), KalshiError> {
+    if u64::from(max_cap_cents) > crate::risk::MENTION_FILL_CAP_CENTS {
+        return Err(KalshiError::Risk(format!(
+            "mention-fill gate: cap {max_cap_cents}¢ > {}¢ ceiling — raise MENTION_FILL_CAP_CENTS deliberately, not per-run",
+            crate::risk::MENTION_FILL_CAP_CENTS
+        )));
+    }
+    for m in markets {
+        tracing::info!(
+            ticker = %m.ticker,
+            category = m.category.as_deref().unwrap_or("?"),
+            can_close_early = ?m.can_close_early,
+            cap_cents = max_cap_cents,
+            "mention-FILL target (marketable — orders may cross the ask)"
+        );
+        if m.can_close_early == Some(false) {
+            tracing::warn!(
+                ticker = %m.ticker,
+                "can_close_early=false — this market will NOT resolve early on utterance"
+            );
+        }
+    }
+    Ok(())
+}
+
 /// Guaranteed-no-fill guard for the mention probe drill: refuse to send a
 /// buy-YES order that would cross the current best ask. `None` ask (empty
 /// book or missing field) is refused — unknown is dangerous (P3).
@@ -190,6 +237,30 @@ mod tests {
         // A market that can't close early is warned about, not refused.
         let no_early = ValidatedMarket { can_close_early: Some(false), ..mention };
         assert!(mention_probe_gate(&[no_early], 1).is_ok());
+    }
+
+    #[test]
+    fn mention_fill_gate_permits_bounded_marketable_cap() {
+        let mention = ValidatedMarket {
+            ticker: "KXFEDMENTION-X".into(),
+            status: "active".into(),
+            category: Some("Mentions".into()),
+            can_close_early: Some(true),
+        };
+        // A crossable cap (e.g. to fill a ~28¢ ask) is permitted...
+        assert!(mention_fill_gate(std::slice::from_ref(&mention), 30).is_ok());
+        // ...up to the ceiling...
+        assert!(mention_fill_gate(
+            std::slice::from_ref(&mention),
+            crate::risk::MENTION_FILL_CAP_CENTS as u8
+        )
+        .is_ok());
+        // ...but not beyond it (deliberate const bump required).
+        assert!(mention_fill_gate(
+            std::slice::from_ref(&mention),
+            crate::risk::MENTION_FILL_CAP_CENTS as u8 + 1
+        )
+        .is_err());
     }
 
     #[test]

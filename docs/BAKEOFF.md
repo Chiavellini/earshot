@@ -150,6 +150,13 @@ neighbors, not noise:
   full budget when Fast never fired).
 - partnership prefix "partner" collides with the standalone word → dropped.
 
+This token-boundary + FA-autopsy + market-outcome procedure is generalized in
+`docs/PREFIX-SAFETY.md` and tooled by `earshot compile-keywords` (Gate a: prints
+each keyword's token-cut on any model's BPE). The cuts are model-specific — they
+must be recomputed for the streaming-CTC model when it lands. (On the gigaspeech
+BPE, `inflation` = `▁IN F L ATION` has no safe Fast prefix either: its only cut,
+`▁IN F L` = "infl", collides with influence/influx/inflate.)
+
 Frozen dev numbers (round 4): guidance Conf recall 1.00 / 1.07 FA/h;
 tariff Conf 0.78 / 0.36 FA/h, Fast 0.67 / 0.36 FA/h; partnership Conf 0.75;
 acquisition Conf 0.67 (n=3); recession (pure FA control, 0 positives) Fast
@@ -228,3 +235,118 @@ listeners reacting to the same audio feed.
 Secondary follow-ups: corpus v2 (more calls; positive "recession" samples;
 by-ear verification pass), guidance FA re-scoring after fixing the aligner
 misses, per-keyword `min_confidence` gates once an engine exposes scores.
+
+## Recall-sweep finding (2026-07-14) — the tariff misses are NOT threshold-bound
+
+Ran a threshold/boost sweep on `tariff` (harness `scratchpad/sweep.py`;
+`bench-detector --split dev`). On AAPL the Confirmed result is **bit-identical
+across `confirmed_threshold` = 0.10 / 0.07 / 0.03 AND `boost` = 3.0 / 5.0**:
+7 tp, **2 miss**, 0 FA, recall 0.78, precision 1.00. The 2 missed occurrences
+produce NO detector hypothesis at all — the KWS model emits nothing for them on
+band-limited 8 kHz telephony audio, so lowering the threshold (even to 0.03) or
+raising boost (to 5.0) recovers zero of them. This empirically confirms the
+telephony band-limit hypothesis (`tariff ~2/9 recall cost`) and means:
+- **Config tuning cannot close the tariff recall gap** — it is a model/acoustic
+  ceiling, not an operating-point choice.
+- Lowering thresholds is a NET LOSS in the fill posture (a false alarm now spends
+  real money) for zero recall gain, so the **frozen thresholds stay** (tariff
+  0.10, precision 1.00 — the right point for precision-critical fillable trading).
+- The real recall lever is a **telephony-adapted / streaming-CTC model** (the
+  M4-blocked detector work, `docs/CTC-MODEL-SOURCING.md`), or front-end work
+  (loudness-normalization/AGC — none exists today), NOT thresholds.
+- NB: full-corpus dev+holdout confirmation was not run to completion here (one
+  accuracy pass >9.5 min on this box; the sweep harness is committed for a
+  faster run). The single-call result is directional but consistent and strong.
+
+## Fast / unclear speech robustness (2026-07-14)
+
+Real calls are fast and sometimes slurred. Tooling: `scripts/corpus-degrade.sh`
+(ffmpeg `atempo` time-compression = tempo change, no pitch shift = "speed-talking")
++ `scripts/manifest-rescale.py` (scale onsets by 1/T) → sibling `corpus-t125/` /
+`corpus-t15/` roots benched with the existing harness.
+
+**Finding 1 — speed halves SHORT-word recall; long words are robust; precision
+holds (AAPL, tariff n=9).**
+
+| tempo | tariff Conf recall | tariff precision | guidance Conf recall |
+|-------|--------------------|------------------|----------------------|
+| 1.00× | 0.78               | 1.00             | 1.00                 |
+| 1.25× | 0.56               | 1.00             | 1.00                 |
+| 1.50× | 0.33               | 1.00             | 1.00                 |
+
+Short "tariff" (▁TA RI FF) collapses under compression; long "guidance"
+(▁GU ID ANCE) is unaffected. Speed causes MISSES, never false alarms — so the
+tiered fill posture stays money-safe (fast speech = missed trade, not a bad fill).
+Recall-vs-length ⇒ the lever is a lower-lookahead / stronger MODEL
+(streaming_ctc), not tuning.
+
+**Finding 2 — naive per-chunk RMS AGC HURTS recall; front-end level-norm is NOT
+the lever (rejected).**
+
+| condition            | tariff Conf recall |
+|----------------------|--------------------|
+| normal, AGC off      | 0.78               |
+| normal, AGC on       | 0.22  ⬅ regressed  |
+| quiet (¼ level), off | 0.67               |
+| quiet, AGC on        | 0.56  ⬅ worse      |
+
+Per-80 ms RMS-to-target gain (target 0.08, max 8×) distorts the level the
+gigaspeech model expects and destroys recall. Note quiet audio alone barely dents
+recall (0.78→0.67 with AGC off) — the model is already fairly level-robust, so
+there is little for gain to recover. AGC code was REVERTED (no dead knob). A
+stateful/smoothed AGC is unproven and low-priority; the dominant lever is temporal
+(model), per Finding 1.
+
+## Miss-autopsy cell 1 — int8 vs fp32 encoder (2026-07-14): quantization IS a contributor
+
+First (cheapest) rung of the miss-autopsy (`docs/TELEPHONY-DETECTION-SPEC.md` §10.5).
+Identical corpus/config/keyword-graph/streaming; the ONLY variable is encoder+joiner
+precision (shipped int8 vs fp32), via the new `[detector.sherpa_kws] fp32` toggle
+(decoder is fp32 in both). tariff Confirmed recall:
+
+| call | n | int8 | fp32 | precision (both) |
+|------|---|------|------|------------------|
+| AAPL-Q2-2026 (dev) | 9 | 0.78 (7/9) | **0.89 (8/9)** | 1.00 |
+| CAT-Q1-2026 (holdout) | 39 | 0.87 (34/39) | **0.90 (35/39)** | 0.97 |
+
+Fast tier also rose (AAPL 0.67→0.78; CAT 0.54→0.59). **fp32 recovers misses at ZERO
+precision cost**, and the compute penalty is negligible — CAT wall-clock 329 s (fp32)
+vs 324 s (int8), ~11× real-time, well inside `perf_detector_rtf` (>3×). So the
+"int8 encoder for compute" tradeoff buys ~nothing on this workload while costing
+recall.
+
+**Conclusion:** part of the tariff recall gap is INT8 QUANTIZATION, not a pure
+acoustic ceiling — the earlier "acoustic-bound" claim is partially refuted. A
+residual gap remains (CAT 4/39 misses at fp32), so the remaining autopsy cells
+(channel / beam / tokenization / streaming-offset / speed, via the offline ONNX
+encoder harness) are still needed to isolate the rest. Cheap action: set
+`[detector.sherpa_kws] fp32 = true` in the live configs (recall win, no precision
+or meaningful latency cost). Samples are still modest (n=9, n=39) — confirm on full
+dev+holdout before treating the magnitudes as final.
+
+### Full-dictionary regression (all 6 calls, all 5 keywords, int8 vs fp32)
+
+| keyword | tier | int8 recall/FA | fp32 recall/FA | Δ | live-traded |
+|---------|------|----------------|----------------|---|-------------|
+| tariff | Confirmed | 0.85 / 2 | **0.90 / 1** | recall +0.04, FA −1 | yes |
+| recession (FA ctrl) | Confirmed | — / 4 | — / **3** | FA −1 | yes |
+| guidance | Confirmed | 1.00 / 6 | 1.00 / **7** | FA **+1** | no |
+| acquisition | Confirmed | 0.75 / 2 | 0.75 / **4** | FA **+2** | no |
+| partnership | Confirmed | 0.75 / 1 | 0.75 / 1 | flat | no |
+
+Aggregate Confirmed triggers 83 → 86 (+3, all on non-traded words). **Both
+real-money keywords (tariff, recession) improved on BOTH axes** (tariff recall up +
+FA down; recession FA down). fp32 regressed FA on two NON-traded keywords
+(acquisition +2, guidance +1) — phonetic-neighbour false alarms the higher-fidelity
+encoder surfaces. Per the deployment guard ("no FA regression on ANY keyword"), the
+global live flip was initially HELD for review: fp32 is not universally FA-neutral,
+so the untested live words (inflation + event-specific, no corpus positives) could
+also see more FAs.
+
+**Operator decision (recorded 2026-07-14, commit `9a163d3`): flip `fp32 = true`
+in the live configs.** Rationale: both money-path keywords improve on both axes;
+every FA regression sits on words the live configs hold at 1¢ observe-only
+(`max_price_cents = 1`, non-crossing), where a false alarm costs nothing and is
+itself useful validation data. Guard for future configs: before promoting any
+observe-word to a fillable tier, re-check its fp32 FA rate on corpus — the
+"no FA regression" bar applies at promotion time, not only globally.
