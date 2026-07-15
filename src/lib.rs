@@ -8,6 +8,7 @@ pub mod config;
 pub mod decision;
 pub mod detector;
 pub mod fixture;
+pub mod fsio;
 pub mod kalshi;
 pub mod latprobe;
 pub mod pipeline;

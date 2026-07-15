@@ -740,18 +740,43 @@ async fn arm(
     });
     let exec_task = tokio::spawn(run_executor(intent_rx, ctx));
 
-    // Kill switch: STOP file or SIGINT → cancel THIS SESSION's orders (never
-    // account-wide: unrelated systems' orders share this account) + disarm.
+    // Kill switch: STOP file, SIGINT, or SIGTERM → cancel THIS SESSION's
+    // orders (never account-wide: unrelated systems' orders share this
+    // account) + disarm. SIGTERM (the unattended supervisor's kill) also
+    // flushes the ledger, writes a last-words report, and exits.
     let rest_for_kill = rest.clone();
     let registry_for_kill = registry.clone();
-    let watcher = spawn_kill_watcher(gate.clone(), state_dir.join("STOP"), move || {
-        let rest = rest_for_kill.clone();
-        let ids = registry_for_kill.ids();
-        async move {
-            let n = rest.cancel_orders(&ids).await;
-            tracing::info!(cancelled = n, of = ids.len(), "kill: session orders cancelled");
-        }
-    });
+    let report_for_term = report_path.clone();
+    let registry_for_term = registry.clone();
+    let gate_for_term = gate.clone();
+    let watcher = spawn_kill_watcher(
+        gate.clone(),
+        state_dir.join("STOP"),
+        move || {
+            let rest = rest_for_kill.clone();
+            let ids = registry_for_kill.ids();
+            async move {
+                let n = rest.cancel_orders(&ids).await;
+                tracing::info!(cancelled = n, of = ids.len(), "kill: session orders cancelled");
+            }
+        },
+        // Last words on SIGTERM: the full report only exists after a clean
+        // pipeline drain, so leave SOME forensic record (never clobber a
+        // complete report from an earlier attempt in the same state dir).
+        move || {
+            if report_for_term.exists() {
+                return;
+            }
+            let json = serde_json::json!({
+                "terminated": "SIGTERM",
+                "session_order_ids": registry_for_term.ids(),
+                "ledger_spent_cents": gate_for_term.ledger_spent_cents(),
+            });
+            if let Ok(s) = serde_json::to_string_pretty(&json) {
+                let _ = earshot::fsio::write_atomic(&report_for_term, s.as_bytes());
+            }
+        },
+    );
 
     // Audio pipeline runs on its own OS threads (it owns a current-thread
     // runtime for the source, so it must not run inside this runtime).
@@ -797,7 +822,7 @@ async fn arm(
     let mut json = serde_json::to_value(&report)?;
     json["orders"] = serde_json::to_value(&exec_report.orders)?;
     json["lost_races"] = exec_report.lost_races.into();
-    std::fs::write(&report_path, serde_json::to_string_pretty(&json)?)?;
+    earshot::fsio::write_atomic(&report_path, serde_json::to_string_pretty(&json)?.as_bytes())?;
     println!("\nreport written to {}", report_path.display());
     Ok(())
 }
@@ -917,16 +942,21 @@ async fn kill_drill(ticker: &str, auto: bool) -> Result<(), AnyErr> {
     let ids = registry.ids();
     let t0 = std::sync::Arc::new(std::sync::Mutex::new(None::<MonotonicNs>));
     let t0_w = t0.clone();
-    let watcher = spawn_kill_watcher(gate.clone(), stop_file.clone(), move || {
-        let rest = rest_for_kill.clone();
-        let ids = ids.clone();
-        let t0 = t0_w.clone();
-        async move {
-            *t0.lock().unwrap() = Some(MonotonicNs::now());
-            let n = rest.cancel_orders(&ids).await;
-            tracing::info!(cancelled = n, of = ids.len(), "drill: session orders cancelled");
-        }
-    });
+    let watcher = spawn_kill_watcher(
+        gate.clone(),
+        stop_file.clone(),
+        move || {
+            let rest = rest_for_kill.clone();
+            let ids = ids.clone();
+            let t0 = t0_w.clone();
+            async move {
+                *t0.lock().unwrap() = Some(MonotonicNs::now());
+                let n = rest.cancel_orders(&ids).await;
+                tracing::info!(cancelled = n, of = ids.len(), "drill: session orders cancelled");
+            }
+        },
+        || {},
+    );
 
     if auto {
         tokio::time::sleep(Duration::from_secs(1)).await;
@@ -976,7 +1006,7 @@ async fn book_soak(ticker: &str, secs: u64) -> Result<(), AnyErr> {
         let book = cache.read(ticker);
         match book {
             Some(b) if b.as_of.0 != 0 => println!(
-                "t+{i:>3}s  bid {:?}  ask {:?}  levels {}/{}  seq {}  feed_age {} ms",
+                "t+{i:>3}s  bid {:?}  ask {:?}  (qty=centi-contracts)  levels {}/{}  seq {}  feed_age {} ms",
                 b.best_bid(),
                 b.best_ask(),
                 b.yes_bids.len(),

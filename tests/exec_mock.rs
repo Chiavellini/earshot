@@ -326,12 +326,17 @@ async fn kill_switch_stop_file_cancels_and_disarms() {
     let stop = state.path().join("STOP");
     let cancelled = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let c2 = cancelled.clone();
-    let watcher = earshot::risk::spawn_kill_watcher(gate.clone(), stop.clone(), move || {
-        let c = c2.clone();
-        async move {
-            c.store(true, std::sync::atomic::Ordering::SeqCst);
-        }
-    });
+    let watcher = earshot::risk::spawn_kill_watcher(
+        gate.clone(),
+        stop.clone(),
+        move || {
+            let c = c2.clone();
+            async move {
+                c.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+        },
+        || {},
+    );
     tokio::time::sleep(Duration::from_millis(50)).await;
     assert!(gate.check_order(TICKER, 1, 1, 0, 0).is_ok());
     std::fs::write(&stop, "x").unwrap();

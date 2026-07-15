@@ -119,7 +119,9 @@ struct LedgerStore {
 }
 
 impl LedgerStore {
-    /// Serialize the current total (brief lock) and write it. Never on the
+    /// Serialize the current total (brief lock) and write it ATOMICALLY
+    /// (temp+rename — a kill mid-write must never truncate the money
+    /// backstop; see `RiskGate::new`'s corrupt-file refusal). Never on the
     /// fire path. Preserves the `{"spent_cents": N}` on-disk shape.
     fn persist(&self) {
         let json = {
@@ -128,7 +130,7 @@ impl LedgerStore {
         };
         match json {
             Ok(json) => {
-                if let Err(e) = std::fs::write(&self.path, json) {
+                if let Err(e) = crate::fsio::write_atomic(&self.path, json.as_bytes()) {
                     tracing::error!("probe ledger persist failed: {e}");
                 }
             }
@@ -157,10 +159,23 @@ impl RiskGate {
     pub fn new(cfg: RiskConfig, state_dir: &Path) -> std::io::Result<Self> {
         std::fs::create_dir_all(state_dir)?;
         let ledger_path = state_dir.join("probe_ledger.json");
-        let ledger: Ledger = std::fs::read_to_string(&ledger_path)
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default();
+        // Missing file = fresh event, start at zero. A PRESENT file that does
+        // not parse is refused loudly: defaulting a corrupt ledger to zero
+        // would silently erase the cross-run $1 spend backstop.
+        let ledger: Ledger = match std::fs::read_to_string(&ledger_path) {
+            Ok(s) => serde_json::from_str(&s).map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!(
+                        "corrupt probe ledger {} ({e}) — REFUSING to start: this file is the \
+                         cumulative money backstop; inspect and restore it, never delete blindly",
+                        ledger_path.display()
+                    ),
+                )
+            })?,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ledger::default(),
+            Err(e) => return Err(e),
+        };
         Ok(RiskGate {
             cfg: cfg.clamped(),
             armed: AtomicBool::new(false),
@@ -274,22 +289,49 @@ impl RiskGate {
     }
 }
 
+/// Test hook: the SIGTERM path ends in `process::exit`, which would kill the
+/// test runner — `tests/kill_sigterm.rs` flips this off to observe the kill
+/// sequence in-process. Always true in production.
+#[doc(hidden)]
+pub static SIGTERM_EXITS: AtomicBool = AtomicBool::new(true);
+
 /// Kill-switch watcher: polls `state/STOP` every 200 ms and listens for
-/// SIGINT/SIGTERM. On trigger, runs `on_kill` (cancel-all) then flips the
-/// gate. Returns the poller JoinHandle.
-pub fn spawn_kill_watcher<F, Fut>(
+/// SIGINT and SIGTERM. On any trigger: flip the gate, run `on_kill`
+/// (cancel-all), force a durable ledger flush.
+///
+/// STOP/SIGINT then let the process live (the pipeline winds down disarmed —
+/// operator-driven, the supervisor keeps its report path). SIGTERM is the
+/// UNATTENDED kill (launchd, `launch-event.sh`'s trap, the supervisor's
+/// port cleanup): after the kill sequence it runs `on_terminate` (last-words
+/// reporting) and exits the process with 143, because the sender expects
+/// termination — swallowing SIGTERM would leak the process and wedge the
+/// port. Returns the poller JoinHandle.
+pub fn spawn_kill_watcher<F, Fut, G>(
     gate: std::sync::Arc<RiskGate>,
     stop_file: PathBuf,
     on_kill: F,
+    on_terminate: G,
 ) -> tokio::task::JoinHandle<()>
 where
     F: Fn() -> Fut + Send + Sync + 'static,
     Fut: std::future::Future<Output = ()> + Send,
+    G: FnOnce() + Send + 'static,
 {
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(std::time::Duration::from_millis(200));
         let ctrl_c = tokio::signal::ctrl_c();
         tokio::pin!(ctrl_c);
+        // Install failure would leave SIGTERM at its default (instant death,
+        // no cancel) — degrade loudly to STOP/SIGINT-only rather than
+        // panicking the watcher (a dead watcher is a dead kill switch).
+        let mut sigterm = match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(s) => Some(s),
+            Err(e) => {
+                tracing::error!("SIGTERM handler install FAILED ({e}) — unattended kills will not cancel orders");
+                None
+            }
+        };
+        let mut terminated = false;
         loop {
             tokio::select! {
                 _ = tick.tick() => {
@@ -302,15 +344,34 @@ where
                     tracing::error!("SIGINT — killing");
                     break;
                 }
+                _ = async {
+                    match sigterm.as_mut() {
+                        Some(s) => { s.recv().await; }
+                        None => std::future::pending::<()>().await,
+                    }
+                } => {
+                    tracing::error!("SIGTERM — killing, then exiting");
+                    terminated = true;
+                    break;
+                }
             }
         }
         let t0 = MonotonicNs::now();
         gate.kill();
         on_kill().await;
+        // Kill is an emergency: make the ledger durable NOW — on SIGTERM
+        // neither the persister nor the Drop flush will get another chance.
+        gate.flush();
         tracing::info!(
             kill_to_cancel_ms = MonotonicNs::now().saturating_since(t0) / 1_000_000,
-            "kill switch complete: orders cancelled, disarmed"
+            "kill switch complete: orders cancelled, disarmed, ledger flushed"
         );
+        if terminated {
+            on_terminate();
+            if SIGTERM_EXITS.load(Ordering::SeqCst) {
+                std::process::exit(143);
+            }
+        }
     })
 }
 
@@ -382,6 +443,35 @@ mod tests {
         assert!(matches!(g.check_order("T", 2, 1, 0, 0), Err(Refusal::ProbeLedger { .. })));
         g.record_send(1, 1);
         assert!(matches!(g.check_order("T", 1, 1, 0, 0), Err(Refusal::ProbeLedger { .. })));
+    }
+
+    #[test]
+    fn corrupt_ledger_refuses_to_start() {
+        // A truncated/garbage ledger must NEVER default to zero spend — that
+        // would erase the cross-run money backstop (post-mortem 2026-07-15).
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("probe_ledger.json"), "{\"spent_c").unwrap();
+        let err = RiskGate::new(permissive(), dir.path()).map(|_| ()).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+        // Missing file stays fine: fresh event starts at zero.
+        let dir2 = tempfile::tempdir().unwrap();
+        assert_eq!(RiskGate::new(permissive(), dir2.path()).unwrap().ledger_spent_cents(), 0);
+    }
+
+    #[test]
+    fn ledger_persist_is_atomic_no_temp_residue() {
+        let dir = tempfile::tempdir().unwrap();
+        let g = RiskGate::new(permissive(), dir.path()).unwrap();
+        g.record_send(1, 30);
+        g.flush();
+        let names: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        assert_eq!(names, vec!["probe_ledger.json"], "unexpected files: {names:?}");
+        // And the flushed file round-trips.
+        let g2 = RiskGate::new(permissive(), dir.path()).unwrap();
+        assert_eq!(g2.ledger_spent_cents(), 30);
     }
 
     #[test]
