@@ -10,7 +10,7 @@
 #     --account ~/.earshot/acctA.env \
 #     --bind-port 8080 \
 #     --to +18883243618 --dtmf "1364784#" \
-#     [--i-am-live] [--allow-mention]
+#     [--i-am-live] [--allow-mention] [--fillable]
 #
 # The account env file is the single source of truth for THIS event's secrets:
 # it must export the Kalshi pair (KALSHI_API_KEY_ID / KALSHI_PRIVATE_KEY_PATH,
@@ -26,7 +26,7 @@
 #   - distinct state dir (state/<event-id>) → distinct $1 ledger + STOP kill file
 set -euo pipefail
 
-CONFIG="" ACCOUNT="" BIND_PORT="" TO="" DTMF="" LIVE="" ALLOW_MENTION="" NGROK_CONFIG=""
+CONFIG="" ACCOUNT="" BIND_PORT="" TO="" DTMF="" LIVE="" ALLOW_MENTION="" FILLABLE="" NGROK_CONFIG=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --config)        CONFIG="$2"; shift 2 ;;
@@ -37,11 +37,12 @@ while [[ $# -gt 0 ]]; do
     --ngrok-config)  NGROK_CONFIG="$2"; shift 2 ;;
     --i-am-live)     LIVE="--i-am-live"; shift ;;
     --allow-mention) ALLOW_MENTION="--allow-mention"; shift ;;
+    --fillable)      FILLABLE="--fillable"; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
 [[ -n "$CONFIG" && -n "$ACCOUNT" && -n "$BIND_PORT" && -n "$TO" ]] || {
-  echo "usage: $0 --config <cfg> --account <env-file> --bind-port <port> --to +1... [--dtmf 1234#] [--ngrok-config <yml>] [--i-am-live] [--allow-mention]" >&2
+  echo "usage: $0 --config <cfg> --account <env-file> --bind-port <port> --to +1... [--dtmf 1234#] [--ngrok-config <yml>] [--i-am-live] [--allow-mention] [--fillable]" >&2
   exit 2
 }
 [[ -f "$CONFIG" ]]  || { echo "config not found: $CONFIG" >&2; exit 2; }
@@ -69,19 +70,30 @@ echo "event=${EVENT_ID}  account=${ACCOUNT}  port=${BIND_PORT}  state=${STATE_DI
 # allows only ONE agent per account, so two SIMULTANEOUS tunnels need two ngrok
 # accounts — pass each event's auth file via --ngrok-config <acctX.yml>.
 NGROK_WEB_PORT=$((4040 + BIND_PORT - 8080))
-NGROK_CONFIG_ARG=()
-[[ -n "$NGROK_CONFIG" ]] && NGROK_CONFIG_ARG=(--config "$NGROK_CONFIG")
+# ngrok v3 has no --web-addr CLI flag; web_addr is a config option. Compose the
+# account config (default agent config, or --ngrok-config) with a tiny per-event
+# override so each event gets its own web-API port. Later --config wins on merge.
+BASE_NGROK_CONFIG="$NGROK_CONFIG"
+if [[ -z "$BASE_NGROK_CONFIG" ]]; then
+  BASE_NGROK_CONFIG=$(ngrok config check 2>/dev/null | sed -n 's/^Valid configuration file at //p')
+fi
+[[ -n "$BASE_NGROK_CONFIG" && -f "$BASE_NGROK_CONFIG" ]] || {
+  echo "could not locate ngrok agent config (run 'ngrok config check' / pass --ngrok-config)" >&2; exit 1
+}
+EVENT_NGROK_CONFIG="${STATE_DIR}/ngrok-event.yml"
+printf 'version: "3"\nagent:\n  web_addr: 127.0.0.1:%s\n' "$NGROK_WEB_PORT" > "$EVENT_NGROK_CONFIG"
 ngrok http "$BIND_PORT" \
-  --web-addr "127.0.0.1:${NGROK_WEB_PORT}" \
-  "${NGROK_CONFIG_ARG[@]}" \
+  --config "$BASE_NGROK_CONFIG" --config "$EVENT_NGROK_CONFIG" \
   --log stdout --log-level info > "${STATE_DIR}/ngrok.log" 2>&1 &
 NGROK_PID=$!
 trap 'kill "$NGROK_PID" 2>/dev/null || true' EXIT
-sleep 3
 # Select the tunnel that actually forwards to THIS event's bind port (never
 # blindly tunnels[0]), so a stray/other tunnel on the same agent can't mislead us.
-STREAM_HOST=$(curl -s "http://127.0.0.1:${NGROK_WEB_PORT}/api/tunnels" \
-  | BIND_PORT="$BIND_PORT" python3 -c '
+# Poll: the tunnel takes a few seconds to establish after the agent starts.
+STREAM_HOST=""
+for _ in $(seq 1 30); do
+  STREAM_HOST=$(curl -s "http://127.0.0.1:${NGROK_WEB_PORT}/api/tunnels" \
+    | BIND_PORT="$BIND_PORT" python3 -c '
 import sys, json, os
 port = os.environ["BIND_PORT"]
 tuns = json.load(sys.stdin).get("tunnels", [])
@@ -89,7 +101,11 @@ match = [t for t in tuns if t.get("config", {}).get("addr", "").endswith(":" + p
 pick = (match or tuns)
 print(pick[0]["public_url"].split("://")[1] if pick else "")
 ' 2>/dev/null || true)
-[[ -n "$STREAM_HOST" ]] || { echo "could not read ngrok tunnel host from :${NGROK_WEB_PORT} for port ${BIND_PORT}" >&2; exit 1; }
+  [[ -n "$STREAM_HOST" ]] && break
+  kill -0 "$NGROK_PID" 2>/dev/null || { echo "ngrok exited — see ${STATE_DIR}/ngrok.log" >&2; exit 1; }
+  sleep 1
+done
+[[ -n "$STREAM_HOST" ]] || { echo "could not read ngrok tunnel host from :${NGROK_WEB_PORT} for port ${BIND_PORT} within 30 s" >&2; exit 1; }
 STREAM_URL="wss://${STREAM_HOST}/media"
 echo "ngrok tunnel: ${STREAM_URL} (web-api :${NGROK_WEB_PORT}, pid ${NGROK_PID})"
 
@@ -100,11 +116,20 @@ export TWILIO_STREAM_URL="$STREAM_URL"
 # Arm the pipeline (blocks, waiting for the dial). Dial from a second shell, or
 # background this and dial below.
 REPORT="${STATE_DIR}/report.json"
-echo "arming: earshot arm --config ${CONFIG} --state-dir ${STATE_DIR} --report ${REPORT} ${LIVE} ${ALLOW_MENTION}"
-cargo run --release -- arm --config "$CONFIG" --state-dir "$STATE_DIR" --report "$REPORT" $LIVE $ALLOW_MENTION &
+echo "arming: earshot arm --config ${CONFIG} --state-dir ${STATE_DIR} --report ${REPORT} ${LIVE} ${ALLOW_MENTION} ${FILLABLE}"
+cargo run --release -- arm --config "$CONFIG" --state-dir "$STATE_DIR" --report "$REPORT" $LIVE $ALLOW_MENTION $FILLABLE &
 ARM_PID=$!
 trap 'kill "$ARM_PID" "$NGROK_PID" 2>/dev/null || true' EXIT
-sleep 8  # let the WS listener bind before Twilio connects
+# Wait for the WS listener to actually bind before dialing — arm validates every
+# market and waits for book snapshots first, which takes ~30 s on a 14-market
+# config. Dialing early hands Twilio a dead tunnel and the stream is lost.
+for _ in $(seq 1 120); do
+  nc -z 127.0.0.1 "$BIND_PORT" 2>/dev/null && break
+  kill -0 "$ARM_PID" 2>/dev/null || { echo "arm exited before binding :${BIND_PORT} — see log above" >&2; exit 1; }
+  sleep 1
+done
+nc -z 127.0.0.1 "$BIND_PORT" 2>/dev/null || { echo "arm never bound :${BIND_PORT} within 120 s" >&2; exit 1; }
+echo "WS listener up on :${BIND_PORT} — dialing"
 
 # Dial this event's call, forking its inbound audio to THIS event's stream URL.
 scripts/twilio-dial.sh --to "$TO" ${DTMF:+--dtmf "$DTMF"} --stream-url "$STREAM_URL"

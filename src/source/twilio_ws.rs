@@ -247,14 +247,34 @@ impl AudioSource for TwilioWsSource {
         let listener = TcpListener::from_std(self.listener)?;
         tracing::info!(addr = %listener.local_addr()?, "twilio source: waiting for stream connection");
 
-        let (stream, peer) = tokio::time::timeout(accept_timeout, listener.accept())
+        // Accept until one connection completes the WS handshake. A public
+        // tunnel URL sees stray scanners and spoofed dialers; a failed or
+        // rejected handshake must not kill the armed pipeline (that would let
+        // any unauthenticated TCP connect deny service mid-event). Fail-loud
+        // still applies to the accepted stream itself.
+        let deadline = tokio::time::Instant::now() + accept_timeout;
+        let (mut ws, peer) = loop {
+            let remaining = deadline
+                .checked_duration_since(tokio::time::Instant::now())
+                .filter(|d| !d.is_zero())
+                .ok_or_else(|| {
+                    protocol_err("no Twilio connection before accept_timeout — call never landed?")
+                })?;
+            let (stream, peer) = tokio::time::timeout(remaining, listener.accept())
+                .await
+                .map_err(|_| protocol_err("no Twilio connection before accept_timeout — call never landed?"))??;
+            match tokio_tungstenite::accept_hdr_async(stream, |req: &Request, resp: Response| {
+                check_signature(req, resp, auth_token.as_deref(), public_url.as_deref())
+            })
             .await
-            .map_err(|_| protocol_err("no Twilio connection before accept_timeout — call never landed?"))??;
-        let mut ws = tokio_tungstenite::accept_hdr_async(stream, |req: &Request, resp: Response| {
-            check_signature(req, resp, auth_token.as_deref(), public_url.as_deref())
-        })
-        .await
-        .map_err(|e| protocol_err(format!("websocket handshake: {e}")))?;
+            {
+                Ok(ws) => break (ws, peer),
+                Err(e) => {
+                    tracing::warn!(%peer, error = %e, "handshake failed — connection dropped, still waiting for Twilio");
+                    continue;
+                }
+            }
+        };
         tracing::info!(%peer, "twilio stream connected");
 
         let b64 = base64::engine::general_purpose::STANDARD;

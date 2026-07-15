@@ -38,11 +38,16 @@ handshake callback and rejects a mismatch with 403.
 - Scheme is from official docs (pinned in `VERIFICATIONS.md`); confirm the
   reconstructed-URL bytes against a live handshake in the loopback rehearsal.
 
-## Message shapes (source: Twilio Media Streams docs — PENDING live capture)
+## Message shapes (LIVE-VERIFIED 2026-07-14, loopback rehearsal)
 
-All messages are JSON over WS text frames. Confidence: from official docs,
-2026-07-11; each shape must be re-verified from the captured JSONL of the
-first loopback call and this file stamped accordingly.
+All messages are JSON over WS text frames. Confidence: live-verified
+2026-07-14 across three real ngrok-fronted streams (CallSids `CA919fb7…`
+outbound_track TTS, `CA5831c4…` inbound_track vs the real MS bridge,
+`CA2dfec9…` full launch-event.sh chain): `connected` → `start` (mediaFormat
+audio/x-mulaw 8 kHz mono verified; tracks `["outbound"]` / `["inbound"]` as
+dialed) → dense `media` frames (1280/3585/2674 per call, 0 drops) → clean
+`stop` on hangup. Signature verified on every handshake (see
+`VERIFICATIONS.md` Q-M3).
 
 - `{"event":"connected","protocol":"Call","version":"1.0.0"}` — first.
 - `{"event":"start","sequenceNumber":"1","start":{"accountSid":…,"streamSid":…,
@@ -82,7 +87,9 @@ the strategy's structural edge.
 - Trial accounts restrict outbound calls to verified numbers and inject a
   preamble — upgrade the account before the rehearsal.
 - A new-account compliance/fraud review hold can block outbound calling even
-  when the read-only Account API still reports `status=active`. Confirm the
+  when the read-only Account API still reports `status=active`. The 2026-07
+  hold (ticket #28111133) was CONFIRMED LIFTED 2026-07-14 by live probe
+  (call accepted, CallSid returned). Confirm the
   account is actually clear before the rehearsal with
   `scripts/twilio-status.sh` (read-only snapshot) and, definitively,
   `scripts/twilio-status.sh --probe --probe-to +1...` — it places a

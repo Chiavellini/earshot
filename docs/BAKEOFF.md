@@ -339,7 +339,14 @@ real-money keywords (tariff, recession) improved on BOTH axes** (tariff recall u
 FA down; recession FA down). fp32 regressed FA on two NON-traded keywords
 (acquisition +2, guidance +1) — phonetic-neighbour false alarms the higher-fidelity
 encoder surfaces. Per the deployment guard ("no FA regression on ANY keyword"), the
-global live flip was HELD for review: fp32 is not universally FA-neutral, so the
-untested live words (inflation + event-specific, no corpus positives) could also
-see more FAs. Decision deferred to the operator; the `fp32` toggle stays available
-per-config in the meantime.
+global live flip was initially HELD for review: fp32 is not universally FA-neutral,
+so the untested live words (inflation + event-specific, no corpus positives) could
+also see more FAs.
+
+**Operator decision (recorded 2026-07-14, commit `9a163d3`): flip `fp32 = true`
+in the live configs.** Rationale: both money-path keywords improve on both axes;
+every FA regression sits on words the live configs hold at 1¢ observe-only
+(`max_price_cents = 1`, non-crossing), where a false alarm costs nothing and is
+itself useful validation data. Guard for future configs: before promoting any
+observe-word to a fillable tier, re-check its fp32 FA rate on corpus — the
+"no FA regression" bar applies at promotion time, not only globally.

@@ -140,10 +140,11 @@ ceilings for the two-account design.
   one shared bucket with nothing coordinating them. (Two separate accounts = two separate
   buckets, so this contention does not apply to the two-account design — §8.)
 
-### Twilio — outbound is fraud-blocked, and it blocks even one call
-- **A fraud/compliance hold currently disables outbound voice entirely**
-  (`docs/TWILIO.md:82-88`; ticket #28111133 — check status with
-  `scripts/twilio-status.sh --probe`). This gates a *single* call, let alone two.
+### Twilio — outbound fraud hold (RESOLVED for account A, 2026-07-14)
+- **The fraud/compliance hold on the primary account was LIFTED** — confirmed
+  by live probe 2026-07-14 (`scripts/twilio-status.sh --probe` → call accepted).
+  Ticket #28111133. Any NEW second account for multi-event should expect the
+  same review hold and probe it the same way before relying on it.
 - **Inbound does not sidestep it.** EARSHOT places an *outbound* call and ingests its
   `inbound_track` (the conference audio coming back). The hold sits exactly on the
   outbound origination the system depends on; there is no inbound-DID path.

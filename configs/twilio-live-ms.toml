@@ -2,10 +2,13 @@
 # Review before arming: confirm variants against state/rules/*.json and
 # research the dial-in (number + passcode) — NOT in the repo.
 # Posture: MENTION-FILL, TIERED (arm --i-am-live --allow-mention --fillable) — only precision-vetted words fill at the live ask; unvalidated words observe at 1¢. Bounded by config notional caps + $1 probe ledger.
+# Morgan Stanley Q2 2026 call — Wednesday 2026-07-15 8:30 AM ET (results ~7:30 AM ET).
+# Dial-in: +1-844-886-2200 (domestic), +1-646-307-1096 (intl), passcode 400700#.
+# Source (primary, verified 2026-07-14): morganstanley.com/about-us-ir/morgan-stanley-second-quarter-2026-investor-conference-call
 
 [event]
 id        = "KXEARNINGSMENTIONMS-26JUL15"
-starts_at = "2026-07-15T00:00:00Z"  # TODO: set the real call time (UTC)
+starts_at = "2026-07-15T12:30:00Z"  # 8:30 AM ET call start, per MS IR (verified 2026-07-14)
 
 [pipeline]
 chunk_ms       = 80
@@ -154,11 +157,14 @@ budget_contracts = 1
 policy           = "confirmed_only"
 
 # Tariff (KXEARNINGSMENTIONMS-26JUL15-TARI) — corpus-tuned; cap: min fill = live ask (vetted)
+# Cap raised 14→45 on 2026-07-14 22:19 CST: live yes_ask was 38¢ (probe evidence),
+# so the generated 14¢ cap could never fill. 45¢ = ask + headroom, under the 50¢
+# MENTION_FILL_CAP_CENTS ceiling. Executor crosses AT the ask, not the cap.
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONMS-26JUL15-TARI"
 phrase           = "tariff"
 variants         = ["tariff", "tariffs"]
-max_price_cents  = 14
+max_price_cents  = 45
 budget_contracts = 1
 policy           = "confirmed_only"
 confirmed_threshold = 0.1

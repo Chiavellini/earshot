@@ -1,3 +1,56 @@
+# LIVE RUN — Wednesday 2026-07-15, Morgan Stanley Q2 call (CURRENT)
+
+> The JPM section below is retained as the original template; the JPM call
+> (2026-07-14) passed without a live run — its markets are finalized. The MS
+> run below was fully drilled the night of 2026-07-14 (all drills PASSED:
+> Twilio hold probe, kill-drill 140 ms, mention probes on TARI/RECE, dry-run
+> arm 14/14 markets, loopback rehearsal with 3/3 keyword detections, and an
+> end-to-end `launch-event.sh` dress rehearsal against the real MS bridge).
+
+Posture: **mention-fill, tiered** (`--i-am-live --allow-mention --fillable`) —
+recession (cap 26¢) and tariff (cap 45¢; live ask was 38¢ on 07-14 evening,
+the generated 14¢ cap could never fill) may cross the ask and FILL; the other
+12 words observe at 1¢ non-crossing. Worst case 83¢, backstopped by the 100¢
+event notional cap and the per-event $1 ledger (fresh:
+`state/KXEARNINGSMENTIONMS-26JUL15/probe_ledger.json` = 0¢).
+
+- **Call**: Wednesday 2026-07-15 **8:30 AM ET** (results ~7:30 AM ET).
+- **Dial-in** (primary source morganstanley.com IR, verified 2026-07-14):
+  **+1-844-886-2200** (intl +1-646-307-1096), passcode **400700#**.
+- **Markets**: `KXEARNINGSMENTIONMS-26JUL15` — 14 active (verified via API
+  2026-07-14); rules stored `state/KXEARNINGSMENTIONMS-26JUL15/rules/`.
+- **Account env**: `~/.earshot/ms.env` (Twilio + Kalshi combined, created
+  2026-07-14, mode 600).
+
+## Morning checklist (fits 10 minutes; call at 8:30 ET = 7:30 CST)
+
+```
+cd ~/Code/ear
+# 1. Sanity (~2 min): clock, markets, no stale STOP
+sntp -sS time.apple.com 2>/dev/null || true   # or trust arm's own NTP check
+rm -f state/KXEARNINGSMENTIONMS-26JUL15/STOP state/STOP
+cargo run --release -- book --ticker KXEARNINGSMENTIONMS-26JUL15-TARI --secs 5
+# 2. Launch (arm validates everything; dial fires automatically once the
+#    WS listener is up — target launch ~8:10-8:15 ET, bridge opens early):
+scripts/launch-event.sh \
+  --config configs/twilio-live-ms.toml \
+  --account ~/.earshot/ms.env \
+  --bind-port 8080 \
+  --to +18448862200 --dtmf "400700#" \
+  --i-am-live --allow-mention --fillable
+# 3. Kill (either leg, any time):
+#    touch state/KXEARNINGSMENTIONMS-26JUL15/STOP        # orders: cancel + disarm
+#    scripts/twilio-hangup.sh <CallSid printed at dial>  # audio leg
+# 4. After the call: report at state/KXEARNINGSMENTIONMS-26JUL15/report.json
+```
+
+If the DTMF passcode isn't accepted (bridge prompt timing), hang up and
+re-dial manually with more leading waits: `--dtmf "wwww400700#"` (each w =
+0.5 s). The dress rehearsal confirmed the bridge answers and streams audio;
+passcode acceptance can only be proven when the conference is open.
+
+---
+
 # First live run — Tuesday 2026-07-14 (JPMorgan Q2 call)
 
 Posture: **mention-probe** — 1¢ IOC × 1 contract per keyword, $1 cumulative

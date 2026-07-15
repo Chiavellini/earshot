@@ -509,10 +509,20 @@ time compare are round-trip tested (`signature_round_trips_and_rejects_tampering
 (`valid_twilio_signature`); mismatch → 403. Token from `TWILIO_AUTH_TOKEN`; the
 exact configured stream URL may be pinned via `TWILIO_STREAM_URL` (else rebuilt
 from `Host` + request target).
-**Confidence:** high on the crypto; the reconstructed-URL byte-for-byte match
-behind ngrok is **not yet confirmed against a live Twilio handshake**.
-**Re-verify:** the loopback rehearsal — capture a real upgrade request, confirm
-the reconstructed URL matches the signed URL, upgrade this pin to live-verified.
+**Confidence:** **live-verified 2026-07-14** (loopback rehearsal, ngrok-fronted):
+three real Twilio streams accepted with `TWILIO_STREAM_URL` pinned as the
+signature base — "X-Twilio-Signature verified" on every handshake, no 403s.
+Evidence CallSids `CA919fb7…` (outbound_track TTS rehearsal, 1280 frames, 3/3
+keyword detections), `CA5831c4…` (inbound_track vs the real MS bridge via
+`twilio-dial.sh` + DTMF, 3585 frames, 0 drops), `CA2dfec9…` (full
+`launch-event.sh` chain, 2674 frames, 0 drops, clean STOP+hangup teardown,
+report.json written). Message shapes (`connected`/`start` with
+mediaFormat audio/x-mulaw 8 kHz mono/`media`/`stop`) matched the pinned docs
+shapes on all three calls (`docs/TWILIO.md` stamped live-verified).
+**Also live-found 2026-07-14:** a TCP connection that fails the WS handshake
+used to kill the armed pipeline (single-accept). Fixed: the listener now drops
+failed handshakes and keeps waiting until `accept_timeout`
+(`tests/twilio_source.rs::stray_connection_does_not_kill_the_listener`).
 
 ## Open items carried forward
 
@@ -525,9 +535,11 @@ the reconstructed URL matches the signed URL, upgrade this pin to live-verified.
 4. **Exact max batch size** — undocumented; bounded by write bucket only.
 5. §12 Q7 (Rust SIP story) and Q8 (conference-provider landscape) — M3
    concerns, deliberately not researched yet.
-6. **Order-connection latency evidence** — run `probe-order --allow-mention`
-   against an active Mentions market to capture the negotiated HTTP version,
-   connection reuse, and the `send→hdrs`/`hdrs→ack` split; fold the numbers
-   into the 2026-07-13 connection-tuning pin above (code + docs already
-   landed). Ideally a cold run (order is the first request) vs a warm run to
-   quantify the pre-warm win.
+6. ~~Order-connection latency evidence~~ — RESOLVED 2026-07-14: `probe-order
+   --allow-mention` against live Mentions markets (KXEARNINGSMENTIONMS-26JUL15-
+   TARI and -RECE, both active): negotiated **HTTP/1.1**, cold single-shot CLI
+   runs measured `build+sign` 2.6–3.3 ms, `send→hdrs` 128–134 ms,
+   `hdrs→ack` 26–31 µs (send→ack ≈ 128–134 ms). These are COLD numbers (each
+   CLI invocation opens a fresh TLS+TCP connection); the armed pipeline's
+   pre-warmed connection should shave the handshake share — capture a warm
+   sample from tomorrow's live run report.

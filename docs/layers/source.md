@@ -30,6 +30,13 @@ visibility); our own `seq` stays dense. μ-law decode lives HERE because
 μ-law is this source's codec (the "decoding beyond its own codec"
 exclusion refers to downstream resampling/VAD, which stay in preproc).
 
+The listener accepts until one connection COMPLETES the WS handshake
+(deadline = `accept_timeout`): a stray scanner, health probe, or spoofed
+dialer that fails the handshake is logged and dropped, and the listener
+keeps waiting — a garbage TCP connect must never deny service while armed
+on a public tunnel URL (live-found 2026-07-14; regression:
+`tests/twilio_source.rs::stray_connection_does_not_kill_the_listener`).
+
 `X-Twilio-Signature` is validated during the WS handshake (`accept_hdr_async`
 callback → `valid_twilio_signature`, HMAC-SHA1 over the stream URL): a spoofed
 dialer never becomes an audio source. The auth token comes from the config's
@@ -86,7 +93,9 @@ Two modes:
 - Never silently resample or downmix: wrong format = error (replay:
   constructor; Twilio: `SourceError::Protocol` on any `start.mediaFormat`
   other than audio/x-mulaw 8 kHz mono).
-- Twilio: a bad/missing `X-Twilio-Signature` fails the WS handshake (403).
+- Twilio: a bad/missing `X-Twilio-Signature` fails the WS handshake (403);
+  the rejected connection is dropped and the listener keeps waiting (a
+  spoofer or scanner must not kill the armed pipeline).
 - Arbiter: needs ≥ 2 inners (constructor error otherwise). It returns
   `EndOfStream` once all legs end; only if *every* leg errors before producing
   a frame does it surface the first error (one dead leg must not tear down).
