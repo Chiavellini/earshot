@@ -16,8 +16,11 @@ cache, never a blocking REST fetch"). NOT responsible for: deciding anything
 
 ## Exit door
 - **Type:** `Arc<book::Book>` — `yes_bids`/`yes_asks: Vec<(u32 cents, u32
-  qty)>` best-first, `seq`, `as_of: MonotonicNs` — plus helpers
-  `best_ask()`, `best_bid()`, `depth_at_or_below(cap)`.
+  qty_centi_contracts)>` best-first, `seq`, `as_of: MonotonicNs` — plus
+  helpers `best_ask()`, `best_bid()`, `depth_at_or_below(cap)`. Quantities
+  are CENTI-contracts (100 = 1 whole contract): Kalshi supports fractional
+  contracts (pinned 2026-07-15) and exact hundredths keep deltas drift-free
+  and sub-1.0 levels present.
 - **Mechanism:** `BookCache::read(&ticker) -> Option<Arc<Book>>` — a
   wait-free `ArcSwap` load; readers can never observe a torn book. Plus
   `feed_age_ns() -> u64` (ns since last WS frame; `u64::MAX` before the
@@ -27,6 +30,12 @@ cache, never a blocking REST fetch"). NOT responsible for: deciding anything
 - The NO→YES conversion happens here and only here:
   `yes_ask = 100¢ − no_bid` (`Ladders::apply_level`). Everything downstream
   thinks in yes-leg cents.
+- Quantities parse EXACTLY (`fp_to_centi_contracts`): truncating fractional
+  wire sizes to whole contracts deleted sub-1.0 levels and let delta
+  bookkeeping drift (2026-07-15 MS run — see VERIFICATIONS.md). Sub-cent
+  PRICE levels (`deci_cent` structure) are refused: the arm-time validator
+  rejects non-`linear_cent` markets, and the parser drops such levels loudly
+  as belt-and-braces.
 - Publish a complete fresh `Arc<Book>` per applied message — no partial
   mutation visible to readers.
 - Liveness ≠ market activity: the task pings every 500 ms so `feed_age_ns`

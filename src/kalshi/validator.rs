@@ -53,16 +53,31 @@ impl LiveMarketValidator<'_> {
                 )));
             }
 
+            // Price-level structure gate (pinned 2026-07-15): the book cache
+            // prices in integer cents; `deci_cent` markets (0.1¢ steps) would
+            // silently corrupt the ladders. Absent field = older wire = cent
+            // levels; anything else present must be linear_cent.
+            if let Some(pls) = market["price_level_structure"].as_str() {
+                if pls != "linear_cent" {
+                    return Err(KalshiError::Validation(format!(
+                        "market {} price_level_structure is {pls:?} (not linear_cent) — \
+                         the book cache prices in integer cents; refusing to arm",
+                        kw.market_ticker
+                    )));
+                }
+            }
+
             // Audit trail: store the rules text alongside the session state.
             let rules = serde_json::json!({
                 "ticker": kw.market_ticker,
                 "rules_primary": market["rules_primary"],
                 "rules_secondary": market["rules_secondary"],
                 "early_close_condition": market["early_close_condition"],
+                "price_level_structure": market["price_level_structure"],
                 "fetched": "arm-time",
             });
             let path = rules_dir.join(format!("{}.json", kw.market_ticker));
-            std::fs::write(&path, serde_json::to_string_pretty(&rules).unwrap())
+            crate::fsio::write_atomic(&path, serde_json::to_string_pretty(&rules).unwrap().as_bytes())
                 .map_err(|e| KalshiError::Validation(format!("store rules: {e}")))?;
 
             let category = self.category_of(market).await;

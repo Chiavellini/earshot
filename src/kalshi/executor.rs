@@ -119,6 +119,7 @@ pub struct OrderRecord {
     pub hdrs_ts: Option<u64>,
     pub ack_ts: Option<u64>,
     /// Book snapshot at decision time (LOST_RACE forensics, spec §5.6).
+    /// (price_cents, qty_centi_contracts) at decision time — forensic only.
     pub best_ask: Option<(u32, u32)>,
 }
 

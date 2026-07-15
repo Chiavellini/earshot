@@ -334,6 +334,23 @@ bid). Also: a quiet market sends no frames for seconds — feed liveness must
 be measured with pings, not message arrival.
 **Confidence:** high (pinned live).
 
+**Claim (2026-07-15): Kalshi quantities are FRACTIONAL contracts (hundredths),
+and sub-cent price structures exist.** The 2026-07-10 assumption that `*_fp`
+quantities are whole contracts ("23844.00") has drifted: the live MS run
+(state/KXEARNINGSMENTIONMS-26JUL15/autorun.log, 06:05–07:30 CDMX) logged
+thousands of fractional book quantities ("0.77", "0.30", "9888.38"), and REST
+market objects now carry `*_fp` sizes plus `price_level_structure` +
+`price_ranges`: KXEARNINGSMENTIONMS-26JUL15-RECE shows `volume_fp: "3075.67"`
+and `price_level_structure: "linear_cent"` (step 0.0100); KXMVE* markets show
+`"deci_cent"` (step 0.0010 = 0.1¢ price levels). Consequences (both landed
+2026-07-15): book quantities parse EXACTLY as centi-contracts
+(`book.rs::fp_to_centi_contracts` — the old whole-contract truncation deleted
+sub-1.0 levels and let deltas drift; it cost us the true best-ask during the
+MS run), and the arm-time validator REFUSES any market whose
+`price_level_structure` is present and not `linear_cent` (the book prices in
+integer cents).
+**Confidence:** high (pinned live, both wire layers).
+
 **Claim:** Measured order-path latency from this laptop: send→ack ~90–94 ms
 (RTT-dominated), exec→send 352 µs with pre-signed headers + pre-staged body
 (spec §3 stage-7 "<1 ms" target confirmed achievable). The ≤60 ms
