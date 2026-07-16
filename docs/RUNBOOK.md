@@ -1,4 +1,52 @@
-# LIVE RUN — Wednesday 2026-07-15, Morgan Stanley Q2 call (CURRENT)
+# NEXT EVENT — Monday 2026-07-20, Domino's (DPZ) Q2 call — PHONE-FIRST (number hunt)
+
+> **2026-07-16, revised twice.** (1) UAL and every remaining July mention
+> event (DPZ 07-20, GEV 07-22, TSLA 07-22, INTC 07-23) publish NO public
+> dial-in — announcements are webcast-only (UAL/TSLA confirmed in their own
+> 8-K exhibits). (2) BUT the operator corrected the read: a participant phone
+> bridge EXISTS for most of these — the analyst Q&A runs by phone. Transcript
+> evidence: DPZ + INTC operators say "press star-11" (real PSTN bridge); GEV
+> is a moderated bridge (analysts pre-cleared); TSLA alone has NO phone leg
+> (webcast-platform Q&A, "raise hand"/"unmute"). Phone is preferred — the
+> webcast runs ~18-30 s behind, and whoever holds the bridge number beats
+> every webcast listener. The webcast (HLS) adapter design is COMPLETE but
+> DEFERRED (operator decision 2026-07-16: phone-only this week; TSLA is
+> therefore untradeable this week).
+>
+> **DPZ number hunt (Track A) — the event is GO only if one lands by 07-19:**
+> 1. IR ask: investorrelations@dominos.com (VP IR Greg Lemenchick) — operator
+>    sends from their own account.
+> 2. Legacy operator numbers from the 2015 8-K: **888-400-9978 /
+>    +1-706-634-4947, "ask for the Domino's Pizza conference call"** — probe
+>    via a user-approved Twilio bridge call (operator live on the leg), 07-17.
+> 3. Call-morning: the live webcast player often shows a "listen by phone"
+>    tab. ⚠ ir.dominos.com (and ir.united.com) GEO-BLOCK this box (Akamai,
+>    Mexico) — needs a US VPN or the operator's manual check.
+>
+> - **Call**: Monday 2026-07-20, 8:30 AM ET = 6:30 AM CDMX local. Fire 06:05,
+>   wake 06:00, END_HHMM 0740, COMPLETE_EARLIEST 0710.
+> - **Markets**: `KXEARNINGSMENTIONDPZ-26JUL20` — 14 tradeable (prepared +
+>   compile-keywords + dry-run test-arm 14/14 PASSED 2026-07-16; DoorDash
+>   "5+ times" auto-skipped). Config: `configs/twilio-live-dpz.toml`
+>   (tiered fillable: TARI only, cap 35¢). Env: `configs/dpz-autorun.env`
+>   (TO_NUMBER/PASSCODE TBD — the supervisor refuses a live fire while TBD).
+> - **Supervisor**: `scripts/event-autorun.sh` (generalized 2026-07-16,
+>   follow-up 3 closed) driven by a per-event env file named in the launchd
+>   plist via `EARSHOT_EVENT_ENV`; launchd-fired rehearsal PASSED 2026-07-16
+>   08:53 (env sourced, TTS dial, 7124 frames, 3 detections, rc=0).
+
+## Fills — precise status (do not over- or under-claim)
+
+The system HAS filled one real order: the **M2 acceptance fill, 2026-07-10**
+(1¢ × 1 IOC on a non-mention market, 231 ms round-trip, fee $0.0007 — wire
+evidence pinned in `VERIFICATIONS.md` M2 live-drill pins). What has NEVER
+happened is a **detection-triggered mention fill**: the full hear-keyword →
+cross-ask → fill loop. The MS run sent 1 order (canceled unfilled, IOC) and
+lost the race on 4. Ledger `spent_cents` values prove sends, not fills (caps
+are debited on send, never refunded — `src/risk.rs::record_send`). The next
+live event with the fillable posture is that validation.
+
+# LIVE RUN — Wednesday 2026-07-15, Morgan Stanley Q2 call (COMPLETED)
 
 > The JPM section below is retained as the original template; the JPM call
 > (2026-07-14) passed without a live run — its markets are finalized. The MS
@@ -102,9 +150,13 @@ Deferred follow-ups from the same audit (tracked, deliberately NOT done yet):
 2. Warm-path order latency: the one real send this run showed `send→hdrs`
    102 ms and `presign_age` 1.17 s — connection/presign reuse is a LOST_RACE
    lever; belongs to the low-latency detector milestone.
-3. Event windows (`END_HHMM`, the 07:10 gate, the date guard) are hard-coded
-   per event in `ms-autorun.sh` — generalize to per-event config when the next
-   event is scheduled (the supervisor should be `prepare`-generated, not edited).
+3. ~~Event windows hard-coded per event in `ms-autorun.sh`~~ DONE 2026-07-16:
+   renamed `scripts/event-autorun.sh`, all event-specific values (name, config,
+   number, passcode, label, date guard, `END_HHMM_LIVE`,
+   `COMPLETE_EARLIEST_HHMM`, account env, tickers) come from a per-event env
+   file (`configs/<event>-autorun.env`) named via `EARSHOT_EVENT_ENV` in the
+   plist. Missing/incomplete env → refuse + email. `prepare`-generating the
+   env file remains the follow-on.
 4. ~~Test-mode rehearsals share the LIVE event's state dir~~ DONE 2026-07-15:
    `EARSHOT_AUTORUN_TEST_CONFIG` gives rehearsals their own event id/state dir.
 5. After a STOP-triggered kill, the still-running disarmed arm is
@@ -113,13 +165,17 @@ Deferred follow-ups from the same audit (tracked, deliberately NOT done yet):
    escalation covers it (fired for real in the 2026-07-15 rehearsal), but the
    watcher should either keep draining signals or exit the process after a
    STOP kill.
-6. `prepare` can emit detector-unencodable phrases (e.g. "warner bros." —
-   "BROS." not in the BPE vocab) and arm then refuses the entire config at
-   fire time. Sanitize/validate phrases in `prepare` (encode-check against
-   the model vocab) or add a preflight test-arm step.
-7. `notify()` sends are single-shot; one rehearsal SUMMARY email failed
-   (SMTP throttle after ~12 sends that day) — logged + summary file intact,
-   but add one retry with backoff for event-day robustness.
+6. ~~`prepare` can emit detector-unencodable phrases~~ DONE 2026-07-16:
+   `prepare` now sanitizes variants into the detector alphabet AND
+   encode-validates each against the real vocab, dropping (with comments) what
+   cannot encode; `preflight-event.sh` additionally runs `compile-keywords`
+   against the pinned binary. NOTE the second failure class found while
+   fixing: the vocab contains `-`/`'` pieces, so "non-stop" ENCODES to tokens
+   speech never produces — a silently dead entry that encode-checking alone
+   passes; sanitization is what prevents it (see `docs/layers/prepare.md`).
+7. ~~`notify()` sends are single-shot~~ DONE 2026-07-16: one retry with a
+   30 s backoff (immediate retry would re-hit the send-rate throttle);
+   still best-effort/never-fatal. Force-fail verified (both attempts logged).
 
 ## Morning checklist (manual fallback) — ⚠ call is **6:30 AM local (CDMX, UTC-6)** = 8:30 ET
 

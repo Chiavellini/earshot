@@ -10,7 +10,9 @@ numbers/passcodes are not in the repo — printed as a TODO in the output).
 ## Entry door
 - **CLI:** `earshot prepare --event-ticker <EVENT> [--out <path>] [--fillable]`
   (`src/main.rs`, `Command::Prepare`). Connects via `connect_live()` (read-only
-  creds) and calls `prepare::run_prepare(&rest, event_ticker, fillable)`.
+  creds), loads the detector vocab (`kws_compile::TokenTable::from_bpe_model`
+  from `prepare::KWS_MODEL_DIR`; missing model ⇒ `None` + loud warning), and
+  calls `prepare::run_prepare(&rest, event_ticker, fillable, fill_all, table)`.
 - **Data:** `RestClient::event_markets(event_ticker)` (`src/kalshi/rest.rs`) —
   paginated `GET /markets?event_ticker=`, each object carrying `ticker`,
   `yes_sub_title` (the WORD), `yes_ask_dollars`, `can_close_early`,
@@ -30,6 +32,22 @@ numbers/passcodes are not in the repo — printed as a TODO in the output).
   possessive; `A / B` subtitles yield alternates). "Said N times" strikes are
   detected (count phrasing) and SKIPPED — the one-shot decision table cannot
   trade them.
+- **Never emit a variant the detector cannot match** (follow-up 6, closed
+  2026-07-16). Raw subtitles fail in TWO ways: LOUD — a symbol not in the
+  vocab ("Warner Bros." → "BROS.") makes `arm` refuse the ENTIRE config; and
+  SILENT — the vocab contains `-`/`'` as pieces, so "Non-Stop" encodes to
+  `▁NO N - S T O P`, tokens the transducer never emits for speech: a dead
+  entry with zero recall that encode-validation alone would pass. Two stages,
+  both load-bearing: `sanitize_variant` normalizes into the detector alphabet
+  (lowercase letters + spaces; `-`/`_`→space, `&`→" and ", all other
+  punctuation/digits stripped), then every variant is encode-validated against
+  the real vocab (`TokenTable::encode`, the exact path arm uses). Unencodable
+  variants are DROPPED with a `# DROPPED unencodable variant` comment; a
+  keyword losing all variants is SKIPPED and excluded from
+  `allowlist_tickers`; the footer counts both. With no vocab table (model
+  missing) the config is emitted with a loud `# WARNING: encodability NOT
+  validated` header. `preflight-event.sh` re-runs `compile-keywords` against
+  the pinned binary as the belt-and-braces gate for the loud class.
 - `max_price_cents` per keyword is TIERED: `--fillable` fills at `min(live ask,
   MENTION_FILL_CAP_CENTS)` ONLY for precision-vetted words (`tuned_library`);
   every unvalidated word is left at 1¢ observe (it hits the executor's LOST_RACE
@@ -69,7 +87,11 @@ recorded (respects `docs/RUNBOOK.md` "do not record"). The FULL rigorous path �
 recall ceiling, not part of a trading run.
 
 ## How to test
-- `earshot prepare --event-ticker <live event> --fillable` then
+- Unit: `cargo test prepare::` (sanitizer vectors + `prep_market` shapes);
+  model-gated: `EARSHOT_REQUIRE_MODELS=1 cargo test prepare::` additionally
+  proves sanitized forms encode on the real vocab and raw punctuation forms
+  do not.
+- End-to-end: `earshot prepare --event-ticker <live event> --fillable` then
   `earshot compile-keywords --config <out>` (every keyword must tokenize) and
   a dry-run `earshot arm --config <out> --allow-mention` (markets validate,
   books go live). Verified 2026-07-14 on `KXEARNINGSMENTIONMS-26JUL15` (14

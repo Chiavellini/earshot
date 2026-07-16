@@ -275,7 +275,27 @@ fn run(command: Command) -> Result<(), AnyErr> {
         }
         Command::Prepare { event_ticker, out, fillable, fill_all } => rt()?.block_on(async {
             let (_signer, rest) = connect_live().await?;
-            let toml = earshot::prepare::run_prepare(&rest, &event_ticker, fillable, fill_all).await?;
+            // Encode-validation table (follow-up 6). Missing model ⇒ emit the
+            // config anyway, loudly unvalidated (prepare must work anywhere).
+            let bpe = PathBuf::from(earshot::prepare::KWS_MODEL_DIR).join("bpe.model");
+            let table = match earshot::detector::kws_compile::TokenTable::from_bpe_model(&bpe) {
+                Ok(t) => Some(t),
+                Err(e) => {
+                    eprintln!(
+                        "WARNING: variants NOT encode-validated ({e}) — arm may refuse this \
+                         config; run compile-keywords on a box with models/"
+                    );
+                    None
+                }
+            };
+            let toml = earshot::prepare::run_prepare(
+                &rest,
+                &event_ticker,
+                fillable,
+                fill_all,
+                table.as_ref(),
+            )
+            .await?;
             let issuer = event_ticker
                 .split('-')
                 .next()

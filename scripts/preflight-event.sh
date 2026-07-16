@@ -82,6 +82,13 @@ if cargo build --release 2>&1 | tail -1 | grep -q "Finished"; then
     echo "built=$(date "+%Y-%m-%d %H:%M:%S %z")"
   } > "$STATE_DIR/pinned.info"
   check PASS "pinned binary: $STATE_DIR/earshot-pinned ($(grep sha256 "$STATE_DIR/pinned.info" | cut -c1-23)…)"
+  # Follow-up 6 gate: arm refuses the WHOLE config over one detector-
+  # unencodable variant. Exercise the exact encode path with the pin (offline).
+  if "$STATE_DIR/earshot-pinned" compile-keywords --config "$CONFIG" >/dev/null 2>&1; then
+    check PASS "keywords compile (BPE-encodable) against the pinned binary"
+  else
+    check FAIL "compile-keywords FAILED — config has detector-unencodable phrases; arm will refuse at fire time"
+  fi
 else
   check FAIL "cargo build --release FAILED — fix before event day"
 fi
