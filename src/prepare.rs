@@ -13,8 +13,14 @@
 
 use serde_json::Value;
 
+use crate::detector::kws_compile::TokenTable;
 use crate::kalshi::rest::RestClient;
 use crate::risk::MENTION_FILL_CAP_CENTS;
+
+/// The detector model whose vocab `prepare` validates variants against (and
+/// the model_dir it emits). One place so the emitted config and the
+/// validation table can never disagree.
+pub const KWS_MODEL_DIR: &str = "models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01";
 
 /// One market turned into a keyword candidate.
 pub struct PreppedKeyword {
@@ -29,6 +35,32 @@ pub struct PreppedKeyword {
     /// (confirmed_threshold, boost) when the phrase is in the corpus-tuned
     /// library; None ⇒ engine defaults (best-effort, corpus-unvalidated).
     pub tuned: Option<(f32, f32)>,
+    /// Variants removed by encode-validation (not in the detector vocab even
+    /// after sanitizing). Emitted as comments so the operator sees the loss.
+    pub dropped: Vec<String>,
+}
+
+/// Normalize a raw subtitle alternate into the detector's input alphabet
+/// (letters + spaces): lowercase, separator punctuation (`-`/`_`) and `&`
+/// become word breaks, everything else non-alphabetic is stripped
+/// ("warner bros." → "warner bros", "non-stop" → "non stop"). LOAD-BEARING,
+/// not just a nicety: the vocab contains `-`/`'` as pieces, so a raw
+/// "non-stop" ENCODES (to `▁NO N - S T O P`) and would sail through
+/// encode-validation as a silently dead entry — tokens the transducer never
+/// emits for speech. Sanitize first; the encode check then catches whatever
+/// normalization cannot fix.
+fn sanitize_variant(raw: &str) -> String {
+    let mut s = String::with_capacity(raw.len() + 4);
+    for c in raw.chars() {
+        match c {
+            '-' | '_' => s.push(' '),
+            '&' => s.push_str(" and "),
+            c if c.is_ascii_alphabetic() => s.push(c.to_ascii_lowercase()),
+            c if c.is_whitespace() => s.push(' '),
+            _ => {} // periods, apostrophes, digits, … — not in the vocab
+        }
+    }
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// Corpus-tuned per-keyword firing params (frozen bake-off values; the tariff
@@ -62,10 +94,12 @@ fn prep_market(m: &Value) -> Option<PreppedKeyword> {
 
     let compound = word.chars().any(|c| c.is_ascii_digit()) || word.contains(' ');
 
-    // Alternates from " / ", else the single word; each lowercased.
+    // Alternates from " / ", else the single word; each sanitized into the
+    // detector alphabet (letters + spaces) — follow-up 6: raw subtitles carry
+    // punctuation the vocab cannot encode ("non-stop", "bros.").
     let mut variants: Vec<String> = Vec::new();
     for alt in word.split('/') {
-        let a = alt.trim().to_lowercase();
+        let a = sanitize_variant(alt);
         if a.is_empty() {
             continue;
         }
@@ -97,6 +131,7 @@ fn prep_market(m: &Value) -> Option<PreppedKeyword> {
         said_n_times,
         can_close_early: m["can_close_early"].as_bool().unwrap_or(false),
         compound,
+        dropped: Vec::new(),
     })
 }
 
@@ -123,11 +158,16 @@ fn fill_cap_cents(k: &PreppedKeyword, fillable: bool, fill_all: bool) -> (u8, &'
 
 /// Fetch all markets in an event and turn them into a ready-to-run config TOML.
 /// `fillable` sets whether per-keyword caps are the live ask (fill) or 1¢ (probe).
+/// `table` is the detector vocab: every variant is encode-validated against it
+/// (follow-up 6 — arm refuses a whole config over one unencodable variant, so
+/// prepare must never emit one). `None` (model not on this box) emits the
+/// config with a loud unvalidated warning instead.
 pub async fn run_prepare(
     rest: &RestClient,
     event_ticker: &str,
     fillable: bool,
     fill_all: bool,
+    table: Option<&TokenTable>,
 ) -> Result<String, crate::kalshi::KalshiError> {
     let markets = rest.event_markets(event_ticker).await?;
     if markets.is_empty() {
@@ -141,8 +181,30 @@ pub async fn run_prepare(
     let mut preps: Vec<PreppedKeyword> = markets.iter().filter_map(prep_market).collect();
     preps.sort_by(|a, b| a.ticker.cmp(&b.ticker));
 
+    // Encode-validation: drop variants the detector vocab cannot represent.
+    // The sanitizer already normalized punctuation; this is the ground truth.
+    if let Some(table) = table {
+        for k in &mut preps {
+            let (kept, dropped): (Vec<String>, Vec<String>) = k
+                .variants
+                .drain(..)
+                .partition(|v| table.encode(&k.phrase, v).is_ok());
+            k.variants = kept;
+            k.dropped = dropped;
+            // The phrase must stay a real (kept) variant — it names the
+            // keyword in reports and feeds the tuned-library lookup.
+            if let Some(first) = k.variants.first() {
+                if k.phrase != *first {
+                    k.phrase = first.clone();
+                    k.tuned = tuned_library(&k.phrase);
+                }
+            }
+        }
+    }
+
     let mut body = String::new();
-    let tradeable: Vec<&PreppedKeyword> = preps.iter().filter(|k| !k.said_n_times).collect();
+    let tradeable: Vec<&PreppedKeyword> =
+        preps.iter().filter(|k| !k.said_n_times && !k.variants.is_empty()).collect();
 
     // Header + fixed sections (mirror configs/twilio-live.toml).
     body.push_str(&format!(
@@ -159,19 +221,27 @@ pub async fn run_prepare(
             _ => "mention-probe (arm --i-am-live --allow-mention) — 1¢ non-crossing, no fill",
         }
     ));
+    if table.is_none() {
+        body.push_str(
+            "# WARNING: encodability NOT validated — bpe.model missing on this box.\n\
+             # arm will refuse the whole config if any variant is not in the detector\n\
+             # vocab. Run `earshot compile-keywords --config <this>` on a box with\n\
+             # models/ before event night.\n\n",
+        );
+    }
     body.push_str(&format!(
         "[event]\nid        = \"{}\"\nstarts_at = \"2026-07-15T00:00:00Z\"  # TODO: set the real call time (UTC)\n\n",
         event_ticker
     ));
-    body.push_str(
+    body.push_str(&format!(
         "[pipeline]\nchunk_ms       = 80\nresample_to_hz = 16000\n\n\
          [detector]\nengine = \"sherpa_kws\"\n\n\
          [detector.sherpa_kws]\n\
-         model_dir         = \"models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01\"\n\
+         model_dir         = \"{KWS_MODEL_DIR}\"\n\
          num_threads       = 1\nmax_active_paths  = 4\ndefault_threshold = 0.20\n\
          default_boost     = 2.0\nrefractory_ms     = 2000\n\n\
          [[sources]]\nkind = \"twilio_stream\"\nbind = \"127.0.0.1:8080\"\n\n",
-    );
+    ));
     body.push_str(&format!("[kalshi]\nseries = \"{series}\"\n\n"));
 
     // Risk: allowlist = tradeable tickers; keep notional caps tight.
@@ -213,6 +283,11 @@ pub async fn run_prepare(
             "# {} ({}) — {}; cap: {}{}\n",
             k.word, k.ticker, tuned_note, cap_note, flag_note
         ));
+        for d in &k.dropped {
+            body.push_str(&format!(
+                "# DROPPED unencodable variant {d:?} — not in the detector vocab\n"
+            ));
+        }
         body.push_str("[[keywords]]\n");
         body.push_str(&format!("market_ticker    = \"{}\"\n", k.ticker));
         body.push_str(&format!("phrase           = \"{}\"\n", k.phrase));
@@ -230,14 +305,97 @@ pub async fn run_prepare(
 
     // Footer summary as comments (also logged to stderr by the caller).
     let skipped: Vec<&PreppedKeyword> = preps.iter().filter(|k| k.said_n_times).collect();
+    let unencodable: Vec<&PreppedKeyword> =
+        preps.iter().filter(|k| !k.said_n_times && k.variants.is_empty()).collect();
+    let dropped_total: usize = preps.iter().map(|k| k.dropped.len()).sum();
     body.push_str(&format!(
-        "# --- prepare summary: {} tradeable, {} skipped (said-N-times) of {} markets ---\n",
+        "# --- prepare summary: {} tradeable, {} skipped (said-N-times), {} skipped \
+         (unencodable), {} variants dropped of {} markets ---\n",
         tradeable.len(),
         skipped.len(),
+        unencodable.len(),
+        dropped_total,
         preps.len()
     ));
     for k in &skipped {
         body.push_str(&format!("#   SKIPPED {} ({}) — multi-count market\n", k.word, k.ticker));
     }
+    for k in &unencodable {
+        body.push_str(&format!(
+            "#   SKIPPED {} ({}) — no variant survives the detector vocab (excluded from allowlist)\n",
+            k.word, k.ticker
+        ));
+    }
     Ok(body)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn sanitize_normalizes_punctuation_to_detector_alphabet() {
+        assert_eq!(sanitize_variant("Warner Bros."), "warner bros");
+        assert_eq!(sanitize_variant("Non-Stop"), "non stop");
+        assert_eq!(sanitize_variant("ATC"), "atc");
+        assert_eq!(sanitize_variant("Shut Down"), "shut down");
+        assert_eq!(sanitize_variant("AT&T"), "at and t");
+        assert_eq!(sanitize_variant("domino's"), "dominos");
+        assert_eq!(sanitize_variant("747"), ""); // digits can never encode
+        assert_eq!(sanitize_variant("  spaced   out  "), "spaced out");
+    }
+
+    #[test]
+    fn prep_market_emits_sanitized_variants_only() {
+        let m = json!({
+            "ticker": "KX-T-NONS",
+            "yes_sub_title": "Nonstop / Non-Stop",
+            "rules_primary": "resolves yes if said",
+            "yes_ask_dollars": "0.25",
+            "can_close_early": true,
+        });
+        let k = prep_market(&m).unwrap();
+        assert_eq!(k.variants, vec!["nonstop", "nonstops", "non stop"]);
+        assert!(k.variants.iter().all(|v| v.chars().all(|c| c.is_ascii_lowercase() || c == ' ')));
+    }
+
+    /// Model-gated gate (skips unless models/ is present). Two raw-subtitle
+    /// failure classes the sanitizer must prevent:
+    /// 1. LOUD: symbols not in the vocab at all ("bros.", "7-eleven") — arm
+    ///    refuses the whole config (the 2026-07-15 rehearsal failure).
+    /// 2. SILENT: the vocab DOES contain `-`/`'` as pieces, so "non-stop"
+    ///    encodes — to `▁NO N - S T O P`, tokens the transducer never emits
+    ///    for spoken audio. Encode-validation alone would pass a dead entry
+    ///    with zero recall; only sanitizing prevents this class.
+    #[test]
+    fn sanitizer_prevents_both_unencodable_and_dead_punctuation_entries() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(KWS_MODEL_DIR)
+            .join("bpe.model");
+        if !path.exists() {
+            if std::env::var_os("EARSHOT_REQUIRE_MODELS").is_some() {
+                panic!("EARSHOT_REQUIRE_MODELS set but {} missing", path.display());
+            }
+            eprintln!("SKIP: {} not present — run scripts/fetch-models.sh", path.display());
+            return;
+        }
+        let t = TokenTable::from_bpe_model(&path).unwrap();
+        for good in ["warner bros", "non stop", "shut down", "atc", "jetblue", "newark"] {
+            let toks = t.encode("test", good).expect("sanitized form must encode");
+            assert!(
+                toks.iter().all(|p| p.chars().all(|c| c == '▁' || c.is_ascii_alphabetic())),
+                "sanitized {good:?} must encode to letter pieces only, got {toks:?}"
+            );
+        }
+        for bad in ["warner bros.", "7-eleven"] {
+            assert!(t.encode("test", bad).is_err(), "raw {bad:?} must be unencodable (loud)");
+        }
+        // The silent class: encodes, but via a literal `-` piece — dead entry.
+        let toks = t.encode("test", "non-stop").unwrap();
+        assert!(
+            toks.iter().any(|p| p.contains('-')),
+            "expected raw \"non-stop\" to encode via a '-' piece (the silent hazard), got {toks:?}"
+        );
+    }
 }
