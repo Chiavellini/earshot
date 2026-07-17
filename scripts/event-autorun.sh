@@ -193,7 +193,12 @@ rm -f "$STATE_DIR/STOP" "$REPO/state/STOP"
 if [[ "$TEST" == 1 ]]; then
   LIVE_FLAGS="--allow-mention"          # dry-run: orders computed, never sent
   MAX_ATTEMPTS=2
-  END_HHMM=$((10#$(date -v+8M "+%H%M"))) # test window: ~8 minutes from now
+  # test window: ~8 minutes from now (BSD vs GNU date syntax)
+  if [[ "$(uname -s)" == Darwin ]]; then
+    END_HHMM=$((10#$(date -v+8M "+%H%M")))
+  else
+    END_HHMM=$((10#$(date -d '+8 minutes' "+%H%M")))
+  fi
   LONG_STREAM_S="${EARSHOT_AUTORUN_TEST_LONG_S:-99999}" # default: never "call complete" — forces the redial path
   MIN_FRAMES=1
   # Test mode places NO real call unless explicitly asked — the loop/report
@@ -234,12 +239,22 @@ elif [[ "$TEST" != 1 ]]; then
   notify "EARSHOT $EVENT_NAME run: WARNING (no pinned binary)" "Live run is falling back to 'cargo run' from the working tree — scripts/preflight-event.sh was not run. Launch continues, but this is the unpinned path the runbook forbids."
 fi
 
+# Platform seam (Darwin laptop vs Linux server — us-east-1 box, 2026-07-17).
+# Darwin behavior is byte-identical to before; Linux fills the same slots.
+power_status() {
+  if [[ "$(uname -s)" == Darwin ]]; then
+    pmset -g batt | tr '\n' ' '
+  else
+    echo "server (no battery); load: $(cat /proc/loadavg 2>/dev/null || echo '?')"
+  fi
+}
+
 log "=== event-autorun start ($EVENT_NAME/$EVENT_ID, mode: $MODE, end window: $END_HHMM, max attempts: $MAX_ATTEMPTS) ==="
-log "power: $(pmset -g batt | tr '\n' ' ')"
+log "power: $(power_status)"
 notify "EARSHOT $EVENT_NAME run: LAUNCHED ($MODE)" "event-autorun started $(ts).
 Event: $EVENT_ID
 Mode: $MODE
-Power: $(pmset -g batt | tr '\n' ' ')
+Power: $(power_status)
 Log: $LOG"
 
 # ── Attempt loop ──────────────────────────────────────────────────────────
@@ -290,12 +305,17 @@ while :; do
   log "── attempt $attempt (dtmf variant: $DTMF)"
   t0=$(date +%s)
   attempt_log_start=$(wc -l < "$LOG")
+  # Tunnel-free hosts (Linux/VPS) set EARSHOT_STREAM_URL in the event env;
+  # empty on Darwin/CDMX → launch-event runs its unchanged ngrok path.
+  STREAM_ARGS=()
+  [[ -n "${EARSHOT_STREAM_URL:-}" ]] && STREAM_ARGS=(--stream-url "$EARSHOT_STREAM_URL")
   scripts/launch-event.sh \
     --config "$CONFIG_PATH" \
     --account "$ACCOUNT_ENV" \
     --bind-port 8080 \
     --to "$TO_NUMBER" --dtmf "$DTMF" \
     ${BIN_ARGS[@]+"${BIN_ARGS[@]}"} $DIAL_FLAG \
+    ${STREAM_ARGS[@]+"${STREAM_ARGS[@]}"} \
     $LIVE_FLAGS &
   LAUNCH_PID=$!
 
@@ -423,7 +443,15 @@ finished=1
 log "=== event-autorun done ==="
 
 # Self-disarm (live only): never fire again. This kills us — final act.
+# Darwin: launchd bootout (SIGTERMs us). Linux: disable+stop our systemd user
+# timer AND service (scripts/install-event-timer.sh names both after $LABEL);
+# stopping the service also SIGTERMs us, so it stays the final act on both.
 if [[ "$TEST" != 1 ]]; then
   trap - EXIT
-  launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
+  if [[ "$(uname -s)" == Darwin ]]; then
+    launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
+  else
+    systemctl --user disable --now "$LABEL.timer" 2>/dev/null || true
+    systemctl --user stop "$LABEL.service" 2>/dev/null || true
+  fi
 fi

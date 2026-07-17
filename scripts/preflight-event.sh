@@ -98,7 +98,12 @@ fi
 
 # ── Credentials (live probes, read-only) ───────────────────────────────────
 if [[ -f "$ACCOUNT" ]]; then
-  check PASS "account env exists: $ACCOUNT ($(stat -f '%Lp' "$ACCOUNT") perms)"
+  if [[ "$(uname -s)" == Darwin ]]; then
+    perms=$(stat -f '%Lp' "$ACCOUNT")
+  else
+    perms=$(stat -c '%a' "$ACCOUNT")
+  fi
+  check PASS "account env exists: $ACCOUNT ($perms perms)"
   # shellcheck disable=SC1090
   source "$ACCOUNT"
   if [[ -n "${TWILIO_ACCOUNT_SID:-}" && -n "${TWILIO_AUTH_TOKEN:-}" ]]; then
@@ -117,11 +122,17 @@ kalshi_code=$(curl -s -o /dev/null -w '%{http_code}' "https://api.elections.kals
 [[ "$kalshi_code" == 200 ]] && check PASS "Kalshi API reachable (exchange/status 200)" \
                             || check FAIL "Kalshi API probe: HTTP $kalshi_code"
 
-# ── ngrok agent ────────────────────────────────────────────────────────────
-if ngrok config check >/dev/null 2>&1; then
-  check PASS "ngrok agent config valid"
+# ── ngrok agent (Darwin/CDMX only) ─────────────────────────────────────────
+# Linux/VPS production is tunnel-free by design (docs/INGRESS-BAKEOFF.md §5:
+# "No tunnels in production") — the WS endpoint terminates on the box.
+if [[ "$(uname -s)" == Darwin ]]; then
+  if ngrok config check >/dev/null 2>&1; then
+    check PASS "ngrok agent config valid"
+  else
+    check FAIL "ngrok config check failed"
+  fi
 else
-  check FAIL "ngrok config check failed"
+  check PASS "tunnel-free host (Linux) — direct WS endpoint; ngrok not used"
 fi
 
 # ── Timezone + scheduled wake ──────────────────────────────────────────────
@@ -129,24 +140,50 @@ tz=$(readlink /etc/localtime | sed 's|.*/zoneinfo/||')
 [[ "$tz" == "America/Mexico_City" ]] && check PASS "timezone: $tz" \
   || check WARN "timezone is '$tz', not America/Mexico_City — ALL window times (launchd fire, END_HHMM) shift with local time; re-verify the schedule"
 if [[ -n "$FIRE_HHMM" ]]; then
-  # Only USER-scheduled wakes count — macOS system alarms (by 'com.apple…')
-  # come and go and must not satisfy this check.
-  user_wake=$(pmset -g sched 2>/dev/null | grep -i "wake at" | grep -v "by 'com.apple" | head -1 | tr -s ' ')
-  if [[ -n "$user_wake" ]]; then
-    check PASS "pmset user-scheduled wake: $user_wake — VERIFY it is before fire time $FIRE_HHMM"
+  if [[ "$(uname -s)" == Darwin ]]; then
+    # Only USER-scheduled wakes count — macOS system alarms (by 'com.apple…')
+    # come and go and must not satisfy this check.
+    user_wake=$(pmset -g sched 2>/dev/null | grep -i "wake at" | grep -v "by 'com.apple" | head -1 | tr -s ' ')
+    if [[ -n "$user_wake" ]]; then
+      check PASS "pmset user-scheduled wake: $user_wake — VERIFY it is before fire time $FIRE_HHMM"
+    else
+      check FAIL "NO user-scheduled pmset wake — a closed lid at fire time defers launchd past the window. Set one: sudo pmset schedule wake \"MM/DD/YY HH:MM:SS\""
+    fi
   else
-    check FAIL "NO user-scheduled pmset wake — a closed lid at fire time defers launchd past the window. Set one: sudo pmset schedule wake \"MM/DD/YY HH:MM:SS\""
+    # Linux server: no sleep/wake concept — the fire mechanism is a systemd
+    # user timer (scripts/install-event-timer.sh). Verify it is armed.
+    ev_label=""
+    if [[ -n "$EVENT_ENV" && -f "$EVENT_ENV" ]]; then
+      ev_label=$(source "$EVENT_ENV" 2>/dev/null; echo "${LABEL:-}")
+    fi
+    if [[ -n "$ev_label" ]]; then
+      next=$(systemctl --user list-timers --all 2>/dev/null | grep -F "$ev_label.timer" | head -1 | tr -s ' ')
+      if [[ -n "$next" ]]; then
+        check PASS "systemd timer armed: $next — VERIFY NEXT is the event fire time ($FIRE_HHMM box-local)"
+      else
+        check FAIL "NO systemd user timer '$ev_label.timer' — nothing will fire. Arm it: scripts/install-event-timer.sh --event-env $EVENT_ENV --fire-hhmm $FIRE_HHMM --date <YYYY-MM-DD>"
+      fi
+    else
+      check WARN "fire-time check skipped: no --event-env (or no LABEL in it) — cannot name the systemd timer to verify"
+    fi
   fi
 fi
-check WARN "power: $(pmset -g batt | tr '\n' ' ' | tr -s ' ') — must be AC + lid open at fire time"
+if [[ "$(uname -s)" == Darwin ]]; then
+  check WARN "power: $(pmset -g batt | tr '\n' ' ' | tr -s ' ') — must be AC + lid open at fire time"
+fi
 
 # ── CPU load ───────────────────────────────────────────────────────────────
 # 2026-07-17: unrelated batch jobs pushed this box to load 82 — network egress
 # failed outright and every process crawled. The pipeline's latency budgets
 # (chunk→detect p90 ~25 ms) were measured on a quiet box; a saturated one is a
 # different machine than the one that rehearsed.
-ncpu=$(sysctl -n hw.ncpu)
-load1=$(sysctl -n vm.loadavg | awk '{print $2}')
+if [[ "$(uname -s)" == Darwin ]]; then
+  ncpu=$(sysctl -n hw.ncpu)
+  load1=$(sysctl -n vm.loadavg | awk '{print $2}')
+else
+  ncpu=$(nproc)
+  load1=$(awk '{print $1}' /proc/loadavg)
+fi
 if python3 -c "exit(0 if float('$load1') > $ncpu*2 else 1)"; then
   check FAIL "load average $load1 with $ncpu cores — box is saturated; whatever is running must be done or stopped before the event"
 elif python3 -c "exit(0 if float('$load1') > $ncpu*0.75 else 1)"; then

@@ -27,7 +27,7 @@
 set -euo pipefail
 
 CONFIG="" ACCOUNT="" BIND_PORT="" TO="" DTMF="" LIVE="" ALLOW_MENTION="" FILLABLE="" NGROK_CONFIG=""
-BIN="${EARSHOT_BIN:-}" NO_DIAL=""
+BIN="${EARSHOT_BIN:-}" NO_DIAL="" STREAM_URL_OVERRIDE=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --config)        CONFIG="$2"; shift 2 ;;
@@ -36,6 +36,7 @@ while [[ $# -gt 0 ]]; do
     --to)            TO="$2"; shift 2 ;;
     --dtmf)          DTMF="$2"; shift 2 ;;
     --ngrok-config)  NGROK_CONFIG="$2"; shift 2 ;;
+    --stream-url)    STREAM_URL_OVERRIDE="$2"; shift 2 ;;  # tunnel-free: skip ngrok, endpoint terminates on the box
     --bin)           BIN="$2"; shift 2 ;;
     --no-dial)       NO_DIAL=1; shift ;;
     --i-am-live)     LIVE="--i-am-live"; shift ;;
@@ -45,7 +46,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 [[ -n "$CONFIG" && -n "$ACCOUNT" && -n "$BIND_PORT" && -n "$TO" ]] || {
-  echo "usage: $0 --config <cfg> --account <env-file> --bind-port <port> --to +1... [--dtmf 1234#] [--ngrok-config <yml>] [--i-am-live] [--allow-mention] [--fillable]" >&2
+  echo "usage: $0 --config <cfg> --account <env-file> --bind-port <port> --to +1... [--dtmf 1234#] [--ngrok-config <yml> | --stream-url wss://host/media] [--i-am-live] [--allow-mention] [--fillable]" >&2
   exit 2
 }
 [[ -f "$CONFIG" ]]  || { echo "config not found: $CONFIG" >&2; exit 2; }
@@ -71,6 +72,15 @@ STATE_DIR="state/${EVENT_ID}"
 mkdir -p "$STATE_DIR"
 echo "event=${EVENT_ID}  account=${ACCOUNT}  port=${BIND_PORT}  state=${STATE_DIR}"
 
+# Tunnel-free path (Linux/VPS production — docs/INGRESS-BAKEOFF.md §5 "No
+# tunnels in production"): --stream-url wss://host/media skips ngrok entirely;
+# the WS endpoint (TLS-terminated on the box) must route to 127.0.0.1:BIND_PORT.
+# The Darwin/CDMX rehearsal path below is unchanged when the flag is absent.
+if [[ -n "$STREAM_URL_OVERRIDE" ]]; then
+  STREAM_URL="$STREAM_URL_OVERRIDE"
+  NGROK_PID=""
+  echo "tunnel-free: using provided stream URL ${STREAM_URL} (no ngrok)"
+else
 # This event's own ngrok tunnel, on its OWN local web-API port so two events'
 # ngrok agents never share ngrok's default 127.0.0.1:4040. NOTE: the free tier
 # allows only ONE agent per account, so two SIMULTANEOUS tunnels need two ngrok
@@ -115,6 +125,7 @@ done
 [[ -n "$STREAM_HOST" ]] || { echo "could not read ngrok tunnel host from :${NGROK_WEB_PORT} for port ${BIND_PORT} within 30 s" >&2; exit 1; }
 STREAM_URL="wss://${STREAM_HOST}/media"
 echo "ngrok tunnel: ${STREAM_URL} (web-api :${NGROK_WEB_PORT}, pid ${NGROK_PID})"
+fi  # end ngrok path (--stream-url skips it)
 
 # Pin the signature base so the WS source rejects any stream not signed by THIS
 # account's token (the config's [twilio] section should point stream_url here).
