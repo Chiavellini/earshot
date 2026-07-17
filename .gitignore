@@ -19,3 +19,4 @@ corpus-quiet/
 .env.*
 state/
 vendor/
+scripts/__pycache__/

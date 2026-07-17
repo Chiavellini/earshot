@@ -1,0 +1,633 @@
+# EARSHOT dial-in access registry
+#
+# WHAT THIS IS: the durable, per-issuer answer to "can we dial a number and LISTEN
+# to this earnings call in real time?" — which decides whether a KXEARNINGSMENTION<T>
+# series is tradeable on the phone-first capture path at all.
+#
+# WHAT THIS IS NOT: a store of dial-in numbers or passcodes. Those rotate per call and
+# stay OUT of the repo (docs/layers/prepare.md, src/prepare.rs) — they live in the
+# gitignored per-event env files (configs/*-autorun.env). This file records the ACCESS
+# PATTERN plus the URL where the current number is published; fetch the digits at
+# prep time from `number_src`.
+#
+# ── FIELD SEMANTICS (read this before adding an entry) ────────────────────────────
+#
+# tier          how the LISTEN path is obtained:
+#                 published          — number openly published, no registration. Dial it.
+#                 bridge_unpublished — a real PSTN bridge provably exists, but no number
+#                                      is published. Needs a number hunt (RUNBOOK Track A).
+#                 none               — no phone leg exists at all. NOT phone-tradeable.
+#                 unknown            — not yet researched. Never treat as none.
+#
+# qa_mechanism  how ANALYSTS get into the question queue. Diagnostic only:
+#                 dtmf_star     — self-service "press star-N on your telephone" (or "*N")
+#                 curated       — operator reads pre-arranged analysts by name, no DTMF
+#                 hybrid        — phone bridge + webcast raise-hand
+#                 phone_present — phone leg evidenced (handset language) but no queue
+#                                 instruction quoted. Distinct from `unknown` (found
+#                                 nothing) and from `dtmf_star` (would claim a mechanism
+#                                 the text never showed).
+#                 webcast_hand  — webcast platform raise-hand/unmute, no phone
+#                 unknown       — not researched / nothing found
+#
+#               Derive this with scripts/mine-dial-in.py, never by hand.
+#               `scripts/mine-dial-in.py --check` pins 6 corpus verdicts + 8 synthetic
+#               operator strings; it caught two real false negatives that review missed:
+#               QCOM ("star THEN the number one") and GOOGL ("press *1" — the GLYPH,
+#               on the largest near-term event).
+#
+# listen_access can WE dial in and listen? "yes" | "no" | "unknown"
+#               (string enum, never a bool — "unknown" must be representable)
+#
+# ⚠ THE APPLE RULE — the single most important invariant in this file:
+#   `qa_mechanism` and `listen_access` are INDEPENDENT. A curated Q&A queue does NOT
+#   imply the absence of a public listen line. AAPL proves it: zero star-1/keypad
+#   language anywhere in its transcript, yet Apple publishes a dial-in on its IR page.
+#   Inferring `listen_access=false` from "no DTMF in the transcript" is a real error
+#   that was made and caught on 2026-07-16. A transcript can only ever establish
+#   `qa_mechanism`. `listen_access` is established ONLY by an IR page / press release
+#   / 8-K. Never mark an issuer `none` on transcript evidence alone.
+#
+# EVIDENCE ORDER (strongest first):
+#   IR events page / earnings PR  →  8-K exhibit  →  official transcript operator preamble
+#   Transcripts: Insider Monkey / Investing.com. ⛔ NEVER Motley Fool — it redacts operator
+#   text to "[Operator Instructions]" and dropped the preamble entirely on INTC and GEV,
+#   which manufactures FALSE `none` readings.
+#
+# ⚠ 8-K SILENCE IS NOT EVIDENCE OF ABSENCE. UAL's Q2 8-K says "a live, listen-only
+#   webcast" — phrasing identical in kind to Tesla's — yet UAL's operator runs a live
+#   phone Q&A. Same words, opposite meaning. Only a transcript settles it.
+#
+# Keys are the Kalshi series suffix (KXEARNINGSMENTION<KEY>), NOT always the ISO ticker:
+# Citi is `C`. Verified live 2026-07-16: 379 "Mentions" series, 135 KXEARNINGSMENTION*.
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# TIER: published — dial and listen, no registration
+# ══════════════════════════════════════════════════════════════════════════════════
+
+[JPM]
+tier          = "published"
+qa_mechanism  = "unknown"
+listen_access = "yes"    
+evidence      = "Earnings PR publishes a public US/Canada toll-free + international number and a passcode; explicitly states the general public can access the call. Advises dialing 15 min early."
+evidence_src  = "https://www.jpmorganchase.com/ir/news/2026/jpmc-to-host-second-quarter-2026-earnings-call"
+number_src    = "https://www.jpmorganchase.com/ir/news"
+confidence    = "high"
+last_verified = "2026-07-16"
+notes         = "Supersedes the syndicated-reprint sourcing flagged at docs/RUNBOOK.md:286 — now primary-verified from jpmorganchase.com. Number itself never dialed."
+
+[GS]
+tier          = "published"
+qa_mechanism  = "unknown"
+listen_access = "yes"    
+evidence      = "Earnings PR: 'The call will be open to the public.' Publishes US + international numbers and a passcode; 'There is no charge to access the call.' Dial 10 min prior."
+evidence_src  = "https://www.goldmansachs.com/pressroom/press-releases/2026/2026-07-14-q2-results"
+number_src    = "https://www.goldmansachs.com/pressroom/press-releases"
+confidence    = "high"
+last_verified = "2026-07-16"
+
+[MS]
+tier          = "published"
+qa_mechanism  = "unknown"
+listen_access = "yes"    
+evidence      = "Earnings PR publishes domestic + international numbers and a passcode."
+evidence_src  = "https://www.morganstanley.com/press-releases/morgan-stanley-reports-second-quarter-2026"
+number_src    = "https://www.morganstanley.com/about-us-ir"
+confidence    = "high"
+last_verified = "2026-07-16"
+notes         = "STRONGEST evidence in the project: the bridge is wire-verified, not just paper. Live Twilio capture 2026-07-14 (CallSid CA5831c4…, 3585 frames, 0 drops) — see VERIFICATIONS.md:533. Bridge IVR disconnects silent callers after ~60s pre-conference (measured). Passcode acceptance still unproven (RUNBOOK.md:207) — provable only once the conference is open."
+
+[C]
+tier          = "published"
+qa_mechanism  = "unknown"
+listen_access = "yes"    
+evidence      = "Earnings PR publishes a US/Canada number + passcode; international via a TurboBridge global-access PDF."
+evidence_src  = "https://www.citigroup.com/global/news/press-release/2026/citi-second-quarter-2026-earnings-call"
+number_src    = "https://www.citigroup.com/global/news"
+confidence    = "high"
+last_verified = "2026-07-16"
+notes         = "Kalshi series key is C, not CITI."
+
+[MSFT]
+tier          = "published"
+qa_mechanism  = "dtmf_star"
+listen_access = "yes"    
+evidence      = "IR earnings page publishes a toll-free + international dial-in, explicitly 'no password required'. Operator preamble: 'all participants are in a listen-only mode… press star zero on your telephone keypad'; Q&A: 'press star one on your telephone keypad and a confirmation tone will indicate your line is in the question queue'. The analyst Q&A runs on the SAME open bridge."
+evidence_src  = "https://www.microsoft.com/en-us/investor/earnings/fy-2026-q3/press-release-webcast"
+number_src    = "https://www.microsoft.com/en-us/investor/earnings"
+confidence    = "high"
+last_verified = "2026-07-16"
+notes         = "Corroborated independently by our own ASR corpus: corpus/transcripts/msft-q3-2026.txt."
+
+[AAPL]
+tier          = "published"
+qa_mechanism  = "curated"
+listen_access = "yes"    
+evidence      = "IR earnings-call page publishes a toll-free + direct number and a confirmation code as the fallback for browsers that cannot stream. It is a LIVE listen-in line (the replay state is separate text on the same page). The press release itself is webcast-only. Q&A is curated: IR asks 'Operator, may we have the first question, please?' and the operator reads pre-arranged analysts by name — no star-1 anywhere."
+evidence_src  = "https://www.apple.com/investor/earnings-call/"
+number_src    = "https://www.apple.com/investor/earnings-call/"
+confidence    = "medium"
+last_verified = "2026-07-16"
+notes         = "⚠ THE APPLE RULE CASE. Our ASR transcript (corpus/transcripts/aapl-q2-2026.txt) has ZERO star/keypad/listen-only hits and starts at the literal top of the call ('Good afternoon and welcome to the Apple Q2 Fiscal Year 2026 earnings conference call') — so the absence is real, not a podcast-trim artifact. It was still WRONG to read that as 'no phone access': the curated queue only means we cannot ASK, and we never wanted to (INGRESS-BAKEOFF.md:133 'Listen-only, always'). MEDIUM confidence because the confirmation code could not be date-stamped — the page renders all states at once and the code appears static. RE-VERIFY the code at call time before arming."
+
+[OKLO]
+tier          = "published"
+qa_mechanism  = "unknown"
+listen_access = "yes"    
+evidence      = "IR newsroom release publishes a toll-free + international number and a conference ID, no registration. Webcast on Q4 Inc."
+evidence_src  = "https://oklo.com/newsroom/news-details/2026/Oklo-Announces-Date-for-Full-Year-2025-Financial-Results-and-Business-Update-Call/default.aspx"
+number_src    = "https://oklo.com/newsroom"
+confidence    = "medium"
+last_verified = "2026-07-16"
+notes         = "Evidence is the 2026-03-17 FY25 call; next call ~2026-08-10, outside the July window. Pattern consistent but the Q2 number is not yet published."
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# TIER: bridge_unpublished — a real PSTN bridge exists; no number published.
+# Needs a number hunt (RUNBOOK Track A) before the event is GO.
+# ══════════════════════════════════════════════════════════════════════════════════
+
+[GOOGL]
+tier          = "bridge_unpublished"
+qa_mechanism  = "dtmf_star"
+listen_access = "unknown"
+evidence      = "Alphabet's OWN transcript PDF, operator: 'At this time, all participants are in a listen only mode… To ask a question during the session, you will need to press *1 on your telephone.' The earnings PR links only a YouTube webcast — no phone, no registration link."
+evidence_src  = "https://s206.q4cdn.com/479360582/files/doc_events/2026/Apr/29/Alphabet-2026_Q1_Earnings_Transcript.pdf"
+number_src    = "https://abc.xyz/investor/"
+confidence    = "high"
+last_verified = "2026-07-16"
+notes         = "OPEN EVENT KXEARNINGSMENTIONGOOGL-26JUL22 — largest near-term name, NOT tracked in docs/RUNBOOK.md. Bridge existence is high-confidence (issuer's own transcript); the access path is undetermined. GO only if a number lands before 07-22."
+
+[AMZN]
+tier          = "bridge_unpublished"
+qa_mechanism  = "dtmf_star"
+listen_access = "unknown"
+evidence      = "Operator: 'If you would like to ask a question, please press star 1 on your keypad. We ask that when you pose your question, you pick up your handsets to provide optimum sound quality.' IR release is webcast-only."
+evidence_src  = "https://ir.aboutamazon.com/news-release/news-release-details/2026/Amazon-com-to-Webcast-First-Quarter-2026-Financial-Results-Conference-Call-57c6bd583/"
+number_src    = "https://ir.aboutamazon.com/"
+confidence    = "high"
+last_verified = "2026-07-16"
+
+[META]
+tier          = "bridge_unpublished"
+qa_mechanism  = "phone_present"
+listen_access = "unknown"
+evidence      = "Operator: 'Please pick up your handset before asking your question to ensure clarity. If you are streaming today's call, please mute your computer speakers.' The handset-vs-streaming distinction proves a separate phone leg exists. PR + event page are webcast-only."
+evidence_src  = "https://www.prnewswire.com/news-releases/meta-reports-first-quarter-2026-results-302757852.html"
+number_src    = "https://investor.atmeta.com/"
+confidence    = "high"
+last_verified = "2026-07-16"
+notes         = "qa_mechanism is phone_present, NOT dtmf_star: the quoted evidence is handset language, which proves a phone leg but shows no queue instruction. An earlier draft of this entry claimed dtmf_star — that overstated the evidence. The full transcript likely contains a star instruction; upgrade only when quoted."
+
+[NVDA]
+tier          = "bridge_unpublished"
+qa_mechanism  = "dtmf_star"
+listen_access = "unknown"
+evidence      = "Operator: 'in order to ask a question, press star, then the number 1 on your telephone keypad.' IR PR states the webcast is listen-only and that 'the Q&A session … will be limited to questions from financial analysts and institutional investors.'"
+evidence_src  = "https://investor.nvidia.com/news/press-release-details/2026/NVIDIA-Sets-Conference-Call-for-First-Quarter-Financial-Results/"
+number_src    = "https://investor.nvidia.com/"
+confidence    = "high"
+last_verified = "2026-07-16"
+notes         = "Clearest on-the-record eligibility gate of the set — Q&A restriction stated in the PR itself. Does not bear on listen access."
+
+[DPZ]
+tier          = "bridge_unpublished"
+qa_mechanism  = "dtmf_star"
+listen_access = "unknown"
+evidence      = "Operator, Q3'25 AND Q1'26 identically: 'Good day, and thank you for standing by… At this time, all participants are in a listen-only mode… To ask a question during the session, you will need to press star 11 on your telephone.' Q2 announcement and the Q1 8-K exhibit publish only a live webcast."
+evidence_src  = "https://www.insidermonkey.com/blog/dominos-pizza-inc-nasdaqdpz-q1-2026-earnings-call-transcript-1748850/"
+number_src    = "https://ir.dominos.com/news-releases"
+confidence    = "high"
+last_verified = "2026-07-16"
+notes         = "CONFIRMS the star-11 claim at docs/RUNBOOK.md:7-8. OPEN EVENT KXEARNINGSMENTIONDPZ-26JUL20 — the runbook's next event, GO only if a number lands by 07-19. ⚠ ir.dominos.com geo-blocks from Mexico (Akamai) — needs a US VPN or manual check."
+
+[INTC]
+tier          = "bridge_unpublished"
+qa_mechanism  = "dtmf_star"
+listen_access = "unknown"
+evidence      = "Operator, Q4'25: 'Thank you for standing by… At this time, participants are in listen only mode… To ask a question during this session, you'll need to press star 11 on your telephone.' Intel's IR calendar entry for the 2026-07-23 call lists ONLY a media-server webcast URL — no number, no conference ID, no registration link."
+evidence_src  = "https://www.insidermonkey.com/blog/intel-corporation-nasdaqintc-q4-2025-earnings-call-transcript-1680769/"
+number_src    = "https://www.intc.com/news-events/ir-calendar/detail/20260723-q2-2026-intel-corporation-earnings-conference-call"
+confidence    = "high"
+last_verified = "2026-07-16"
+notes         = "CONFIRMS the star-11 claim at docs/RUNBOOK.md:7-8. OPEN EVENT KXEARNINGSMENTIONINTC-26JUL23. Webcast runs on edge.media-server.com (Notified) — a platform that generically issues dial-in+PIN on registration, but NO Intel-specific registration link was found. Platform-pattern inference is NOT evidence; do not record a registration tier without an Intel-specific link."
+
+[GEV]
+tier          = "bridge_unpublished"
+qa_mechanism  = "dtmf_star"
+listen_access = "unknown"
+evidence      = "Operator, Q1'26: 'welcome to GE Vernova Inc.'s First Quarter 2026 Earnings Conference Call. At this time, all participants are in a listen-only mode.' Queue: 'Please press 11 on your telephone. If you wish to withdraw your question… please press 11.' PR publishes webcast only."
+evidence_src  = "https://www.insidermonkey.com/blog/ge-vernova-inc-nysegev-q1-2026-earnings-call-transcript-1744799/"
+number_src    = "https://www.gevernova.com/news/press-releases"
+confidence    = "medium-high"
+last_verified = "2026-07-16"
+notes         = "⚠ REFUTES docs/RUNBOOK.md:8-9 ('GEV is a moderated bridge, analysts pre-cleared'). GEV runs the SAME self-service star-11 queue as DPZ/INTC. There is an operator-moderated coordinator, but zero evidence of analyst pre-clearance. Any model treating GEV as structurally different from DPZ/INTC is wrong. OPEN EVENT KXEARNINGSMENTIONGEV-26JUL22."
+
+[UAL]
+tier          = "bridge_unpublished"
+qa_mechanism  = "dtmf_star"
+listen_access = "unknown"
+evidence      = "Operator, Q1'26: 'If you would like to ask a question, please press star, then the number one on your telephone keypad.' The Q2 8-K exhibit (filed 2026-07-15) says only: 'A live, listen-only webcast of the conference call will be available at ir.united.com.'"
+evidence_src  = "https://www.investing.com/news/transcripts/earnings-call-transcript-united-airlines-q1-2026-beats-expectations-despite-stock-dip-93CH-4629995"
+number_src    = "https://ir.united.com/"
+confidence    = "high"
+last_verified = "2026-07-16"
+notes         = "⚠⚠ THE UAL TRAP — the highest-risk misread in the project. UAL's 8-K language ('live, listen-only webcast') is IDENTICAL IN KIND to Tesla's, but means the opposite: UAL runs a real phone Q&A, Tesla has no phone at all. docs/RUNBOOK.md:5-6 groups 'UAL and TSLA confirmed webcast-only in their own 8-K exhibits' — literally true, and acting on it would forfeit a tradeable event. 8-K silence is NOT evidence of absence. ⚠ ir.united.com geo-blocks from Mexico (Akamai)."
+
+[CAVA]
+tier          = "bridge_unpublished"
+qa_mechanism  = "hybrid"
+listen_access = "unknown"
+evidence      = "Operator, Q1'26: 'If you would like to ask a question, please press Star one to raise your hand. To withdraw your question, please press Star one again.' 8-K publishes webcast only."
+evidence_src  = "https://www.benzinga.com/insights/news/26/05/52682229/cava-group-q1-2026-earnings-call-transcript"
+number_src    = "https://investor.cava.com/"
+confidence    = "medium-high"
+last_verified = "2026-07-16"
+
+[RKLB]
+tier          = "bridge_unpublished"
+qa_mechanism  = "dtmf_star"
+listen_access = "unknown"
+evidence      = "Q1'26 transcript shows listen-only mode + a 'Star one' telephone queue. 8-K: 'The live webcast and a replay of the webcast will be available on Rocket Lab's Investor Relations website.'"
+evidence_src  = "https://seekingalpha.com/article/4901108-rocket-lab-corporation-rklb-q1-2026-earnings-call-transcript"
+number_src    = "https://investors.rocketlabusa.com/"
+confidence    = "low"
+last_verified = "2026-07-16"
+notes         = "Transcript evidence came from a search summary, not a direct fetch. Re-derive from the primary transcript before acting."
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# TIER: none — no phone leg. NOT phone-tradeable. Needs the (unbuilt) HLS adapter.
+# ══════════════════════════════════════════════════════════════════════════════════
+
+[TSLA]
+tier          = "none"
+qa_mechanism  = "webcast_hand"
+listen_access = "no"     
+evidence      = "Q2 2026 8-K exhibit access block lists What/When/Time/Update/Webcast and contains NO dial-in field at all. Q1'26 transcript has no operator whatsoever — IR head Travis Axelrod opens ('welcome to Tesla's first quarter 2026 Q&A webcast') and instructs analysts to 'use the raise hand button to join the question queue' and 'unmute yourself when you're ready'. Retail Q&A is pre-submitted/voted via Say Technologies."
+evidence_src  = "https://www.sec.gov/Archives/edgar/data/0001318605/000162828026046717/exhibit99111111.htm"
+number_src    = ""
+confidence    = "high"
+last_verified = "2026-07-16"
+notes         = "CONFIRMS docs/RUNBOOK.md:9-10, including the 'TSLA alone' part — it is the only no-phone name among the 16 non-NFLX issuers checked. Distinctive tell: NO OPERATOR AT ALL. That absence, not the 8-K wording, is what separates TSLA from UAL. OPEN EVENT KXEARNINGSMENTIONTSLA-26JUL22 — untradeable on the phone path."
+
+[NFLX]
+tier          = "none"
+qa_mechanism  = "webcast_hand"
+listen_access = "no"     
+evidence      = "Q2 2026 IR press release states exactly one access method: 'The live earnings video interview will be accessible on the Netflix Investor Relations YouTube channel at youtube.com/netflixir.' No conference number, no passcode, no operator line. Format is a live video interview with pre-submitted analyst questions (since ~2015)."
+evidence_src  = "https://ir.netflix.net/investor-news-and-events/financial-releases/press-release-details/2026/Netflix-to-Announce-Second-Quarter-2026-Financial-Results/default.aspx"
+number_src    = ""
+confidence    = "high"
+last_verified = "2026-07-16"
+notes         = "OPEN EVENT KXEARNINGSMENTIONNFLX-26JUL02 (17 markets). Untradeable on the phone path — same class as TSLA. Not a 'webcast-only 8-K with a hidden bridge': there is genuinely no phone leg. Q2 call captured 2026-07-16 14:45:16 CDMX from stream qqGCRlldcXY for corpus + the first real webcast-lag measurement."
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# TIER: unknown — qa_mechanism known from our ASR corpus, listen access NOT researched.
+# Per the Apple rule these are NOT no-go; the IR page has simply not been checked.
+# ══════════════════════════════════════════════════════════════════════════════════
+
+[QCOM]
+tier          = "unknown"
+qa_mechanism  = "dtmf_star"
+listen_access = "unknown"
+evidence      = "Operator (ASR): 'To cue a question, press star then the number one.' + listen-only mode + 'thank you for standing by'."
+evidence_src  = "corpus/transcripts/qcom-q2-2026.txt"
+number_src    = "https://investor.qualcomm.com/"
+confidence    = "medium"
+last_verified = "2026-07-16"
+notes         = "ASR source — real garbles present in this file ('All prayer' for 'Operator', 'To destroy your question' for 'To withdraw your question'). qa_mechanism only; IR page not yet checked."
+
+[GIS]
+tier          = "unknown"
+qa_mechanism  = "dtmf_star"
+listen_access = "unknown"
+evidence      = "Operator (ASR): 'All participants are in a listen-only mode… To ask a question at this time, you'll need to press star followed by the number one on your telephone keypad.'"
+evidence_src  = "corpus/transcripts/gis-q3-2026.txt"
+number_src    = "https://investors.generalmills.com/"
+confidence    = "medium"
+last_verified = "2026-07-16"
+
+[WMT]
+tier          = "unknown"
+qa_mechanism  = "dtmf_star"
+listen_access = "unknown"
+evidence      = "Operator (ASR): 'all participants are in listen only mode… press star zero on your telephone keypad' + 'please press star one on your telephone keypad and a confirmation tone to indicate your lines in the question queue'."
+evidence_src  = "corpus/transcripts/wmt-q1-2027.txt"
+number_src    = "https://stock.walmart.com/"
+confidence    = "medium"
+last_verified = "2026-07-16"
+
+[CAT]
+tier          = "unknown"
+qa_mechanism  = "hybrid"
+listen_access = "unknown"
+evidence      = "Operator (ASR): 'If you have dialed in and would like to ask a question, please press star one on your telephone keypad to raise your hand and join the queue.' Phone bridge + webcast raise-hand in one sentence."
+evidence_src  = "corpus/transcripts/cat-q1-2026.txt"
+number_src    = "https://investors.caterpillar.com/"
+confidence    = "medium"
+last_verified = "2026-07-16"
+notes         = "The 'if you have dialed in' conditional is the cleanest hybrid marker seen — it presumes some listeners are on a phone and some are not."
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# COHORT: sp500-random-2026-07-16 — prevalence sample, NOT the open board.
+#
+# Purpose: test "most S&P 500 issuers run a phone bridge" beyond the board-skewed
+# n=18 above. Selection is DETERMINISTIC so it cannot be cherry-picked: from the
+# Wikipedia "List of S&P 500 companies" constituents table (fetched 2026-07-16,
+# 503 rows), take the first TWO tickers alphabetically per GICS sector that are
+# not already in this registry → 22 issuers, 2 × 11 sectors.
+#
+# Keys here are ISO tickers (TOML-safe: BF.B → BF-B), NOT Kalshi series suffixes —
+# most of these have no mention series. `sector`/`cohort` fields mark the cohort.
+# Same field semantics and evidence rules as above (Apple rule, UAL trap, no
+# Motley Fool, no digits in git).
+#
+# RESULT (2026-07-16): 8 published · 11 bridge_unpublished · 3 unknown · 0 none
+#   → bridge confirmed 19/22 (86%); number published 8/22 (36%).
+# Full analysis + the webinar-migration finding: docs/DIAL-INS.md.
+# ══════════════════════════════════════════════════════════════════════════════════
+
+[ABNB]
+tier          = "published"
+qa_mechanism  = "dtmf_star"
+listen_access = "yes"
+cohort        = "sp500-random-2026-07-16"
+sector        = "Consumer Discretionary"
+evidence      = "Q1 2026 results PR publishes an issuer-specific registration link ('register for the call in advance by visiting https://registrations.events/direct/… instructions will be shared on how to join the call') — registration-issued dial-in — alongside the audio webcast. Q1 2026 transcript confirms the bridge: operator says 'If you would like to ask a question, please press star one.'"
+evidence_src  = "https://www.prnewswire.com/news-releases/airbnb-announces-first-quarter-2026-results-302759162.html"
+number_src    = "https://investors.airbnb.com/press-releases/"
+confidence    = "high"
+last_verified = "2026-07-16"
+notes         = "Q1 2026 (call May 7). No raw digits in the PR — the registrations.events link issues join instructions on registration (published per the registration-link rule)."
+
+[ACN]
+tier          = "published"
+qa_mechanism  = "dtmf_star"
+listen_access = "yes"
+cohort        = "sp500-random-2026-07-16"
+sector        = "Information Technology"
+evidence      = "Accenture's own Jun 2, 2026 announcement openly publishes phone access, no registration: 'To participate in the teleconference, please dial [toll-free US + international] and enter access code … approximately 15 minutes before the scheduled start.' Q3 FY2026 transcript confirms listen-only mode + star-one queue."
+evidence_src  = "https://newsroom.accenture.com/news/2026/accenture-to-announce-third-quarter-fiscal-2026-results"
+number_src    = "https://newsroom.accenture.com/news/"
+confidence    = "high"
+last_verified = "2026-07-16"
+notes         = "FY-Q3 2026 (Jun 18). Same dial-in-published pattern in the Q2 FY2026 advisory."
+
+[ALB]
+tier          = "published"
+qa_mechanism  = "dtmf_star"
+listen_access = "yes"
+cohort        = "sp500-random-2026-07-16"
+sector        = "Materials"
+evidence      = "IR PR for the Q1 2026 call (May 7): access 'via webcast or direct dial', openly publishes a US/Canada toll-free + international number and conference ID, no registration. Investing.com transcript operator: 'If you would like to ask a question, please press star 5 to raise your hand.'"
+evidence_src  = "https://investors.albemarle.com/news-and-events/news/news-details/2026/Albemarle-Corporation-to-Release-First-Quarter-2026-Earnings-Results-on-Wednesday-May-6-2026/default.aspx"
+number_src    = "https://investors.albemarle.com/news-and-events/news/"
+confidence    = "high"
+last_verified = "2026-07-16"
+notes         = "Q1 2026. Webcast on open-exchange.net; dial-in and webcast are parallel access paths."
+
+[AMCR]
+tier          = "published"
+qa_mechanism  = "dtmf_star"
+listen_access = "yes"
+cohort        = "sp500-random-2026-07-16"
+sector        = "Materials"
+evidence      = "Official FY-Q3 2026 announcement (call May 6) openly publishes toll-free dial-ins for USA, Australia, UK, Hong Kong, Singapore + all-other-countries; optional pre-registration issues a unique code. Investing.com transcript operator: 'If you would like to ask a question, please press star one to raise your hand.'"
+evidence_src  = "https://www.amcor.com/media/news/amcor-to-report-fiscal-2026-third-quarter-results"
+number_src    = "https://www.amcor.com/media/news"
+confidence    = "high"
+last_verified = "2026-07-16"
+notes         = "FY-Q3 2026. Prior quarter (H1 FY26) also published open numbers — consistent pattern. Insider Monkey redacted operator text; Investing.com preserved it."
+
+[AMT]
+tier          = "published"
+qa_mechanism  = "dtmf_star"
+listen_access = "yes"
+cohort        = "sp500-random-2026-07-16"
+sector        = "Real Estate"
+evidence      = "Q1 2026 8-K exhibit has a 'Pre-Registration Link for Dial-in Access' section: participants pre-register 'to receive dial-in information and a personalized PIN' (register-conf.media-server.com, issuer-specific link → counts as published per the registration rule). Investing.com transcript operator: 'If you'd like to ask a question, please press 11 on your telephone… your hand is raised.'"
+evidence_src  = "https://www.sec.gov/Archives/edgar/data/1053507/000105350726000094/pressreleaseq12026.htm"
+number_src    = "https://www.barchart.com/story/news/1074021/american-tower-plans-first-quarter-2026-earnings-release-and-conference-call"
+confidence    = "high"
+last_verified = "2026-07-16"
+notes         = "Q1 2026. No raw number printed anywhere — dial-in + PIN issued ONLY via the registration link. americantower.gcs-web.com timed out; verified via SEC 8-K + Barchart syndication carrying the registration URL."
+
+[APTV]
+tier          = "published"
+qa_mechanism  = "unknown"
+listen_access = "yes"
+cohort        = "sp500-random-2026-07-16"
+sector        = "Consumer Discretionary"
+evidence      = "Q1 2026 results PR openly publishes a toll-free US + international number and conference ID, no registration — dial 15 min early and 'ask to be connected to the Aptiv PLC conference call' — plus webcast and a replay. Transcript confirms a live operator; no queue instruction was quoted in accessible transcripts."
+evidence_src  = "https://www.aptiv.com/en/newsroom/article/aptiv-reports-first-quarter-2026-financial-results"
+number_src    = "https://www.aptiv.com/en/newsroom/"
+confidence    = "high"
+last_verified = "2026-07-16"
+notes         = "Q1 2026 (call May 5). 'Ask to be connected' = operator-assisted join (cf. the DPZ legacy-number pattern). qa_mechanism unknown per the JPM/GS/MS precedent (published tier, queue instruction unquoted)."
+
+[ARE]
+tier          = "published"
+qa_mechanism  = "unknown"
+listen_access = "yes"
+cohort        = "sp500-random-2026-07-16"
+sector        = "Real Estate"
+evidence      = "IR PR for the Q1 2026 call (Apr 28) openly publishes US/Canada + international participant dial-ins ('To participate in this conference call, dial … shortly before 2:00 p.m. ET') plus a replay number, no registration. Transcript shows an operator announcing analysts by name, but the captured preamble may be trimmed."
+evidence_src  = "https://investor.are.com/news-events-and-webcasts/news/news-details/2026/Alexandria-Real-Estate-Equities-Inc--to-Hold-Its-First-Quarter-2026-Operating-and-Financial-Results-Conference-Call-and-Webcast-on-April-28-2026/default.aspx"
+number_src    = "https://investor.are.com/news-events-and-webcasts/news/"
+confidence    = "high"
+last_verified = "2026-07-16"
+notes         = "Q1 2026. qa_mechanism left unknown, NOT curated: the transcript preamble may be trimmed (the --require-opening rule — never rest a non-positive queue verdict on a file without the call opening). Tier/listen_access unaffected (published in the issuer PR)."
+
+[BF-B]
+tier          = "published"
+qa_mechanism  = "dtmf_star"
+listen_access = "yes"
+cohort        = "sp500-random-2026-07-16"
+sector        = "Consumer Staples"
+evidence      = "May 5, 2026 scheduling PR for the Q4/FY2026 call (Jun 4) invites joining by phone via an issuer-specific advance-registration link (register-conf.media-server.com) that issues dial-in details; webcast in parallel. Benzinga transcript confirms the bridge: 'all participants are in a listen only mode… to ask a question… press star 11 on your telephone.'"
+evidence_src  = "https://investors.brown-forman.com/investors/news-releases/press-release/2026/Brown-Forman-Fourth-Quarter-Earnings-Release-and-Conference-Call-Scheduled-for-June-4-2026/default.aspx"
+number_src    = "https://investors.brown-forman.com/investors/news-releases/"
+confidence    = "high"
+last_verified = "2026-07-16"
+notes         = "FY-Q4 2026 (Jun 4 call). Registration-issued dial-in with an issuer-specific link = published. Registration link is event-specific — expect a fresh link each quarter. TOML key BF-B (ISO BF.B)."
+
+[A]
+tier          = "bridge_unpublished"
+qa_mechanism  = "hybrid"
+listen_access = "unknown"
+cohort        = "sp500-random-2026-07-16"
+sector        = "Health Care"
+evidence      = "Q2 FY2026 8-K exhibit publishes webcast-only access ('broadcast live online in listen-only mode'). Q2 FY2026 transcript proves a phone leg alongside webcast raise-hand: 'If you would like to ask a question, please raise your hand now. If you have dialed in to today's call, please press Star9 to raise your hand and Star6 to unmute.'"
+evidence_src  = "https://www.sahmcapital.com/news/content/agilent-technologies-q2-2026-earnings-call-complete-transcript-2026-06-17"
+number_src    = "https://www.investor.agilent.com/news-and-events/events-and-webcasts/default.aspx"
+confidence    = "medium"
+last_verified = "2026-07-16"
+notes         = "FY-Q2 2026 (call May 27). Star9/Star6 = Zoom-webinar-style event with an unpublished dial-in leg. sec.gov 8-K: exhibit991-q226pressrelease.htm."
+
+[ABBV]
+tier          = "bridge_unpublished"
+qa_mechanism  = "dtmf_star"
+listen_access = "unknown"
+cohort        = "sp500-random-2026-07-16"
+sector        = "Health Care"
+evidence      = "Announcement PR publishes only a live webcast via the IR site, no dial-in. Investing.com Q1 2026 transcript proves a phone bridge: 'All participants will be able to listen only until the question and answer portion of this call. You may ask a question by pressing star one on your phone.'"
+evidence_src  = "https://www.investing.com/news/transcripts/earnings-call-transcript-abbvie-q1-2026-beats-expectations-stock-dips-93CH-4645829"
+number_src    = "https://investors.abbvie.com/events-and-presentations/upcoming-events"
+confidence    = "high"
+last_verified = "2026-07-16"
+notes         = "Q1 2026 (call Apr 29). Insider Monkey redacted operator instructions; Investing.com preserved them."
+
+[ACGL]
+tier          = "bridge_unpublished"
+qa_mechanism  = "dtmf_star"
+listen_access = "unknown"
+cohort        = "sp500-random-2026-07-16"
+sector        = "Financials"
+evidence      = "IR event page for the Q1 2026 call and the BusinessWire announcement PR publish only a live webcast, no dial-in. Investing.com Q1 2026 transcript proves a real operator bridge: 'please signal by pressing star one on your telephone keypad. If you are using a speakerphone, please make sure your mute function is turned off.'"
+evidence_src  = "https://www.investing.com/news/transcripts/earnings-call-transcript-arch-capital-q1-2026-mixed-results-impact-shares-93CH-4646027"
+number_src    = "https://ir.archgroup.com/events-and-presentations/event-details/2026/Q1-2026-Earnings-Conference-Call/default.aspx"
+confidence    = "high"
+last_verified = "2026-07-16"
+notes         = "Q1 2026 (call Apr 29). Insider Monkey redacted operator text for this issuer; verbatim from Investing.com."
+
+[ADBE]
+tier          = "bridge_unpublished"
+qa_mechanism  = "dtmf_star"
+listen_access = "unknown"
+cohort        = "sp500-random-2026-07-16"
+sector        = "Information Technology"
+evidence      = "Q2 FY2026 advisory offers only a live stream on the Adobe IR site, no dial-in. Investing.com transcript of the Jun 11 call has a telephone operator: 'please press star one on your touch-tone telephone… If you're joining us today using a speakerphone, please make sure your mute function is turned off' — a real bridge exists."
+evidence_src  = "https://www.investing.com/news/transcripts/earnings-call-transcript-adobe-beats-q2-2026-forecasts-stock-dips-93CH-4738625"
+number_src    = "https://www.adobe.com/investor-relations.html"
+confidence    = "high"
+last_verified = "2026-07-16"
+notes         = "FY-Q2 2026 (Jun 11). Adobe also posts an official FactSet-corrected PDF transcript on adobe.com (timed out on fetch)."
+
+[ADM]
+tier          = "bridge_unpublished"
+qa_mechanism  = "dtmf_star"
+listen_access = "unknown"
+cohort        = "sp500-random-2026-07-16"
+sector        = "Consumer Staples"
+evidence      = "Q1 2026 8-K exhibit publishes webcast-only access ('To listen to the webcast, go to www.adm.com/webcast'), no dial-in. Investing.com transcript proves a real bridge: 'All lines have been placed on a listen-only mode… please press star one to raise your hand… we will ask you to pick up your handset while asking the question.'"
+evidence_src  = "https://www.investing.com/news/transcripts/earnings-call-transcript-adm-q1-2026-beats-eps-forecast-stock-rises-93CH-4676860"
+number_src    = "https://www.adm.com/webcast"
+confidence    = "high"
+last_verified = "2026-07-16"
+notes         = "Q1 2026 (call May 5). 8-K adm-ex991_20260331xq1.htm via curl (sec.gov 403s WebFetch). Insider Monkey redacted operator text; Investing.com used."
+
+[ADP]
+tier          = "bridge_unpublished"
+qa_mechanism  = "dtmf_star"
+listen_access = "unknown"
+cohort        = "sp500-random-2026-07-16"
+sector        = "Industrials"
+evidence      = "Q3 FY2026 PR (Apr 29) lists only a live webcast at investors.adp.com, no dial-in. Investing.com transcript has a named conference operator ('My name is Michelle, and I'll be your conference operator') instructing 'If you wish to ask a question, please press star one one' — a real telephone bridge exists."
+evidence_src  = "https://www.investing.com/news/transcripts/earnings-call-transcript-adp-q3-2026-beats-expectations-stock-rises-93CH-4645590"
+number_src    = "https://investors.adp.com/events-and-presentations"
+confidence    = "high"
+last_verified = "2026-07-16"
+notes         = "FY-Q3 2026 (Apr 29). PR silence checked against mediacenter.adp.com release AND 8-K exhibit results; neither publishes a number or registration link."
+
+[AEP]
+tier          = "bridge_unpublished"
+qa_mechanism  = "dtmf_star"
+listen_access = "unknown"
+cohort        = "sp500-random-2026-07-16"
+sector        = "Utilities"
+evidence      = "Q1 2026 8-K/PR and aep.com publish webcast-only access ('broadcast live over the internet… at aep.com/webcasts'), no dial-in or registration. The Q1 2026 transcript proves a real operator bridge: 'If you would like to ask a question during this time, simply press star then one on your telephone keypad' and 'Please pick up your handset and ensure that your phone is not on mute'. A telephone REPLAY number was announced on the call itself (replay, not live access)."
+evidence_src  = "https://www.marketbeat.com/earnings/reports/2026-5-5-american-electric-power-company-inc-stock/"
+number_src    = "https://www.aep.com/webcasts"
+confidence    = "high"
+last_verified = "2026-07-16"
+notes         = "Q1 2026 (call May 5). Insider Monkey confirms the operator preamble but redacts queue instructions; MarketBeat preserves the verbatim DTMF/handset language. Q2 2026 call scheduled 2026-07-30 — where a current number would next surface."
+
+[AFL]
+tier          = "bridge_unpublished"
+qa_mechanism  = "dtmf_star"
+listen_access = "unknown"
+cohort        = "sp500-random-2026-07-16"
+sector        = "Financials"
+evidence      = "PR: 'To listen to the conference call, please register at investors.aflac.com five to seven minutes prior' — webcast registration, no phone. Investing.com Q1 2026 transcript proves a live phone bridge: 'To ask a question, you may press Star, then One on your telephone keypad. If you are using a speakerphone, you will need to pick up the handset before pressing the keys.'"
+evidence_src  = "https://www.investing.com/news/transcripts/earnings-call-transcript-aflac-q1-2026-reveals-revenue-beat-eps-miss-93CH-4649590"
+number_src    = "https://investors.aflac.com/press-releases/press-release-details/2026/Aflac-Incorporated-to-Release-First-Quarter-Results-and-CFO-Video-Update-on-April-29-2026-and-Host-Webcast-on-April-30-2026/default.aspx"
+confidence    = "high"
+last_verified = "2026-07-16"
+notes         = "Q1 2026 (call Apr 30). If the investors.aflac.com registration turns out to issue dial-in details this upgrades to published."
+
+[APA]
+tier          = "bridge_unpublished"
+qa_mechanism  = "dtmf_star"
+listen_access = "unknown"
+cohort        = "sp500-random-2026-07-16"
+sector        = "Energy"
+evidence      = "Both the Apr 14 scheduling PR and May 6 results PR publish webcast-only access, no dial-in or registration. Investing.com transcript proves a real bridge: 'all participants are in a listen-only mode… to ask a question… press star one one on your telephone.'"
+evidence_src  = "https://www.investing.com/news/transcripts/earnings-call-transcript-apa-corp-q1-2026-results-beat-estimates-stock-drops-93CH-4686096"
+number_src    = "https://investor.apacorp.com/events-and-presentations"
+confidence    = "high"
+last_verified = "2026-07-16"
+notes         = "Q1 2026 (call May 7). Analyst dial-in exists but distributed through an unpublished channel."
+
+[BKR]
+tier          = "bridge_unpublished"
+qa_mechanism  = "dtmf_star"
+listen_access = "unknown"
+cohort        = "sp500-random-2026-07-16"
+sector        = "Energy"
+evidence      = "Q1 2026 8-K exhibit publishes webcast-only access ('broadcast live via a webcast… Events and Presentations page'), no dial-in. Investing.com transcript proves a real bridge: 'all participants are in a listen-only mode… press star one on your telephone keypad to raise your hand and join the queue.'"
+evidence_src  = "https://www.investing.com/news/transcripts/earnings-call-transcript-baker-hughes-beats-q1-2026-estimates-stock-rises-93CH-4636194"
+number_src    = "https://investors.bakerhughes.com/events-presentations"
+confidence    = "high"
+last_verified = "2026-07-16"
+notes         = "Q1 2026 (call Apr 24). 8-K earningsreleaseex991033120.htm via curl. IR event page JS-rendered, no access details when fetched."
+
+[CMCSA]
+tier          = "bridge_unpublished"
+qa_mechanism  = "dtmf_star"
+listen_access = "unknown"
+cohort        = "sp500-random-2026-07-16"
+sector        = "Communication Services"
+evidence      = "'To host' PR and the Q1 2026 8-K exhibit publish webcast-only access (live + replay both website-only), no dial-in or registration. Benzinga verbatim transcript proves a real bridge: 'At this time all participants are in Listen Only mode… please press Star, the number one on your touchtone phone… If you're using a speakerphone, you may need to pick up your handset first.'"
+evidence_src  = "https://www.benzinga.com/insights/news/26/04/51999233/transcript-comcast-q1-2026-earnings-conference-call"
+number_src    = "https://www.cmcsa.com/news-releases/"
+confidence    = "high"
+last_verified = "2026-07-16"
+notes         = "PR/8-K checked for Q1 2026 (call Apr 23). Caveat: the Benzinga transcript is titled Q1 2026 but its preamble self-identifies as the Q4/FY2025 call (Jan 2026) — either way a 2026 Comcast call ran a listen-only star-1 phone bridge; Insider Monkey's Q1 2026 copy independently shows an operator-run Q&A (instructions redacted)."
+
+[AEE]
+tier          = "unknown"
+qa_mechanism  = "webcast_hand"
+listen_access = "unknown"
+cohort        = "sp500-random-2026-07-16"
+sector        = "Utilities"
+evidence      = "Q1 2026 PR, pre-call advisory, and IR event page all webcast-only; no dial-in, registration, or replay number anywhere. Insider Monkey verbatim Q1 2026 transcript shows a webinar platform: 'if you have joined via the webinar, please use the raise hand icon… at the bottom of your webinar application', analysts told 'please unmute your line'. Zero star/telephone/keypad/handset occurrences in Q1 2026 AND Q4 2025 — versus Q3 2025, which still ran a classic phone bridge ('press Star 1 from your telephone keypad… pick up your handset')."
+evidence_src  = "https://www.insidermonkey.com/blog/ameren-corporation-nyseaee-q1-2026-earnings-call-transcript-1755856/"
+number_src    = "https://www.amereninvestors.com/investors/events-and-presentations/"
+confidence    = "medium"
+last_verified = "2026-07-16"
+notes         = "⚠ LIKELY-NONE but deliberately NOT recorded as none: a named conference operator is still present (fails the TSLA no-operator tell) and the conditional 'if you have joined via the webinar' leaves open an unpublished phone join (Zoom-style webinars support dial-in attendees). FIRST OBSERVED PLATFORM MIGRATION: phone bridge → webinar after Q3 2025 — evidence that tier assignments DECAY and need per-event re-verification."
+
+[ALLE]
+tier          = "unknown"
+qa_mechanism  = "webcast_hand"
+listen_access = "unknown"
+cohort        = "sp500-random-2026-07-16"
+sector        = "Industrials"
+evidence      = "Q1 2026 advisory (read in full) is webcast-only. Investing.com transcript shows a conference operator ('All lines have been placed on mute') directing Q&A via 'if you've joined via the webinar, please use the raise hand icon' — no star/keypad/handset language, so a phone bridge is not proven; but the conditional 'if you've joined via the webinar' plus the presence of an operator prevent a positive 'none'."
+evidence_src  = "https://www.investing.com/news/transcripts/earnings-call-transcript-allegion-plcs-q1-2026-miss-on-eps-sends-stock-lower-93CH-4641565"
+number_src    = "https://investor.allegion.com/news-and-events/events-and-presentations"
+confidence    = "medium"
+last_verified = "2026-07-16"
+notes         = "Q1 2026 (Apr 28). Closest to the TSLA shape in the sample, but NOT confirmable as none: operator exists and the webinar conditional implies a non-webinar join path. Webcast on Open Exchange (JS-rendered, uninspectable). Q2 call Jul 23, 2026 — same webcast-only advisory."
+
+[CHTR]
+tier          = "unknown"
+qa_mechanism  = "webcast_hand"
+listen_access = "unknown"
+cohort        = "sp500-random-2026-07-16"
+sector        = "Communication Services"
+evidence      = "Call announcement (2026-03-11) is webcast-only ('accessed live via ir.charter.com'), no dial-in. Q1 2026 transcript shows fully on-screen Q&A: 'click on the Raise Hand button… on the black bar at the bottom of the screen', 'receive a message on your screen from the host allowing you to talk' — zero star/keypad/handset language."
+evidence_src  = "https://corporate.charter.com/newsroom/charter-to-hold-webcast-to-discuss-first-quarter-2026-financial-and-operating-results"
+number_src    = "https://ir.charter.com/"
+confidence    = "medium"
+last_verified = "2026-07-16"
+notes         = "⚠ LIKELY-NONE but not recorded as none: an 'Operator' is still credited ('this conference is being recorded… if you have any objections, please disconnect'), failing the TSLA no-operator tell, and a private dial-in into the webinar platform can't be excluded. Same webinar-with-operator shape as AEE and ALLE."

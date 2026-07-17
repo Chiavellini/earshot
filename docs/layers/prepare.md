@@ -7,6 +7,21 @@ event config, so the operator no longer hand-types markets/tickers/variants
 TOML for review. NOT responsible for: arming, trading, dial-in sourcing (dial-in
 numbers/passcodes are not in the repo — printed as a TODO in the output).
 
+**Dial-in numbers/passcodes remain out of the repo — that rule stands.** They rotate
+per call and live in the gitignored per-event env files (`configs/*-autorun.env`).
+
+What IS versioned, as of 2026-07-16, is the *classification*: `configs/dial-ins.toml`
+records per issuer whether a dialable listen path exists at all (`tier`), how analysts
+reach the queue (`qa_mechanism`), the evidence, and `number_src` — the URL to fetch the
+current digits from at prep time. None of that is secret and none of it is per-call, so
+it does not conflict with the rule above; it is the durable half that was previously
+re-discovered from scratch every quarter. See `docs/DIAL-INS.md`.
+
+The one invariant that matters when reading that registry: **`qa_mechanism` and
+`listen_access` are independent** (the Apple rule — AAPL has no DTMF queue and a public
+listen line). A transcript can never establish `listen_access`, and a `curated`/`unknown`
+verdict is never a no-go.
+
 ## Entry door
 - **CLI:** `earshot prepare --event-ticker <EVENT> [--out <path>] [--fillable]`
   (`src/main.rs`, `Command::Prepare`). Connects via `connect_live()` (read-only
