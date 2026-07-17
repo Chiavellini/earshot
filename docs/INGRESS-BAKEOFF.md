@@ -57,6 +57,25 @@ the work order:
 
 Record the chosen region and the measured numbers before proceeding.
 
+**Measured — CDMX box baseline (2026-07-16, `state/latprobe-cdmx-2026-07-16.json`,
+50 samples, TCP-handshake RTT):**
+
+| target | loss% | p50 | p95 | p99 |
+|---|---|---|---|---|
+| api.twilio.com:443 | 0.0 | 32.7 ms | 181.3 ms | **266.4 ms** |
+| media.twiliocdn.com:443 | **4.0** | 55.3 ms | 89.3 ms | 97.3 ms |
+| sip.telnyx.com:5060 | 0.0 | 291.4 ms | 389.0 ms | 604.2 ms |
+| api.elections.kalshi.com:443 | 0.0 | **54.7 ms** | 102.4 ms | 115.1 ms |
+
+Reading: the Kalshi p50 (54.7 ms) is the network floor under the measured
+102 ms warm send→hdrs (VERIFICATIONS Q-MSPM); Twilio API tail from Mexico is
+poor (p99 266 ms) and the media CDN shows 4% loss — the p99-first decision
+rule above is exactly what these numbers threaten. Region decision (us-east-1,
+operator-chosen 2026-07-16) awaits the VPS-side latprobe for the "after"
+column; the CDMX↔VPS *audio* differential should come from `capture-bakeoff`
+cross-correlation on one call captured from both boxes — not from arithmetic
+on these handshake numbers.
+
 ## 3. The bake-off that settles it
 
 Do not decide from vendor docs. Run both paths into the same box against the
