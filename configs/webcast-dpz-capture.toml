@@ -1,0 +1,37 @@
+# DPZ Q2 2026 — WEBCAST CAPTURE ONLY (Monday 2026-07-20 12:30 UTC).
+# Driven by `earshot capture-bakeoff`: no orders, no Kalshi creds needed.
+# TWO legs with DISTINCT labels (pipe + hls) — identical-label legs collide
+# on the recording filename (found in the 07-17 smoke). Monday morning:
+#   echo "<m3u8>" > ~/dpz-stream.url
+#   sed -i "s|__DPZ_URL__|<m3u8>|" configs/webcast-dpz-capture.toml
+
+[event]
+id        = "KXEARNINGSMENTIONDPZ-26JUL20-WEBCAST"
+starts_at = "2026-07-20T12:30:00Z"
+
+[pipeline]
+chunk_ms = 80
+
+[[sources]]
+kind = "pipe"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "ffmpeg -loglevel warning -i \"$(cat $HOME/dpz-stream.url)\" -vn -f s16le -ac 1 -ar 16000 -",
+]
+
+[[sources]]
+kind = "hls"
+url = "__DPZ_URL__"
+
+[kalshi]
+series = "KXEARNINGSMENTIONDPZ"
+env = "prod"
+
+[[keywords]]
+market_ticker   = "KXEARNINGSMENTIONDPZ-26JUL20-PIZZ"
+phrase          = "pizza"
+variants        = ["pizza"]
+max_price_cents = 1
+budget_contracts = 1
+policy          = "confirmed_only"

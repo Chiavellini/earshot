@@ -151,6 +151,37 @@ last chance. Hang up politely either way; one probe per number, no retries
 >   plist via `EARSHOT_EVENT_ENV`; launchd-fired rehearsal PASSED 2026-07-16
 >   08:53 (env sourced, TTS dial, 7124 frames, 3 detections, rc=0).
 
+## DPZ MONDAY — webcast-capture choreography (pivot; phone path only if a number lands)
+
+Everything below is STAGED and smoke-tested on the us-east box (2026-07-17:
+capture-bakeoff ran 2 legs → 20 MB each, distinct files, xcorr peak 1.00;
+identical-label filename collision found and fixed — legs are now pipe+hls).
+Zero creds on the box, zero orders possible. Worst case = lost recording.
+
+**Sunday evening:** start the box (`aws ec2 start-instances --instance-ids
+i-04c50d76572aa092e`), note the new IP, `ssh ubuntu@<ip>` sanity: `ls
+~/run-dpz-capture.sh ~/ear/configs/webcast-dpz-capture.toml`. Also the
+LAST phone check: the events page via the user's US-VPN browser — a number
+→ abort pivot, run the drilled phone path (preflight etc.).
+
+**Monday 06:10–06:25 CDMX (8:10–8:25 ET):**
+1. User opens ir.dominos.com → events → Q2 webcast player (US VPN, Chrome).
+2. Claude pulls the HLS manifest URL from the browser's network requests
+   (claude-in-chrome `read_network_requests`, filter `.m3u8`).
+3. On the box: `echo "<m3u8>" > ~/dpz-stream.url` and
+   `sed -i "s|__DPZ_URL__|<m3u8>|" ~/ear/configs/webcast-dpz-capture.toml`
+4. `~/run-dpz-capture.sh` (refuses if the URL/placeholder steps were missed).
+   110-min capture → `~/dpz-capture/{pipe,hls}.wav + .jsonl + report.json`.
+5. Watch `~/dpz-capture/run.log` for "stream started"-class output; segment
+   cadence readable from the manifest (curl it, EXTINF values).
+
+**Post-call (CDMX):** scp the WAV; replay through the detector with the DPZ
+config vocabulary; line detection times against the public Kalshi trades
+tape (VERIFICATIONS Q-MSPM method) → the VIRTUAL RACE: were asks swept
+before webcast-visible detections (bridge money present) or did they sit
+(webcast = the effective floor for this event class)? Either answer sets
+Wednesday's GEV/GOOGL webcast-fallback posture.
+
 ## Same-floor W1-pre findings (2026-07-17 evening) — the YouTube access terrain
 
 Three live-measured facts that shape the webcast lane's design:
