@@ -164,6 +164,20 @@ failover.
 - **No tunnels in production.** WS/RTP terminates directly on the box's public
   endpoint. Validate `X-Twilio-Signature` (set `TWILIO_AUTH_TOKEN`; on by
   default when present). ngrok is loopback-rehearsal only.
+  **Mechanism landed 2026-07-17:** `launch-event.sh --stream-url wss://…`
+  skips ngrok (supervisor passes it via `EARSHOT_STREAM_URL` in the event
+  env); `scripts/install-event-timer.sh` arms the systemd user timer that
+  replaces the launchd plist on Linux. First systemd-fired TEST rehearsal
+  PASSED mechanics on the us-east box 2026-07-17 16:19 UTC (fire on schedule,
+  Linux seams, tunnel-free branch, attempt-failure guard, notify retry
+  non-fatal, SUMMARY, clean exit) — and caught a real bug first (hardcoded
+  CDMX repo path, exit-1-in-6ms). Still UNVALIDATED on the box: real arm
+  (needs pinned binary + Kalshi creds), a real Twilio stream (needs the TLS
+  endpoint + creds + a dial), the mailer (`~/.kalshi/mail_env`), SIGTERM/
+  STOP under systemd, and live-mode self-disarm. Those are the Phase 1
+  rehearsal ladder, gated on: (1) TLS/WSS endpoint decision (Elastic IP
+  ≈$3.7/mo + Let's Encrypt vs per-start certs — operator sign-off, cost
+  rule), (2) operator consent to place per-event credentials on the box.
 - **Jitter buffer is a tunable — sweep it.** Applies to the SIP/RTP path (we own
   the buffer; Twilio owns its own). Start at 40 ms, find the minimum stable
   value, log the choice. `capture-bakeoff --jitter-buffer-ms` is the sweep hook
