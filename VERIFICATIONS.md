@@ -541,6 +541,35 @@ used to kill the armed pipeline (single-accept). Fixed: the listener now drops
 failed handshakes and keeps waiting until `accept_timeout`
 (`tests/twilio_source.rs::stray_connection_does_not_kill_the_listener`).
 
+## Q-MSPM — MS 2026-07-15 RECE race: the loss was upstream of the order path
+
+**Claim:** the single genuine race of the MS run (RECE, cap 26¢, IOC canceled
+unfilled) was lost on **audio-arrival latency**, not order-path latency: the
+first competitor fills printed on the public tape ~400 ms BEFORE the audio
+containing "recession" reached our pipeline input.
+**Source/Evidence (2026-07-16):** public trades endpoint, no auth —
+`GET https://api.elections.kalshi.com/trade-api/v2/markets/trades?ticker=KXEARNINGSMENTIONMS-26JUL15-RECE`.
+Tape: batch fills at **13:27:10.273707Z** sweep YES 27¢→95¢ (50 @ 93¢,
+49.23 @ 95¢, 124.77 @ 81¢, …), continuing to 96–98¢ at 10.393702/10.506997.
+Our run artifacts (`state/KXEARNINGSMENTIONMS-26JUL15/report.json` +
+`autorun.log:2130`): decision logged 13:27:10.763424Z with
+`capture→decision` 91.3 ms ⇒ audio arrival ≈ 13:27:10.672; order acked
++104 ms later into a book already at 96–98¢. Decision-time snapshot said
+best_ask 20¢ — stale book vs MM re-quote undecidable post-hoc (executor now
+records `book_age` per order).
+**Also pinned:** the trades endpoint returns `taker_book_side`/`taker_side`,
+dollar-string prices, fractional `count_fp`, and is publicly readable for
+settled markets — usable for post-event race forensics on any future run.
+**Implication:** connection/presign reuse cannot win this race (both were
+already live during the run, commit 8421741; `presign_age` 1.17 s is
+time-since-refresh on a 10 s cycle, zero latency cost; `send→hdrs` 102 ms
+matches a warm-socket CDMX RTT — vs the 128–134 ms COLD numbers in item 6
+below, confirming the warmer worked). The lever is upstream: audio transport
+(bridge→Twilio→ngrok) and detector chunking (~60 ms of the 91 ms internal
+edge). Full decomposition: `docs/RUNBOOK.md` follow-up 2.
+**Confidence:** high — public tape cross-referenced against our own
+monotonic-to-wall mapping (±ms via the decision log line).
+
 ## Open items carried forward
 
 1. ~~Clock-skew tolerance~~ — RESOLVED: ±30 s, measured (see Q3).
@@ -558,5 +587,7 @@ failed handshakes and keeps waiting until `accept_timeout`
    runs measured `build+sign` 2.6–3.3 ms, `send→hdrs` 128–134 ms,
    `hdrs→ack` 26–31 µs (send→ack ≈ 128–134 ms). These are COLD numbers (each
    CLI invocation opens a fresh TLS+TCP connection); the armed pipeline's
-   pre-warmed connection should shave the handshake share — capture a warm
-   sample from tomorrow's live run report.
+   pre-warmed connection should shave the handshake share. **Warm sample
+   captured 2026-07-15 (MS live run): `send→hdrs` 102 ms on the armed
+   pipeline's kept-warm connection — ~30 ms under cold, consistent with the
+   handshake share saved (see Q-MSPM).**

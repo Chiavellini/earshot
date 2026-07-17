@@ -1,17 +1,55 @@
 # NEXT EVENT — Monday 2026-07-20, Domino's (DPZ) Q2 call — PHONE-FIRST (number hunt)
 
-> **2026-07-16, revised twice.** (1) UAL and every remaining July mention
-> event (DPZ 07-20, GEV 07-22, TSLA 07-22, INTC 07-23) publish NO public
-> dial-in — announcements are webcast-only (UAL/TSLA confirmed in their own
-> 8-K exhibits). (2) BUT the operator corrected the read: a participant phone
-> bridge EXISTS for most of these — the analyst Q&A runs by phone. Transcript
-> evidence: DPZ + INTC operators say "press star-11" (real PSTN bridge); GEV
-> is a moderated bridge (analysts pre-cleared); TSLA alone has NO phone leg
-> (webcast-platform Q&A, "raise hand"/"unmute"). Phone is preferred — the
-> webcast runs ~18-30 s behind, and whoever holds the bridge number beats
-> every webcast listener. The webcast (HLS) adapter design is COMPLETE but
-> DEFERRED (operator decision 2026-07-16: phone-only this week; TSLA is
-> therefore untradeable this week).
+> **2026-07-16, revised three times.** Per-issuer access now lives in
+> `configs/dial-ins.toml` + `docs/DIAL-INS.md` — **that registry is the source of
+> truth; this blockquote is a summary.**
+>
+> (1) DPZ 07-20, GEV 07-22, TSLA 07-22, INTC 07-23 — and UAL — publish NO public
+> dial-in; announcements are webcast-only. (2) BUT the operator corrected the read:
+> a participant phone bridge EXISTS for most — the analyst Q&A runs by phone.
+> Verified 2026-07-16 against primary sources + verbatim transcripts:
+> **DPZ + INTC** operators say "press star 11 on your telephone" (real PSTN bridge)
+> — CONFIRMED. **TSLA alone** has NO phone leg (no operator at all; IR runs
+> "raise hand"/"unmute") — CONFIRMED.
+>
+> Two corrections to the previous revision:
+> - **GEV is NOT "a moderated bridge (analysts pre-cleared)"** — that was asserted
+>   without evidence and is **refuted**. GEV runs the *same* self-service queue as
+>   DPZ/INTC ("Please press 11 on your telephone"). There is a coordinator, but no
+>   pre-clearance. Do not model GEV as structurally different.
+> - **⚠ Do NOT group UAL with TSLA.** The old line "UAL/TSLA confirmed webcast-only
+>   in their own 8-K exhibits" is literally true and **dangerously misleading**.
+>   UAL's 8-K says "a live, listen-only webcast" — phrasing identical in kind to
+>   Tesla's — yet UAL's operator runs a live phone Q&A ("press star, then the number
+>   one on your telephone keypad"). **8-K silence is not evidence of absence.**
+>   Acting on that grouping forfeits a tradeable event. The tell that actually
+>   separates them: Tesla's call has **no operator at all**.
+>
+> Also newly tracked: **GOOGL 07-22** and **AAL 07-23** have open mention events that
+> this runbook previously omitted. GOOGL is the largest near-term name — bridge
+> confirmed from Alphabet's own transcript ("press \*1 on your telephone"), number
+> unpublished, so it needs the same Track A hunt as DPZ.
+>
+> Phone is preferred — whoever holds the bridge number beats every webcast listener.
+> ⚠ The "~18-30 s" webcast lag previously quoted here is **unsourced** (`:246` and
+> `docs/TWILIO.md:66` both call it an unverified estimate; the "18" appears nowhere
+> else). **Quote no number until it is measured.**
+>
+> **How to actually measure it (and why NFLX cannot).** The lag is a *difference*
+> between two paths, so it needs a call carrying BOTH a phone bridge and a webcast,
+> captured simultaneously and cross-correlated. **NFLX is exactly the wrong subject:
+> it has no phone leg, so there is no reference to subtract from** — the 2026-07-16
+> capture (`corpus/nflx-q2-2026.wav`, 39:25, verified speech throughout) is corpus
+> material only, NOT a latency datapoint. An earlier revision of this line claimed it
+> would yield "the first real measurement"; that was wrong.
+> Run the measurement on a **Tier-A published-number** issuer instead (MSFT, or a
+> bank — `configs/dial-ins.toml`), where both paths are reachable at once.
+>
+> The webcast (HLS) adapter is **NOT built** (`src/main.rs`: `SourceConfig::Hls =>
+> Err("HLS adapter not built")`), and no design artifact exists — a previous revision
+> claiming the design was "COMPLETE but DEFERRED" was an overclaim. Operator decision
+> 2026-07-16: phone-only this week. **TSLA and NFLX are therefore untradeable** — not
+> deferred by choice, but with no capture path at all.
 >
 > **DPZ number hunt (Track A) — the event is GO only if one lands by 07-19:**
 > 1. IR ask: investorrelations@dominos.com (VP IR Greg Lemenchick) — operator
@@ -22,6 +60,73 @@
 > 3. Call-morning: the live webcast player often shows a "listen by phone"
 >    tab. ⚠ ir.dominos.com (and ir.united.com) GEO-BLOCK this box (Akamai,
 >    Mexico) — needs a US VPN or the operator's manual check.
+
+## Track A execution kit (prepared 2026-07-16)
+
+### 1. IR email — ready to send (operator's own account, TODAY)
+
+To: `investorrelations@dominos.com` · Subject: **Dial-in access for the Q2
+2026 earnings call (Monday, July 20)**
+
+> Dear Domino's Investor Relations,
+>
+> I plan to follow Monday's Q2 2026 earnings conference call (July 20,
+> 8:30 a.m. ET) live. The announcement lists the webcast, but streaming is
+> unreliable where I will be that morning — is a telephone dial-in available
+> to listen to the call? Listen-only access is all I need.
+>
+> Thank you very much,
+> Bernardo Del Rio
+
+Notes: no shareholder claim is made (we hold none); listen-only is stated
+up front. If IR replies with a registration link instead of digits, register
+immediately — platform-issued dial-in + PIN counts as a number landing.
+
+### 2. Legacy-number probe — Thursday 2026-07-17, US business hours (ET)
+
+⚠ USER-APPROVED, OPERATOR LIVE ON THE LEG. Do not run unattended; a human
+answers. Two-leg bridge so the call works from Mexico and presents the US
+Twilio caller ID: Twilio calls YOUR phone first; when you answer it bridges
+you to the legacy number.
+
+```bash
+source ~/.twilio/earshot_env          # or the per-event account env
+YOUR_PHONE="+52..."                   # the phone you will answer
+LEGACY="+18884009978"                 # attempt 1; attempt 2: +17066344947
+curl -s -X POST "https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls.json" \
+  --data-urlencode "To=${YOUR_PHONE}" \
+  --data-urlencode "From=${TWILIO_FROM_NUMBER}" \
+  --data-urlencode "Twiml=<Response><Dial callerId=\"${TWILIO_FROM_NUMBER}\">${LEGACY}</Dial></Response>" \
+  -u "${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}"
+```
+
+Say: *"Hi — I'm calling about the Domino's Pizza conference call on Monday,
+July 20. Could you give me the dial-in details to listen to that call?"*
+
+Record, whichever way it goes: (a) does the number still route to a
+conferencing operator at all, and which provider (greeting usually names it);
+(b) participant number + passcode if offered → `configs/dpz-autorun.env`;
+(c) "operator-assisted, ask for the call by name" → set `TO_NUMBER` to the
+legacy number, `PASSCODE=""`, and note that the autorun DTMF path is unused —
+an operator-assisted join needs a human on the morning leg, which demotes
+the event from autonomous to attended; (d) dead/reassigned → step 3 is the
+last chance. Hang up politely either way; one probe per number, no retries
+(these are staffed lines).
+
+### 3. Manual checks only the operator can do (geo-blocked box)
+
+- **07-17/18, US VPN**: ir.dominos.com → Events → the Q2 2026 call entry.
+  Look for any "listen by phone" / "telephone access" / registration link
+  that the SEC-visible announcement lacks.
+- **07-20 ~06:00–06:20 local**: open the live webcast player (US VPN) — the
+  player chrome sometimes exposes a phone tab only once the event is live.
+  If digits appear: update `configs/dpz-autorun.env`, then
+  `launchctl kickstart` is NOT needed — the 06:05 fire reads the env at
+  launch; before 06:05 an edit is safely picked up.
+- After ANY number lands: fill `TO_NUMBER`/`PASSCODE`, run
+  `scripts/preflight-event.sh --config configs/twilio-live-dpz.toml
+  --account ~/.earshot/ms.env --fire-hhmm 0605` the night of 07-19.
+  Preflight/supervisor FAIL-STOP on TBD is already validated.
 >
 > - **Call**: Monday 2026-07-20, 8:30 AM ET = 6:30 AM CDMX local. Fire 06:05,
 >   wake 06:00, END_HHMM 0740, COMPLETE_EARLIEST 0710.
@@ -35,16 +140,61 @@
 >   plist via `EARSHOT_EVENT_ENV`; launchd-fired rehearsal PASSED 2026-07-16
 >   08:53 (env sourced, TTS dial, 7124 frames, 3 detections, rc=0).
 
+## DPZ readiness scorecard (2026-07-16) — graded by evidence class
+
+Classes, strongest first (the CLAUDE.md standard: *validated = rehearsed with
+the exact production mechanism*):
+**WIRE** = live evidence against the real external system ·
+**PROD-REHEARSED** = launchd-fired / real signal / minimal env ·
+**PAPER** = primary source read, never exercised ·
+**ASSERTED** = no evidence — treat as false until shown.
+
+| Claim | Class | Evidence |
+|---|---|---|
+| Twilio capture vs a real bridge | WIRE | MS bridge 07-14 (CA5831c4, 3585 frames, 0 drops) + 85-min live run 07-15 |
+| Full unattended chain (launchd fire → dial → detect → order → email) | WIRE | MS run 07-15 completed rc-clean; SUMMARY sent (FAILED email was the self-bootout bug, fixed) |
+| Kalshi mention-category order acceptance | WIRE | probe orders on TARI/RECE 07-14 + live RECE IOC ack 07-15 |
+| Warm order path (~102 ms send→hdrs) | WIRE | MS run report.json; VERIFICATIONS Q-MSPM |
+| Supervisor generalized to per-event env | PROD-REHEARSED | launchd-fired rehearsal 07-16 08:53 (env sourced, TTS dial, 7124 frames, 3 detections, rc=0) |
+| SIGTERM kill path / STOP / TERM→KILL escalation / frames guard | PROD-REHEARSED | 07-15 dress rehearsal (SIGTERM 6 ms; STOP 152 ms; escalation fired for real) |
+| DPZ config arms | PROD-REHEARSED | dry-run test-arm 14/14 vs pinned binary 07-16 |
+| prepare encode-validation + preflight keyword compile | PROD-REHEARSED | follow-up 6 closed 07-16, force-fail tested |
+| notify() retry | PROD-REHEARSED | force-fail verified 07-16 (both attempts logged) |
+| Preflight TBD-number FAIL-STOP (`--event-env`) | PROD-REHEARSED | full real preflight run 07-16 vs the DPZ event: gate FAILed on TBD/TBD → NO-GO, exit nonzero, PREFLIGHT email sent. Same run also PASSed: pin, keyword compile, both cred probes, mailer; flagged missing pmset wake + battery power (both expected to be set 07-19) |
+| Bank published dial-ins (JPM/GS/C) | PAPER | primary-source PRs read; **never dialed** (only MS is wire-verified) |
+| AAPL listen-line confirmation code | PAPER | IR page renders all states at once; code not date-stamped — re-verify at call time |
+| RKLB bridge evidence | PAPER (weak) | search summary only — re-derive before acting |
+| **Detection-triggered mention FILL** | **ASSERTED** | **has NEVER happened.** One real fill ever = M2 plumbing 07-10 (non-mention 1¢). DPZ is this test |
+| **DPZ dial-in number** | **ASSERTED** | TBD — event is NO-GO without it (Track A above; deadline 07-19) |
+| Competitive fill at tight caps | **ASSERTED (evidence against)** | Q-MSPM: best competitor's whole loop beat our *audio arrival* by ~400 ms on MS-RECE. Until audio transport + detector chunking shrink, expect to lose sub-50¢ races on contested words |
+| Mid-call stream recovery | ASSERTED | follow-up 1 open: a 30 s stall ends the run; recovery = full redial re-paying ~30 s warmup |
+| Post-STOP arm SIGTERM immunity | KNOWN BUG (covered) | follow-up 5: TERM→KILL escalation covers it, fired for real 07-15 |
+| Book freshness at decision | INSTRUMENTED, UNPROVEN | `book_age` added 07-16 after the MS RECE 20¢-vs-98¢ discrepancy; first data next live run |
+
+Bottom line for DPZ: **plumbing is wire- or production-validated end to end;
+the two things that have never been true remain the two go/no-go items — a
+number to dial, and a mention fill.** The fill test itself carries a measured
+headwind (the 400 ms audio deficit), so a DPZ zero-fill outcome with clean
+detections would be *consistent with the known latency gap*, not a new
+failure — judge it against `book_age` + the public tape, per Q-MSPM.
+
 ## Fills — precise status (do not over- or under-claim)
 
 The system HAS filled one real order: the **M2 acceptance fill, 2026-07-10**
 (1¢ × 1 IOC on a non-mention market, 231 ms round-trip, fee $0.0007 — wire
 evidence pinned in `VERIFICATIONS.md` M2 live-drill pins). What has NEVER
 happened is a **detection-triggered mention fill**: the full hear-keyword →
-cross-ask → fill loop. The MS run sent 1 order (canceled unfilled, IOC) and
-lost the race on 4. Ledger `spent_cents` values prove sends, not fills (caps
-are debited on send, never refunded — `src/risk.rs::record_send`). The next
-live event with the fillable posture is that validation.
+cross-ask → fill loop. The MS run sent 1 order (canceled unfilled, IOC).
+Ledger `spent_cents` values prove sends, not fills (caps are debited on
+send, never refunded — `src/risk.rs::record_send`). The next live event with
+the fillable posture is that validation.
+
+⚠ The widely-repeated "0 fills, **4 LOST_RACE**" headline for the MS run is
+a misread (corrected 2026-07-16, post-mortem below): all 4 "LOST_RACE"
+records were **1¢ observe-tier intents against 21–70¢ asks — the designed
+non-crossing outcome**, not lost races. `ExecReport` now splits the counters
+(`lost_races` vs `observe_noncross`, `src/kalshi/executor.rs`). The run had
+exactly ONE genuine race (RECE), and its post-mortem is follow-up 2.
 
 # LIVE RUN — Wednesday 2026-07-15, Morgan Stanley Q2 call (COMPLETED)
 
@@ -147,9 +297,39 @@ Deferred follow-ups from the same audit (tracked, deliberately NOT done yet):
 1. Mid-call stream recovery: a 30 s audio stall or socket close ends the whole
    run (`twilio_ws.rs` idle/EndOfStream); recovery is a full shell redial that
    re-pays ~30 s of warmup. Consider in-process re-accept within a call window.
-2. Warm-path order latency: the one real send this run showed `send→hdrs`
-   102 ms and `presign_age` 1.17 s — connection/presign reuse is a LOST_RACE
-   lever; belongs to the low-latency detector milestone.
+2. ~~Warm-path order latency: connection/presign reuse is a LOST_RACE lever~~
+   **POST-MORTEM COMPLETE 2026-07-16 — the premise was wrong on every count.**
+   Evidence: `state/KXEARNINGSMENTIONMS-26JUL15/report.json` + the public
+   Kalshi trades tape for `…MS-26JUL15-RECE` (pinned in `VERIFICATIONS.md`
+   Q-MSPM). Findings, in order of importance:
+   - **The RECE race was lost upstream of everything tunable in the order
+     path.** Tape: the first competitor fills printed **13:27:10.274Z**,
+     sweeping RECE YES 27¢→95¢ (then to 98¢ by 10.507). Our audio chunk
+     containing "recession" reached the pipeline **≈13:27:10.672** (decision
+     wall-time minus the 91.3 ms capture→decision edge) — i.e. **the
+     competitor's entire hear→fill loop finished ~400 ms before our audio
+     even arrived**. Our internal 91 ms and the 104 ms decision→ack could
+     both be zero and we still would not have filled at ≤26¢. The binding
+     constraint is **audio-arrival latency** (bridge → Twilio media →
+     ngrok → us), plus the detector's 80 ms chunking (~60 ms of the 91 ms
+     internal edge is chunk assembly — `preproc→chunk` p50 60.5 ms).
+     That sets the low-latency milestone's measured target: audio transport
+     must shed hundreds of ms; the detector edge tens.
+   - **`presign_age` 1.17 s is not a latency cost.** The presigner refreshes
+     every 10 s and `get()` is a wait-free ArcSwap read; 1.17 s is merely
+     time-since-refresh, far under the stale-fallback threshold (no "inline
+     signing" warning in the run log). Nothing to fix.
+   - **`send→hdrs` 102 ms is consistent with an already-warm h2 socket**
+     (CDMX→Kalshi RTT + matching-engine time; a cold TLS handshake would
+     read 250 ms+). The conn-warmer + presigner were live during the run
+     (commit 8421741). Remaining order-path lever is geography (a us-east
+     execution box), not code — deferred, likely moot given the 400 ms
+     upstream deficit.
+   - **Open forensic hole, now instrumented:** the decision-time book showed
+     best_ask 20¢ at 10.763 although the tape had swept to 98¢ by 10.507 —
+     either our WS book was ≥250 ms stale or an MM briefly re-quoted 20¢.
+     Undecidable post-hoc then; the executor now records `book_age`
+     (snapshot age at decision) per order so the next run settles it.
 3. ~~Event windows hard-coded per event in `ms-autorun.sh`~~ DONE 2026-07-16:
    renamed `scripts/event-autorun.sh`, all event-specific values (name, config,
    number, passcode, label, date guard, `END_HHMM_LIVE`,

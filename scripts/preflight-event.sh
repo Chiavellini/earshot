@@ -15,17 +15,20 @@
 # Exit nonzero on any FAIL; a PREFLIGHT email reports the full checklist.
 set -uo pipefail
 
-CONFIG="" ACCOUNT="" FIRE_HHMM=""
+CONFIG="" ACCOUNT="" FIRE_HHMM="" EVENT_ENV=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --config)    CONFIG="$2"; shift 2 ;;
     --account)   ACCOUNT="$2"; shift 2 ;;
     --fire-hhmm) FIRE_HHMM="$2"; shift 2 ;;
+    --event-env) EVENT_ENV="$2"; shift 2 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
 [[ -n "$CONFIG" && -n "$ACCOUNT" ]] || {
-  echo "usage: $0 --config <cfg.toml> --account <env-file> [--fire-hhmm 0605]" >&2; exit 2
+  echo "usage: $0 --config <cfg.toml> --account <env-file> [--fire-hhmm 0605]" >&2
+  echo "          [--event-env configs/<event>-autorun.env]   # dial-in go/no-go gate" >&2
+  exit 2
 }
 
 FAILS=0
@@ -136,6 +139,38 @@ if [[ -n "$FIRE_HHMM" ]]; then
   fi
 fi
 check WARN "power: $(pmset -g batt | tr '\n' ' ' | tr -s ' ') — must be AC + lid open at fire time"
+
+# ── Dial-in go/no-go gate ──────────────────────────────────────────────────
+# The night-before FAIL-STOP promised by configs/<event>-autorun.env ("the
+# preflight must FAIL-STOP if these are still TBD"). Until 2026-07-16 that gate
+# did not exist: the ONLY placeholder check lived in event-autorun.sh, and it
+# fires at 06:05 on call morning — hours after the go/no-go decision, with no
+# time left to hunt a number. The promise read as covered until the morning it
+# wasn't. This is that gate, at the hour it was meant to run.
+if [[ -n "$EVENT_ENV" ]]; then
+  if [[ -f "$EVENT_ENV" ]]; then
+    # Subshell: never leak event vars into the rest of the preflight.
+    DIAL_STATUS=$(
+      # shellcheck disable=SC1090
+      source "$EVENT_ENV" 2>/dev/null
+      if [[ "${TO_NUMBER:-TBD}" == *TBD* || "${PASSCODE:-}" == *TBD* ]]; then
+        echo "TBD:${TO_NUMBER:-unset}/${PASSCODE:-unset}"
+      else
+        echo "OK:${TO_NUMBER}"
+      fi
+    )
+    if [[ "$DIAL_STATUS" == TBD:* ]]; then
+      check FAIL "dial-in still TBD in $EVENT_ENV (${DIAL_STATUS#TBD:}) — NO-GO. The number hunt has not completed; event-autorun would abort at fire time. See docs/RUNBOOK.md Track A."
+    else
+      check PASS "dial-in resolved in $EVENT_ENV (${DIAL_STATUS#OK:})"
+    fi
+  else
+    check FAIL "event env not found: $EVENT_ENV"
+  fi
+else
+  # Not passing --event-env is itself a risk: it silently skips the gate.
+  check WARN "no --event-env given — dial-in go/no-go gate SKIPPED. Pass --event-env configs/<event>-autorun.env to enforce it."
+fi
 
 # ── Mailer live test ───────────────────────────────────────────────────────
 BODY=$(printf '%s\n' "${REPORT_LINES[@]}")
