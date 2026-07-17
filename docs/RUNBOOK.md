@@ -103,11 +103,16 @@ curl -s -X POST "https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID
 Say: *"Hi — I'm calling about the Domino's Pizza conference call on Monday,
 July 20. Could you give me the dial-in details to listen to that call?"*
 
-**OUTCOME 2026-07-17: 888-400-9978 is DEAD** — reassigned to an unrelated
-marketing line (medical devices), no conference operator. Probed once via the
-user-attended bridge, per protocol. Remaining: the +1-706-634-4947 probe, the
-IR ask (email + the IR office phone from a current PR), the VPN page check,
-and the call-morning player check.
+**OUTCOME 2026-07-17: BOTH legacy numbers DEAD.** 888-400-9978 → reassigned
+to an unrelated marketing line (medical devices). +1-706-634-4947 → dead
+(evening probe, user live on the leg). **IR EMAIL ANSWERED same day:** "All
+public access to our earnings call is through our website" + a link to the
+events page — the definitive polite no. Track A is exhausted except the
+Sunday page check and the Monday player check. **The operative Monday plan
+is the WEBCAST PIVOT** (capture-only from the us-east box — see the
+webcast-lane sections below and the plan file): zero creds, zero orders,
+corpus + cadence + virtual-race analysis against the public Kalshi tape.
+The phone path runs only if a number lands Sunday/Monday.
 
 Record, whichever way it goes: (a) does the number still route to a
 conferencing operator at all, and which provider (greeting usually names it);
@@ -205,6 +210,39 @@ phone leg). Prep state (2026-07-17):
   **investor-relations@abc.xyz**; plus registration/player checks per Track A.
 - GOOGL expectation per VERIFICATIONS Q-MSPM: marquee-name hot words likely
   lose races at tight caps — value is detection data + any sitting asks.
+
+## Fire-path latency pass (2026-07-17, branch `webcast-lane`) — code landed, on-box gates OPEN
+
+Mechanical-latency-only pass (no change to what/when we fire; risk gates and
+caps untouched). Landed: `book_age` histogram fix + new `ring_wake`/
+`handoff→exec` edges; fire-first ordering on the detect thread (telemetry/logs
+after `try_send`); executor telemetry locks deferred to after the wire
+(`PendingEdges`); executor on a dedicated OS thread + current-thread runtime,
+intents overlapped via `FuturesUnordered` (no per-intent spawn); ring
+unpark-on-send (wake ≈ µs, not the 100 µs park backstop); `[perf]` section +
+`src/perf.rs` (Linux core pinning / SCHED_FIFO / ring spin — default OFF,
+no-op on every existing config); arm-time shadow warm-fire (signed GET, id
+that cannot exist — places nothing); criterion bench `benches/hot_path.rs` +
+`perf_cold_first_fire`; `perf_detector_rtf` now measures the chunk ladder
+160/80/40/20. Host-tuning kit: `docs/OS-TUNING.md`,
+`scripts/os-tune-{check,apply}.sh`.
+
+**Gates that remain OPEN (all on the us-east box, none required for the next
+event — every default keeps today's behavior):**
+1. On-box baseline: `cargo test --release -- --ignored perf_` + `cargo bench`
+   before/after `os-tune-apply` (jitter = p99−p50).
+2. `chunk_ms` 80→40: only after the on-box `perf_detector_rtf` ladder shows
+   comfortable RTF margin at chunk 40 (accuracy is unaffected — BAKEOFF.md;
+   this is purely the buffering win, ~20 ms mean / ~40 ms worst). Judge on
+   RTF, not per-call p95 — the 07-17 laptop ladder showed sherpa's decode is
+   BURSTY below its internal quantum (chunk 80: p50 345 µs, p95 71 ms, max
+   197 ms; the burst tail exists at every chunk size and only the
+   streaming_ctc engine removes it).
+3. `[perf] realtime = true` for an event: only after the systemd-fired
+   rehearsal on the tuned box passes with real SIGTERM (kill latency must not
+   regress; `tests/kill_sigterm.rs` posture) + `os-tune-check.sh` all-PASS.
+4. `spin_hot_rings`: after (3), distinct cores per spinning thread (config
+   validation enforces).
 
 ## Re-validation rehearsal 2026-07-17 (after the Linux-seam script changes) — PASSED
 
