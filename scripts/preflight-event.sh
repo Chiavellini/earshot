@@ -140,6 +140,21 @@ if [[ -n "$FIRE_HHMM" ]]; then
 fi
 check WARN "power: $(pmset -g batt | tr '\n' ' ' | tr -s ' ') — must be AC + lid open at fire time"
 
+# ── CPU load ───────────────────────────────────────────────────────────────
+# 2026-07-17: unrelated batch jobs pushed this box to load 82 — network egress
+# failed outright and every process crawled. The pipeline's latency budgets
+# (chunk→detect p90 ~25 ms) were measured on a quiet box; a saturated one is a
+# different machine than the one that rehearsed.
+ncpu=$(sysctl -n hw.ncpu)
+load1=$(sysctl -n vm.loadavg | awk '{print $2}')
+if python3 -c "exit(0 if float('$load1') > $ncpu*2 else 1)"; then
+  check FAIL "load average $load1 with $ncpu cores — box is saturated; whatever is running must be done or stopped before the event"
+elif python3 -c "exit(0 if float('$load1') > $ncpu*0.75 else 1)"; then
+  check WARN "load average $load1 with $ncpu cores — something heavy is running; confirm it finishes before fire time"
+else
+  check PASS "load average $load1 ($ncpu cores)"
+fi
+
 # ── Dial-in go/no-go gate ──────────────────────────────────────────────────
 # The night-before FAIL-STOP promised by configs/<event>-autorun.env ("the
 # preflight must FAIL-STOP if these are still TBD"). Until 2026-07-16 that gate
