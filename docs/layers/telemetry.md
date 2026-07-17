@@ -27,7 +27,9 @@ layer — it never sits between two stages.
   the content timeline for the bench's paced onset→emit latency), per-edge
   `EdgeStats` (count + p50/p90/p95/p99/max in µs; zero-count edges omitted
   by `snapshot()`), `DetectionRecord`s, `DropCounters`. `main.rs::arm`
-  extends the JSON with `orders` (OrderRecords) and `lost_races`.
+  extends the JSON with `orders` (OrderRecords), `lost_races` (fillable-tier
+  only), and `observe_noncross` (designed 1¢ non-crossing — see
+  `docs/layers/executor.md`).
 - **Mechanism:** `render_table()` (terminal) and `write_json(path)`
   (`report.json`) — the replay/regression artifacts (spec P4).
 

@@ -24,8 +24,9 @@ LOST_RACE check → EV gate → risk gate → pre-staged body + pre-signed heade
   VERIFICATIONS.md.
 - **Type:** `executor::OrderRecord` per intent (ticker, price, count, tier,
   `dry_run`, `lost_race`, refusal, status, order_id, full ts chain,
-  `best_ask` book snapshot) aggregated into `ExecReport { orders,
-  lost_races, recorder }`, returned when the channel closes.
+  `best_ask` book snapshot + `book_age_ns` snapshot age) aggregated into
+  `ExecReport { orders, lost_races, observe_noncross, recorder }`, returned
+  when the channel closes.
 - Every acked `order_id` is pushed into `kalshi::OrderRegistry` — the kill
   switch's cancel set.
 
@@ -33,7 +34,14 @@ LOST_RACE check → EV gate → risk gate → pre-staged body + pre-signed heade
 - Read books ONLY via `BookCache::read` (wait-free); never a REST fetch on
   this path.
 - LOST_RACE: no ask at or under the cap → journal + counter, no order. This
-  counter is the edge-decay kill-criterion metric (spec §10).
+  counter is the edge-decay kill-criterion metric (spec §10) — and it counts
+  ONLY fillable-tier caps (> `OBSERVE_PRICE_CENTS` = 1¢). A 1¢ observe-tier
+  intent crossing nothing is the DESIGNED outcome (prepare parks unvalidated
+  words at 1¢ precisely so they never send); those land in the separate
+  `observe_noncross` counter and log at INFO, not WARN. The per-record
+  `lost_race` flag still marks the non-crossing branch on both. (The MS
+  2026-07-15 headline "4 LOST_RACE" was 4 observes — a designed outcome
+  misread as a latency failure.)
 - EV gate before risk gate: `ev_gate(cap, count, haircut, min_ev)` with
   `fee_cents` = ceil-to-cent 0.07 quadratic (conservative vs the observed
   centicent rounding — see VERIFICATIONS).
@@ -49,11 +57,15 @@ LOST_RACE check → EV gate → risk gate → pre-staged body + pre-signed heade
 - Pre-staged bodies (`prestage_orders`) MUST mirror the decision layer's
   tranche arithmetic per policy; the inline-build fallback is a logged
   should-never-happen.
-- Record edges `decision→exec`, `presign_age`, `exec→send`, `send→hdrs`,
-  `hdrs→ack`, `send→ack`, `decision→ack`, `capture→ack` into its own
-  `LatencyRecorder` (merged into the pipeline report at teardown). `send→hdrs`
-  is network + matching-engine time (TTFB), `hdrs→ack` is body read + parse;
-  `send→ack` is kept as the end-to-end aggregate (p95 of a sum ≠ sum of p95s).
+- Record edges `decision→exec`, `book_age`, `presign_age`, `exec→send`,
+  `send→hdrs`, `hdrs→ack`, `send→ack`, `decision→ack`, `capture→ack` into its
+  own `LatencyRecorder` (merged into the pipeline report at teardown).
+  `send→hdrs` is network + matching-engine time (TTFB), `hdrs→ack` is body
+  read + parse; `send→ack` is kept as the end-to-end aggregate (p95 of a sum
+  ≠ sum of p95s). `book_age` = exec_ts − the book snapshot's `as_of`
+  (skipped while the book is still the seq-0 placeholder); it distinguishes
+  "our book was stale" from "a competitor was genuinely faster" — the MS RECE
+  loss was undiagnosable without it.
 
 ## Failure policy
 - Risk refusal / EV failure / LOST_RACE → recorded on the OrderRecord, no

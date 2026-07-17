@@ -43,6 +43,14 @@ pub fn ev_gate(cap_cents: u32, count: u32, haircut_cents: u32, min_ev_cents: u32
     gross.saturating_sub(fee) >= min_ev_cents as u64 * count as u64
 }
 
+/// The observe-posture price: unvalidated words bid 1¢ non-crossing, so their
+/// intents are EXPECTED to find no ask at or under the cap (prepare leaves them
+/// at 1¢ precisely so they take the non-crossing branch and never send). A
+/// non-crossing outcome at this price is by design, not a lost race — the MS
+/// 2026-07-15 run reported "4 LOST_RACE" that were all 1¢ observes, which
+/// misread as a latency failure. `ExecReport` splits the two counters.
+pub const OBSERVE_PRICE_CENTS: u32 = 1;
+
 #[derive(Clone)]
 pub struct PreStaged {
     pub body: Bytes,
@@ -121,6 +129,11 @@ pub struct OrderRecord {
     /// Book snapshot at decision time (LOST_RACE forensics, spec §5.6).
     /// (price_cents, qty_centi_contracts) at decision time — forensic only.
     pub best_ask: Option<(u32, u32)>,
+    /// Age of that snapshot (exec_ts − book.as_of). Distinguishes "stale book"
+    /// from "fast competitor": the MS RECE loss showed best_ask 20¢ at decision
+    /// while the public tape had already swept to 98¢ ~250 ms earlier — without
+    /// this field the two explanations were indistinguishable post-hoc.
+    pub book_age_ns: Option<u64>,
 }
 
 pub struct ExecCtx {
@@ -138,7 +151,12 @@ pub struct ExecCtx {
 
 pub struct ExecReport {
     pub orders: Vec<OrderRecord>,
+    /// Fillable-tier intents (cap > `OBSERVE_PRICE_CENTS`) that found no ask at
+    /// or under the cap — genuinely lost races.
     pub lost_races: u32,
+    /// 1¢ observe-tier intents that (by design) crossed nothing. Kept separate
+    /// so designed behavior never inflates the failure headline.
+    pub observe_noncross: u32,
     pub recorder: LatencyRecorder,
 }
 
@@ -160,9 +178,16 @@ pub async fn run_executor(mut rx: mpsc::Receiver<DecisionIntent>, ctx: Arc<ExecC
     while tasks.join_next().await.is_some() {}
 
     let orders = Arc::try_unwrap(orders).ok().expect("sole owner").into_inner().unwrap();
-    let lost_races = orders.iter().filter(|o| o.lost_race).count() as u32;
+    let lost_races = orders
+        .iter()
+        .filter(|o| o.lost_race && o.price_cents > OBSERVE_PRICE_CENTS)
+        .count() as u32;
+    let observe_noncross = orders
+        .iter()
+        .filter(|o| o.lost_race && o.price_cents <= OBSERVE_PRICE_CENTS)
+        .count() as u32;
     let recorder = Arc::try_unwrap(recorder).ok().expect("sole owner").into_inner().unwrap();
-    ExecReport { orders, lost_races, recorder }
+    ExecReport { orders, lost_races, observe_noncross, recorder }
 }
 
 async fn handle_intent(
@@ -218,21 +243,37 @@ async fn handle_intent(
         hdrs_ts: None,
         ack_ts: None,
         best_ask: None,
+        book_age_ns: None,
     };
 
     // Local book read — never a blocking REST fetch (spec §5.6).
     let book = ctx.cache.read(&staged.ticker);
     let best_ask = book.as_ref().and_then(|b| b.best_ask());
     record.best_ask = best_ask;
+    // seq 0 = the placeholder Book::default() (as_of 0) — no snapshot yet, so
+    // an "age" would be time-since-boot noise.
+    if let Some(b) = book.as_ref().filter(|b| b.seq > 0) {
+        let age = exec_ts.saturating_since(b.as_of);
+        record.book_age_ns = Some(age);
+        recorder.lock().unwrap().record("book_age", age);
+    }
 
-    // LOST_RACE: nothing offered at or under the cap. Primary edge-decay metric.
+    // LOST_RACE: nothing offered at or under the cap. Primary edge-decay metric
+    // — but only for fillable-tier caps. A 1¢ observe intent crossing nothing
+    // is the designed outcome, never a race.
     let swept = match best_ask {
         Some((price, _)) if price <= staged.price_cents => false,
         _ => true,
     };
     if swept {
         record.lost_race = true;
-        tracing::warn!(ticker = %staged.ticker, ?best_ask, cap = staged.price_cents, "LOST_RACE");
+        if staged.price_cents > OBSERVE_PRICE_CENTS {
+            tracing::warn!(ticker = %staged.ticker, ?best_ask, cap = staged.price_cents,
+                book_age_ms = record.book_age_ns.map(|a| a / 1_000_000), "LOST_RACE");
+        } else {
+            tracing::info!(ticker = %staged.ticker, ?best_ask,
+                "observe non-crossing (1¢ cap, by design — not a lost race)");
+        }
         return record;
     }
 

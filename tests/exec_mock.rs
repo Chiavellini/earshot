@@ -164,10 +164,34 @@ async fn lost_race_sends_nothing() {
     let report = run_executor(rx, rig.ctx.clone()).await;
 
     assert_eq!(report.lost_races, 1);
+    assert_eq!(report.observe_noncross, 0);
     let o = &report.orders[0];
     assert!(o.lost_race);
     assert!(o.send_ts.is_none());
     assert_eq!(o.best_ask, Some((85, 500)));
+    assert!(o.book_age_ns.is_some(), "book snapshot age must be recorded at decision");
+    assert_eq!(rig.ctx.gate.ledger_spent_cents(), 0);
+}
+
+/// A 1¢ observe-tier intent crossing nothing is the DESIGNED outcome (the
+/// observe posture bids 1¢ non-crossing so it never sends) — it must count as
+/// observe_noncross, never inflate lost_races. The MS 2026-07-15 run headline
+/// ("4 LOST_RACE") was exactly this misclassification.
+#[tokio::test]
+async fn observe_noncross_is_not_a_lost_race() {
+    let server = MockServer::start().await;
+    // No mock mounted: any POST would 404 and fail the test via the record.
+    let rig = rig(&server, 1, 1, false, Duration::from_secs(5)).await; // 1¢ observe vs 85¢ ask
+    let (tx, rx) = tokio::sync::mpsc::channel(8);
+    tx.send(intent_for(0, 1, 1, Tier::Confirmed)).await.unwrap();
+    drop(tx);
+    let report = run_executor(rx, rig.ctx.clone()).await;
+
+    assert_eq!(report.lost_races, 0);
+    assert_eq!(report.observe_noncross, 1);
+    let o = &report.orders[0];
+    assert!(o.lost_race, "the per-record flag still marks the non-crossing branch");
+    assert!(o.send_ts.is_none());
     assert_eq!(rig.ctx.gate.ledger_spent_cents(), 0);
 }
 

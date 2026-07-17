@@ -826,7 +826,12 @@ async fn arm(
 
     report.edges.extend(exec_report.recorder.snapshot());
     print!("\n{}", report.render_table());
-    println!("\norders ({} total, {} LOST_RACE):", exec_report.orders.len(), exec_report.lost_races);
+    println!(
+        "\norders ({} total, {} LOST_RACE, {} observe non-crossing by design):",
+        exec_report.orders.len(),
+        exec_report.lost_races,
+        exec_report.observe_noncross
+    );
     for o in &exec_report.orders {
         println!(
             "  {} {} x{} @≤{}¢ [{}] {}",
@@ -842,6 +847,7 @@ async fn arm(
     let mut json = serde_json::to_value(&report)?;
     json["orders"] = serde_json::to_value(&exec_report.orders)?;
     json["lost_races"] = exec_report.lost_races.into();
+    json["observe_noncross"] = exec_report.observe_noncross.into();
     earshot::fsio::write_atomic(&report_path, serde_json::to_string_pretty(&json)?.as_bytes())?;
     println!("\nreport written to {}", report_path.display());
     Ok(())
