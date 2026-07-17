@@ -140,6 +140,21 @@ last chance. Hang up politely either way; one probe per number, no retries
 >   plist via `EARSHOT_EVENT_ENV`; launchd-fired rehearsal PASSED 2026-07-16
 >   08:53 (env sourced, TTS dial, 7124 frames, 3 detections, rc=0).
 
+## Re-validation rehearsal 2026-07-17 (after the Linux-seam script changes) — PASSED
+
+The platform-seam changes to `event-autorun.sh` / `launch-event.sh` /
+`preflight-event.sh` (us-east Phase 1 work) touched the DPZ live path, so the
+launchd-fired TEST rehearsal was re-run the same day: kickstart 10:53:15 →
+armed **configs/rehearsal-gev.toml** (fresh `prepare` output — the old
+rehearsal config's NFLX markets had FINALIZED and arm correctly refused them;
+lesson: **rehearsal configs go stale as events settle — re-prepare against a
+live event each week**) → real TTS dial → 7129 frames / 1783 chunks / 0 drops
+→ clean long-stream close → rc=0 → [TEST] SUMMARY. Caveat, stated exactly:
+**0 detections, expected** — the TTS loopback speaks NFLX-tailored text and
+this run armed GEV vocabulary; the detection leg is binary-level, unchanged
+since its 3/3 TTS pass on 07-16. The changed (shell) surface is fully
+re-validated.
+
 ## DPZ readiness scorecard (2026-07-16) — graded by evidence class
 
 Classes, strongest first (the CLAUDE.md standard: *validated = rehearsed with
