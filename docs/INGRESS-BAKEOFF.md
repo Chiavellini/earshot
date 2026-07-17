@@ -70,11 +70,30 @@ Record the chosen region and the measured numbers before proceeding.
 Reading: the Kalshi p50 (54.7 ms) is the network floor under the measured
 102 ms warm send→hdrs (VERIFICATIONS Q-MSPM); Twilio API tail from Mexico is
 poor (p99 266 ms) and the media CDN shows 4% loss — the p99-first decision
-rule above is exactly what these numbers threaten. Region decision (us-east-1,
-operator-chosen 2026-07-16) awaits the VPS-side latprobe for the "after"
-column; the CDMX↔VPS *audio* differential should come from `capture-bakeoff`
-cross-correlation on one call captured from both boxes — not from arithmetic
-on these handshake numbers.
+rule above is exactly what these numbers threaten.
+
+**Measured — us-east-1 box (2026-07-17, `state/latprobe-useast1-2026-07-17.json`,
+i-04c50d76572aa092e / t3a.large / us-east-1a, 50 samples):**
+
+| target | loss% | p50 | p95 | p99 | vs CDMX p50 |
+|---|---|---|---|---|---|
+| api.twilio.com:443 | 0.0 | 2.3 ms | 4.6 ms | 5.0 ms | **14× closer** |
+| media.twiliocdn.com:443 | 0.0 | 2.9 ms | 7.0 ms | 10.7 ms | 19× (and loss 4%→0) |
+| sip.telnyx.com:5060 | 0.0 | 42.5 ms | 43.9 ms | 47.1 ms | 7× |
+| api.elections.kalshi.com:443 | 0.0 | **2.2 ms** | 4.8 ms | 7.2 ms | **25× closer** |
+
+**§2 REGION DECISION (2026-07-17): us-east-1 — confirmed by numbers.** The
+work-order prediction held: Twilio's edge is same-metro (2–5 ms, zero loss),
+so the Option-A TCP objection is largely neutralized; Kalshi is 2.2 ms away
+(order flight should drop from ~102 ms warm to low-teens). The CDMX↔VPS
+*audio* differential still must come from `capture-bakeoff` cross-correlation
+on one call captured from both boxes — not from arithmetic on these handshake
+numbers. Box facts: Ubuntu 24.04, full test suite green with
+`EARSHOT_REQUIRE_MODELS=1` (2026-07-17); onnxruntime linux-x64 1.27.1 sha
+pinned in `scripts/fetch-models.sh`; instance is STOPPED when idle (cost
+discipline) — start with
+`aws ec2 start-instances --instance-ids i-04c50d76572aa092e` (public IP
+changes on restart; look it up with describe-instances).
 
 ## 3. The bake-off that settles it
 

@@ -19,7 +19,8 @@ fetch_onnxruntime_dylib() {
   case "$os/$arch" in
     Darwin/arm64)  dir="onnxruntime-osx-arm64-$ver"
                    sha="e42b77a7281cc6e55141bf44fcfbac2c782b823a491bbb6ac33c781dd991f8a6" ;;
-    Linux/x86_64)  dir="onnxruntime-linux-x64-$ver"; sha="" ;;   # TODO: pin sha on first Linux/CI use
+    Linux/x86_64)  dir="onnxruntime-linux-x64-$ver"
+                   sha="25b1ef1fea1acd210d63f8f24dc870ad6e077795ce1f54876252c6d3803c15af" ;;  # pinned 2026-07-17, first Linux use (us-east-1 box)
     Linux/aarch64) dir="onnxruntime-linux-aarch64-$ver"; sha="" ;;
     *) echo "unknown platform $os/$arch — download an onnxruntime $ver dylib manually" >&2; return 1 ;;
   esac
