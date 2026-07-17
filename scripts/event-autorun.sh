@@ -17,7 +17,10 @@ set -u  # NOT -e: unattended — every failure must reach the report, not die si
 # launchd runs with a minimal environment — set everything explicitly.
 export PATH="/opt/homebrew/bin:$HOME/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 export HOME="${HOME:-/Users/bernardodelrio}"
-REPO="/Users/bernardodelrio/Code/ear"
+# Repo root: derive from this script's location; EARSHOT_REPO overrides.
+# (Was hardcoded to the CDMX box's path — caught by the first systemd-fired
+# VPS rehearsal, 2026-07-17: `cd /Users/...` on a Linux box, exit 1 in 6 ms.)
+REPO="${EARSHOT_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 
 # Minimal mailer for failures BEFORE the env file is loaded (the full notify()
 # below needs SUBJ_TAG/log; this one needs only ~/.kalshi/mail_env). A silent
