@@ -146,6 +146,32 @@ last chance. Hang up politely either way; one probe per number, no retries
 >   plist via `EARSHOT_EVENT_ENV`; launchd-fired rehearsal PASSED 2026-07-16
 >   08:53 (env sourced, TTS dial, 7124 frames, 3 detections, rc=0).
 
+## Same-floor W1-pre findings (2026-07-17 evening) — the YouTube access terrain
+
+Three live-measured facts that shape the webcast lane's design:
+
+1. **CGNAT breaks direct-manifest fetching from the CDMX box.** googlevideo
+   segment URLs are IP-locked (the manifest bakes in `/ip/<requester>/`);
+   this connection rotates egress IPs mid-session → ffmpeg-on-manifest dies
+   with TLS/IO errors. yt-dlp (which re-resolves per session) worked: 80 s
+   captured. Direct-manifest strategies REQUIRE a stable-IP host.
+2. **YouTube bot-walls datacenter IPs.** From the us-east EC2 box, current
+   yt-dlp gets "Sign in to confirm you're not a bot" — YouTube capture from
+   AWS needs authenticated cookies (`--cookies`), a residential egress, or a
+   non-YouTube simulcast. Also: Ubuntu 24.04's node 18 is not accepted as a
+   JS runtime by yt-dlp 2026.07 — install deno on the VPS.
+3. **Cadence probe methodology works** (runs Wednesday against TSLA's
+   stream): resolve manifest → `EXT-X-TARGETDURATION`/`EXTINF`. Sky News
+   reference: 5 s segments.
+
+Implications: (a) W1's strategy race needs the operator's YouTube cookies on
+the VPS (ordinary yt-dlp practice, ToS-gray — operator decision) or an owned
+test stream + cookies; (b) non-YouTube corporate webcast players (Notified/
+Q4/media-server HLS — INTC, most issuers) have no bot-wall and are the
+friendlier same-floor venue for direct low-latency fetching; (c) Wednesday's
+TSLA v0 runs from the CDMX box via yt-dlp (proven path) — proximity matters
+less for a v0 whose goal is cadence + corpus.
+
 ## Webcast lane (branch `webcast-lane`, 2026-07-17 — MERGE ONLY AFTER DPZ)
 
 `SourceConfig::Hls`/`Pipe` are now real (`src/source/pipe.rs`: ffmpeg/yt-dlp
