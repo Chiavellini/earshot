@@ -33,7 +33,7 @@ serde_json = "1"
 sherpa-onnx = "1.13.4"
 smallvec = { version = "1", features = ["serde"] }
 thiserror = "2"
-tokio = { version = "1", features = ["rt", "rt-multi-thread", "time", "macros", "sync", "net", "signal"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "time", "macros", "sync", "net", "signal", "process", "io-util"] }
 tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
 toml = "0.8"
 tracing = "0.1"

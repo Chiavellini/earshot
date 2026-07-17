@@ -48,6 +48,27 @@ token set, validation is skipped with a loud warn — a dev/loopback-only
 posture. Two distinct account tokens make this a cryptographic boundary between
 two events. Scheme pinned in `VERIFICATIONS.md`.
 
+### Adapter #4: `PipeSource` (`src/source/pipe.rs`) — the webcast lane
+
+Generic subprocess audio: spawns a decoder command and reads **raw s16le mono
+PCM** at a declared rate from its stdout, emitting one `AudioFrame` per 20 ms
+of samples stamped at arrival (`clock_domain: "network"`, latency class
+`Webcast` — tens of seconds behind the bridge, unmeasured; this lane is for
+coverage/corpus/slow markets, never racing). Two config spellings:
+`SourceConfig::Hls { url }` (sugar → `ffmpeg -i <url> -f s16le -ac 1 -ar
+16000 -`) and `SourceConfig::Pipe { cmd, sample_rate_hz }` (the honest
+primitive — YouTube via `sh -c "yt-dlp -o - <url> | ffmpeg -i - …"`).
+Obligations kept here: dense `seq`; ring drop policy (send + warn);
+dead-stream guard (`idle_timeout` 30 s, no bytes → `SourceError::Protocol`
+with the decoder's stderr tail — "wall time ≠ audio"); child killed on every
+exit path + `kill_on_drop` backstop (no orphan ffmpeg); trailing partial
+frame flushed at EOF; empty cmd/url refused at construction (fail cheap).
+The subprocess owns protocol/demux/codec; format is DECLARED to it, never
+sniffed. 16 kHz default = wideband, an ASR-quality win over the phone path.
+Launch: `scripts/launch-webcast.sh` (observe posture enforced — accepts no
+fillable/live flags). Tests: `tests/pipe_source.rs`, incl. full-pipeline
+detection parity vs `ReplaySource` on the same fixture.
+
 ### Adapter combiner: `SourceArbiter` (`src/source/arbiter.rs`)
 Dual dial-in (spec §5.2). The arbiter *is itself* an `AudioSource`: it wraps
 N inner sources (each run as a task feeding a private ring) and re-emits one

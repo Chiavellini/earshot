@@ -5,6 +5,7 @@
 //! `SourceConfig` variant; the pipeline is unchanged.
 
 pub mod arbiter;
+pub mod pipe;
 pub mod replay;
 pub mod twilio_ws;
 

@@ -146,7 +146,17 @@ last chance. Hang up politely either way; one probe per number, no retries
 >   plist via `EARSHOT_EVENT_ENV`; launchd-fired rehearsal PASSED 2026-07-16
 >   08:53 (env sourced, TTS dial, 7124 frames, 3 detections, rc=0).
 
-## WEDNESDAY 2026-07-22 double-header: GEV (pre-market) + GOOGL (after close)
+## Webcast lane (branch `webcast-lane`, 2026-07-17 — MERGE ONLY AFTER DPZ)
+
+`SourceConfig::Hls`/`Pipe` are now real (`src/source/pipe.rs`: ffmpeg/yt-dlp
+subprocess → s16le PCM → AudioFrames; 6 tests incl. pipeline detection parity
+vs replay). Launch: `scripts/launch-webcast.sh` — **observe posture enforced**
+(no fillable/live flags accepted) until the webcast lag is measured. Purpose:
+no-phone issuers (TSLA/NFLX class), webinar-shape unknowns, and ANY event
+whose number hunt fails — degraded-GO instead of NO-GO. First target:
+**GOOGL 07-22 (YouTube-only per Alphabet's PR), attended.** ⚠ The 07-19 DPZ
+preflight pins from main HEAD — this branch stays unmerged until Monday
+evening precisely so Monday runs exactly what was drilled.
 
 Sequential, not concurrent (times pinned 2026-07-17 from issuer sources):
 **GEV 7:30 AM ET = 5:30 CDMX** (gevernova.com PR) → fire 05:05, wake 05:00;

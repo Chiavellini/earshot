@@ -5,9 +5,14 @@ Companion to `configs/dial-ins.toml` (the machine-readable registry) and
 whether a `KXEARNINGSMENTION<T>` series is tradeable at all: **can we dial a
 number and listen to this call live?**
 
-It matters because EARSHOT is phone-first by construction. `src/source/twilio_ws.rs`
-is the only built capture path; `src/main.rs` refuses to construct the HLS adapter
-(`"HLS adapter not built — use twilio_stream"`). No number ⇒ no audio ⇒ no trade.
+It matters because EARSHOT is phone-FIRST: the bridge beats every webcast
+listener. Since 2026-07-17 (branch `webcast-lane`) there is also a webcast
+fallback — `src/source/pipe.rs` (ffmpeg/yt-dlp subprocess → PCM), launched via
+`scripts/launch-webcast.sh` in capture/observe posture only. The router:
+**tier `published`/`bridge_unpublished` with a number in hand → phone lane;
+tier `none`, the webinar-shape `unknown`s, or a FAILED number hunt → webcast
+lane (degraded-GO: corpus + observation, not racing).** No number no longer
+means no audio; it means the slow lane.
 
 ## The finding
 

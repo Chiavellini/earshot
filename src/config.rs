@@ -190,8 +190,22 @@ pub enum SourceConfig {
         #[serde(default)]
         dial_at: String,
     },
-    /// Webcast fallback (adapter not built; parses now).
+    /// Webcast fallback: ffmpeg decodes the URL to raw PCM (adapter #4,
+    /// `source::pipe`). Tens of seconds behind the phone bridge — coverage
+    /// for no-phone issuers and failed number hunts, not for racing.
     Hls { url: String },
+    /// Generic subprocess audio: `cmd` writes raw s16le MONO PCM at
+    /// `sample_rate_hz` to stdout (e.g. `yt-dlp -o - <url> | ffmpeg …` via
+    /// `sh -c`). The honest primitive under `hls`; same webcast latency class.
+    Pipe {
+        cmd: Vec<String>,
+        #[serde(default = "default_pipe_rate")]
+        sample_rate_hz: u32,
+    },
+}
+
+fn default_pipe_rate() -> u32 {
+    16_000
 }
 
 fn default_speed() -> f32 {
@@ -363,6 +377,22 @@ fn validate(cfg: &EventConfig) -> Result<(), ConfigError> {
         return fail("at least one source is required".into());
     }
     for s in &cfg.sources {
+        match s {
+            SourceConfig::Hls { url } if url.is_empty() => {
+                return fail("hls.url must be non-empty".into());
+            }
+            SourceConfig::Pipe { cmd, sample_rate_hz } => {
+                if cmd.is_empty() {
+                    return fail("pipe.cmd must be non-empty".into());
+                }
+                if !(8_000..=48_000).contains(sample_rate_hz) {
+                    return fail(format!(
+                        "pipe.sample_rate_hz {sample_rate_hz} outside 8000..=48000"
+                    ));
+                }
+            }
+            _ => {}
+        }
         if let SourceConfig::TwilioStream { bind } = s {
             if bind.parse::<std::net::SocketAddr>().is_err() {
                 return fail(format!(

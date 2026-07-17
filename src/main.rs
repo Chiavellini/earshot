@@ -22,6 +22,7 @@ use earshot::kalshi::KalshiEnv;
 use earshot::pipeline::preproc::PreprocCfg;
 use earshot::pipeline::run_pipeline;
 use earshot::risk::{spawn_kill_watcher, RiskConfig, RiskGate};
+use earshot::source::pipe::PipeSource;
 use earshot::source::replay::ReplaySource;
 use earshot::source::twilio_ws::TwilioWsSource;
 use earshot::telemetry;
@@ -565,7 +566,13 @@ fn build_leg(
              winner is chosen"
         )
         .into()),
-        SourceConfig::Hls { .. } => Err("HLS adapter not built — use twilio_stream".into()),
+        // Webcast lane (adapter #4, source::pipe): ffmpeg/subprocess decodes
+        // to raw PCM. Tens of seconds behind the bridge — capture/observe
+        // posture; see docs/RUNBOOK.md webcast-lane notes.
+        SourceConfig::Hls { url } => Ok(Box::new(PipeSource::hls(url, source_id)?)),
+        SourceConfig::Pipe { cmd, sample_rate_hz } => {
+            Ok(Box::new(PipeSource::new(cmd.clone(), *sample_rate_hz, source_id)?))
+        }
     }
 }
 
@@ -577,6 +584,7 @@ fn source_label(s: &SourceConfig) -> String {
         SourceConfig::Sip { carrier, .. } if !carrier.is_empty() => carrier.clone(),
         SourceConfig::Sip { .. } => "sip".into(),
         SourceConfig::Hls { .. } => "hls".into(),
+        SourceConfig::Pipe { .. } => "pipe".into(),
     }
 }
 
