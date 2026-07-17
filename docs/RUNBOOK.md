@@ -103,6 +103,12 @@ curl -s -X POST "https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID
 Say: *"Hi — I'm calling about the Domino's Pizza conference call on Monday,
 July 20. Could you give me the dial-in details to listen to that call?"*
 
+**OUTCOME 2026-07-17: 888-400-9978 is DEAD** — reassigned to an unrelated
+marketing line (medical devices), no conference operator. Probed once via the
+user-attended bridge, per protocol. Remaining: the +1-706-634-4947 probe, the
+IR ask (email + the IR office phone from a current PR), the VPN page check,
+and the call-morning player check.
+
 Record, whichever way it goes: (a) does the number still route to a
 conferencing operator at all, and which provider (greeting usually names it);
 (b) participant number + passcode if offered → `configs/dpz-autorun.env`;
@@ -139,6 +145,30 @@ last chance. Hang up politely either way; one probe per number, no retries
 >   follow-up 3 closed) driven by a per-event env file named in the launchd
 >   plist via `EARSHOT_EVENT_ENV`; launchd-fired rehearsal PASSED 2026-07-16
 >   08:53 (env sourced, TTS dial, 7124 frames, 3 detections, rc=0).
+
+## WEDNESDAY 2026-07-22 double-header: GEV (pre-market) + GOOGL (after close)
+
+Sequential, not concurrent (times pinned 2026-07-17 from issuer sources):
+**GEV 7:30 AM ET = 5:30 CDMX** (gevernova.com PR) → fire 05:05, wake 05:00;
+**GOOGL 4:30 PM ET = 2:30 PM CDMX** (abc.xyz IR page) → fire 14:05, operator
+can attend. Same accounts, per-event state dirs. TSLA same day: NO-GO (no
+phone leg). Prep state (2026-07-17):
+
+- Configs generated via `prepare --fillable` + test-armed dry-run:
+  `configs/twilio-live-gev.toml` (**12/12 markets active**),
+  `configs/twilio-live-googl.toml` (**18/18 active**); keyword compile clean.
+- ⚠ **Every word on both events is corpus-UNVALIDATED → all caps are 1¢
+  observe.** As generated, Wednesday is observe-only. Making any word
+  fillable requires the validation-loop promotion (or the risky `--fill-all`
+  override) — **posture freeze Monday evening, after the DPZ outcome.**
+- Env files staged with TBD numbers (`configs/gev-autorun.env`,
+  `configs/googl-autorun.env`); preflight TBD gate governs go/no-go
+  independently per event (preflights night of 07-21).
+- Number hunts: GEV — IR ask to **investors@gevernova.com** and the direct
+  IR line **+1 617 674 7568** (Michael Lapides, VP IR); GOOGL — IR ask to
+  **investor-relations@abc.xyz**; plus registration/player checks per Track A.
+- GOOGL expectation per VERIFICATIONS Q-MSPM: marquee-name hot words likely
+  lose races at tight caps — value is detection data + any sitting asks.
 
 ## Re-validation rehearsal 2026-07-17 (after the Linux-seam script changes) — PASSED
 
