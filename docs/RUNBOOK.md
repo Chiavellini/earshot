@@ -244,8 +244,11 @@ phone leg). Prep state (2026-07-17):
 
 ## Fire-path latency pass (2026-07-17, branch `webcast-lane`) — code landed, on-box gates OPEN
 
-Mechanical-latency-only pass (no change to what/when we fire; risk gates and
-caps untouched). Landed: `book_age` histogram fix + new `ring_wake`/
+**Measured A/B verdicts for every claim in this section: `docs/LATENCY-PROOF.md`**
+(proven: ring wake ~17–21×/hop, warm-fire −645 µs on the first fire; measured
+regression: burst-intake p95 ~+70 µs from the no-spawn executor; below-noise:
+the rest on the laptop). Mechanical-latency-only pass (no change to what/when
+we fire; risk gates and caps untouched). Landed: `book_age` histogram fix + new `ring_wake`/
 `handoff→exec` edges; fire-first ordering on the detect thread (telemetry/logs
 after `try_send`); executor telemetry locks deferred to after the wire
 (`PendingEdges`); executor on a dedicated OS thread + current-thread runtime,

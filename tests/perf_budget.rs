@@ -373,126 +373,257 @@ async fn perf_full_chain_paced() {
     assert!(c2a.p95_us < 200_000, "capture→ack p95 {} µs vs local mock", c2a.p95_us);
 }
 
-/// Cold first fire vs steady state. The socket is warmed at arm (rest.warm()),
-/// but the first REAL fire still pays cold i-cache / branch predictors / lazy
-/// init along handle_intent → create_order_presigned → JSON parse — and the
-/// first fire is the one that decides the race. This test quantifies that
-/// cold-start premium per fire (OrderRecord timestamps, not the aggregate
-/// histogram) so the WS-7 shadow warm-fire has a measured target.
+/// Cold first fire vs steady state, A/B on the arm-time shadow warm-fire.
+/// The socket is warmed at arm (rest.warm()), but the first REAL fire still
+/// pays cold lazy-init / first-parse costs along handle_intent →
+/// create_order_presigned → JSON parse — and the first fire is the one that
+/// decides the race. Four fresh rigs run alternating [warm-off, warm-on,
+/// warm-off, warm-on]; the HEADLINE pair is rigs 3–4, where process-wide
+/// state (allocator, lazy statics) is hot for both and the remaining delta
+/// isolates the per-client warm-fire effect — exactly what arm's
+/// `order_by_client_id` shadow warm buys. Caveat printed with the result:
+/// wiremock/localhost proves CODE-PATH warming, not network behavior.
 #[tokio::test]
 #[ignore]
 async fn perf_cold_first_fire() {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/exchange/status"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "exchange_active": true, "trading_active": true
-        })))
-        .mount(&server)
-        .await;
-    Mock::given(method("POST"))
-        .and(path("/portfolio/events/orders"))
-        .respond_with(ResponseTemplate::new(201).set_body_json(
-            serde_json::json!({"order": {"order_id": "srv-c", "status": "canceled"}}),
-        ))
-        .mount(&server)
-        .await;
+    async fn rig_cold_premium(warm_code_path: bool) -> (u64, u64) {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/exchange/status"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "exchange_active": true, "trading_active": true
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/portfolio/orders"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "orders": []
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/portfolio/events/orders"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(
+                serde_json::json!({"order": {"order_id": "srv-c", "status": "canceled"}}),
+            ))
+            .mount(&server)
+            .await;
 
-    let signer = test_signer();
-    let rest =
-        RestClient::with_base_and_timeout(server.uri(), signer.clone(), Duration::from_secs(5))
-            .unwrap();
-    // Warm the connection exactly as arm does — the premium we want to see is
-    // the CODE path's, not a TCP/TLS handshake's.
-    rest.warm().await;
+        let signer = test_signer();
+        let rest =
+            RestClient::with_base_and_timeout(server.uri(), signer.clone(), Duration::from_secs(5))
+                .unwrap();
+        // Socket warm always (arm always does it) — the A/B variable is the
+        // code-path warm below, not the TCP handshake.
+        rest.warm().await;
+        if warm_code_path {
+            // The arm-time shadow warm-fire, verbatim posture.
+            let _ = rest.order_by_client_id("earshot-warmfire-never-an-order").await;
+        }
 
-    let cache = BookCache::new(&[TICKER.to_string()]);
-    cache.touch();
-    cache.publish(
-        TICKER,
-        Book { yes_bids: vec![(5, 100)], yes_asks: vec![(10, 500)], seq: 1, as_of: MonotonicNs::now() },
-    );
-    let state = tempfile::tempdir().unwrap();
-    let gate = Arc::new(
-        RiskGate::new(
-            RiskConfig { allowlist_tickers: vec![TICKER.into()], ..Default::default() },
-            state.path(),
-        )
-        .unwrap(),
-    );
-    gate.arm();
-    let presigner = Presigner::new(signer, "POST", "/trade-api/v2/portfolio/events/orders".into());
-    // 6 × 15¢ = 90¢: deepest sequence inside the $1 probe ledger.
-    let kws: Vec<KeywordConfig> = (0..6)
-        .map(|_| {
-            toml::from_str(
-                r#"
-                market_ticker    = "KX-PERF"
-                phrase           = "perf"
-                variants         = ["perf"]
-                max_price_cents  = 15
-                budget_contracts = 1
-                policy           = "confirmed_only"
-                "#,
+        let cache = BookCache::new(&[TICKER.to_string()]);
+        cache.touch();
+        cache.publish(
+            TICKER,
+            Book { yes_bids: vec![(5, 100)], yes_asks: vec![(10, 500)], seq: 1, as_of: MonotonicNs::now() },
+        );
+        let state = tempfile::tempdir().unwrap();
+        let gate = Arc::new(
+            RiskGate::new(
+                RiskConfig { allowlist_tickers: vec![TICKER.into()], ..Default::default() },
+                state.path(),
             )
-            .unwrap()
-        })
-        .collect();
-    let ctx = Arc::new(ExecCtx {
-        rest,
-        presigner,
-        cache,
-        gate,
-        prestaged: prestage_orders("PERF", &kws),
-        haircuts: (0..6u16).map(|i| (i, 0u32)).collect::<HashMap<_, _>>(),
-        dry_run: false,
-        registry: earshot::kalshi::OrderRegistry::default(),
-    });
+            .unwrap(),
+        );
+        gate.arm();
+        let presigner =
+            Presigner::new(signer, "POST", "/trade-api/v2/portfolio/events/orders".into());
+        // 6 × 15¢ = 90¢: deepest sequence inside the $1 probe ledger.
+        let kws: Vec<KeywordConfig> = (0..6)
+            .map(|_| {
+                toml::from_str(
+                    r#"
+                    market_ticker    = "KX-PERF"
+                    phrase           = "perf"
+                    variants         = ["perf"]
+                    max_price_cents  = 15
+                    budget_contracts = 1
+                    policy           = "confirmed_only"
+                    "#,
+                )
+                .unwrap()
+            })
+            .collect();
+        let ctx = Arc::new(ExecCtx {
+            rest,
+            presigner,
+            cache,
+            gate,
+            prestaged: prestage_orders("PERF", &kws),
+            haircuts: (0..6u16).map(|i| (i, 0u32)).collect::<HashMap<_, _>>(),
+            dry_run: false,
+            registry: earshot::kalshi::OrderRegistry::default(),
+        });
 
-    // One intent at a time with a gap, so fire #1 is genuinely first and the
-    // rest are steady-state — no queue-wait pollution.
-    let (tx, rx) = tokio::sync::mpsc::channel(8);
-    let exec = tokio::spawn(run_executor(rx, ctx));
-    for kw in 0..6u16 {
-        let now = MonotonicNs::now();
-        tx.send(DecisionIntent {
-            keyword: KeywordId(kw),
-            market_ticker: TICKER.into(),
-            max_price_cents: 15,
-            tranche_contracts: 1,
-            tier: Tier::Confirmed,
-            audio_ts: now,
-            decision_ts: now,
-            handoff_ts: now,
-        })
-        .await
-        .unwrap();
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        // One intent at a time with a gap, so fire #1 is genuinely first and
+        // the rest are steady-state — no queue-wait pollution.
+        let (tx, rx) = tokio::sync::mpsc::channel(8);
+        let exec = tokio::spawn(run_executor(rx, ctx));
+        for kw in 0..6u16 {
+            let now = MonotonicNs::now();
+            tx.send(DecisionIntent {
+                keyword: KeywordId(kw),
+                market_ticker: TICKER.into(),
+                max_price_cents: 15,
+                tranche_contracts: 1,
+                tier: Tier::Confirmed,
+                audio_ts: now,
+                decision_ts: now,
+                handoff_ts: now,
+            })
+            .await
+            .unwrap();
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        drop(tx);
+        let report = exec.await.unwrap();
+
+        let mut fires: Vec<(u64, u64)> = report
+            .orders
+            .iter()
+            .filter_map(|o| Some((o.exec_ts, o.send_ts?.saturating_sub(o.exec_ts))))
+            .collect();
+        assert_eq!(fires.len(), 6, "all 6 fires must send");
+        fires.sort_unstable_by_key(|f| f.0); // order by exec_ts: first = cold
+        let cold_send_ns = fires[0].1;
+        let mut steady: Vec<u64> = fires[1..].iter().map(|f| f.1).collect();
+        steady.sort_unstable();
+        (cold_send_ns, percentile(&steady, 0.50))
     }
-    drop(tx);
-    let report = exec.await.unwrap();
 
-    let mut fires: Vec<(u64, u64, u64)> = report
-        .orders
-        .iter()
-        .filter_map(|o| Some((o.exec_ts, o.send_ts?.saturating_sub(o.exec_ts), o.ack_ts?.saturating_sub(o.exec_ts))))
-        .collect();
-    assert_eq!(fires.len(), 6, "all 6 fires must send+ack");
-    fires.sort_unstable_by_key(|f| f.0); // order by exec_ts: first = cold
-    let (_, cold_send_ns, cold_ack_ns) = fires[0];
-    let mut warm_send: Vec<u64> = fires[1..].iter().map(|f| f.1).collect();
-    warm_send.sort_unstable();
-    let warm_send_p50 = percentile(&warm_send, 0.50);
+    let mut rows = Vec::new();
+    for (i, warm) in [false, true, false, true].into_iter().enumerate() {
+        let (cold, steady) = rig_cold_premium(warm).await;
+        println!(
+            "rig {} warm-fire={:5}: cold exec→send {} µs, steady p50 {} µs, premium {} µs",
+            i + 1, warm, cold / 1000, steady / 1000, cold.saturating_sub(steady) / 1000
+        );
+        rows.push((warm, cold, steady));
+        // Loose ceiling (2–3× convention) applies to every rig.
+        assert!(cold < 20_000_000, "cold exec→send {} µs — first-fire path pathological", cold / 1000);
+    }
+    let (_, off_cold, off_steady) = rows[2]; // process-warm pair
+    let (_, on_cold, on_steady) = rows[3];
     println!(
-        "cold first fire: exec→send {} µs (steady p50 {} µs, premium {} µs); exec→ack {} µs",
-        cold_send_ns / 1000,
-        warm_send_p50 / 1000,
-        cold_send_ns.saturating_sub(warm_send_p50) / 1000,
-        cold_ack_ns / 1000,
+        "HEADLINE (process-warm pair): warm-fire OFF premium {} µs vs ON premium {} µs \
+         [wiremock localhost — proves code-path warming, not network]",
+        off_cold.saturating_sub(off_steady) / 1000,
+        on_cold.saturating_sub(on_steady) / 1000,
     );
-    // Loose ceiling (2–3× convention): the cold fire must still be machinery-
-    // fast. The printed premium is the number WS-7 exists to shrink.
-    assert!(cold_send_ns < 20_000_000, "cold exec→send {} µs — first-fire path pathological", cold_send_ns / 1000);
+}
+
+/// Ring idle-wake A/B: OLD pre-unpark ring (spin 64 + bare park_timeout(100 µs),
+/// vendored verbatim below from 8eed570:src/ring.rs) vs the NEW unpark-on-send
+/// ring, side by side in one process on the same machine state. The payload IS
+/// the producer's push timestamp, so each recv measures true push→recv-return
+/// across the thread boundary. The producer sleeps 1 ms between pushes so the
+/// consumer is parked (~99.9% of each cycle) when the push lands — the racing
+/// case: a word arriving after silence.
+#[test]
+#[ignore]
+fn perf_ring_wake_ab() {
+    /// The OLD ring's receive loop, verbatim semantics (no unpark machinery).
+    mod old_ring {
+        use std::time::Duration;
+        const PARK_TIMEOUT: Duration = Duration::from_micros(100);
+        const SPIN_ITERS: u32 = 64;
+
+        pub struct Sender(pub rtrb::Producer<u64>);
+        pub struct Receiver(pub rtrb::Consumer<u64>);
+
+        pub fn ring(capacity: usize) -> (Sender, Receiver) {
+            let (p, c) = rtrb::RingBuffer::new(capacity);
+            (Sender(p), Receiver(c))
+        }
+
+        impl Sender {
+            pub fn send(&mut self, v: u64) -> bool {
+                self.0.push(v).is_ok()
+            }
+        }
+
+        impl Receiver {
+            pub fn recv(&mut self) -> Option<u64> {
+                loop {
+                    for _ in 0..SPIN_ITERS {
+                        if let Ok(v) = self.0.pop() {
+                            return Some(v);
+                        }
+                        std::hint::spin_loop();
+                    }
+                    if self.0.is_abandoned() {
+                        return self.0.pop().ok();
+                    }
+                    std::thread::park_timeout(PARK_TIMEOUT);
+                }
+            }
+        }
+    }
+
+    const N: usize = 500;
+    const GAP: Duration = Duration::from_millis(1);
+
+    fn stats(mut deltas: Vec<u64>) -> (u64, u64, u64) {
+        deltas.sort_unstable();
+        (percentile(&deltas, 0.50), percentile(&deltas, 0.95), *deltas.last().unwrap())
+    }
+
+    // OLD ring.
+    let (mut otx, mut orx) = old_ring::ring(8);
+    let old_consumer = std::thread::spawn(move || {
+        let mut deltas = Vec::with_capacity(N);
+        while let Some(t0) = orx.recv() {
+            deltas.push(MonotonicNs::now().0.saturating_sub(t0));
+        }
+        deltas
+    });
+    for _ in 0..N {
+        std::thread::sleep(GAP);
+        assert!(otx.send(MonotonicNs::now().0), "old ring full");
+    }
+    drop(otx);
+    let (o50, o95, omax) = stats(old_consumer.join().unwrap());
+
+    // NEW ring.
+    let (mut ntx, mut nrx) = earshot::ring::ring::<u64>(8);
+    let new_consumer = std::thread::spawn(move || {
+        let mut deltas = Vec::with_capacity(N);
+        while let Some(t0) = nrx.recv() {
+            deltas.push(MonotonicNs::now().0.saturating_sub(t0));
+        }
+        deltas
+    });
+    for _ in 0..N {
+        std::thread::sleep(GAP);
+        ntx.send(MonotonicNs::now().0).ok().expect("new ring full");
+    }
+    drop(ntx);
+    let (n50, n95, nmax) = stats(new_consumer.join().unwrap());
+
+    println!(
+        "ring idle-wake push→recv ({N} parked pushes each):\n\
+         old (park-timeout only): p50 {} µs  p95 {} µs  max {} µs\n\
+         new (unpark-on-send)   : p50 {} µs  p95 {} µs  max {} µs",
+        o50 / 1000, o95 / 1000, omax / 1000, n50 / 1000, n95 / 1000, nmax / 1000
+    );
+    // The claim under test: the new ring's typical wake beats the old ring's
+    // park-timeout-bounded wake. Assert on p50 with wide margin (macOS
+    // scheduling noise can spike any single wake).
+    assert!(
+        n50 < o50,
+        "new ring p50 {n50} ns not better than old {o50} ns — unpark not helping"
+    );
 }
 
 /// Recorder overhead: it sits on the detect thread's inner loop.
