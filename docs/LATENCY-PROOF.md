@@ -35,6 +35,39 @@ The dominant terms remain (a) detector model lag (sherpa ~320 ms lookahead + dec
 on an English streaming-CTC model, see below), (b) chunk assembly (~20 ms, measurable now,
 gated on-box for prod), (c) OS-tuning tail (on-box only).
 
+## Race reconstruction — MS-RECE replayed under today's lanes (2026-07-17)
+
+Question: with the us-east migration (+ this pass), how does the 07-15 MS-RECE loss replay?
+Timeline anchors (post-mortem, RUNBOOK): competitor's first fill **13:27:10.274Z**; our
+keyword chunk captured **≈10.672** (−398 ms at audio arrival); decision ≈10.763
+(`capture→decision` 91.3 ms); would-be ack ≈**10.867** → net **~593 ms behind**.
+
+| Leg | CDMX then (measured) | us-east now | Evidence class | Race effect |
+|---|---|---|---|---|
+| box→Kalshi RTT | p50 54.7 ms (floor under the 102 ms warm `send→hdrs`) | p50 **2.2 ms**, p99 7.2 | **MEASURED** (latprobes 07-16/07-17, INGRESS-BAKEOFF §2) | `decision→ack` 104 → **~15–20 ms PREDICTED**; pin via on-box probe-order |
+| box→Twilio media | p50 55.3 ms + **4% loss** + ngrok relay | p50 **2.9 ms, 0% loss**, no ngrok | **MEASURED** (RTT/loss); end-to-end audio delta **UNMEASURED** | X_audio recovery: ~100–150 ms by p50 arithmetic; loss-tail removal may be worth much more on the worst chunk — handshake numbers cannot prove it |
+| Twilio bridge→media-stream fork | unknown | unchanged | UNMEASURED | 0; the SIP bake-off exists to bypass it |
+| `capture→decision` | 91.3 ms | ~same (chunk 80, sherpa) | measured then; unchanged | chunk-40 gate ≈ −20 ms when passed on-box |
+| first-fire premium | unmeasured | −645 µs (warm-fire) | **PROVEN** (this ledger) | sub-ms |
+| detector onset→emit | sherpa ~1 s class | unchanged | measured (BAKEOFF holdout) | **the remaining gap** — blocked on Tier-1 CTC |
+
+**Replay verdict:** today's ack ≈ `+593 − ~85 (order leg) − X_audio` ms behind the same
+competitor. At X_audio ≈ 100–200 ms (p50 arithmetic): **~+300–400 ms behind — still lost**, just
+no longer by 600. Even a generous tail-case X only reaches ~even, and RECE swept 27→98¢ in 233 ms.
+The migration converts transport from the *dominant* deficit to *recovered-or-nearly-so*; the
+residual gap is detector-shaped (sherpa vs a competitor's streaming ASR). Races against slower
+competition plausibly flip to winnable on transport alone; marquee instant-words do not until the
+CTC engine lands.
+
+**The two measurements that convert this reconstruction's estimates into proofs (operator-run):**
+1. **Dual-box capture-bakeoff** — same live call captured simultaneously from the CDMX laptop and
+   the us-east box (same Twilio account/carrier, one leg each), cross-correlated with the existing
+   `capture-bakeoff` cross-delta machinery (INGRESS-BAKEOFF §3, dual-BOX variant of the dual-carrier
+   protocol). Output: X_audio directly, with jitter/stall p99 per box. First natural slot: any
+   Tier-A published-number call this week.
+2. **On-box probe-order** (existing 1¢ non-mention envelope) — pins real `send→hdrs` from us-east,
+   converting the "low-teens" prediction into a VERIFICATIONS-grade number.
+
 ## Word-recognition efficiency — status 2026-07-17
 
 **Tier-0 probe re-run (per `docs/CTC-MODEL-SOURCING.md`): still no English streaming-CTC
