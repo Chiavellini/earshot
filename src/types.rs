@@ -66,4 +66,11 @@ pub struct DecisionIntent {
     pub tier: Tier,
     pub audio_ts: MonotonicNs,
     pub decision_ts: MonotonicNs,
+    /// Stamped by the detect thread immediately before `try_send` into the
+    /// executor channel, so `handoff→exec = exec_ts − handoff_ts` isolates the
+    /// mpsc scheduler-wake + task-spawn hop from the detect-thread critical
+    /// section (the tail between `decision_ts` and the send). `MonotonicNs(0)`
+    /// until stamped (log-only replay never crosses the ring; the executor
+    /// skips the edge when it is 0).
+    pub handoff_ts: MonotonicNs,
 }

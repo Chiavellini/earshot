@@ -16,12 +16,16 @@ the executor.
 ## Exit door
 - **Type:** `types::DecisionIntent` — `keyword`, `market_ticker`,
   `max_price_cents`, `tranche_contracts`, `tier`, `audio_ts`,
-  `decision_ts: MonotonicNs` (stamped here).
-- **Mechanism:** returned to the detect loop, which (a) logs it and (b) if an
+  `decision_ts: MonotonicNs` (stamped here), `handoff_ts: MonotonicNs`
+  (stamped 0 here; the detect loop stamps the real value on the sent clone
+  immediately before `try_send` — it feeds the `handoff→exec` edge).
+- **Mechanism:** returned to the detect loop, which — FIRE FIRST — if an
   executor is attached, `try_send`s a clone into
-  `tokio::sync::mpsc::Sender<DecisionIntent>` (cap 64). Full/closed channel =
-  counted LOUD drop (`intent channel full/closed: intent DROPPED`) — the
-  detect thread never blocks on the executor.
+  `tokio::sync::mpsc::Sender<DecisionIntent>` (cap 64), and only THEN records
+  edges and logs (nothing but the trade on the critical span). Full/closed
+  channel = counted LOUD drop (`intent channel full/closed: intent DROPPED`,
+  logged after the handoff attempt) — the detect thread never blocks on the
+  executor.
 
 ## Obligations
 - O(1) lookup, no allocation on the miss path; the table is compiled once

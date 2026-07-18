@@ -57,6 +57,7 @@ fn intent_for(kw: u16, price: u8, tranche: u32, tier: Tier) -> DecisionIntent {
         tier,
         audio_ts: now,
         decision_ts: now,
+        handoff_ts: now,
     }
 }
 
@@ -147,7 +148,7 @@ async fn fires_exactly_one_signed_post_per_intent() {
     assert!(o.send_ts.is_some() && o.ack_ts.is_some());
     assert!(o.ack_ts.unwrap() > o.send_ts.unwrap());
     let edges = report.recorder.snapshot();
-    for edge in ["decision→exec", "presign_age", "exec→send", "send→ack", "decision→ack", "capture→ack"] {
+    for edge in ["decision→exec", "handoff→exec", "book_age", "presign_age", "exec→send", "send→ack", "decision→ack", "capture→ack"] {
         assert!(edges.get(edge).map(|s| s.count > 0).unwrap_or(false), "edge {edge} empty");
     }
     assert_eq!(rig.ctx.gate.ledger_spent_cents(), 90); // 1 × 90¢ worst-case debit

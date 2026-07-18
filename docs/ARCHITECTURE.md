@@ -17,14 +17,16 @@ config.toml ──► config ─────────────────
                                           mpsc(64)   │ DecisionIntent
                                                      ▼
              [book-cache] ◄─WS── Kalshi        [executor] ──HTTPS──► Kalshi
-              tokio task    (reads: ArcSwap)    tokio task
+              tokio task    (reads: ArcSwap)    own OS thread
                                                      │ guarded by
                                                  [risk gate]
 ```
 
 Cross-cutting planes (not layers — they touch everything by design):
-**telemetry** (latency recorders + report) and **config** (arm-time only,
-never consulted on the hot path).
+**telemetry** (latency recorders + report), **config** (arm-time only,
+never consulted on the hot path), and **perf** (`src/perf.rs` + `[perf]`
+config: per-thread core pinning/SCHED_FIFO and ring spin mode, applied at
+thread spawn; default = no-op — docs/OS-TUNING.md).
 
 Running two live events at once (two Kalshi + two Twilio accounts, one process
 each) is isolated via per-event config credential binding (`[kalshi]`/`[twilio]`
@@ -41,7 +43,7 @@ extends per event). The signing/credential layer is `docs/layers/auth.md`.
 | 3 | chunker | `ring::RingReceiver<AudioFrame>` | `AudioChunk` (chunk_ms of samples, ts propagated) → `send_blocking` into ring (cap 64) | OS thread `chunker` | `src/pipeline/chunker.rs` |
 | 4 | detector | `&AudioChunk` via `Detector::process(&mut self, &AudioChunk) -> SmallVec<[Detection; 2]>` (sync trait call) | `Detection` (return value, same call) | OS thread `detect` | `src/detector/mod.rs` (trait), `src/detector/stub.rs` |
 | 5 | decision | `&Detection` via `DecisionTable::decide(&mut self, &Detection) -> Option<DecisionIntent>` | `DecisionIntent` → `tokio::sync::mpsc::Sender<DecisionIntent>` (cap 64), `try_send`, full = counted loud drop | OS thread `detect` (shared with 4) | `src/decision.rs` |
-| 6 | executor | `tokio::sync::mpsc::Receiver<DecisionIntent>` | HTTPS orders on the wire + `OrderRecord`s in `ExecReport` (returned when sender drops) | tokio task | `src/kalshi/executor.rs` |
+| 6 | executor | `tokio::sync::mpsc::Receiver<DecisionIntent>` | HTTPS orders on the wire + `OrderRecord`s in `ExecReport` (returned when sender drops) | dedicated OS thread + current-thread rt (intents overlap via `FuturesUnordered`, no per-intent spawn) | `src/kalshi/executor.rs` |
 | 7 | book-cache | Kalshi WS frames (internal to `run_ws` task) | `BookCache::read(&ticker) -> Option<Arc<Book>>` (wait-free ArcSwap load) + `feed_age_ns()` | writer: tokio task; readers: any | `src/kalshi/book.rs` |
 | 8 | risk | `RiskGate::check_order(..) -> Result<(), Refusal>` + `record_send(..)` calls | verdicts (return values) + `state/probe_ledger.json` + kill-watcher side effects | caller's thread (atomics; ledger mutex) | `src/risk.rs` |
 | — | telemetry | `LatencyRecorder::record(edge, ns)` — each recorder is single-owner, merged at teardown via `merge()` | `PipelineReport` (`render_table()`, `write_json()`) | owning thread | `src/telemetry.rs` |

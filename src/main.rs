@@ -254,7 +254,7 @@ fn run(command: Command) -> Result<(), AnyErr> {
             let detector = detector_factory::build_detector(&cfg)?;
             let table = DecisionTable::from_keywords(&cfg.keywords);
             let preproc_cfg = PreprocCfg { resample_to_hz: cfg.pipeline.resample_to_hz };
-            let out = run_pipeline(&cfg.event.id, cfg.pipeline.chunk_ms, preproc_cfg, source, detector, table, None)?;
+            let out = run_pipeline(&cfg.event.id, cfg.pipeline.chunk_ms, preproc_cfg, source, detector, table, None, cfg.perf)?;
             print!("\n{}", out.render_table());
             out.write_json(&report)?;
             println!("\nreport written to {}", report.display());
@@ -766,7 +766,21 @@ async fn arm(
         dry_run: !i_am_live,
         registry: registry.clone(),
     });
-    let exec_task = tokio::spawn(run_executor(intent_rx, ctx));
+    // Executor on its own OS thread + current-thread runtime: the mpsc send
+    // from the detect thread wakes THIS parked thread directly instead of
+    // queueing through the shared 2-worker runtime (which also serves WS,
+    // presign refresh, warmers — any of which could hold both workers at the
+    // wrong instant). Pinned/RT per [perf] on a tuned box; plain thread
+    // otherwise. spawn_blocking keeps the join awaitable from arm.
+    let perf = cfg.perf;
+    let exec_task = tokio::task::spawn_blocking(move || {
+        earshot::perf::apply_to_current_thread("executor", perf.core_executor, perf.fifo_priority());
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("executor runtime")
+            .block_on(run_executor(intent_rx, ctx))
+    });
 
     // Kill switch: STOP file, SIGINT, or SIGTERM → cancel THIS SESSION's
     // orders (never account-wide: unrelated systems' orders share this
@@ -817,8 +831,18 @@ async fn arm(
     // One-shot pre-warm at t=0 of listening: wait_for_books may have burned up
     // to 15 s, so guarantee a hot connection at the instant the pipeline starts.
     rest.warm().await;
+    // Shadow warm-fire: a signed GET on the orders origin for an id that
+    // cannot exist. Places nothing, debits nothing — but walks the same
+    // signed-request build + pooled-h2 send + JSON-parse machinery as the
+    // real fire, so the FIRST live order doesn't pay cold i-cache/branch
+    // state on that code (measured by perf_cold_first_fire).
+    match rest.order_by_client_id("earshot-warmfire-never-an-order").await {
+        Ok(None) => tracing::debug!("warm-fire ok (no such order, as designed)"),
+        Ok(Some(_)) => tracing::warn!("warm-fire id unexpectedly matched an order — ignoring"),
+        Err(e) => tracing::warn!("warm-fire query failed (non-fatal): {e}"),
+    }
     let mut report = tokio::task::spawn_blocking(move || {
-        run_pipeline(&event_id, chunk_ms, preproc_cfg, source, detector, table, Some(intent_tx))
+        run_pipeline(&event_id, chunk_ms, preproc_cfg, source, detector, table, Some(intent_tx), perf)
     })
     .await??;
 

@@ -68,6 +68,13 @@ fn perf_preproc_rtf() {
 /// Detector: the whole strategy dies if sherpa can't keep up with live audio.
 /// RTF and per-chunk latency both matter: a chunk must decode in well under
 /// one chunk-duration or the pipeline falls progressively behind.
+///
+/// Measures the WS-2 chunk-size ladder (160 / 80 prod / 40 / 20 candidates):
+/// chunk_ms is a pure latency dial for sherpa_kws (BAKEOFF.md — the model
+/// re-buffers internally, accuracy is bit-identical), so the only question is
+/// whether the per-call overhead at smaller chunks keeps p95 under half a
+/// chunk-duration. Run this ON THE EVENT BOX before shipping a smaller
+/// chunk_ms — laptop numbers guide, the box decides.
 #[test]
 #[ignore]
 fn perf_detector_rtf() {
@@ -91,8 +98,6 @@ fn perf_detector_rtf() {
         "#,
     )
     .unwrap();
-    let sherpa_cfg = toml::from_str(&format!("model_dir = {:?}", dir.display().to_string())).unwrap();
-    let mut det = SherpaKwsDetector::new(&sherpa_cfg, std::slice::from_ref(&kw)).unwrap();
 
     // 60 s of real speech: tile the model's own test WAV (16 kHz).
     let mut reader = hound::WavReader::open(dir.join("test_wavs/0.wav")).unwrap();
@@ -101,37 +106,71 @@ fn perf_detector_rtf() {
     let target = 16_000 * 60;
     let pcm: Vec<i16> = base.iter().copied().cycle().take(target).collect();
 
-    let chunk_samples = 16_000 * 160 / 1000;
-    let mut per_chunk_us: Vec<u64> = Vec::with_capacity(pcm.len() / chunk_samples + 1);
-    let t0 = Instant::now();
-    for (seq, window) in pcm.chunks(chunk_samples).enumerate() {
-        let now = MonotonicNs::now();
-        let chunk = AudioChunk {
-            pcm: Arc::from(window),
-            sample_rate_hz: 16_000,
-            first_capture_ts: now,
-            last_capture_ts: now,
-            first_preproc_ts: now,
-            chunk_ts: now,
-            source: SourceId(0),
-            seq: seq as u64,
-        };
-        let c0 = Instant::now();
-        let _ = det.process(&chunk);
-        per_chunk_us.push(c0.elapsed().as_micros() as u64);
+    // (chunk_ms, hard p95 budget in µs, or None = report-only).
+    // 160 keeps the original bar (p95 < half a chunk). Below the model's
+    // internal decode quantum (chunk-16 export) per-call time turns BIMODAL —
+    // most calls are near-zero, every Nth absorbs the full decode burst
+    // (measured 2026-07-17: chunk 80 p50 345 µs / p95 71 ms / max 197 ms) —
+    // so "p95 < chunk/2" is the wrong stability rule there; stability is
+    // throughput (the RTF > 3 assert) and the burst tail is structural to
+    // sherpa (the streaming_ctc milestone's territory, not a chunk_ms
+    // property). 80/40/20 are report-only: the numbers feed the on-box WS-2
+    // decision, and a noisy dev laptop can't green/red-light a prod change.
+    let ladder: [(u32, Option<u64>); 4] =
+        [(160, Some(80_000)), (80, None), (40, None), (20, None)];
+
+    // Measure and PRINT the whole ladder first, assert only afterwards: a
+    // budget miss at one size must not hide the other sizes' numbers — the
+    // printout IS the deliverable of this test (the asserts are drift alarms).
+    let mut results = Vec::new();
+    for (chunk_ms, p95_budget_us) in ladder {
+        // Fresh detector per size: the two OnlineStreams carry state, and the
+        // sizes must not contaminate each other's timing.
+        let sherpa_cfg =
+            toml::from_str(&format!("model_dir = {:?}", dir.display().to_string())).unwrap();
+        let mut det = SherpaKwsDetector::new(&sherpa_cfg, std::slice::from_ref(&kw)).unwrap();
+
+        let chunk_samples = 16_000 * chunk_ms as usize / 1000;
+        let mut per_chunk_us: Vec<u64> = Vec::with_capacity(pcm.len() / chunk_samples + 1);
+        let t0 = Instant::now();
+        for (seq, window) in pcm.chunks(chunk_samples).enumerate() {
+            let now = MonotonicNs::now();
+            let chunk = AudioChunk {
+                pcm: Arc::from(window),
+                sample_rate_hz: 16_000,
+                first_capture_ts: now,
+                last_capture_ts: now,
+                first_preproc_ts: now,
+                chunk_ts: now,
+                source: SourceId(0),
+                seq: seq as u64,
+            };
+            let c0 = Instant::now();
+            let _ = det.process(&chunk);
+            per_chunk_us.push(c0.elapsed().as_micros() as u64);
+        }
+        let elapsed = t0.elapsed().as_secs_f64();
+        let rtf = 60.0 / elapsed;
+        per_chunk_us.sort_unstable();
+        let p50 = percentile(&per_chunk_us, 0.50);
+        let p95 = percentile(&per_chunk_us, 0.95);
+        let max = *per_chunk_us.last().unwrap();
+        println!(
+            "sherpa_kws chunk {chunk_ms} ms: 60 s speech in {elapsed:.2} s → {rtf:.1}× realtime; \
+             per-chunk p50 {p50} µs  p95 {p95} µs  max {max} µs{}",
+            if p95_budget_us.is_none() { "  [candidate: report-only]" } else { "" }
+        );
+        results.push((chunk_ms, p95_budget_us, rtf, p95));
     }
-    let elapsed = t0.elapsed().as_secs_f64();
-    let rtf = 60.0 / elapsed;
-    per_chunk_us.sort_unstable();
-    let p50 = percentile(&per_chunk_us, 0.50);
-    let p95 = percentile(&per_chunk_us, 0.95);
-    let max = *per_chunk_us.last().unwrap();
-    println!(
-        "sherpa_kws: 60 s speech in {elapsed:.2} s → {rtf:.1}× realtime; per-160ms-chunk \
-         p50 {p50} µs  p95 {p95} µs  max {max} µs"
-    );
-    assert!(rtf > 3.0, "detector only {rtf:.1}× realtime — cannot keep up live");
-    assert!(p95 < 80_000, "p95 per-chunk {p95} µs ≥ half a chunk — pipeline would drift");
+    for (chunk_ms, p95_budget_us, rtf, p95) in results {
+        assert!(rtf > 3.0, "detector only {rtf:.1}× realtime at chunk {chunk_ms} — cannot keep up live");
+        if let Some(budget) = p95_budget_us {
+            assert!(
+                p95 < budget,
+                "chunk {chunk_ms}: p95 per-chunk {p95} µs ≥ half a chunk — pipeline would drift"
+            );
+        }
+    }
 }
 
 /// Executor fire path: from intent to wire must be microseconds — the
@@ -217,6 +256,7 @@ async fn perf_executor_fire_path() {
             tier: Tier::Confirmed,
             audio_ts: now,
             decision_ts: now,
+            handoff_ts: now,
         })
         .await
         .unwrap();
@@ -316,7 +356,7 @@ async fn perf_full_chain_paced() {
     let (intent_tx, intent_rx) = tokio::sync::mpsc::channel(64);
     let exec_task = tokio::spawn(run_executor(intent_rx, ctx));
     let mut report = tokio::task::spawn_blocking(move || {
-        run_pipeline("PERF", 160, PreprocCfg::default(), source, detector, table, Some(intent_tx))
+        run_pipeline("PERF", 160, PreprocCfg::default(), source, detector, table, Some(intent_tx), Default::default())
     })
     .await
     .unwrap()
@@ -331,6 +371,128 @@ async fn perf_full_chain_paced() {
     );
     assert!(c2d.p95_us < 170_000, "capture→decision p95 {} µs > chunk + 10 ms", c2d.p95_us);
     assert!(c2a.p95_us < 200_000, "capture→ack p95 {} µs vs local mock", c2a.p95_us);
+}
+
+/// Cold first fire vs steady state. The socket is warmed at arm (rest.warm()),
+/// but the first REAL fire still pays cold i-cache / branch predictors / lazy
+/// init along handle_intent → create_order_presigned → JSON parse — and the
+/// first fire is the one that decides the race. This test quantifies that
+/// cold-start premium per fire (OrderRecord timestamps, not the aggregate
+/// histogram) so the WS-7 shadow warm-fire has a measured target.
+#[tokio::test]
+#[ignore]
+async fn perf_cold_first_fire() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/exchange/status"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "exchange_active": true, "trading_active": true
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/portfolio/events/orders"))
+        .respond_with(ResponseTemplate::new(201).set_body_json(
+            serde_json::json!({"order": {"order_id": "srv-c", "status": "canceled"}}),
+        ))
+        .mount(&server)
+        .await;
+
+    let signer = test_signer();
+    let rest =
+        RestClient::with_base_and_timeout(server.uri(), signer.clone(), Duration::from_secs(5))
+            .unwrap();
+    // Warm the connection exactly as arm does — the premium we want to see is
+    // the CODE path's, not a TCP/TLS handshake's.
+    rest.warm().await;
+
+    let cache = BookCache::new(&[TICKER.to_string()]);
+    cache.touch();
+    cache.publish(
+        TICKER,
+        Book { yes_bids: vec![(5, 100)], yes_asks: vec![(10, 500)], seq: 1, as_of: MonotonicNs::now() },
+    );
+    let state = tempfile::tempdir().unwrap();
+    let gate = Arc::new(
+        RiskGate::new(
+            RiskConfig { allowlist_tickers: vec![TICKER.into()], ..Default::default() },
+            state.path(),
+        )
+        .unwrap(),
+    );
+    gate.arm();
+    let presigner = Presigner::new(signer, "POST", "/trade-api/v2/portfolio/events/orders".into());
+    // 6 × 15¢ = 90¢: deepest sequence inside the $1 probe ledger.
+    let kws: Vec<KeywordConfig> = (0..6)
+        .map(|_| {
+            toml::from_str(
+                r#"
+                market_ticker    = "KX-PERF"
+                phrase           = "perf"
+                variants         = ["perf"]
+                max_price_cents  = 15
+                budget_contracts = 1
+                policy           = "confirmed_only"
+                "#,
+            )
+            .unwrap()
+        })
+        .collect();
+    let ctx = Arc::new(ExecCtx {
+        rest,
+        presigner,
+        cache,
+        gate,
+        prestaged: prestage_orders("PERF", &kws),
+        haircuts: (0..6u16).map(|i| (i, 0u32)).collect::<HashMap<_, _>>(),
+        dry_run: false,
+        registry: earshot::kalshi::OrderRegistry::default(),
+    });
+
+    // One intent at a time with a gap, so fire #1 is genuinely first and the
+    // rest are steady-state — no queue-wait pollution.
+    let (tx, rx) = tokio::sync::mpsc::channel(8);
+    let exec = tokio::spawn(run_executor(rx, ctx));
+    for kw in 0..6u16 {
+        let now = MonotonicNs::now();
+        tx.send(DecisionIntent {
+            keyword: KeywordId(kw),
+            market_ticker: TICKER.into(),
+            max_price_cents: 15,
+            tranche_contracts: 1,
+            tier: Tier::Confirmed,
+            audio_ts: now,
+            decision_ts: now,
+            handoff_ts: now,
+        })
+        .await
+        .unwrap();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    drop(tx);
+    let report = exec.await.unwrap();
+
+    let mut fires: Vec<(u64, u64, u64)> = report
+        .orders
+        .iter()
+        .filter_map(|o| Some((o.exec_ts, o.send_ts?.saturating_sub(o.exec_ts), o.ack_ts?.saturating_sub(o.exec_ts))))
+        .collect();
+    assert_eq!(fires.len(), 6, "all 6 fires must send+ack");
+    fires.sort_unstable_by_key(|f| f.0); // order by exec_ts: first = cold
+    let (_, cold_send_ns, cold_ack_ns) = fires[0];
+    let mut warm_send: Vec<u64> = fires[1..].iter().map(|f| f.1).collect();
+    warm_send.sort_unstable();
+    let warm_send_p50 = percentile(&warm_send, 0.50);
+    println!(
+        "cold first fire: exec→send {} µs (steady p50 {} µs, premium {} µs); exec→ack {} µs",
+        cold_send_ns / 1000,
+        warm_send_p50 / 1000,
+        cold_send_ns.saturating_sub(warm_send_p50) / 1000,
+        cold_ack_ns / 1000,
+    );
+    // Loose ceiling (2–3× convention): the cold fire must still be machinery-
+    // fast. The printed premium is the number WS-7 exists to shrink.
+    assert!(cold_send_ns < 20_000_000, "cold exec→send {} µs — first-fire path pathological", cold_send_ns / 1000);
 }
 
 /// Recorder overhead: it sits on the detect thread's inner loop.

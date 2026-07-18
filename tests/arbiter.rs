@@ -61,7 +61,7 @@ fn run_dual(mode: ArbiterMode) -> earshot::telemetry::PipelineReport {
 
     let detector = Box::new(EnergyStubDetector::for_standard_fixture());
     let table = DecisionTable::from_keywords(&keywords());
-    run_pipeline("arbiter-e2e", 160, PreprocCfg::default(), source, detector, table, None).unwrap()
+    run_pipeline("arbiter-e2e", 160, PreprocCfg::default(), source, detector, table, None, Default::default()).unwrap()
 }
 
 #[test]

@@ -19,13 +19,27 @@ use crate::types::{DecisionIntent, Detection};
 /// renders in this order instead). The M2 execution edges live in the same
 /// recorder space; a run that never fires an order simply leaves them at
 /// count 0 (hidden by the renderer).
-pub const EDGES: [&str; 13] = [
+pub const EDGES: [&str; 16] = [
     "capture→preproc",
     "preproc→chunk",
     "chunk→detect",
+    // ring_wake — push→wake cost of the detect hop's SPSC park (recorded only
+    // when the consumer actually parked; absent under spin mode). With
+    // unpark-on-send this should sit at unpark-syscall scale (~µs), far under
+    // the 100 µs PARK_TIMEOUT backstop.
+    "ring_wake",
     "detect→decision",
     "capture→decision",
+    // handoff→exec — pure mpsc scheduler-wake hop of the detect→fire
+    // boundary, isolated from the detect-thread critical-section tail by
+    // stamping `handoff_ts` immediately before try_send. decision→exec stays
+    // the aggregate (tail + wake).
+    "handoff→exec",
     "decision→exec",
+    // book_age — WS book staleness at decision time. Was recorded but MISSING
+    // from this list (silently dropped by record()'s get_mut miss) until the
+    // latency pass; kept next to presign_age as the two "age" diagnostics.
+    "book_age",
     "presign_age",
     "exec→send",
     // send→ack split at TTFB: send→hdrs is network + matching-engine time,
@@ -239,6 +253,22 @@ mod tests {
         let snap = r.snapshot();
         assert_eq!(snap.len(), 1);
         assert!(snap.contains_key("capture→ack"));
+    }
+
+    #[test]
+    fn latency_pass_edges_are_registered_not_silently_dropped() {
+        // Regression guard: book_age was recorded by the executor but MISSING
+        // from EDGES, so record() dropped it via the get_mut miss. handoff→exec
+        // and ring_wake are the new detect→fire wake diagnostics. All must be
+        // real histogram edges, i.e. actually show up in the snapshot.
+        let mut r = LatencyRecorder::new();
+        for edge in ["book_age", "handoff→exec", "ring_wake"] {
+            r.record(edge, 1234);
+        }
+        let snap = r.snapshot();
+        for edge in ["book_age", "handoff→exec", "ring_wake"] {
+            assert_eq!(snap.get(edge).map(|s| s.count), Some(1), "edge {edge} dropped");
+        }
     }
 
     #[test]

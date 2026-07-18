@@ -122,7 +122,7 @@ async fn audio_in_order_out_with_all_edges_recorded() {
     let (intent_tx, intent_rx) = tokio::sync::mpsc::channel(64);
     let exec_task = tokio::spawn(run_executor(intent_rx, ctx.clone()));
     let mut report = tokio::task::spawn_blocking(move || {
-        run_pipeline("E2E", 160, PreprocCfg::default(), source, detector, table, Some(intent_tx))
+        run_pipeline("E2E", 160, PreprocCfg::default(), source, detector, table, Some(intent_tx), Default::default())
     })
     .await
     .unwrap()

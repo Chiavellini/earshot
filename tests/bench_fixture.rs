@@ -42,7 +42,7 @@ fn fixture_selftest_scores_perfect_recall_zero_fa() {
     let detector = Box::new(EnergyStubDetector::for_standard_fixture());
     let table = DecisionTable::from_keywords(&keywords());
     let report =
-        run_pipeline("selftest", 160, PreprocCfg::default(), source, detector, table, None).unwrap();
+        run_pipeline("selftest", 160, PreprocCfg::default(), source, detector, table, None, Default::default()).unwrap();
 
     assert_eq!(report.drops.total(), 0);
     assert!(report.first_capture_ts.is_some());
@@ -80,7 +80,7 @@ fn fixture_selftest_paced_latency_is_chunk_dominated() {
     let detector = Box::new(EnergyStubDetector::for_standard_fixture());
     let table = DecisionTable::from_keywords(&keywords());
     let report =
-        run_pipeline("selftest-paced", 160, PreprocCfg::default(), source, detector, table, None)
+        run_pipeline("selftest-paced", 160, PreprocCfg::default(), source, detector, table, None, Default::default())
             .unwrap();
 
     let occurrences = spec.occurrences("tone");

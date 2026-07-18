@@ -29,6 +29,10 @@ pub struct EventConfig {
     pub twilio: Option<TwilioSection>,
     #[serde(default)]
     pub risk: crate::risk::RiskConfig,
+    /// `[perf]` — OS/RT tuning hooks (core pinning, SCHED_FIFO). All off by
+    /// default; only meaningful on the tuned Linux event box (docs/OS-TUNING.md).
+    #[serde(default)]
+    pub perf: crate::perf::PerfSection,
     pub keywords: Vec<KeywordConfig>,
 }
 
@@ -438,6 +442,44 @@ fn validate(cfg: &EventConfig) -> Result<(), ConfigError> {
             "pipeline.chunk_ms must be in 1..=1000, got {}",
             cfg.pipeline.chunk_ms
         ));
+    }
+    if !(1..=99).contains(&cfg.perf.rt_priority) {
+        return fail(format!(
+            "perf.rt_priority must be in 1..=99 (SCHED_FIFO range), got {}",
+            cfg.perf.rt_priority
+        ));
+    }
+    if cfg.perf.spin_hot_rings {
+        if !cfg.perf.realtime {
+            return fail("perf.spin_hot_rings requires perf.realtime = true".into());
+        }
+        // Spinning consumers are preproc, chunker, detect. A spinning
+        // SCHED_FIFO thread never yields — sharing a core starves the peer
+        // (and anything else pinned there), so all assigned hot cores must be
+        // pairwise distinct.
+        let cores = [
+            ("core_source", cfg.perf.core_source),
+            ("core_preproc", cfg.perf.core_preproc),
+            ("core_chunker", cfg.perf.core_chunker),
+            ("core_detect", cfg.perf.core_detect),
+            ("core_executor", cfg.perf.core_executor),
+        ];
+        for (name, c) in [cores[1], cores[2], cores[3]] {
+            if c.is_none() {
+                return fail(format!("perf.spin_hot_rings requires perf.{name} to be set"));
+            }
+        }
+        let assigned: Vec<_> = cores.iter().filter_map(|(n, c)| c.map(|c| (*n, c))).collect();
+        for i in 0..assigned.len() {
+            for j in i + 1..assigned.len() {
+                if assigned[i].1 == assigned[j].1 {
+                    return fail(format!(
+                        "perf.spin_hot_rings: {} and {} share core {} — spinning threads must not share a core",
+                        assigned[i].0, assigned[j].0, assigned[i].1
+                    ));
+                }
+            }
+        }
     }
     if let Some(hz) = cfg.pipeline.resample_to_hz {
         if hz != 16_000 {

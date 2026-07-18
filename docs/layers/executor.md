@@ -12,8 +12,18 @@ LOST_RACE check → EV gate → risk gate → pre-staged body + pre-signed heade
 - **Mechanism:** `tokio::sync::mpsc::Receiver<DecisionIntent>` (cap 64),
   consumed by `executor::run_executor(rx, Arc<ExecCtx>)`
   (`src/kalshi/executor.rs`). Runs until the sender (decision layer) drops.
-- Intents are handled CONCURRENTLY (one task each — the Powell burst case);
-  aggregation mutexes are held µs and never touch the audio thread.
+- `run_executor` runs on its OWN OS thread + current-thread runtime (wired in
+  `main.rs::arm` via `spawn_blocking`): the detect thread's `try_send` wakes
+  that parked thread directly instead of queueing behind the shared 2-worker
+  runtime's other work (WS/presign/warmers). On a tuned box the thread is
+  pinned/SCHED_FIFO per `[perf] core_executor` (docs/OS-TUNING.md).
+- Intents are handled CONCURRENTLY (the Powell burst case) via a
+  `FuturesUnordered` polled inside `run_executor` itself — sends overlap on
+  the wire with NO per-intent task spawn (no alloc, no scheduler enqueue).
+  `tokio::select!` is `biased` toward a fresh intent over harvesting a
+  completed send: firing beats bookkeeping. Intents carry `handoff_ts`
+  (stamped by the detect thread just before `try_send`) so the wake hop is
+  measured as `handoff→exec`, separate from `decision→exec` (the aggregate).
 
 ## Exit door
 - **Wire:** `POST {base}/portfolio/events/orders` with pre-serialized
@@ -57,15 +67,20 @@ LOST_RACE check → EV gate → risk gate → pre-staged body + pre-signed heade
 - Pre-staged bodies (`prestage_orders`) MUST mirror the decision layer's
   tranche arithmetic per policy; the inline-build fallback is a logged
   should-never-happen.
-- Record edges `decision→exec`, `book_age`, `presign_age`, `exec→send`,
-  `send→hdrs`, `hdrs→ack`, `send→ack`, `decision→ack`, `capture→ack` into its
-  own `LatencyRecorder` (merged into the pipeline report at teardown).
-  `send→hdrs` is network + matching-engine time (TTFB), `hdrs→ack` is body
-  read + parse; `send→ack` is kept as the end-to-end aggregate (p95 of a sum
-  ≠ sum of p95s). `book_age` = exec_ts − the book snapshot's `as_of`
-  (skipped while the book is still the seq-0 placeholder); it distinguishes
-  "our book was stale" from "a competitor was genuinely faster" — the MS RECE
-  loss was undiagnosable without it.
+- Record edges `decision→exec`, `handoff→exec`, `book_age`, `presign_age`,
+  `exec→send`, `send→hdrs`, `hdrs→ack`, `send→ack`, `decision→ack`,
+  `capture→ack` into its own `LatencyRecorder` (merged into the pipeline
+  report at teardown). `send→hdrs` is network + matching-engine time (TTFB),
+  `hdrs→ack` is body read + parse; `send→ack` is kept as the end-to-end
+  aggregate (p95 of a sum ≠ sum of p95s). `book_age` = exec_ts − the book
+  snapshot's `as_of` (skipped while the book is still the seq-0 placeholder);
+  it distinguishes "our book was stale" from "a competitor was genuinely
+  faster" — the MS RECE loss was undiagnosable without it.
+- **No telemetry lock before the wire**: the pre-send edge values
+  (`decision→exec`, `handoff→exec`, `book_age`, `presign_age`) are measured
+  at the right instants but recorded via `PendingEdges` only AFTER the send
+  (or at a non-fire exit). Between intent arrival and the HTTP send the fire
+  path takes no `recorder.lock()`.
 
 ## Failure policy
 - Risk refusal / EV failure / LOST_RACE → recorded on the OrderRecord, no

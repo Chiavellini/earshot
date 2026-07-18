@@ -107,6 +107,8 @@ impl DecisionTable {
             tier: det.tier,
             audio_ts: det.audio_ts,
             decision_ts: MonotonicNs::now(),
+            // Stamped at the ring boundary (pipeline::run_pipeline), not here.
+            handoff_ts: MonotonicNs(0),
         })
     }
 }

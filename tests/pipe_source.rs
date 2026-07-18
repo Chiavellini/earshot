@@ -138,7 +138,7 @@ async fn pipeline_detection_parity_with_replay() {
         let detector = Box::new(EnergyStubDetector::for_standard_fixture());
         let table = DecisionTable::from_keywords(&kws);
         tokio::task::spawn_blocking(move || {
-            run_pipeline("PARITY", 160, PreprocCfg::default(), source, detector, table, None)
+            run_pipeline("PARITY", 160, PreprocCfg::default(), source, detector, table, None, Default::default())
         })
         .await
         .unwrap()

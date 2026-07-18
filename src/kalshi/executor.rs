@@ -161,23 +161,36 @@ pub struct ExecReport {
 }
 
 /// Runs until the intent sender is dropped. Intents are processed
-/// concurrently (Powell burst case) — each spawns onto the runtime; results
-/// aggregate under short-held mutexes that are never on the audio thread.
+/// concurrently (Powell burst case) via a FuturesUnordered polled in this one
+/// task: sends still overlap on the wire (the awaits are network-bound), but
+/// there is no per-intent task spawn — no allocation, no scheduler enqueue,
+/// no cross-worker hop between intent arrival and handle_intent (the fire
+/// path is µs of CPU; a second core buys nothing but jitter). `biased`
+/// ordering prefers a fresh intent over harvesting a completed send: firing
+/// beats bookkeeping.
 pub async fn run_executor(mut rx: mpsc::Receiver<DecisionIntent>, ctx: Arc<ExecCtx>) -> ExecReport {
-    let orders = Arc::new(Mutex::new(Vec::<OrderRecord>::new()));
-    let recorder = Arc::new(Mutex::new(LatencyRecorder::new()));
-    let mut tasks = tokio::task::JoinSet::new();
+    use futures_util::stream::{FuturesUnordered, StreamExt};
 
-    while let Some(intent) = rx.recv().await {
-        let (ctx, orders, recorder) = (ctx.clone(), orders.clone(), recorder.clone());
-        tasks.spawn(async move {
-            let record = handle_intent(&ctx, &recorder, intent).await;
-            orders.lock().unwrap().push(record);
-        });
+    let mut orders = Vec::<OrderRecord>::new();
+    let recorder = Mutex::new(LatencyRecorder::new());
+    let mut inflight = FuturesUnordered::new();
+
+    loop {
+        tokio::select! {
+            biased;
+            maybe = rx.recv() => match maybe {
+                Some(intent) => inflight.push(handle_intent(&ctx, &recorder, intent)),
+                None => break,
+            },
+            Some(record) = inflight.next(), if !inflight.is_empty() => orders.push(record),
+        }
     }
-    while tasks.join_next().await.is_some() {}
+    // Sender gone: drain the in-flight sends.
+    while let Some(record) = inflight.next().await {
+        orders.push(record);
+    }
+    drop(inflight);
 
-    let orders = Arc::try_unwrap(orders).ok().expect("sole owner").into_inner().unwrap();
     let lost_races = orders
         .iter()
         .filter(|o| o.lost_race && o.price_cents > OBSERVE_PRICE_CENTS)
@@ -186,8 +199,39 @@ pub async fn run_executor(mut rx: mpsc::Receiver<DecisionIntent>, ctx: Arc<ExecC
         .iter()
         .filter(|o| o.lost_race && o.price_cents <= OBSERVE_PRICE_CENTS)
         .count() as u32;
-    let recorder = Arc::try_unwrap(recorder).ok().expect("sole owner").into_inner().unwrap();
+    let recorder = recorder.into_inner().unwrap();
     ExecReport { orders, lost_races, observe_noncross, recorder }
+}
+
+/// Edge values measured before the send but recorded only AFTER the wire (or
+/// at a non-fire exit): the fire path must hold no telemetry lock between
+/// intent arrival and the HTTP send. Timestamps are taken at the right
+/// moments; only the histogram bookkeeping is deferred.
+#[derive(Default)]
+struct PendingEdges {
+    decision_to_exec: u64,
+    handoff_to_exec: Option<u64>,
+    book_age: Option<u64>,
+    presign_age: Option<u64>,
+}
+
+impl PendingEdges {
+    fn record_into(&self, rec: &mut LatencyRecorder) {
+        rec.record("decision→exec", self.decision_to_exec);
+        if let Some(v) = self.handoff_to_exec {
+            rec.record("handoff→exec", v);
+        }
+        if let Some(v) = self.book_age {
+            rec.record("book_age", v);
+        }
+        if let Some(v) = self.presign_age {
+            rec.record("presign_age", v);
+        }
+    }
+
+    fn flush(&self, recorder: &Mutex<LatencyRecorder>) {
+        self.record_into(&mut recorder.lock().unwrap());
+    }
 }
 
 async fn handle_intent(
@@ -196,10 +240,15 @@ async fn handle_intent(
     intent: DecisionIntent,
 ) -> OrderRecord {
     let exec_ts = MonotonicNs::now();
-    recorder
-        .lock()
-        .unwrap()
-        .record("decision→exec", exec_ts.saturating_since(intent.decision_ts));
+    let mut pending = PendingEdges {
+        // Aggregate: detect-thread tail + mpsc wake + task spawn.
+        decision_to_exec: exec_ts.saturating_since(intent.decision_ts),
+        // Isolated wake hop: only meaningful once the detect thread stamped it
+        // (0 in unit tests / log-only paths that construct intents directly).
+        handoff_to_exec: (intent.handoff_ts.0 > 0)
+            .then(|| exec_ts.saturating_since(intent.handoff_ts)),
+        ..Default::default()
+    };
 
     let kw = intent.keyword.0;
     let staged = ctx
@@ -255,7 +304,7 @@ async fn handle_intent(
     if let Some(b) = book.as_ref().filter(|b| b.seq > 0) {
         let age = exec_ts.saturating_since(b.as_of);
         record.book_age_ns = Some(age);
-        recorder.lock().unwrap().record("book_age", age);
+        pending.book_age = Some(age);
     }
 
     // LOST_RACE: nothing offered at or under the cap. Primary edge-decay metric
@@ -274,6 +323,7 @@ async fn handle_intent(
             tracing::info!(ticker = %staged.ticker, ?best_ask,
                 "observe non-crossing (1¢ cap, by design — not a lost race)");
         }
+        pending.flush(recorder);
         return record;
     }
 
@@ -281,6 +331,7 @@ async fn handle_intent(
     let haircut = ctx.haircuts.get(&kw).copied().unwrap_or(0);
     if !ev_gate(staged.price_cents, staged.count, haircut, ctx.gate.cfg().min_ev_cents) {
         record.refusal = Some("EV gate".into());
+        pending.flush(recorder);
         return record;
     }
 
@@ -289,6 +340,7 @@ async fn handle_intent(
     // tests and the live drills.
     if ctx.dry_run {
         record.refusal = Some("dry_run".into());
+        pending.flush(recorder);
         return record;
     }
 
@@ -303,13 +355,14 @@ async fn handle_intent(
     ) {
         record.refusal = Some(refusal.to_string());
         tracing::error!(ticker = %staged.ticker, "risk refusal: {refusal}");
+        pending.flush(recorder);
         return record;
     }
 
     // Fire. Presigned headers (RSA off the hot path); debit ledger BEFORE the
     // send so an ambiguous timeout still counts as spent.
     let (headers, presign_age) = ctx.presigner.get();
-    recorder.lock().unwrap().record("presign_age", presign_age);
+    pending.presign_age = Some(presign_age);
     ctx.gate.record_send(staged.price_cents, staged.count);
 
     match ctx.rest.create_order_presigned(staged.body.clone(), headers).await {
@@ -322,10 +375,12 @@ async fn handle_intent(
             if let Some(id) = &record.order_id {
                 ctx.registry.register(id.clone());
             }
-            let mut rec = recorder.lock().unwrap();
-            rec.record("exec→send", send_ts.saturating_since(exec_ts));
-            // TTFB split of send→ack (all three recorded on the success path so
+            // One lock, after the wire: the deferred pre-send edges plus the
+            // TTFB split of send→ack (all recorded on the success path so
             // e2e's all-edges-populated assertion holds).
+            let mut rec = recorder.lock().unwrap();
+            pending.record_into(&mut rec);
+            rec.record("exec→send", send_ts.saturating_since(exec_ts));
             rec.record("send→hdrs", ack.hdrs_ts.saturating_since(send_ts));
             rec.record("hdrs→ack", ack.ack_ts.saturating_since(ack.hdrs_ts));
             rec.record("send→ack", ack.ack_ts.saturating_since(send_ts));
@@ -336,6 +391,7 @@ async fn handle_intent(
             // Ambiguous outcome: query by client id before assuming failure.
             // Never blind-retry (idempotent id makes a retry safe server-side,
             // but a query is cheaper and unambiguous).
+            pending.flush(recorder);
             tracing::error!("order send error: {e}; querying status");
             match ctx.rest.order_by_client_id(&staged.client_order_id).await {
                 Ok(Some(order)) => {

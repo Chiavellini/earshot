@@ -8,18 +8,32 @@ layer — it never sits between two stages.
 ## Entry door
 - **Type/mechanism:** `LatencyRecorder::record(edge: &'static str, nanos:
   u64)` (`src/telemetry.rs`). Edge names are the fixed `EDGES` list —
-  pipeline: `capture→preproc`, `preproc→chunk`, `chunk→detect`,
-  `detect→decision`, `capture→decision`; execution: `decision→exec`,
-  `presign_age`, `exec→send`, `send→hdrs`, `hdrs→ack`, `send→ack`,
-  `decision→ack`, `capture→ack` (`send→hdrs`/`hdrs→ack` split `send→ack` at
-  TTFB — see the executor doc).
+  pipeline: `capture→preproc`, `preproc→chunk`, `chunk→detect`, `ring_wake`
+  (detect-hop SPSC push→wake cost; absent under `[perf] spin_hot_rings`),
+  `detect→decision`, `capture→decision`; execution: `handoff→exec` (mpsc
+  wake hop, from the intent's `handoff_ts` stamp), `decision→exec` (the
+  aggregate: detect-thread tail + wake), `book_age`, `presign_age`,
+  `exec→send`, `send→hdrs`, `hdrs→ack`, `send→ack`, `decision→ack`,
+  `capture→ack` (`send→hdrs`/`hdrs→ack` split `send→ack` at TTFB — see the
+  executor doc).
+- **Declared ⇒ populated:** an edge may only be added to `EDGES` together
+  with the code that records it — `record()` on an undeclared edge is a
+  silent no-op (this exact failure hid `book_age` until 2026-07-17), and
+  `tests/e2e_full_chain.rs` asserts every declared edge is populated in a
+  full-chain run.
 - **Ownership rule:** each recorder is owned by exactly one thread/task (the
   detect thread owns the pipeline recorder; the executor owns its own) —
   recording is lock-free-by-ownership (~20 ns into a pre-allocated
   hdrhistogram). Recorders merge at teardown via
   `LatencyRecorder::merge(&other)` (hdrhistogram `add`).
 - Logging: `telemetry::init_logging(json)` — tracing with EnvFilter
-  (`RUST_LOG`), JSON mode for machine ingestion.
+  (`RUST_LOG`), JSON mode for machine ingestion. The writer is deliberately
+  SYNCHRONOUS: hot-path code logs only AFTER the intent handoff / order send
+  (see decision.md, executor.md), and a non-blocking appender
+  (tracing-appender) can drop the final lines at SIGTERM — the post-mortem
+  record (the MS RECE analysis was reconstructed from decision wall-times in
+  the logs) outweighs the residual µs. Revisit only with a flush-on-signal
+  guarantee.
 
 ## Exit door
 - **Type:** `PipelineReport` — event id, frame/chunk counts,

@@ -136,7 +136,7 @@ fn run_cell(
         let table = DecisionTable::from_keywords(&cfg.keywords);
         let preproc = PreprocCfg { resample_to_hz: cfg.pipeline.resample_to_hz };
         tracing::info!(engine = ?engine, chunk_ms, call = %call.id, paced = args.paced, "bench run");
-        let report = run_pipeline(&call.id, chunk_ms, preproc, source, detector, table, None)?;
+        let report = run_pipeline(&call.id, chunk_ms, preproc, source, detector, table, None, Default::default())?;
         if report.drops.total() > 0 {
             return Err(format!("bench run {} dropped {} frames", call.id, report.drops.total()).into());
         }
