@@ -33,7 +33,9 @@
 > Phone is preferred — whoever holds the bridge number beats every webcast listener.
 > ⚠ The "~18-30 s" webcast lag previously quoted here is **unsourced** (`:246` and
 > `docs/TWILIO.md:66` both call it an unverified estimate; the "18" appears nowhere
-> else). **Quote no number until it is measured.**
+> else). **Quote no number until it is measured.** Monday's DPZ three-leg
+> capture is designed to produce the first measured numbers: manifest-probe
+> PDT lag (absolute, encoder-clock-bounded) + tuned-vs-default xcorr delta.
 >
 > **How to actually measure it (and why NFLX cannot).** The lag is a *difference*
 > between two paths, so it needs a call carrying BOTH a phone bridge and a webcast,
@@ -163,6 +165,20 @@ i-04c50d76572aa092e`), note the new IP, `ssh ubuntu@<ip>` sanity: `ls
 ~/run-dpz-capture.sh ~/ear/configs/webcast-dpz-capture.toml`. Also the
 LAST phone check: the events page via the user's US-VPN browser — a number
 → abort pivot, run the drilled phone path (preflight etc.).
+⚠ The 07-17 tuned-leg change REQUIRES a Sunday rebuild + re-smoke on the box
+(the pre-change binary rejects the new `label` config field at parse):
+1. `cd ~/ear && git fetch && git checkout webcast-lane && git pull &&
+   cargo build --release`
+2. `ffmpeg -h demuxer=hls | grep -E 'live_start_index|http_persistent'` —
+   confirm the pinned defaults (config comment) on the box's ffmpeg version.
+3. Re-smoke the THREE-leg config against a real **https** HLS stream (the
+   Sky News manifest from W1-pre; the tuned leg's -reconnect flags are
+   http(s)-only and exit 8 on file inputs): `echo "<m3u8>" >
+   ~/dpz-stream.url`, sed a COPY of the config, `capture-bakeoff --secs 90
+   --record-dir ~/dpz-smoke` → expect 3 distinct WAVs, `pipe → pipe_tuned`
+   delta ≈ −(2 × segment cadence) at peak > 0.5, plus a
+   `scripts/manifest-probe.sh` run.
+4. `free -h` — three in-RAM legs ≈ 650 MB for 110 min.
 
 **Monday 06:10–06:25 CDMX (8:10–8:25 ET):**
 1. User opens ir.dominos.com → events → Q2 webcast player (US VPN, Chrome).
@@ -170,17 +186,28 @@ LAST phone check: the events page via the user's US-VPN browser — a number
    (claude-in-chrome `read_network_requests`, filter `.m3u8`).
 3. On the box: `echo "<m3u8>" > ~/dpz-stream.url` and
    `sed -i "s|__DPZ_URL__|<m3u8>|" ~/ear/configs/webcast-dpz-capture.toml`
-4. `~/run-dpz-capture.sh` (refuses if the URL/placeholder steps were missed).
-   110-min capture → `~/dpz-capture/{pipe,hls}.wav + .jsonl + report.json`.
-5. Watch `~/dpz-capture/run.log` for "stream started"-class output; segment
-   cadence readable from the manifest (curl it, EXTINF values).
+   (leg 3 `pipe_tuned` needs no sed — it reads `~/dpz-stream.url` like leg 1).
+4. `~/ear/scripts/manifest-probe.sh "<m3u8>" | tee ~/dpz-capture/manifest-probe.txt`
+   — from the box (segment URLs can be requester-IP-locked): cadence
+   (TARGETDURATION/EXTINF), LL-HLS tags present or not, and if the manifest
+   carries EXT-X-PROGRAM-DATE-TIME, the ABSOLUTE manifest-edge lag. Re-run
+   once mid-call. This output also decides the streamlink/LL-HLS follow-on.
+5. `~/run-dpz-capture.sh` (refuses if the URL/placeholder steps were missed).
+   110-min capture → `~/dpz-capture/{pipe,hls,pipe_tuned}.wav + .jsonl +
+   report.json`. Leg 3 is the low-latency-flags experiment — if it dies,
+   legs 1–2 are unaffected; do NOT debug it during the call.
+6. Watch `~/dpz-capture/run.log` for "stream started"-class output.
 
 **Post-call (CDMX):** scp the WAV; replay through the detector with the DPZ
 config vocabulary; line detection times against the public Kalshi trades
 tape (VERIFICATIONS Q-MSPM method) → the VIRTUAL RACE: were asks swept
 before webcast-visible detections (bridge money present) or did they sit
 (webcast = the effective floor for this event class)? Either answer sets
-Wednesday's GEV/GOOGL webcast-fallback posture.
+Wednesday's GEV/GOOGL webcast-fallback posture. Also transcribe the FIRST
+MEASURED webcast-lag numbers into this file (replacing the retracted
+estimate at the top): the `pipe → pipe_tuned` xcorr delta (what the
+low-latency ffmpeg flags buy — expect ≈ −2 × segment cadence) and the
+manifest-probe PDT lag (absolute encoder→edge, encoder-clock-bounded).
 
 ## Same-floor W1-pre findings (2026-07-17 evening) — the YouTube access terrain
 
@@ -265,13 +292,12 @@ that cannot exist — places nothing); criterion bench `benches/hot_path.rs` +
 event — every default keeps today's behavior):**
 1. On-box baseline: `cargo test --release -- --ignored perf_` + `cargo bench`
    before/after `os-tune-apply` (jitter = p99−p50).
-2. `chunk_ms` 80→40: only after the on-box `perf_detector_rtf` ladder shows
-   comfortable RTF margin at chunk 40 (accuracy is unaffected — BAKEOFF.md;
-   this is purely the buffering win, ~20 ms mean / ~40 ms worst). Judge on
-   RTF, not per-call p95 — the 07-17 laptop ladder showed sherpa's decode is
-   BURSTY below its internal quantum (chunk 80: p50 345 µs, p95 71 ms, max
-   197 ms; the burst tail exists at every chunk size and only the
-   streaming_ctc engine removes it).
+2. ~~`chunk_ms` 80→40~~ **CLOSED as WON'T-DO for sherpa (2026-07-17):**
+   the paced QCOM 80-vs-40 grid measured the dial at **~0 ms** (onset→emit
+   p50 837→838 ms, accuracy identical) — sherpa's internal chunk-16 quantum
+   absorbs chunker timing, so earlier delivery just waits in the model's
+   buffer. The dial becomes real again only on a small-quantum engine
+   (streaming_ctc). Numbers: `docs/LATENCY-PROOF.md`.
 3. `[perf] realtime = true` for an event: only after the systemd-fired
    rehearsal on the tuned box passes with real SIGTERM (kill latency must not
    regress; `tests/kill_sigterm.rs` posture) + `os-tune-check.sh` all-PASS.

@@ -24,14 +24,15 @@ detection.
 - **The dial (latency side):** the detector cannot see a word until the chunk
   containing it seals — pure buffering of `chunk_ms/2` mean, `chunk_ms`
   worst-case, before any model time. For `sherpa_kws` this is a PURE latency
-  dial (the model re-buffers internally; accuracy bit-identical across
-  80/160/320 — BAKEOFF.md), so smaller is strictly better until the
-  detector's per-call overhead eats the margin: the gate is the on-box
-  `perf_detector_rtf` chunk ladder (160/80/40/20), judged on RTF margin —
-  NOT per-call p95, which turns bimodal below the model's internal decode
-  quantum (most calls near-zero, every Nth absorbs the decode burst; the
-  burst tail is structural to sherpa at every chunk size). Prod is 80 ms;
-  the 40 ms candidate is gated in RUNBOOK.md ("Fire-path latency pass").
+  dial ONLY for engines whose internal decode quantum is smaller than
+  `chunk_ms`. **Measured 2026-07-17 (paced QCOM dev call, 80 vs 40 grid):
+  on `sherpa_kws` the dial is worth ~0 ms** — onset→emit p50 837→838 ms,
+  accuracy identical — because the model's internal chunk-16 quantum
+  absorbs the chunker's timing (earlier delivery waits in sherpa's buffer
+  instead of ours). Don't lower chunk_ms for sherpa; revisit for
+  `streaming_ctc` (small `decode_chunk_len`), where the config comment in
+  `configs/twilio-live-ctc.toml` already anticipates it. Full numbers:
+  `docs/LATENCY-PROOF.md`.
 - Timestamp propagation: `first_capture_ts`/`first_preproc_ts` from the
   chunk's FIRST frame, `last_capture_ts` from its last, `chunk_ts` stamped
   when sealed. The detection-latency math depends on these exact semantics.

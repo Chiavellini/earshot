@@ -21,7 +21,7 @@ runs; all A/B below interleaved OLD/NEW ×5 or side-by-side in one process). Ins
 | `book_age` histogram fix | `telemetry` regression test + e2e all-edges assertion | silently dropped since 07-16 | recorded | **PROVEN (correctness)** — forensics-affecting, not latency |
 | Cold-fire premium (characterization) | `perf_cold_first_fire` | — | first fire 320–675 µs vs steady 17–38 µs across runs | Instrument established; premium eliminated by warm-fire (row above) |
 | `[perf]` pinning / SCHED_FIFO / spin, OS host tuning | `os-tune-check.sh`, on-box perf suite | — | — | **INSTRUMENT-ONLY, ON-BOX** — Linux-only; gates 1–4 in RUNBOOK "Fire-path latency pass". No laptop claim possible |
-| chunk_ms 80→40 (recognition latency) | `bench-detector` paced, sherpa, QCOM-Q2-2026 dev call, chunk 80 vs 40 grid | *(running — appended below when complete)* | | Expected ~+20 ms mean onset→emit from halved chunk assembly; accuracy invariant per BAKEOFF |
+| chunk_ms 80→40 (recognition latency) | `bench-detector` paced, sherpa, QCOM-Q2-2026 dev call (45 min), chunk 80 vs 40 grid | onset→emit p50 837 / p95 916 ms (acquisition), 916/1076 (guidance) | p50 838 / p95 916; 915/1077. Accuracy identical | **REFUTED — worth ~0 ms on sherpa** (expected ~20). The model's internal chunk-16 quantum absorbs chunker timing: earlier delivery just waits in sherpa's internal buffer. The dial only pays on a small-quantum engine (streaming_ctc). RUNBOOK gate 2 closed as WON'T-DO for sherpa |
 
 ### Net honest summary
 
