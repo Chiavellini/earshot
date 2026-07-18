@@ -68,6 +68,18 @@ CTC engine lands.
 2. **On-box probe-order** (existing 1¢ non-mention envelope) — pins real `send→hdrs` from us-east,
    converting the "low-teens" prediction into a VERIFICATIONS-grade number.
 
+## Competitor bound (2026-07-17) and the 600 ms roadmap decision
+
+`docs/COMPETITOR-ANATOMY.md` (public-tape × our MS artifacts): the fast player's wave-1 fill lands
+**−42 to +2 ms vs the word's end in our own stream** (3 true-positive words, ±25 ms machine-tight),
+implying a word-end→fill loop ≈ our-then-transport ≈ **400–600 ms**: phone leg + full-word
+streaming ASR + colo'd IOC ladder — ordinary and replicable. OIL/MIDD saw no sweep from anyone and
+closed at pennies → likely OUR false alarms, not their misses. Operator decisions 2026-07-17:
+**Tier-1 CTC GPU work: NOT NOW** → the 600 ms bar is **not reachable this cycle** (the detector is
+~500–700 ms of it; prefix-firing on that engine is also the only move that *beats* wave-1 rather
+than tying it). **SIP/RTP direct ingress: approved, in build** (~100–250 ms, provable only by the
+dual-leg capture-bakeoff).
+
 ## Word-recognition efficiency — status 2026-07-17
 
 **Tier-0 probe re-run (per `docs/CTC-MODEL-SOURCING.md`): still no English streaming-CTC
