@@ -316,6 +316,47 @@ skew); ~4 fired-but-settled-NO words (EURO, CHIN, YOUT, MERG-replay). Both axes 
 on compounds and near-word precision — are now measured problems with a corpus (today's
 WAVs) to tune against.
 
+#### LMT 2026-07-23 — FIRST FANOUT ARM RACE (autonomous; live fanout arm + box 4-leg capture + tape)
+
+First live run of the edge-join fanout posture (2 legs: streamlink `--hls-live-edge 1`
++ tuned ffmpeg `-live_start_index -1`, probesize 64K), fully autonomous (operator
+absent), CDMX laptop, dry-run. Venue: Notified MMC → CloudFront, **audio-only 77 kbps,
+4 s segments, ~40 s manifest window**, no LL-HLS, PDT edge lag ~9 s, no token/IP lock.
+Arm: 99 min, 570,713 frames, **0 drops**; 16/16 detection events heard by BOTH legs at
+identical stream positions; exactly one intent per keyword (cross-leg dedupe 16/16).
+
+**Δrace (contested words; sweep = first ≥3-trade YES burst ≥50¢ within 2 s):**
+
+| Word | Our flag (UTC) | Wave-1 sweep | Δrace | Note |
+|---|---|---|---|---|
+| GOLD ("golden dome" — compound, detected!) | 12:34:54.803 | 12:34:54.198 | **−0.6 s** | tuned leg |
+| MORF ("morfius") | 12:57:10.364 | 12:57:09.337 | **−1.0 s** | tuned leg |
+| EURO ("europe") | 12:42:03.136 | 12:42:00.316 | **−2.8 s** | tuned leg |
+
+Steady-state Δrace mean **−1.5 s** vs the −8.7 s TSLA baseline: the acquisition stack
+recovered ~6–8 s but did NOT flip the sign at this venue. **Why: the ladder COMPRESSES
+at short-window venues** — box 4-leg xcorr (same audio, same run): tuned −1.18 s vs
+default, streamlink only −0.21 s (AAL capture replicates: −1.15/−0.19). A 40 s manifest
+window means default joins near the edge anyway; the −11.7..−13.65 s reference-stream
+ladder numbers DO NOT TRANSFER. **Leg order also reversed: tuned-ffmpeg beat streamlink**
+(5/6 first-arrivals; streamlink won only NASA) — opposite of the Sky/DW reference runs.
+The residual −0.6..−2.8 s is now decode-lag (~0.5 s) + CDMX vantage + wave-1 colocation
+sized — the detector/vantage levers are material again at this gap size.
+
+**Ambiguous/asymmetric outcomes (settlement + transcript checks pending):**
+- NASA: flagged 12:38:33 (both legs); NO market reaction for 52 min; sweep only at
+  13:30:24. Either an FP or the market missed a real early mention (GOOGL-recall-class).
+- PERU flagged, no sweep ever (post-flag max 36¢); IRAN flagged, max 48¢ — settlement grades.
+- **ORIO (13:31:08) and VENT (13:21:35) swept with NO flag from us — candidate recall
+  misses** (VENT = "venture fund", compound-class).
+
+Ops finding (cost ~4 min of pre-call scramble, fixed live): 77 kbps audio-only stream ×
+1 MB ffmpeg probesize = ~100 s of silence before first output byte → every leg died on
+the 30 s idle guard (arm + all box capture legs incl. defaults). Fixed to 64 KB probe;
+the DW dress rehearsal could not have caught it (fat muxed stream). Mid-call caveat pin:
+a truncated 100-trade tape pull misread GOLD as "+11.7 s ahead" — the full tape shows the
+sweep ONSET pre-dated our flag; never score Δrace from a tail pull.
+
 ## Open verification items
 
 1. Transcript check on OIL/MIDD (false-alarm confirmation) — needs the MS capture/transcript.

@@ -187,9 +187,18 @@ one falsifiable outcome with one evidence destination.
       (`launch-webcast.sh --wait-live`, RUNBOOK 07-22 post-mortems #1–#3).
       Verdict gates: **G2 box smoke ✅ PASSED 2026-07-23 04:01 UTC** (DW live,
       2 legs 0 drops, cross-leg dedupe live-proven — RUNBOOK §Monitor
-      staging) → G3 mixed-leg live (AAL/INTC Thu, AXP/VZ Fri) → G4 FOMC
-      07-29 Δrace vs the −8.7 s baseline (bar: steady-state ≥ 0 s, no drain
-      artifact, fanout recall ≥ single-leg).
+      staging) → **G3 ✅ RUN 2026-07-23 (LMT, autonomous)**: (a) fanout full
+      live event PASS (99 min, 0 drops, 1 intent/kw, dedupe 16/16);
+      (b) OR-mechanism proven, no leg-differential word this event;
+      (c) --wait-live production mechanism PASS (after 3 launcher/probe
+      fixes — see RUNBOOK); (d) **event-venue ladder MEASURED: tuned
+      −1.18 s, streamlink −0.21 s vs default — the reference-stream ladder
+      COMPRESSES at short-window venues and the leg order REVERSES**;
+      (e) Δrace GOLD −0.6 s / MORF −1.0 s / EURO −2.8 s (mean −1.5 s vs
+      −8.7 s baseline: ~7 s recovered, sign NOT yet flipped; residual is
+      decode+vantage-sized). NASA/PERU/IRAN ambiguous; ORIO/VENT candidate
+      misses → Phase-4 fodder. G4 FOMC 07-29 bar unchanged (steady-state
+      ≥ 0 s): now hinges on US vantage + decode, not fetch flags.
 
 - [ ] **W2.** Manifest-probe every event venue (cadence, LL-HLS tags, PDT
       absolute lag) and grow a per-venue table (venue/platform → cadence,
