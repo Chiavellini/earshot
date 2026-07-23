@@ -39,7 +39,7 @@ label = "streamlink"
 sample_rate_hz = 16000
 cmd = [
   "/bin/sh", "-c",
-  "streamlink --stdout --hls-live-edge 1 --hls-segment-stream-data --hls-playlist-reload-time segment \"$(cat $HOME/aal-stream.url)\" best | ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 1000000 -analyzeduration 2000000 -i - -vn -f s16le -ac 1 -ar 16000 -",
+  "streamlink --stdout --hls-live-edge 1 --hls-segment-stream-data --hls-playlist-reload-time segment \"$(cat $HOME/aal-stream.url)\" best | ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 65536 -analyzeduration 1000000 -i - -vn -f s16le -ac 1 -ar 16000 -",
 ]
 
 [[sources]]
@@ -48,7 +48,7 @@ label = "pipe_tuned"
 sample_rate_hz = 16000
 cmd = [
   "/bin/sh", "-c",
-  "ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 1000000 -analyzeduration 2000000 -live_start_index -1 -http_persistent 1 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2 -i \"$(cat $HOME/aal-stream.url)\" -vn -f s16le -ac 1 -ar 16000 -",
+  "ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 65536 -analyzeduration 1000000 -live_start_index -1 -http_persistent 1 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2 -i \"$(cat $HOME/aal-stream.url)\" -vn -f s16le -ac 1 -ar 16000 -",
 ]
 
 [kalshi]
