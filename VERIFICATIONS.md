@@ -775,8 +775,15 @@ probe under the $1 ledger → FIX-vs-REST send→ack A/B from the same box.
   sent), 2 LOST_RACE refusals (TRUM ask 19¢ > cap 11¢; CLI ask 34¢ > cap 27¢ —
   the frozen-cap "no pump" guard working), 1 sent+filled. Cumulative ledger
   28¢ of 100¢.
-- Caveat pinned with the win: APPL last-traded 1¢ post-call (settlement
-  pending at pin time) — the fill is almost certainly a detector FALSE FIRE
-  ("apple" class). The fill MACHINERY is validated; the trade's edge is a
-  detector-precision question (Phase-4). Evidence: box `~/intc-live.log`,
-  tape `state/KXEARNINGSMENTIONINTC-26JUL23/tape-2026-07-23.json`.
+- Caveat pinned with the win: APPL last-traded 1¢ post-call — the fill was a
+  detector FALSE FIRE ("apple" class). **Settlement CLOSED 2026-07-23: APPL
+  finalized NO at 23:29:46Z ⇒ realized P&L −26¢** (1×YES @26¢ → 0). **TRUM
+  also finalized NO (same batch) ⇒ the frozen-cap LOST_RACE refusal at 19¢
+  was a correct save.** The fill MACHINERY is validated; the trade's edge is
+  a detector-precision question (Phase-4). Evidence: box `~/intc-live.log`,
+  tape `state/KXEARNINGSMENTIONINTC-26JUL23/tape-2026-07-23.json`,
+  settlements `state/KXEARNINGSMENTIONINTC-26JUL23/settlements-2026-07-23.json`
+  (API `result:"no"`, status `finalized`). All five 07-23 settlements pinned
+  same evening: LMT PERU/IRAN **NO** (false fires), **NASA YES** (true flag
+  the market ignored 52 min — market-missed-word channel settlement-confirmed)
+  in `state/KXEARNINGSMENTIONLMT-26JUL23/settlements-2026-07-23.json`.

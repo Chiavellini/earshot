@@ -343,10 +343,15 @@ ladder numbers DO NOT TRANSFER. **Leg order also reversed: tuned-ffmpeg beat str
 The residual −0.6..−2.8 s is now decode-lag (~0.5 s) + CDMX vantage + wave-1 colocation
 sized — the detector/vantage levers are material again at this gap size.
 
-**Ambiguous/asymmetric outcomes (settlement + transcript checks pending):**
-- NASA: flagged 12:38:33 (both legs); NO market reaction for 52 min; sweep only at
-  13:30:24. Either an FP or the market missed a real early mention (GOOGL-recall-class).
-- PERU flagged, no sweep ever (post-flag max 36¢); IRAN flagged, max 48¢ — settlement grades.
+**Settlements ALL PINNED 2026-07-23 evening (market API, finalized 17:07:46Z;
+evidence `state/KXEARNINGSMENTIONLMT-26JUL23/settlements-2026-07-23.json`;
+transcript checks still pending):**
+- **NASA settled YES ⇒ our 12:38:33 flag was a TRUE detection** that the market
+  ignored for 52 min (sweep only at 13:30:24, ~20¢ available the whole window) —
+  the market-missed-word channel is now settlement-confirmed, not just inferred.
+- PERU (no sweep, post-flag max 36¢) — **settled NO ⇒ FALSE FIRE confirmed**;
+  IRAN (max 48¢) — **settled NO ⇒ FALSE FIRE confirmed**.
+- **LMT flag-precision final: 4/6** (GOLD, MORF, EURO, NASA true; PERU, IRAN false).
 - **ORIO (13:31:08) and VENT (13:21:35) swept with NO flag from us — candidate recall
   misses** (VENT = "venture fund", compound-class).
 
@@ -384,10 +389,14 @@ morning's diagnosis). SECU/ULTR pre-priced ≥80¢/repriced before flag (no real
 ULTR's first utterance ~21:09 was MISSED, flagged only on a ~21:17 repeat).
 **Recall misses (swept, never flagged): ARIZ (arizona), DESK (desktop), GOVE
 (government), MOBI (mobileye)** — 4 clean misses, worse than LMT's 2. **APPL never
-swept and last-traded 1¢ → our fill is almost certainly a FALSE FIRE (−26¢ realized
-if NO settles).** Combined day-verdict: fill machinery + envelope + no-pump guard
-all validated exactly; detector recall AND precision are now indisputably the
-binding constraint on making money (Phase-4).
+swept and last-traded 1¢ → our fill was a FALSE FIRE — SETTLED NO (finalized
+2026-07-23T23:29:46Z, pinned 07-23 evening): realized P&L −26¢** (1×YES @26¢ → 0;
+ledger had debited 28¢ worst-case). **TRUM also SETTLED NO (same timestamp) — the
+frozen-cap refusal at ask 19¢ was a correct save (+19¢ counterfactual).** Evidence:
+`state/KXEARNINGSMENTIONINTC-26JUL23/settlements-2026-07-23.json`. Combined
+day-verdict: fill machinery + envelope + no-pump guard all validated exactly;
+detector recall AND precision are now indisputably the binding constraint on
+making money (Phase-4). Two-day realized program P&L: −26¢.
 
 Ops: INTC box capture recorded 0 frames — the probesize fix had been applied to the
 LMT/AAL capture configs but not INTC's (staged pre-fix). Fixed in the TEMPLATE
