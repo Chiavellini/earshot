@@ -1,0 +1,4011 @@
+{
+  "chunk_ms": 80,
+  "chunks_in": 113958,
+  "detections": [
+    {
+      "detect_latency_us": 111051,
+      "detection": {
+        "audio_pos_ms": 868640,
+        "audio_ts": 243610209746061,
+        "confidence": 1.0,
+        "emit_ts": 243610320797659,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": {
+        "audio_ts": 243610209746061,
+        "decision_ts": 243610320799419,
+        "handoff_ts": 0,
+        "keyword": 9,
+        "market_ticker": "KXEARNINGSMENTIONINTC-26JUL23-PANT",
+        "max_price_cents": 1,
+        "source": 0,
+        "tier": "Confirmed",
+        "tranche_contracts": 1
+      },
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 117608,
+      "detection": {
+        "audio_pos_ms": 868640,
+        "audio_ts": 243611030761744,
+        "confidence": 1.0,
+        "emit_ts": 243611148370617,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 48513,
+      "detection": {
+        "audio_pos_ms": 991840,
+        "audio_ts": 243734720533524,
+        "confidence": 1.0,
+        "emit_ts": 243734769046870,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 51960,
+      "detection": {
+        "audio_pos_ms": 991840,
+        "audio_ts": 243736943766729,
+        "confidence": 1.0,
+        "emit_ts": 243736995726833,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 112498,
+      "detection": {
+        "audio_pos_ms": 996960,
+        "audio_ts": 243738758648469,
+        "confidence": 1.0,
+        "emit_ts": 243738871147005,
+        "keyword": 10,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": {
+        "audio_ts": 243738758648469,
+        "decision_ts": 243738871148535,
+        "handoff_ts": 0,
+        "keyword": 10,
+        "market_ticker": "KXEARNINGSMENTIONINTC-26JUL23-SECU",
+        "max_price_cents": 1,
+        "source": 0,
+        "tier": "Confirmed",
+        "tranche_contracts": 1
+      },
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 111920,
+      "detection": {
+        "audio_pos_ms": 996960,
+        "audio_ts": 243741021084449,
+        "confidence": 1.0,
+        "emit_ts": 243741133004511,
+        "keyword": 10,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 125025,
+      "detection": {
+        "audio_pos_ms": 1090080,
+        "audio_ts": 243830345452903,
+        "confidence": 1.0,
+        "emit_ts": 243830470478537,
+        "keyword": 5,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": {
+        "audio_ts": 243830345452903,
+        "decision_ts": 243830470479687,
+        "handoff_ts": 0,
+        "keyword": 5,
+        "market_ticker": "KXEARNINGSMENTIONINTC-26JUL23-FOUN",
+        "max_price_cents": 1,
+        "source": 1,
+        "tier": "Confirmed",
+        "tranche_contracts": 1
+      },
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 140884,
+      "detection": {
+        "audio_pos_ms": 1090080,
+        "audio_ts": 243831151575514,
+        "confidence": 1.0,
+        "emit_ts": 243831292459635,
+        "keyword": 5,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 92246,
+      "detection": {
+        "audio_pos_ms": 1113120,
+        "audio_ts": 243854669177994,
+        "confidence": 1.0,
+        "emit_ts": 243854761424679,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 83312,
+      "detection": {
+        "audio_pos_ms": 1113120,
+        "audio_ts": 243855241611907,
+        "confidence": 1.0,
+        "emit_ts": 243855324924682,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 63975,
+      "detection": {
+        "audio_pos_ms": 1136480,
+        "audio_ts": 243879009490137,
+        "confidence": 1.0,
+        "emit_ts": 243879073465537,
+        "keyword": 13,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": {
+        "audio_ts": 243879009490137,
+        "decision_ts": 243879073467287,
+        "handoff_ts": 0,
+        "keyword": 13,
+        "market_ticker": "KXEARNINGSMENTIONINTC-26JUL23-TRUM",
+        "max_price_cents": 11,
+        "source": 1,
+        "tier": "Confirmed",
+        "tranche_contracts": 1
+      },
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 58602,
+      "detection": {
+        "audio_pos_ms": 1136480,
+        "audio_ts": 243879332902096,
+        "confidence": 1.0,
+        "emit_ts": 243879391504267,
+        "keyword": 13,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 104415,
+      "detection": {
+        "audio_pos_ms": 1177760,
+        "audio_ts": 243919518148127,
+        "confidence": 1.0,
+        "emit_ts": 243919622563488,
+        "keyword": 5,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 141400,
+      "detection": {
+        "audio_pos_ms": 1177760,
+        "audio_ts": 243919680000393,
+        "confidence": 1.0,
+        "emit_ts": 243919821400396,
+        "keyword": 5,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 207081,
+      "detection": {
+        "audio_pos_ms": 1264160,
+        "audio_ts": 244003889197668,
+        "confidence": 1.0,
+        "emit_ts": 244004096279641,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 186436,
+      "detection": {
+        "audio_pos_ms": 1264160,
+        "audio_ts": 244004943012894,
+        "confidence": 1.0,
+        "emit_ts": 244005129449644,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 49837,
+      "detection": {
+        "audio_pos_ms": 1276640,
+        "audio_ts": 244019929315424,
+        "confidence": 1.0,
+        "emit_ts": 244019979153247,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 30061,
+      "detection": {
+        "audio_pos_ms": 1276640,
+        "audio_ts": 244021149469391,
+        "confidence": 1.0,
+        "emit_ts": 244021179530595,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 80150,
+      "detection": {
+        "audio_pos_ms": 1309600,
+        "audio_ts": 244052067153092,
+        "confidence": 1.0,
+        "emit_ts": 244052147303501,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 86197,
+      "detection": {
+        "audio_pos_ms": 1309600,
+        "audio_ts": 244053629946643,
+        "confidence": 1.0,
+        "emit_ts": 244053716144205,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 33543,
+      "detection": {
+        "audio_pos_ms": 1328800,
+        "audio_ts": 244072147111393,
+        "confidence": 1.0,
+        "emit_ts": 244072180654797,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 33339,
+      "detection": {
+        "audio_pos_ms": 1328800,
+        "audio_ts": 244073901239471,
+        "confidence": 1.0,
+        "emit_ts": 244073934579024,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 100722,
+      "detection": {
+        "audio_pos_ms": 1442720,
+        "audio_ts": 244184643044105,
+        "confidence": 1.0,
+        "emit_ts": 244184743766766,
+        "keyword": 2,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": {
+        "audio_ts": 244184643044105,
+        "decision_ts": 244184743768366,
+        "handoff_ts": 0,
+        "keyword": 2,
+        "market_ticker": "KXEARNINGSMENTIONINTC-26JUL23-CLI",
+        "max_price_cents": 27,
+        "source": 0,
+        "tier": "Confirmed",
+        "tranche_contracts": 1
+      },
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 94390,
+      "detection": {
+        "audio_pos_ms": 1442720,
+        "audio_ts": 244187596621256,
+        "confidence": 1.0,
+        "emit_ts": 244187691012052,
+        "keyword": 2,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 63474,
+      "detection": {
+        "audio_pos_ms": 1457760,
+        "audio_ts": 244199816164277,
+        "confidence": 1.0,
+        "emit_ts": 244199879639214,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 60152,
+      "detection": {
+        "audio_pos_ms": 1457760,
+        "audio_ts": 244200700357605,
+        "confidence": 1.0,
+        "emit_ts": 244200760510534,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 131662,
+      "detection": {
+        "audio_pos_ms": 1463520,
+        "audio_ts": 244203898917996,
+        "confidence": 1.0,
+        "emit_ts": 244204030580287,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 130901,
+      "detection": {
+        "audio_pos_ms": 1463520,
+        "audio_ts": 244204737955407,
+        "confidence": 1.0,
+        "emit_ts": 244204868856854,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 114787,
+      "detection": {
+        "audio_pos_ms": 1475040,
+        "audio_ts": 244216069966443,
+        "confidence": 1.0,
+        "emit_ts": 244216184754251,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 108528,
+      "detection": {
+        "audio_pos_ms": 1475040,
+        "audio_ts": 244216782142829,
+        "confidence": 1.0,
+        "emit_ts": 244216890671513,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 175764,
+      "detection": {
+        "audio_pos_ms": 1492640,
+        "audio_ts": 244232336222426,
+        "confidence": 1.0,
+        "emit_ts": 244232511987258,
+        "keyword": 5,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 196132,
+      "detection": {
+        "audio_pos_ms": 1492640,
+        "audio_ts": 244232866553738,
+        "confidence": 1.0,
+        "emit_ts": 244233062686351,
+        "keyword": 5,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 141179,
+      "detection": {
+        "audio_pos_ms": 1500000,
+        "audio_ts": 244240446718824,
+        "confidence": 1.0,
+        "emit_ts": 244240587898697,
+        "keyword": 13,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 151928,
+      "detection": {
+        "audio_pos_ms": 1500000,
+        "audio_ts": 244240887295115,
+        "confidence": 1.0,
+        "emit_ts": 244241039223456,
+        "keyword": 13,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 214420,
+      "detection": {
+        "audio_pos_ms": 1540000,
+        "audio_ts": 244281077341692,
+        "confidence": 1.0,
+        "emit_ts": 244281291762465,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 236629,
+      "detection": {
+        "audio_pos_ms": 1540000,
+        "audio_ts": 244281083510876,
+        "confidence": 1.0,
+        "emit_ts": 244281320140140,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 72977,
+      "detection": {
+        "audio_pos_ms": 1563040,
+        "audio_ts": 244305153735350,
+        "confidence": 1.0,
+        "emit_ts": 244305226713109,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 101809,
+      "detection": {
+        "audio_pos_ms": 1563040,
+        "audio_ts": 244305472879516,
+        "confidence": 1.0,
+        "emit_ts": 244305574689313,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 195480,
+      "detection": {
+        "audio_pos_ms": 1577440,
+        "audio_ts": 244317224367527,
+        "confidence": 1.0,
+        "emit_ts": 244317419848416,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 198925,
+      "detection": {
+        "audio_pos_ms": 1577440,
+        "audio_ts": 244317667249360,
+        "confidence": 1.0,
+        "emit_ts": 244317866175278,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 85319,
+      "detection": {
+        "audio_pos_ms": 1647200,
+        "audio_ts": 244389503946907,
+        "confidence": 1.0,
+        "emit_ts": 244389589266364,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 81253,
+      "detection": {
+        "audio_pos_ms": 1647200,
+        "audio_ts": 244390730995251,
+        "confidence": 1.0,
+        "emit_ts": 244390812248736,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 202182,
+      "detection": {
+        "audio_pos_ms": 1653600,
+        "audio_ts": 244393536860564,
+        "confidence": 1.0,
+        "emit_ts": 244393739043420,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 186297,
+      "detection": {
+        "audio_pos_ms": 1653600,
+        "audio_ts": 244394818460786,
+        "confidence": 1.0,
+        "emit_ts": 244395004758756,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 101621,
+      "detection": {
+        "audio_pos_ms": 1659360,
+        "audio_ts": 244401562381097,
+        "confidence": 1.0,
+        "emit_ts": 244401664002803,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 79190,
+      "detection": {
+        "audio_pos_ms": 1659360,
+        "audio_ts": 244402915320680,
+        "confidence": 1.0,
+        "emit_ts": 244402994510733,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 152273,
+      "detection": {
+        "audio_pos_ms": 1676960,
+        "audio_ts": 244417679747846,
+        "confidence": 1.0,
+        "emit_ts": 244417832021269,
+        "keyword": 10,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 141799,
+      "detection": {
+        "audio_pos_ms": 1676960,
+        "audio_ts": 244419189737938,
+        "confidence": 1.0,
+        "emit_ts": 244419331537774,
+        "keyword": 10,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 199211,
+      "detection": {
+        "audio_pos_ms": 1698080,
+        "audio_ts": 244437744612744,
+        "confidence": 1.0,
+        "emit_ts": 244437943824665,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 192900,
+      "detection": {
+        "audio_pos_ms": 1698080,
+        "audio_ts": 244439498356430,
+        "confidence": 1.0,
+        "emit_ts": 244439691257286,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 139743,
+      "detection": {
+        "audio_pos_ms": 1712800,
+        "audio_ts": 244453796163623,
+        "confidence": 1.0,
+        "emit_ts": 244453935907588,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 144579,
+      "detection": {
+        "audio_pos_ms": 1712800,
+        "audio_ts": 244455712195747,
+        "confidence": 1.0,
+        "emit_ts": 244455856775728,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 99661,
+      "detection": {
+        "audio_pos_ms": 1776160,
+        "audio_ts": 244518055775451,
+        "confidence": 1.0,
+        "emit_ts": 244518155436956,
+        "keyword": 5,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 100823,
+      "detection": {
+        "audio_pos_ms": 1776160,
+        "audio_ts": 244520687238910,
+        "confidence": 1.0,
+        "emit_ts": 244520788062111,
+        "keyword": 5,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 102148,
+      "detection": {
+        "audio_pos_ms": 1780320,
+        "audio_ts": 244522075364265,
+        "confidence": 1.0,
+        "emit_ts": 244522177512734,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 104779,
+      "detection": {
+        "audio_pos_ms": 1780320,
+        "audio_ts": 244524754224973,
+        "confidence": 1.0,
+        "emit_ts": 244524859004516,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 120436,
+      "detection": {
+        "audio_pos_ms": 1844960,
+        "audio_ts": 244585725000625,
+        "confidence": 1.0,
+        "emit_ts": 244585845436654,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 134056,
+      "detection": {
+        "audio_pos_ms": 1844960,
+        "audio_ts": 244586350217246,
+        "confidence": 1.0,
+        "emit_ts": 244586484273590,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 60466,
+      "detection": {
+        "audio_pos_ms": 1847520,
+        "audio_ts": 244589792482171,
+        "confidence": 1.0,
+        "emit_ts": 244589852948182,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 61104,
+      "detection": {
+        "audio_pos_ms": 1847520,
+        "audio_ts": 244590350582065,
+        "confidence": 1.0,
+        "emit_ts": 244590411686069,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 112427,
+      "detection": {
+        "audio_pos_ms": 1868960,
+        "audio_ts": 244610128780905,
+        "confidence": 1.0,
+        "emit_ts": 244610241208890,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 108505,
+      "detection": {
+        "audio_pos_ms": 1868960,
+        "audio_ts": 244610455916185,
+        "confidence": 1.0,
+        "emit_ts": 244610564421609,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 209813,
+      "detection": {
+        "audio_pos_ms": 1897440,
+        "audio_ts": 244638563147509,
+        "confidence": 1.0,
+        "emit_ts": 244638772961267,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 223461,
+      "detection": {
+        "audio_pos_ms": 1897440,
+        "audio_ts": 244638591444093,
+        "confidence": 1.0,
+        "emit_ts": 244638814905806,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 74295,
+      "detection": {
+        "audio_pos_ms": 1908000,
+        "audio_ts": 244650608689238,
+        "confidence": 1.0,
+        "emit_ts": 244650682984804,
+        "keyword": 14,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": {
+        "audio_ts": 244650608689238,
+        "decision_ts": 244650682986414,
+        "handoff_ts": 0,
+        "keyword": 14,
+        "market_ticker": "KXEARNINGSMENTIONINTC-26JUL23-ULTR",
+        "max_price_cents": 1,
+        "source": 0,
+        "tier": "Confirmed",
+        "tranche_contracts": 1
+      },
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 108175,
+      "detection": {
+        "audio_pos_ms": 1908000,
+        "audio_ts": 244650797571161,
+        "confidence": 1.0,
+        "emit_ts": 244650905746983,
+        "keyword": 14,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 48102,
+      "detection": {
+        "audio_pos_ms": 1911520,
+        "audio_ts": 244654622781482,
+        "confidence": 1.0,
+        "emit_ts": 244654670884085,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 46783,
+      "detection": {
+        "audio_pos_ms": 1911520,
+        "audio_ts": 244654868733677,
+        "confidence": 1.0,
+        "emit_ts": 244654915516923,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 72899,
+      "detection": {
+        "audio_pos_ms": 1932320,
+        "audio_ts": 244674722929373,
+        "confidence": 1.0,
+        "emit_ts": 244674795828972,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 71087,
+      "detection": {
+        "audio_pos_ms": 1932320,
+        "audio_ts": 244675198077583,
+        "confidence": 1.0,
+        "emit_ts": 244675269165442,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 125706,
+      "detection": {
+        "audio_pos_ms": 1957600,
+        "audio_ts": 244698832012810,
+        "confidence": 1.0,
+        "emit_ts": 244698957719558,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 135082,
+      "detection": {
+        "audio_pos_ms": 1957600,
+        "audio_ts": 244699564646309,
+        "confidence": 1.0,
+        "emit_ts": 244699699728418,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 206377,
+      "detection": {
+        "audio_pos_ms": 2027360,
+        "audio_ts": 244767138250750,
+        "confidence": 1.0,
+        "emit_ts": 244767344628429,
+        "keyword": 10,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 196275,
+      "detection": {
+        "audio_pos_ms": 2027360,
+        "audio_ts": 244768623542337,
+        "confidence": 1.0,
+        "emit_ts": 244768819817491,
+        "keyword": 10,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 56773,
+      "detection": {
+        "audio_pos_ms": 2040480,
+        "audio_ts": 244783171033996,
+        "confidence": 1.0,
+        "emit_ts": 244783227807817,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 66142,
+      "detection": {
+        "audio_pos_ms": 2040480,
+        "audio_ts": 244784824261042,
+        "confidence": 1.0,
+        "emit_ts": 244784890403404,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 48536,
+      "detection": {
+        "audio_pos_ms": 2060000,
+        "audio_ts": 244803249630110,
+        "confidence": 1.0,
+        "emit_ts": 244803298166385,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 48065,
+      "detection": {
+        "audio_pos_ms": 2060000,
+        "audio_ts": 244805116309714,
+        "confidence": 1.0,
+        "emit_ts": 244805164375427,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 151218,
+      "detection": {
+        "audio_pos_ms": 2066720,
+        "audio_ts": 244807297588569,
+        "confidence": 1.0,
+        "emit_ts": 244807448806906,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 156397,
+      "detection": {
+        "audio_pos_ms": 2066720,
+        "audio_ts": 244809209530540,
+        "confidence": 1.0,
+        "emit_ts": 244809365928336,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 135401,
+      "detection": {
+        "audio_pos_ms": 2086560,
+        "audio_ts": 244827383635683,
+        "confidence": 1.0,
+        "emit_ts": 244827519037354,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 142036,
+      "detection": {
+        "audio_pos_ms": 2086560,
+        "audio_ts": 244829494229182,
+        "confidence": 1.0,
+        "emit_ts": 244829636265439,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 175543,
+      "detection": {
+        "audio_pos_ms": 2090720,
+        "audio_ts": 244831394248378,
+        "confidence": 1.0,
+        "emit_ts": 244831569792038,
+        "keyword": 0,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": {
+        "audio_ts": 244831394248378,
+        "decision_ts": 244831569793698,
+        "handoff_ts": 0,
+        "keyword": 0,
+        "market_ticker": "KXEARNINGSMENTIONINTC-26JUL23-APPL",
+        "max_price_cents": 28,
+        "source": 0,
+        "tier": "Confirmed",
+        "tranche_contracts": 1
+      },
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 161813,
+      "detection": {
+        "audio_pos_ms": 2090720,
+        "audio_ts": 244833567197528,
+        "confidence": 1.0,
+        "emit_ts": 244833729011113,
+        "keyword": 0,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 58547,
+      "detection": {
+        "audio_pos_ms": 2100320,
+        "audio_ts": 244841693121720,
+        "confidence": 1.0,
+        "emit_ts": 244841751669470,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 50482,
+      "detection": {
+        "audio_pos_ms": 2100320,
+        "audio_ts": 244843421949740,
+        "confidence": 1.0,
+        "emit_ts": 244843472432006,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 86474,
+      "detection": {
+        "audio_pos_ms": 2121440,
+        "audio_ts": 244862153663303,
+        "confidence": 1.0,
+        "emit_ts": 244862240137627,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 106689,
+      "detection": {
+        "audio_pos_ms": 2121440,
+        "audio_ts": 244863519106225,
+        "confidence": 1.0,
+        "emit_ts": 244863625795279,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 96809,
+      "detection": {
+        "audio_pos_ms": 2153760,
+        "audio_ts": 244896656482602,
+        "confidence": 1.0,
+        "emit_ts": 244896753292291,
+        "keyword": 5,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 100452,
+      "detection": {
+        "audio_pos_ms": 2153760,
+        "audio_ts": 244897698371123,
+        "confidence": 1.0,
+        "emit_ts": 244897798823902,
+        "keyword": 5,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 50066,
+      "detection": {
+        "audio_pos_ms": 2172640,
+        "audio_ts": 244916967400507,
+        "confidence": 1.0,
+        "emit_ts": 244917017466730,
+        "keyword": 5,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 170204,
+      "detection": {
+        "audio_pos_ms": 2175520,
+        "audio_ts": 244917000594848,
+        "confidence": 1.0,
+        "emit_ts": 244917170799239,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 47351,
+      "detection": {
+        "audio_pos_ms": 2172640,
+        "audio_ts": 244917739448461,
+        "confidence": 1.0,
+        "emit_ts": 244917786799690,
+        "keyword": 5,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 173797,
+      "detection": {
+        "audio_pos_ms": 2175520,
+        "audio_ts": 244917764101796,
+        "confidence": 1.0,
+        "emit_ts": 244917937899157,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 167649,
+      "detection": {
+        "audio_pos_ms": 2179360,
+        "audio_ts": 244921059861269,
+        "confidence": 1.0,
+        "emit_ts": 244921227510856,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 183993,
+      "detection": {
+        "audio_pos_ms": 2179360,
+        "audio_ts": 244921770382697,
+        "confidence": 1.0,
+        "emit_ts": 244921954376014,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 149722,
+      "detection": {
+        "audio_pos_ms": 2191200,
+        "audio_ts": 244933238686098,
+        "confidence": 1.0,
+        "emit_ts": 244933388408567,
+        "keyword": 5,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 164109,
+      "detection": {
+        "audio_pos_ms": 2191200,
+        "audio_ts": 244933827999832,
+        "confidence": 1.0,
+        "emit_ts": 244933992109250,
+        "keyword": 5,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 166594,
+      "detection": {
+        "audio_pos_ms": 2199200,
+        "audio_ts": 244941351710200,
+        "confidence": 1.0,
+        "emit_ts": 244941518304661,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 147970,
+      "detection": {
+        "audio_pos_ms": 2199200,
+        "audio_ts": 244941878332961,
+        "confidence": 1.0,
+        "emit_ts": 244942026303681,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 205472,
+      "detection": {
+        "audio_pos_ms": 2239520,
+        "audio_ts": 244981981743604,
+        "confidence": 1.0,
+        "emit_ts": 244982187216548,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 212082,
+      "detection": {
+        "audio_pos_ms": 2239520,
+        "audio_ts": 244982106708148,
+        "confidence": 1.0,
+        "emit_ts": 244982318791098,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 201188,
+      "detection": {
+        "audio_pos_ms": 2292640,
+        "audio_ts": 245034899069670,
+        "confidence": 1.0,
+        "emit_ts": 245035100257671,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 35914,
+      "detection": {
+        "audio_pos_ms": 2292640,
+        "audio_ts": 245038246825228,
+        "confidence": 1.0,
+        "emit_ts": 245038282740045,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 97483,
+      "detection": {
+        "audio_pos_ms": 2302560,
+        "audio_ts": 245046326628118,
+        "confidence": 1.0,
+        "emit_ts": 245046424111782,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 108974,
+      "detection": {
+        "audio_pos_ms": 2302560,
+        "audio_ts": 245047035669468,
+        "confidence": 1.0,
+        "emit_ts": 245047144643534,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 140207,
+      "detection": {
+        "audio_pos_ms": 2355680,
+        "audio_ts": 245095868063583,
+        "confidence": 1.0,
+        "emit_ts": 245096008270920,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 149079,
+      "detection": {
+        "audio_pos_ms": 2355680,
+        "audio_ts": 245098547033262,
+        "confidence": 1.0,
+        "emit_ts": 245098696112517,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 191048,
+      "detection": {
+        "audio_pos_ms": 2372960,
+        "audio_ts": 245112155599063,
+        "confidence": 1.0,
+        "emit_ts": 245112346647559,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 3994389,
+      "detection": {
+        "audio_pos_ms": 2372960,
+        "audio_ts": 245114649078727,
+        "confidence": 1.0,
+        "emit_ts": 245118643468013,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 144477,
+      "detection": {
+        "audio_pos_ms": 2383840,
+        "audio_ts": 245124338775966,
+        "confidence": 1.0,
+        "emit_ts": 245124483253646,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 156887,
+      "detection": {
+        "audio_pos_ms": 2383840,
+        "audio_ts": 245126681342493,
+        "confidence": 1.0,
+        "emit_ts": 245126838230242,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 195614,
+      "detection": {
+        "audio_pos_ms": 2425120,
+        "audio_ts": 245164980049091,
+        "confidence": 1.0,
+        "emit_ts": 245165175663312,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 185379,
+      "detection": {
+        "audio_pos_ms": 2425120,
+        "audio_ts": 245166867374518,
+        "confidence": 1.0,
+        "emit_ts": 245167052754023,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 165261,
+      "detection": {
+        "audio_pos_ms": 2436640,
+        "audio_ts": 245177157058780,
+        "confidence": 1.0,
+        "emit_ts": 245177322320544,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 165064,
+      "detection": {
+        "audio_pos_ms": 2436640,
+        "audio_ts": 245178939837795,
+        "confidence": 1.0,
+        "emit_ts": 245179104902248,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 111956,
+      "detection": {
+        "audio_pos_ms": 2471520,
+        "audio_ts": 245213725413420,
+        "confidence": 1.0,
+        "emit_ts": 245213837370093,
+        "keyword": 5,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 131295,
+      "detection": {
+        "audio_pos_ms": 2471520,
+        "audio_ts": 245215053102395,
+        "confidence": 1.0,
+        "emit_ts": 245215184397553,
+        "keyword": 5,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 87511,
+      "detection": {
+        "audio_pos_ms": 2494880,
+        "audio_ts": 245238114758471,
+        "confidence": 1.0,
+        "emit_ts": 245238202270250,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 87088,
+      "detection": {
+        "audio_pos_ms": 2494880,
+        "audio_ts": 245239147038889,
+        "confidence": 1.0,
+        "emit_ts": 245239234127556,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 134389,
+      "detection": {
+        "audio_pos_ms": 2503840,
+        "audio_ts": 245246252483338,
+        "confidence": 1.0,
+        "emit_ts": 245246386872473,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 124271,
+      "detection": {
+        "audio_pos_ms": 2503840,
+        "audio_ts": 245247185292492,
+        "confidence": 1.0,
+        "emit_ts": 245247309564382,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 137675,
+      "detection": {
+        "audio_pos_ms": 2532320,
+        "audio_ts": 245274656643856,
+        "confidence": 1.0,
+        "emit_ts": 245274794319470,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 146310,
+      "detection": {
+        "audio_pos_ms": 2532320,
+        "audio_ts": 245275304465251,
+        "confidence": 1.0,
+        "emit_ts": 245275450775852,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 94783,
+      "detection": {
+        "audio_pos_ms": 2559200,
+        "audio_ts": 245303083208747,
+        "confidence": 1.0,
+        "emit_ts": 245303177992366,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 86083,
+      "detection": {
+        "audio_pos_ms": 2559200,
+        "audio_ts": 245303438131879,
+        "confidence": 1.0,
+        "emit_ts": 245303524214880,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 114424,
+      "detection": {
+        "audio_pos_ms": 2624160,
+        "audio_ts": 245366142849929,
+        "confidence": 1.0,
+        "emit_ts": 245366257274015,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 108875,
+      "detection": {
+        "audio_pos_ms": 2624160,
+        "audio_ts": 245367698901173,
+        "confidence": 1.0,
+        "emit_ts": 245367807777019,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 103524,
+      "detection": {
+        "audio_pos_ms": 2716320,
+        "audio_ts": 245459812520419,
+        "confidence": 1.0,
+        "emit_ts": 245459916045136,
+        "keyword": 13,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 145668,
+      "detection": {
+        "audio_pos_ms": 2716320,
+        "audio_ts": 245460109988137,
+        "confidence": 1.0,
+        "emit_ts": 245460255656174,
+        "keyword": 13,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 61076,
+      "detection": {
+        "audio_pos_ms": 2723360,
+        "audio_ts": 245467939739059,
+        "confidence": 1.0,
+        "emit_ts": 245468000815773,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 99727,
+      "detection": {
+        "audio_pos_ms": 2723360,
+        "audio_ts": 245468157260849,
+        "confidence": 1.0,
+        "emit_ts": 245468256987865,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 167960,
+      "detection": {
+        "audio_pos_ms": 2745120,
+        "audio_ts": 245488209209707,
+        "confidence": 1.0,
+        "emit_ts": 245488377169966,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 183525,
+      "detection": {
+        "audio_pos_ms": 2745120,
+        "audio_ts": 245488375771308,
+        "confidence": 1.0,
+        "emit_ts": 245488559297042,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 86565,
+      "detection": {
+        "audio_pos_ms": 2788000,
+        "audio_ts": 245532382395538,
+        "confidence": 1.0,
+        "emit_ts": 245532468961242,
+        "keyword": 5,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 142608,
+      "detection": {
+        "audio_pos_ms": 2789280,
+        "audio_ts": 245532397088299,
+        "confidence": 1.0,
+        "emit_ts": 245532539696429,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 75082,
+      "detection": {
+        "audio_pos_ms": 2788000,
+        "audio_ts": 245533162680598,
+        "confidence": 1.0,
+        "emit_ts": 245533237763049,
+        "keyword": 5,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 126327,
+      "detection": {
+        "audio_pos_ms": 2789280,
+        "audio_ts": 245533179978762,
+        "confidence": 1.0,
+        "emit_ts": 245533306306294,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 296696,
+      "detection": {
+        "audio_pos_ms": 2817120,
+        "audio_ts": 245557725523198,
+        "confidence": 1.0,
+        "emit_ts": 245558022219241,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 141052,
+      "detection": {
+        "audio_pos_ms": 2817120,
+        "audio_ts": 245560536254057,
+        "confidence": 1.0,
+        "emit_ts": 245560677306119,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 73450,
+      "detection": {
+        "audio_pos_ms": 2832160,
+        "audio_ts": 245573945951091,
+        "confidence": 1.0,
+        "emit_ts": 245574019401832,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 71490,
+      "detection": {
+        "audio_pos_ms": 2832160,
+        "audio_ts": 245576574201772,
+        "confidence": 1.0,
+        "emit_ts": 245576645692163,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 98276,
+      "detection": {
+        "audio_pos_ms": 2868960,
+        "audio_ts": 245610505422082,
+        "confidence": 1.0,
+        "emit_ts": 245610603698790,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 111635,
+      "detection": {
+        "audio_pos_ms": 2868960,
+        "audio_ts": 245612733216732,
+        "confidence": 1.0,
+        "emit_ts": 245612844851923,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 198650,
+      "detection": {
+        "audio_pos_ms": 2935200,
+        "audio_ts": 245675470213459,
+        "confidence": 1.0,
+        "emit_ts": 245675668863855,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 189604,
+      "detection": {
+        "audio_pos_ms": 2935200,
+        "audio_ts": 245677032144225,
+        "confidence": 1.0,
+        "emit_ts": 245677221748682,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 183144,
+      "detection": {
+        "audio_pos_ms": 2951200,
+        "audio_ts": 245691718813146,
+        "confidence": 1.0,
+        "emit_ts": 245691901957958,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 196451,
+      "detection": {
+        "audio_pos_ms": 2951200,
+        "audio_ts": 245693102226695,
+        "confidence": 1.0,
+        "emit_ts": 245693298678690,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 116865,
+      "detection": {
+        "audio_pos_ms": 2981920,
+        "audio_ts": 245724180687026,
+        "confidence": 1.0,
+        "emit_ts": 245724297552676,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 133844,
+      "detection": {
+        "audio_pos_ms": 2981920,
+        "audio_ts": 245725226508439,
+        "confidence": 1.0,
+        "emit_ts": 245725360352671,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 4039651,
+      "detection": {
+        "audio_pos_ms": 3039840,
+        "audio_ts": 245781251304178,
+        "confidence": 1.0,
+        "emit_ts": 245785290955822,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 57065,
+      "detection": {
+        "audio_pos_ms": 3039840,
+        "audio_ts": 245785496823149,
+        "confidence": 1.0,
+        "emit_ts": 245785553888681,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 42942,
+      "detection": {
+        "audio_pos_ms": 3044320,
+        "audio_ts": 245789337780815,
+        "confidence": 1.0,
+        "emit_ts": 245789380723640,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 85659,
+      "detection": {
+        "audio_pos_ms": 3044320,
+        "audio_ts": 245789524501177,
+        "confidence": 1.0,
+        "emit_ts": 245789610161145,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 225938,
+      "detection": {
+        "audio_pos_ms": 3051680,
+        "audio_ts": 245793457073374,
+        "confidence": 1.0,
+        "emit_ts": 245793683012271,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 246019,
+      "detection": {
+        "audio_pos_ms": 3051680,
+        "audio_ts": 245793612921037,
+        "confidence": 1.0,
+        "emit_ts": 245793858940173,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 189961,
+      "detection": {
+        "audio_pos_ms": 3111840,
+        "audio_ts": 245853797944240,
+        "confidence": 1.0,
+        "emit_ts": 245853987905740,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 188859,
+      "detection": {
+        "audio_pos_ms": 3111840,
+        "audio_ts": 245854539427807,
+        "confidence": 1.0,
+        "emit_ts": 245854728286901,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 133456,
+      "detection": {
+        "audio_pos_ms": 3114400,
+        "audio_ts": 245857779722847,
+        "confidence": 1.0,
+        "emit_ts": 245857913178967,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 133271,
+      "detection": {
+        "audio_pos_ms": 3114400,
+        "audio_ts": 245858585521986,
+        "confidence": 1.0,
+        "emit_ts": 245858718793005,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 72430,
+      "detection": {
+        "audio_pos_ms": 3117280,
+        "audio_ts": 245861781064081,
+        "confidence": 1.0,
+        "emit_ts": 245861853495008,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 103008,
+      "detection": {
+        "audio_pos_ms": 3117280,
+        "audio_ts": 245862699850778,
+        "confidence": 1.0,
+        "emit_ts": 245862802859382,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 121487,
+      "detection": {
+        "audio_pos_ms": 3186400,
+        "audio_ts": 245927984260314,
+        "confidence": 1.0,
+        "emit_ts": 245928105748228,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 115515,
+      "detection": {
+        "audio_pos_ms": 3186400,
+        "audio_ts": 245930102622365,
+        "confidence": 1.0,
+        "emit_ts": 245930218137597,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 75462,
+      "detection": {
+        "audio_pos_ms": 3209760,
+        "audio_ts": 245952354010087,
+        "confidence": 1.0,
+        "emit_ts": 245952429473030,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 72299,
+      "detection": {
+        "audio_pos_ms": 3209760,
+        "audio_ts": 245954190933348,
+        "confidence": 1.0,
+        "emit_ts": 245954263233224,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 131512,
+      "detection": {
+        "audio_pos_ms": 3279200,
+        "audio_ts": 246021401116080,
+        "confidence": 1.0,
+        "emit_ts": 246021532628480,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 129764,
+      "detection": {
+        "audio_pos_ms": 3279200,
+        "audio_ts": 246022476511175,
+        "confidence": 1.0,
+        "emit_ts": 246022606275695,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 73114,
+      "detection": {
+        "audio_pos_ms": 3309920,
+        "audio_ts": 246053850372382,
+        "confidence": 1.0,
+        "emit_ts": 246053923487322,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 77366,
+      "detection": {
+        "audio_pos_ms": 3309920,
+        "audio_ts": 246054634472833,
+        "confidence": 1.0,
+        "emit_ts": 246054711838946,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 77163,
+      "detection": {
+        "audio_pos_ms": 3426400,
+        "audio_ts": 246171105432304,
+        "confidence": 1.0,
+        "emit_ts": 246171182595696,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 154051,
+      "detection": {
+        "audio_pos_ms": 3428320,
+        "audio_ts": 246171130701602,
+        "confidence": 1.0,
+        "emit_ts": 246171284752625,
+        "keyword": 10,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 59840,
+      "detection": {
+        "audio_pos_ms": 3426400,
+        "audio_ts": 246171837134748,
+        "confidence": 1.0,
+        "emit_ts": 246171896975045,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 143900,
+      "detection": {
+        "audio_pos_ms": 3428320,
+        "audio_ts": 246171859989133,
+        "confidence": 1.0,
+        "emit_ts": 246172003889310,
+        "keyword": 10,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 147581,
+      "detection": {
+        "audio_pos_ms": 3436640,
+        "audio_ts": 246179156616938,
+        "confidence": 1.0,
+        "emit_ts": 246179304198375,
+        "keyword": 5,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 169132,
+      "detection": {
+        "audio_pos_ms": 3436640,
+        "audio_ts": 246179978672886,
+        "confidence": 1.0,
+        "emit_ts": 246180147805341,
+        "keyword": 5,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 28997,
+      "detection": {
+        "audio_pos_ms": 3473760,
+        "audio_ts": 246219317627736,
+        "confidence": 1.0,
+        "emit_ts": 246219346624844,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 30207,
+      "detection": {
+        "audio_pos_ms": 3473760,
+        "audio_ts": 246220655501946,
+        "confidence": 1.0,
+        "emit_ts": 246220685709341,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 60079,
+      "detection": {
+        "audio_pos_ms": 3510560,
+        "audio_ts": 246253127433882,
+        "confidence": 1.0,
+        "emit_ts": 246253187513161,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 57595,
+      "detection": {
+        "audio_pos_ms": 3510560,
+        "audio_ts": 246255444141578,
+        "confidence": 1.0,
+        "emit_ts": 246255501737573,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 159571,
+      "detection": {
+        "audio_pos_ms": 3516960,
+        "audio_ts": 246257226839123,
+        "confidence": 1.0,
+        "emit_ts": 246257386410636,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 171182,
+      "detection": {
+        "audio_pos_ms": 3516960,
+        "audio_ts": 246259499766319,
+        "confidence": 1.0,
+        "emit_ts": 246259670949066,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 147123,
+      "detection": {
+        "audio_pos_ms": 3524960,
+        "audio_ts": 246265334387184,
+        "confidence": 1.0,
+        "emit_ts": 246265481510339,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 151833,
+      "detection": {
+        "audio_pos_ms": 3524960,
+        "audio_ts": 246267538900957,
+        "confidence": 1.0,
+        "emit_ts": 246267690734008,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 23970,
+      "detection": {
+        "audio_pos_ms": 3546080,
+        "audio_ts": 246289692387984,
+        "confidence": 1.0,
+        "emit_ts": 246289716358145,
+        "keyword": 5,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 38094,
+      "detection": {
+        "audio_pos_ms": 3546080,
+        "audio_ts": 246291615798968,
+        "confidence": 1.0,
+        "emit_ts": 246291653893376,
+        "keyword": 5,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 87401,
+      "detection": {
+        "audio_pos_ms": 3555360,
+        "audio_ts": 246297844879231,
+        "confidence": 1.0,
+        "emit_ts": 246297932280890,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 85918,
+      "detection": {
+        "audio_pos_ms": 3555360,
+        "audio_ts": 246299676692734,
+        "confidence": 1.0,
+        "emit_ts": 246299762611405,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 25507,
+      "detection": {
+        "audio_pos_ms": 3566240,
+        "audio_ts": 246310012326868,
+        "confidence": 1.0,
+        "emit_ts": 246310037834807,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 24973,
+      "detection": {
+        "audio_pos_ms": 3566240,
+        "audio_ts": 246311681017088,
+        "confidence": 1.0,
+        "emit_ts": 246311705990965,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 47920,
+      "detection": {
+        "audio_pos_ms": 3574560,
+        "audio_ts": 246318117245865,
+        "confidence": 1.0,
+        "emit_ts": 246318165166117,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 50677,
+      "detection": {
+        "audio_pos_ms": 3574560,
+        "audio_ts": 246319748175739,
+        "confidence": 1.0,
+        "emit_ts": 246319798853016,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 138333,
+      "detection": {
+        "audio_pos_ms": 3593120,
+        "audio_ts": 246334418479360,
+        "confidence": 1.0,
+        "emit_ts": 246334556813357,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 155757,
+      "detection": {
+        "audio_pos_ms": 3593120,
+        "audio_ts": 246335821349536,
+        "confidence": 1.0,
+        "emit_ts": 246335977106889,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 136698,
+      "detection": {
+        "audio_pos_ms": 3596640,
+        "audio_ts": 246338479050068,
+        "confidence": 1.0,
+        "emit_ts": 246338615748126,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 128122,
+      "detection": {
+        "audio_pos_ms": 3596640,
+        "audio_ts": 246339892448562,
+        "confidence": 1.0,
+        "emit_ts": 246340020571253,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 128779,
+      "detection": {
+        "audio_pos_ms": 3616800,
+        "audio_ts": 246358809070848,
+        "confidence": 1.0,
+        "emit_ts": 246358937850392,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 143524,
+      "detection": {
+        "audio_pos_ms": 3616800,
+        "audio_ts": 246359927462097,
+        "confidence": 1.0,
+        "emit_ts": 246360070986962,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 76048,
+      "detection": {
+        "audio_pos_ms": 3643360,
+        "audio_ts": 246387232640732,
+        "confidence": 1.0,
+        "emit_ts": 246387308689478,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 74803,
+      "detection": {
+        "audio_pos_ms": 3643360,
+        "audio_ts": 246388013538985,
+        "confidence": 1.0,
+        "emit_ts": 246388088342654,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 166567,
+      "detection": {
+        "audio_pos_ms": 3653920,
+        "audio_ts": 246395396704793,
+        "confidence": 1.0,
+        "emit_ts": 246395563271975,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 179615,
+      "detection": {
+        "audio_pos_ms": 3653920,
+        "audio_ts": 246396069552285,
+        "confidence": 1.0,
+        "emit_ts": 246396249167578,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 84763,
+      "detection": {
+        "audio_pos_ms": 3671840,
+        "audio_ts": 246415691052807,
+        "confidence": 1.0,
+        "emit_ts": 246415775816791,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 106090,
+      "detection": {
+        "audio_pos_ms": 3671840,
+        "audio_ts": 246416131957270,
+        "confidence": 1.0,
+        "emit_ts": 246416238048090,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 95027,
+      "detection": {
+        "audio_pos_ms": 3699040,
+        "audio_ts": 246444147217180,
+        "confidence": 1.0,
+        "emit_ts": 246444242244430,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 88713,
+      "detection": {
+        "audio_pos_ms": 3699040,
+        "audio_ts": 246444305284485,
+        "confidence": 1.0,
+        "emit_ts": 246444393997931,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 163370,
+      "detection": {
+        "audio_pos_ms": 3730080,
+        "audio_ts": 246472407631762,
+        "confidence": 1.0,
+        "emit_ts": 246472571002056,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 170867,
+      "detection": {
+        "audio_pos_ms": 3730080,
+        "audio_ts": 246472783975721,
+        "confidence": 1.0,
+        "emit_ts": 246472954843296,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 189337,
+      "detection": {
+        "audio_pos_ms": 3742560,
+        "audio_ts": 246484497232443,
+        "confidence": 1.0,
+        "emit_ts": 246484686570129,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 206602,
+      "detection": {
+        "audio_pos_ms": 3742560,
+        "audio_ts": 246484982188736,
+        "confidence": 1.0,
+        "emit_ts": 246485188790937,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 189133,
+      "detection": {
+        "audio_pos_ms": 3790880,
+        "audio_ts": 246529768727474,
+        "confidence": 1.0,
+        "emit_ts": 246529957860618,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 202095,
+      "detection": {
+        "audio_pos_ms": 3790880,
+        "audio_ts": 246532672008579,
+        "confidence": 1.0,
+        "emit_ts": 246532874104345,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 56373,
+      "detection": {
+        "audio_pos_ms": 3804000,
+        "audio_ts": 246546029165965,
+        "confidence": 1.0,
+        "emit_ts": 246546085539944,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 73326,
+      "detection": {
+        "audio_pos_ms": 3804000,
+        "audio_ts": 246548699391616,
+        "confidence": 1.0,
+        "emit_ts": 246548772718387,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 118420,
+      "detection": {
+        "audio_pos_ms": 3817120,
+        "audio_ts": 246558223204067,
+        "confidence": 1.0,
+        "emit_ts": 246558341624095,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 110042,
+      "detection": {
+        "audio_pos_ms": 3817120,
+        "audio_ts": 246560811055847,
+        "confidence": 1.0,
+        "emit_ts": 246560921098839,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 172513,
+      "detection": {
+        "audio_pos_ms": 3899040,
+        "audio_ts": 246639494972660,
+        "confidence": 1.0,
+        "emit_ts": 246639667486584,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 189219,
+      "detection": {
+        "audio_pos_ms": 3899040,
+        "audio_ts": 246641112452810,
+        "confidence": 1.0,
+        "emit_ts": 246641301672206,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 129160,
+      "detection": {
+        "audio_pos_ms": 3930080,
+        "audio_ts": 246672149854647,
+        "confidence": 1.0,
+        "emit_ts": 246672279015424,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 128443,
+      "detection": {
+        "audio_pos_ms": 3930080,
+        "audio_ts": 246673242524186,
+        "confidence": 1.0,
+        "emit_ts": 246673370967999,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 95619,
+      "detection": {
+        "audio_pos_ms": 3933280,
+        "audio_ts": 246676204046270,
+        "confidence": 1.0,
+        "emit_ts": 246676299666123,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 91986,
+      "detection": {
+        "audio_pos_ms": 3933280,
+        "audio_ts": 246677253427992,
+        "confidence": 1.0,
+        "emit_ts": 246677345414645,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 88680,
+      "detection": {
+        "audio_pos_ms": 3945120,
+        "audio_ts": 246688375241327,
+        "confidence": 1.0,
+        "emit_ts": 246688463921362,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 93609,
+      "detection": {
+        "audio_pos_ms": 3945120,
+        "audio_ts": 246689318606429,
+        "confidence": 1.0,
+        "emit_ts": 246689412215891,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 171199,
+      "detection": {
+        "audio_pos_ms": 3979040,
+        "audio_ts": 246720907572353,
+        "confidence": 1.0,
+        "emit_ts": 246721078772030,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 177006,
+      "detection": {
+        "audio_pos_ms": 3979040,
+        "audio_ts": 246721454229655,
+        "confidence": 1.0,
+        "emit_ts": 246721631235753,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 4042555,
+      "detection": {
+        "audio_pos_ms": 3983840,
+        "audio_ts": 246724986741093,
+        "confidence": 1.0,
+        "emit_ts": 246729029296783,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 30405,
+      "detection": {
+        "audio_pos_ms": 3983840,
+        "audio_ts": 246729475556365,
+        "confidence": 1.0,
+        "emit_ts": 246729505961801,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 90076,
+      "detection": {
+        "audio_pos_ms": 4053600,
+        "audio_ts": 246797763727105,
+        "confidence": 1.0,
+        "emit_ts": 246797853803758,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 85031,
+      "detection": {
+        "audio_pos_ms": 4053600,
+        "audio_ts": 246798257914640,
+        "confidence": 1.0,
+        "emit_ts": 246798342946115,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 25203,
+      "detection": {
+        "audio_pos_ms": 4092320,
+        "audio_ts": 246838046202518,
+        "confidence": 1.0,
+        "emit_ts": 246838071406446,
+        "keyword": 0,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 4043536,
+      "detection": {
+        "audio_pos_ms": 4092320,
+        "audio_ts": 246834857257429,
+        "confidence": 1.0,
+        "emit_ts": 246838900793474,
+        "keyword": 0,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 88808,
+      "detection": {
+        "audio_pos_ms": 4117600,
+        "audio_ts": 246862028452381,
+        "confidence": 1.0,
+        "emit_ts": 246862117260817,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 71738,
+      "detection": {
+        "audio_pos_ms": 4117600,
+        "audio_ts": 246863310059824,
+        "confidence": 1.0,
+        "emit_ts": 246863381798276,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 152747,
+      "detection": {
+        "audio_pos_ms": 4147680,
+        "audio_ts": 246887798140085,
+        "confidence": 1.0,
+        "emit_ts": 246887950888040,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 173107,
+      "detection": {
+        "audio_pos_ms": 4147680,
+        "audio_ts": 246890197070701,
+        "confidence": 1.0,
+        "emit_ts": 246890370178678,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 59196,
+      "detection": {
+        "audio_pos_ms": 4153440,
+        "audio_ts": 246895863373995,
+        "confidence": 1.0,
+        "emit_ts": 246895922570819,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 70193,
+      "detection": {
+        "audio_pos_ms": 4153440,
+        "audio_ts": 246898181731800,
+        "confidence": 1.0,
+        "emit_ts": 246898251925414,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 60851,
+      "detection": {
+        "audio_pos_ms": 4193440,
+        "audio_ts": 246936482649671,
+        "confidence": 1.0,
+        "emit_ts": 246936543501484,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 167646,
+      "detection": {
+        "audio_pos_ms": 4196000,
+        "audio_ts": 246936512938776,
+        "confidence": 1.0,
+        "emit_ts": 246936680585254,
+        "keyword": 10,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 52717,
+      "detection": {
+        "audio_pos_ms": 4193440,
+        "audio_ts": 246938368347978,
+        "confidence": 1.0,
+        "emit_ts": 246938421065617,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 160267,
+      "detection": {
+        "audio_pos_ms": 4196000,
+        "audio_ts": 246938398513414,
+        "confidence": 1.0,
+        "emit_ts": 246938558781350,
+        "keyword": 10,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 103951,
+      "detection": {
+        "audio_pos_ms": 4202400,
+        "audio_ts": 246944627292525,
+        "confidence": 1.0,
+        "emit_ts": 246944731244004,
+        "keyword": 10,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 96528,
+      "detection": {
+        "audio_pos_ms": 4202400,
+        "audio_ts": 246946399044230,
+        "confidence": 1.0,
+        "emit_ts": 246946495573038,
+        "keyword": 10,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 124184,
+      "detection": {
+        "audio_pos_ms": 4227360,
+        "audio_ts": 246969037199189,
+        "confidence": 1.0,
+        "emit_ts": 246969161384108,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 128856,
+      "detection": {
+        "audio_pos_ms": 4227360,
+        "audio_ts": 246970540455684,
+        "confidence": 1.0,
+        "emit_ts": 246970669312489,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 167512,
+      "detection": {
+        "audio_pos_ms": 4256800,
+        "audio_ts": 246997514000814,
+        "confidence": 1.0,
+        "emit_ts": 246997681513661,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 197307,
+      "detection": {
+        "audio_pos_ms": 4256800,
+        "audio_ts": 246998657400241,
+        "confidence": 1.0,
+        "emit_ts": 246998854707680,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 159493,
+      "detection": {
+        "audio_pos_ms": 4280160,
+        "audio_ts": 247021885980890,
+        "confidence": 1.0,
+        "emit_ts": 247022045474003,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 164138,
+      "detection": {
+        "audio_pos_ms": 4280160,
+        "audio_ts": 247022737525019,
+        "confidence": 1.0,
+        "emit_ts": 247022901663187,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 50100,
+      "detection": {
+        "audio_pos_ms": 4301600,
+        "audio_ts": 247046253980454,
+        "confidence": 1.0,
+        "emit_ts": 247046304081018,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 41109,
+      "detection": {
+        "audio_pos_ms": 4301600,
+        "audio_ts": 247046814179969,
+        "confidence": 1.0,
+        "emit_ts": 247046855289764,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 58773,
+      "detection": {
+        "audio_pos_ms": 4306080,
+        "audio_ts": 247050309698855,
+        "confidence": 1.0,
+        "emit_ts": 247050368472517,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 69757,
+      "detection": {
+        "audio_pos_ms": 4306080,
+        "audio_ts": 247050853535551,
+        "confidence": 1.0,
+        "emit_ts": 247050923293433,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 219643,
+      "detection": {
+        "audio_pos_ms": 4361120,
+        "audio_ts": 247103073385861,
+        "confidence": 1.0,
+        "emit_ts": 247103293028993,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 188012,
+      "detection": {
+        "audio_pos_ms": 4361120,
+        "audio_ts": 247103307120420,
+        "confidence": 1.0,
+        "emit_ts": 247103495132659,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    },
+    {
+      "detect_latency_us": 178226,
+      "detection": {
+        "audio_pos_ms": 4377440,
+        "audio_ts": 247119178127911,
+        "confidence": 1.0,
+        "emit_ts": 247119356354146,
+        "keyword": 9,
+        "source": 0,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "streamlink"
+    },
+    {
+      "detect_latency_us": 201981,
+      "detection": {
+        "audio_pos_ms": 4377440,
+        "audio_ts": 247119568864469,
+        "confidence": 1.0,
+        "emit_ts": 247119770846054,
+        "keyword": 9,
+        "source": 1,
+        "tier": "Confirmed"
+      },
+      "intent": null,
+      "leg": "pipe_tuned"
+    }
+  ],
+  "drops": {
+    "chunker_to_detector": 0,
+    "preproc_to_chunker": 0,
+    "source_to_preproc": 0
+  },
+  "edges": {
+    "book_age": {
+      "count": 7,
+      "max_us": 28705816,
+      "p50_us": 4034920,
+      "p90_us": 28705816,
+      "p95_us": 28705816,
+      "p99_us": 28705816
+    },
+    "capture→ack": {
+      "count": 1,
+      "max_us": 193462,
+      "p50_us": 193462,
+      "p90_us": 193462,
+      "p95_us": 193462,
+      "p99_us": 193462
+    },
+    "capture→decision": {
+      "count": 258,
+      "max_us": 4045406,
+      "p50_us": 118423,
+      "p90_us": 196476,
+      "p95_us": 209846,
+      "p99_us": 4041211
+    },
+    "capture→preproc": {
+      "count": 113958,
+      "max_us": 3039,
+      "p50_us": 29,
+      "p90_us": 110,
+      "p95_us": 145,
+      "p99_us": 613
+    },
+    "chunk→detect": {
+      "count": 113958,
+      "max_us": 369885,
+      "p50_us": 108331,
+      "p90_us": 179044,
+      "p95_us": 192937,
+      "p99_us": 263847
+    },
+    "decision→ack": {
+      "count": 1,
+      "max_us": 17858,
+      "p50_us": 17858,
+      "p90_us": 17858,
+      "p95_us": 17858,
+      "p99_us": 17858
+    },
+    "decision→exec": {
+      "count": 7,
+      "max_us": 98,
+      "p50_us": 55,
+      "p90_us": 98,
+      "p95_us": 98,
+      "p99_us": 98
+    },
+    "detect→decision": {
+      "count": 258,
+      "max_us": 49,
+      "p50_us": 1,
+      "p90_us": 1,
+      "p95_us": 1,
+      "p99_us": 1
+    },
+    "exec→send": {
+      "count": 1,
+      "max_us": 69,
+      "p50_us": 69,
+      "p90_us": 69,
+      "p95_us": 69,
+      "p99_us": 69
+    },
+    "handoff→exec": {
+      "count": 7,
+      "max_us": 98,
+      "p50_us": 55,
+      "p90_us": 98,
+      "p95_us": 98,
+      "p99_us": 98
+    },
+    "hdrs→ack": {
+      "count": 1,
+      "max_us": 18,
+      "p50_us": 18,
+      "p90_us": 18,
+      "p95_us": 18,
+      "p99_us": 18
+    },
+    "preproc→chunk": {
+      "count": 113958,
+      "max_us": 26742882,
+      "p50_us": 637,
+      "p90_us": 1398,
+      "p95_us": 2199,
+      "p99_us": 3976200
+    },
+    "presign_age": {
+      "count": 1,
+      "max_us": 1810890,
+      "p50_us": 1810890,
+      "p90_us": 1810890,
+      "p95_us": 1810890,
+      "p99_us": 1810890
+    },
+    "ring_wake": {
+      "count": 5241,
+      "max_us": 1488,
+      "p50_us": 21,
+      "p90_us": 79,
+      "p95_us": 114,
+      "p99_us": 232
+    },
+    "send→ack": {
+      "count": 1,
+      "max_us": 17727,
+      "p50_us": 17727,
+      "p90_us": 17727,
+      "p95_us": 17727,
+      "p99_us": 17727
+    },
+    "send→hdrs": {
+      "count": 1,
+      "max_us": 17711,
+      "p50_us": 17711,
+      "p90_us": 17711,
+      "p95_us": 17711,
+      "p99_us": 17711
+    }
+  },
+  "event_id": "KXEARNINGSMENTIONINTC-26JUL23",
+  "first_capture_ts": 242752026432490,
+  "frames_in": 455828,
+  "lost_races": 2,
+  "observe_noncross": 4,
+  "orders": [
+    {
+      "ack_ts": null,
+      "audio_ts": 243610209746061,
+      "best_ask": null,
+      "book_age_ns": 15555952387,
+      "client_order_id": "059036b8-ed96-456f-8925-c2ca30997074",
+      "count": 1,
+      "decision_ts": 243610320799419,
+      "dry_run": false,
+      "exec_ts": 243610320854759,
+      "hdrs_ts": null,
+      "lost_race": true,
+      "order_id": null,
+      "order_status": null,
+      "price_cents": 1,
+      "refusal": null,
+      "send_ts": null,
+      "ticker": "KXEARNINGSMENTIONINTC-26JUL23-PANT",
+      "tier": "Confirmed"
+    },
+    {
+      "ack_ts": null,
+      "audio_ts": 243738758648469,
+      "best_ask": [
+        82,
+        2800
+      ],
+      "book_age_ns": 4034700376,
+      "client_order_id": "0a86dcf2-bdf7-4fb9-82d7-8c2084b8b82f",
+      "count": 1,
+      "decision_ts": 243738871148535,
+      "dry_run": false,
+      "exec_ts": 243738871200385,
+      "hdrs_ts": null,
+      "lost_race": true,
+      "order_id": null,
+      "order_status": null,
+      "price_cents": 1,
+      "refusal": null,
+      "send_ts": null,
+      "ticker": "KXEARNINGSMENTIONINTC-26JUL23-SECU",
+      "tier": "Confirmed"
+    },
+    {
+      "ack_ts": null,
+      "audio_ts": 243830345452903,
+      "best_ask": null,
+      "book_age_ns": 28699754466,
+      "client_order_id": "69384e87-6053-4601-8843-c69278b333d3",
+      "count": 1,
+      "decision_ts": 243830470479687,
+      "dry_run": false,
+      "exec_ts": 243830470535317,
+      "hdrs_ts": null,
+      "lost_race": true,
+      "order_id": null,
+      "order_status": null,
+      "price_cents": 1,
+      "refusal": null,
+      "send_ts": null,
+      "ticker": "KXEARNINGSMENTIONINTC-26JUL23-FOUN",
+      "tier": "Confirmed"
+    },
+    {
+      "ack_ts": null,
+      "audio_ts": 243879009490137,
+      "best_ask": [
+        19,
+        37000
+      ],
+      "book_age_ns": 5339153234,
+      "client_order_id": "031b2efb-1011-4fae-87c1-b7d11a99a70b",
+      "count": 1,
+      "decision_ts": 243879073467287,
+      "dry_run": false,
+      "exec_ts": 243879073565537,
+      "hdrs_ts": null,
+      "lost_race": true,
+      "order_id": null,
+      "order_status": null,
+      "price_cents": 11,
+      "refusal": null,
+      "send_ts": null,
+      "ticker": "KXEARNINGSMENTIONINTC-26JUL23-TRUM",
+      "tier": "Confirmed"
+    },
+    {
+      "ack_ts": null,
+      "audio_ts": 244184643044105,
+      "best_ask": [
+        34,
+        20000
+      ],
+      "book_age_ns": 1187597,
+      "client_order_id": "4c34f88b-28fb-4301-8a6c-c13966de2957",
+      "count": 1,
+      "decision_ts": 244184743768366,
+      "dry_run": false,
+      "exec_ts": 244184743816536,
+      "hdrs_ts": null,
+      "lost_race": true,
+      "order_id": null,
+      "order_status": null,
+      "price_cents": 27,
+      "refusal": null,
+      "send_ts": null,
+      "ticker": "KXEARNINGSMENTIONINTC-26JUL23-CLI",
+      "tier": "Confirmed"
+    },
+    {
+      "ack_ts": null,
+      "audio_ts": 244650608689238,
+      "best_ask": [
+        49,
+        10000
+      ],
+      "book_age_ns": 73791874,
+      "client_order_id": "8d9917b1-bb2e-40bf-8b97-c255f2e5dde0",
+      "count": 1,
+      "decision_ts": 244650682986414,
+      "dry_run": false,
+      "exec_ts": 244650683034955,
+      "hdrs_ts": null,
+      "lost_race": true,
+      "order_id": null,
+      "order_status": null,
+      "price_cents": 1,
+      "refusal": null,
+      "send_ts": null,
+      "ticker": "KXEARNINGSMENTIONINTC-26JUL23-ULTR",
+      "tier": "Confirmed"
+    },
+    {
+      "ack_ts": 244831587650776,
+      "audio_ts": 244831394248378,
+      "best_ask": [
+        26,
+        4300
+      ],
+      "book_age_ns": 768765237,
+      "client_order_id": "25b78553-2f91-4f7b-8456-85248d1f3c74",
+      "count": 1,
+      "decision_ts": 244831569793698,
+      "dry_run": false,
+      "exec_ts": 244831569860169,
+      "hdrs_ts": 244831587632286,
+      "lost_race": false,
+      "order_id": "07af474a-1158-4fd4-a5cf-61627b404e43",
+      "order_status": "filled",
+      "price_cents": 28,
+      "refusal": null,
+      "send_ts": 244831569930059,
+      "ticker": "KXEARNINGSMENTIONINTC-26JUL23-APPL",
+      "tier": "Confirmed"
+    }
+  ],
+  "per_leg": [
+    {
+      "chunks_in": 56979,
+      "detections": 129,
+      "died": null,
+      "drops": {
+        "chunker_to_detector": 0,
+        "preproc_to_chunker": 0,
+        "source_to_preproc": 0
+      },
+      "frames_in": 227914,
+      "label": "streamlink"
+    },
+    {
+      "chunks_in": 56979,
+      "detections": 129,
+      "died": null,
+      "drops": {
+        "chunker_to_detector": 0,
+        "preproc_to_chunker": 0,
+        "source_to_preproc": 0
+      },
+      "frames_in": 227914,
+      "label": "pipe_tuned"
+    }
+  ]
+}

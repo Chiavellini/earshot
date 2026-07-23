@@ -196,9 +196,16 @@ one falsifiable outcome with one evidence destination.
       COMPRESSES at short-window venues and the leg order REVERSES**;
       (e) Δrace GOLD −0.6 s / MORF −1.0 s / EURO −2.8 s (mean −1.5 s vs
       −8.7 s baseline: ~7 s recovered, sign NOT yet flipped; residual is
-      decode+vantage-sized). NASA/PERU/IRAN ambiguous; ORIO/VENT candidate
-      misses → Phase-4 fodder. G4 FOMC 07-29 bar unchanged (steady-state
-      ≥ 0 s): now hinges on US vantage + decode, not fetch flags.
+      decode+vantage-sized). LMT settlements: NASA YES (our true flag beat
+      the market by 52 min — market-missed-word channel VALIDATED), PERU +
+      IRAN NO (our false fires; precision 4/6). **INTC same-day: FIRST LIVE
+      FILL (Q-FILL) from the us-east box arm** — APPL 1×26¢ filled in 9.9 ms
+      decision→print; no-pump guard refused 2 repriced words; envelope held
+      (28¢ of $1). CLI Δrace −1.0 s FROM US-EAST ⇒ vantage alone doesn't
+      flip the sign — **decode is the remaining race lever**. INTC recall:
+      4 swept words missed (ARIZ/DESK/GOVE/MOBI) + APPL false fire ⇒
+      **detector quality (P1/P2/G2b + corpus) is now the top priority for
+      G4**. FOMC bar unchanged.
 
 - [ ] **W2.** Manifest-probe every event venue (cadence, LL-HLS tags, PDT
       absolute lag) and grow a per-venue table (venue/platform → cadence,

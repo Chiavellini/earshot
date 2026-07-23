@@ -760,3 +760,23 @@ probe under the $1 ledger → FIX-vs-REST send→ack A/B from the same box.
    captured 2026-07-15 (MS live run): `send→hdrs` 102 ms on the armed
    pipeline's kept-warm connection — ~30 ms under cold, consistent with the
    handshake share saved (see Q-MSPM).**
+
+## Q-FILL — First detection-triggered mention FILL (2026-07-23, INTC live)
+
+- **Pinned (2026-07-23, live evidence):** the full hear-keyword → cross-ask →
+  FILL loop executed for the first time. KXEARNINGSMENTIONINTC-26JUL23-APPL:
+  Confirmed detection (streamlink leg, us-east box arm) → decision intent
+  21:20:38.999689Z → crossing IOC at cap 28¢ → **public tape prints our
+  1-contract YES taker trade at 26¢, 21:20:39.009549Z — decision→matched-trade
+  9.9 ms** including the us-east→Kalshi order leg. Order record in
+  `state/KXEARNINGSMENTIONINTC-26JUL23/report-box.json` (`order_status:
+  "filled"`); ledger debited 28¢ (worst-case notional at send; fill was 26¢).
+- Envelope held exactly: 7 orders total = 4 observe non-crossing (1¢, never
+  sent), 2 LOST_RACE refusals (TRUM ask 19¢ > cap 11¢; CLI ask 34¢ > cap 27¢ —
+  the frozen-cap "no pump" guard working), 1 sent+filled. Cumulative ledger
+  28¢ of 100¢.
+- Caveat pinned with the win: APPL last-traded 1¢ post-call (settlement
+  pending at pin time) — the fill is almost certainly a detector FALSE FIRE
+  ("apple" class). The fill MACHINERY is validated; the trade's edge is a
+  detector-precision question (Phase-4). Evidence: box `~/intc-live.log`,
+  tape `state/KXEARNINGSMENTIONINTC-26JUL23/tape-2026-07-23.json`.

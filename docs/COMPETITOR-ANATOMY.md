@@ -369,6 +369,33 @@ the call (WORL 12:33:13, CENT 12:33:00, IRAN 12:33:21, CHIC 12:34:39, WEAT 12:34
 AT 12:35:10, ATH 12:41:19, BASI 12:41:52); 7 no-sweep. WAVs banked on the box for
 offline Δw replay vs these sweep stamps (Phase-4 corpus + Δw sample expansion).
 
+#### INTC 2026-07-23 — FIRST LIVE FILL RUN (fill-all ≤50¢, $1 envelope, ARM ON US-EAST BOX)
+
+First mention-fill posture ever armed (VERIFICATIONS Q-FILL) and first arm run from
+the us-east box. 76-min run, 455,828 frames, 0 drops, both legs clean EOF, 129/129
+identical per-leg detection events. 7 intents → 4 observes (by design), 2 LOST_RACE
+(TRUM 19¢>11¢ cap, CLI 34¢>27¢ — the frozen-cap no-pump guard refusing repriced
+words), **1 SENT + FILLED: APPL 1×YES @26¢, decision→matched-print 9.9 ms** — the
+order path at colo-class speed under live fire.
+
+**Race + recall scoring (tape):** CLI Δrace **−1.0 s from us-east** — vantage alone
+did not flip the sign; the residual second is decode-shaped (consistent with the
+morning's diagnosis). SECU/ULTR pre-priced ≥80¢/repriced before flag (no real race;
+ULTR's first utterance ~21:09 was MISSED, flagged only on a ~21:17 repeat).
+**Recall misses (swept, never flagged): ARIZ (arizona), DESK (desktop), GOVE
+(government), MOBI (mobileye)** — 4 clean misses, worse than LMT's 2. **APPL never
+swept and last-traded 1¢ → our fill is almost certainly a FALSE FIRE (−26¢ realized
+if NO settles).** Combined day-verdict: fill machinery + envelope + no-pump guard
+all validated exactly; detector recall AND precision are now indisputably the
+binding constraint on making money (Phase-4).
+
+Ops: INTC box capture recorded 0 frames — the probesize fix had been applied to the
+LMT/AAL capture configs but not INTC's (staged pre-fix). Fixed in the TEMPLATE
+(webcast-gev-capture.toml + fanout-arm template) so all future staging inherits it.
+Audio for the 4 recall misses is recoverable from the Notified replay (through
+08-06) for the Phase-4 corpus. Also: ssh-piped Monitor tails buffer without a tty —
+use `ssh -tt` (cost: one silent hour mid-call).
+
 ## Open verification items
 
 1. Transcript check on OIL/MIDD (false-alarm confirmation) — needs the MS capture/transcript.
