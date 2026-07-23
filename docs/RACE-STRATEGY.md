@@ -199,6 +199,14 @@ fanout keeps N), `configs/webcast-fanout-arm.toml` (streamlink edge-join +
 tuned ffmpeg), `launch-webcast.sh --wait-live` (live gate outside the arm).
 Live verdicts pending per RACE-CHECKLIST W1 gates (G3 Thu/Fri mixed-leg,
 G4 FOMC 07-29 vs the −8.7 s baseline).
+**G3 MEASURED (LMT 07-23, first fanout race, autonomous):** Δrace GOLD −0.6 s /
+MORF −1.0 s / EURO −2.8 s (mean −1.5 s) — ~7 s recovered vs the −8.7 s baseline,
+sign not yet flipped. Root cause named: **short-manifest-window venues (Notified/
+CloudFront, 40 s window) compress the fetch ladder to −1.2 s and reverse the leg
+order (tuned beats streamlink)** — replicated same-morning on AAL. The remaining
+gap is decode-lag + vantage sized, so G4's levers are the US-vantage arm and
+detector decode, not fetch flags. Full tables: COMPETITOR-ANATOMY §Per-tape LMT/AAL
+07-23.
 Full tables: COMPETITOR-ANATOMY §Per-tape TSLA/GOOGL 2026-07-22.
 First subjects: the Wed 07-22 events (GOOGL attended; TSLA per the same-floor
 W0 plan); DPZ's virtual race (X2) is retroactive sample #1.
