@@ -11,6 +11,7 @@ use earshot::kalshi::auth::{Presigner, Signer};
 use earshot::kalshi::book::{Book, BookCache};
 use earshot::kalshi::executor::{prestage_orders, run_executor, ExecCtx};
 use earshot::kalshi::rest::RestClient;
+use earshot::kalshi::transport::{OrderTransport, StageWire};
 use earshot::risk::{RiskConfig, RiskGate};
 use earshot::types::{DecisionIntent, KeywordId, Tier};
 use rsa::pkcs1::EncodeRsaPrivateKey;
@@ -51,6 +52,7 @@ fn intent_for(kw: u16, price: u8, tranche: u32, tier: Tier) -> DecisionIntent {
     let now = MonotonicNs::now();
     DecisionIntent {
         keyword: KeywordId(kw),
+        source: earshot::types::SourceId(0),
         market_ticker: TICKER.into(),
         max_price_cents: price,
         tranche_contracts: tranche,
@@ -95,11 +97,11 @@ async fn rig_kws(server: &MockServer, kws: Vec<KeywordConfig>, dry_run: bool, ti
     let haircuts: HashMap<u16, u32> = (0..kws.len() as u16).map(|i| (i, 0u32)).collect();
     Rig {
         ctx: Arc::new(ExecCtx {
+            transport: OrderTransport::Rest { client: rest.clone(), presigner },
             rest,
-            presigner,
             cache,
             gate: Arc::new(gate),
-            prestaged: prestage_orders("EV", &kws),
+            prestaged: prestage_orders("EV", &kws, StageWire::Rest),
             haircuts,
             dry_run,
             registry: earshot::kalshi::OrderRegistry::default(),

@@ -131,6 +131,11 @@ pub struct DetectionRecord {
     /// emit_ts − audio_ts: detection latency relative to the capture of the
     /// chunk's first frame (dominated by chunk accumulation, by design).
     pub detect_latency_us: u64,
+    /// Label of the audio leg that heard this (fanout mode). Empty (and
+    /// omitted from JSON) in single-source mode, keeping those reports
+    /// unchanged.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub leg: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -146,6 +151,21 @@ impl DropCounters {
     }
 }
 
+/// Per-leg rollup for fanout mode: one entry per audio leg, so a dead or
+/// lagging leg is visible in the report even when the other leg won every
+/// race.
+#[derive(Debug, Clone, Serialize)]
+pub struct LegSummary {
+    pub label: String,
+    pub frames_in: u64,
+    pub chunks_in: u64,
+    pub detections: u64,
+    pub drops: DropCounters,
+    /// `Some(reason)` when this leg's source ended with an error (leg-local
+    /// failure policy: siblings keep running).
+    pub died: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct PipelineReport {
     pub event_id: String,
@@ -159,6 +179,10 @@ pub struct PipelineReport {
     pub edges: BTreeMap<String, EdgeStats>,
     pub detections: Vec<DetectionRecord>,
     pub drops: DropCounters,
+    /// Fanout mode only (`None` in single-source mode, omitted from JSON so
+    /// existing reports keep their exact shape).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub per_leg: Option<Vec<LegSummary>>,
 }
 
 impl PipelineReport {
@@ -178,6 +202,20 @@ impl PipelineReport {
             self.detections.len(),
             self.drops.total(),
         ));
+        if let Some(legs) = &self.per_leg {
+            for l in legs {
+                out.push_str(&format!(
+                    "leg {:<14} frames {:>8}  chunks {:>6}  detections {:>3}  drops {:>4}{}\n",
+                    l.label,
+                    l.frames_in,
+                    l.chunks_in,
+                    l.detections,
+                    l.drops.total(),
+                    l.died.as_deref().map(|d| format!("  DIED: {d}")).unwrap_or_default(),
+                ));
+            }
+            out.push('\n');
+        }
         out.push_str(&format!(
             "{:<18} {:>8} {:>10} {:>10} {:>10} {:>10} {:>10}\n",
             "edge (µs)", "count", "p50", "p90", "p95", "p99", "max"

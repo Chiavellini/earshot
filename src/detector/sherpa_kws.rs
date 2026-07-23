@@ -205,6 +205,7 @@ impl Detector for SherpaKwsDetector {
                 audio_ts: chunk.first_capture_ts,
                 emit_ts: MonotonicNs::now(),
                 audio_pos_ms: pos_ms,
+                source: chunk.source,
             });
         }
         out

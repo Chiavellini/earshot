@@ -50,6 +50,10 @@ pub struct Detection {
     pub tier: Tier,
     pub audio_ts: MonotonicNs,    // capture_ts of triggering audio
     pub emit_ts: MonotonicNs,
+    /// Which audio leg heard this. Detectors are leg-ignorant and emit
+    /// `SourceId(0)`; the detect stage overwrites it from the chunk before
+    /// the decision, so fanout-mode reports attribute every hit to a leg.
+    pub source: SourceId,
     /// Position of the triggering audio on the stream timeline (ms since the
     /// stream's first sample). Wall-clock-free, so bench scoring works in
     /// lossless speed=0 replays where MonotonicNs gaps are meaningless.
@@ -60,6 +64,9 @@ pub struct Detection {
 #[derive(Debug, Clone, Serialize)]
 pub struct DecisionIntent {
     pub keyword: KeywordId,
+    /// Leg that won the race to the one-shot machine (copied from the
+    /// triggering `Detection.source`).
+    pub source: SourceId,
     pub market_ticker: String,
     pub max_price_cents: u8,
     pub tranche_contracts: u32,

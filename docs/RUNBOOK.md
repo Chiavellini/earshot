@@ -165,20 +165,28 @@ i-04c50d76572aa092e`), note the new IP, `ssh ubuntu@<ip>` sanity: `ls
 ~/run-dpz-capture.sh ~/ear/configs/webcast-dpz-capture.toml`. Also the
 LAST phone check: the events page via the user's US-VPN browser — a number
 → abort pivot, run the drilled phone path (preflight etc.).
-⚠ The 07-17 tuned-leg change REQUIRES a Sunday rebuild + re-smoke on the box
-(the pre-change binary rejects the new `label` config field at parse):
+⚠ The 07-17 tuned/streamlink-leg changes REQUIRE a Sunday rebuild + re-smoke
+on the box (the pre-change binary rejects the new `label` config field at
+parse):
 1. `cd ~/ear && git fetch && git checkout webcast-lane && git pull &&
    cargo build --release`
-2. `ffmpeg -h demuxer=hls | grep -E 'live_start_index|http_persistent'` —
+2. Install streamlink (leg 4): `pipx install streamlink` (or
+   `apt install streamlink`); `streamlink --version` (flags pinned on 8.4.0).
+3. `ffmpeg -h demuxer=hls | grep -E 'live_start_index|http_persistent'` —
    confirm the pinned defaults (config comment) on the box's ffmpeg version.
-3. Re-smoke the THREE-leg config against a real **https** HLS stream (the
-   Sky News manifest from W1-pre; the tuned leg's -reconnect flags are
-   http(s)-only and exit 8 on file inputs): `echo "<m3u8>" >
-   ~/dpz-stream.url`, sed a COPY of the config, `capture-bakeoff --secs 90
-   --record-dir ~/dpz-smoke` → expect 3 distinct WAVs, `pipe → pipe_tuned`
-   delta ≈ −(2 × segment cadence) at peak > 0.5, plus a
-   `scripts/manifest-probe.sh` run.
-4. `free -h` — three in-RAM legs ≈ 650 MB for 110 min.
+4. Re-smoke the FOUR-leg config against a real **https** HLS stream (a
+   direct non-YouTube manifest — YouTube bot-walls the box, W1-pre; the
+   tuned leg's -reconnect flags are http(s)-only and exit 8 on file
+   inputs): `echo "<m3u8>" > ~/dpz-stream.url`, sed a COPY of the config,
+   `capture-bakeoff --secs 90 --record-dir ~/dpz-smoke` → expect 4 distinct
+   WAVs, `pipe → pipe_tuned` ≈ −(2 × cadence) and `pipe → streamlink`
+   slightly larger, peaks > 0.5, plus a `scripts/manifest-probe.sh` run.
+   A dead leg 3/4 in the smoke → delete that TOML block, legs 1–2 are the
+   drilled baseline; do NOT ship an unsmoked leg to Monday.
+5. `free -h` — four in-RAM legs ≈ 870 MB for 110 min.
+6. While on the box (largest-gap program, Track 3): `scripts/os-tune-check.sh`,
+   `cargo test --release -- --ignored perf_` (perf baseline + chunk ladder
+   RTF — closes on-box gates 1–2 for the TSLA armed run).
 
 **Monday 06:10–06:25 CDMX (8:10–8:25 ET):**
 1. User opens ir.dominos.com → events → Q2 webcast player (US VPN, Chrome).
@@ -193,9 +201,10 @@ LAST phone check: the events page via the user's US-VPN browser — a number
    carries EXT-X-PROGRAM-DATE-TIME, the ABSOLUTE manifest-edge lag. Re-run
    once mid-call. This output also decides the streamlink/LL-HLS follow-on.
 5. `~/run-dpz-capture.sh` (refuses if the URL/placeholder steps were missed).
-   110-min capture → `~/dpz-capture/{pipe,hls,pipe_tuned}.wav + .jsonl +
-   report.json`. Leg 3 is the low-latency-flags experiment — if it dies,
-   legs 1–2 are unaffected; do NOT debug it during the call.
+   110-min capture → `~/dpz-capture/{pipe,hls,pipe_tuned,streamlink}.wav +
+   .jsonl + report.json`. Legs 3–4 are the low-latency experiments (tuned
+   ffmpeg / streamlink) — if either dies, legs 1–2 are unaffected; do NOT
+   debug them during the call.
 6. Watch `~/dpz-capture/run.log` for "stream started"-class output.
 
 **Post-call (CDMX):** scp the WAV; replay through the detector with the DPZ
@@ -208,6 +217,21 @@ MEASURED webcast-lag numbers into this file (replacing the retracted
 estimate at the top): the `pipe → pipe_tuned` xcorr delta (what the
 low-latency ffmpeg flags buy — expect ≈ −2 × segment cadence) and the
 manifest-probe PDT lag (absolute encoder→edge, encoder-clock-bounded).
+
+**OUTCOME 2026-07-20 (recorded that evening): THE CAPTURE NEVER RAN.**
+Box boot history (`last reboot`, checked 07-20 ~19:30 CDMX after starting
+the instance): last boot before that check was Fri 07-17 21:38 UTC — the
+box was never started Sunday evening or Monday morning; no `~/dpz-capture/`
+exists, `~/dpz-stream.url` was never written. The Sunday box session
+(rebuild + streamlink install + 4-leg smoke) also never happened — those
+steps roll forward to the Wed 07-22 events. NO webcast-lag numbers exist
+yet; the retracted estimate stays retracted; Wednesday (GEV/GOOGL/TSLA) is
+now the first measurement opportunity. The PUBLIC TAPE was still fetched
+and analyzed (tape-only — no Δw possible without our capture):
+`state/KXEARNINGSMENTIONDPZ-26JUL20/tape-2026-07-20.json`, findings in
+COMPETITOR-ANATOMY §Per-tape results (headline: fast population essentially
+ABSENT — one machine sweep all call; two YES words never swept during the
+call, repriced only ~1 h later by transcript readers).
 
 ## Same-floor W1-pre findings (2026-07-17 evening) — the YouTube access terrain
 
@@ -226,6 +250,17 @@ Three live-measured facts that shape the webcast lane's design:
 3. **Cadence probe methodology works** (runs Wednesday against TSLA's
    stream): resolve manifest → `EXT-X-TARGETDURATION`/`EXTINF`. Sky News
    reference: 5 s segments.
+4. **Acquisition ladder MEASURED (2026-07-17 evening, CDMX vantage,
+   Sky News live via streamlink-resolved manifest, 150 s,
+   `configs/webcast-ladder-bakeoff.toml`):** default ffmpeg → tuned ffmpeg
+   = **−10.6 s** (xcorr peak 0.98; the predicted ~2 × 5 s-segment
+   `live_start_index` win, now empirical); tuned → streamlink = a further
+   **−1.1 s** (peak 1.00) with the best stall profile (42 stalls vs 61/66).
+   Manifest-probe on the same stream: 5 s segments, NO LL-HLS tags,
+   PDT edge lag ~36 s. Implications: (a) the tuned flag set is validated
+   pre-DPZ; (b) streamlink leads the ladder on standard HLS → DPZ leg 4;
+   (c) no LL-HLS on this reference — the native sub-second fetcher stays
+   gated on event venues actually serving LL-HLS (Monday's probe decides).
 
 Implications: (a) W1's strategy race needs the operator's YouTube cookies on
 the VPS (ordinary yt-dlp practice, ToS-gray — operator decision) or an owned
@@ -235,7 +270,171 @@ friendlier same-floor venue for direct low-latency fetching; (c) Wednesday's
 TSLA v0 runs from the CDMX box via yt-dlp (proven path) — proximity matters
 less for a v0 whose goal is cadence + corpus.
 
+## Week of 07-20 — mention-event slate + webcast study monitors (staged 2026-07-20 evening)
+
+Slate from the public API (`GET /events?status=open`, 45 open MENTION events,
+2026-07-20) + venue recon (issuer PRs/8-Ks/past transcripts; sources in the
+07-20 session log). Access classes: `public-dialin` / `bridge (star-11
+confirmed)` / `bridge-likely` (operator-run analyst queue in transcripts, no
+published number) / `webcast-only`.
+
+| Event | Call (ET) | Access | Study monitor |
+|---|---|---|---|
+| ALLY Tue 07-21 | 9:00 AM | **public-dialin via registration** (register-conf.media-server.com — emails dial-in + ID; register the night before) | box `~/run-ally-capture.sh` |
+| BA "26JUL21" | **⚠ MISDATED ticker: Boeing's call is Tue 07-28 10:30 AM** | webcast + analyst bridge | not this week; re-stage for 07-28 |
+| ALK Wed 07-22 | 11:30 AM (results filed Tue after close!) | bridge-likely | box `~/run-alk-capture.sh` |
+| GEV Wed 07-22 | 7:30 AM | bridge-likely (operator queue) + phone autorun staged | box `~/run-gev-capture.sh` |
+| GOOGL Wed 07-22 | 4:30 PM | webcast-only, **YouTube URL live: youtube.com/watch?v=LzExSq9DU9w** | box `~/run-googl-capture.sh` if a non-YouTube m3u8 surfaces; else laptop yt-dlp (googlevideo manifests are requester-IP-locked; box is bot-walled) |
+| TSLA Wed 07-22 | **5:30 PM (8-K confirmed)** | webcast-only (IR player) | laptop `configs/webcast-tsla-capture.toml` (yt-dlp legs) + observe arm `configs/webcast-tsla.toml` |
+| AAL Thu 07-23 | 8:30 AM | **bridge (star-11 confirmed, Q1 transcript)** | box `~/run-aal-capture.sh` |
+| INTC Thu 07-23 | 5:00 PM | **bridge (star-11 confirmed)** | box `~/run-intc-capture.sh` |
+| AXP Fri 07-24 | 8:30 AM | bridge-likely | box `~/run-axp-capture.sh` |
+| VZ Fri 07-24 | 8:30 AM | bridge-likely | box `~/run-vz-capture.sh` |
+
+Same-floor broadcast class this week: House Financial Services FinCEN
+hearing Tue 10:00 AM (committee stream); Navy-commission "Maritime
+Seapower" hearing Wed 10:00 AM (stream link unverified); the "AI Workforce"
+Fri hearing was NOT verifiable on 07-20. **FOMC: Warsh presser is Wed 07-29
+2:30 PM (next week) — the crown same-floor target.**
+
+**Capture outcomes (per-event, running log):**
+- **ALLY Tue 07-21 — NO CAPTURE.** The m3u8 was never surfaced / the box was
+  never driven, so `~/ally-capture/` was never created — no xcorr/manifest/lag
+  numbers. Tape-only analysis stands (COMPETITOR-ANATOMY §Per-tape ALLY:
+  CONTESTED — machine sweeps on all 5 YES words; supports the phone-access-not-
+  cap contestedness hypothesis). Lesson for Wed: the capture only happens if
+  someone runs `~/run-<ev>-capture.sh` after surfacing the URL — the alarms
+  cue it but do not execute it.
+- **GEV Wed 07-22 — NO CAPTURE** (`~/gev-capture/` never created; the prep
+  cues queued while the session sat idle overnight — nobody surfaced the
+  m3u8). The 07-17 autorun artifacts in `state/KXEARNINGSMENTIONGEV-26JUL22/`
+  are a TEST/dry-run rehearsal, not this call. Tape-only analysis:
+  COMPETITOR-ANATOMY §Per-tape GEV — CONTESTED, but 7/8 YES words pre-priced
+  ≥83¢; the one live race (ADMI 36¢→99¢, wave-1/wave-2 2.8 s apart) was
+  machine-fast, with a wrong-way IRAN sweep 6.8 s earlier proving live
+  listening.
+- **ALK Wed 07-22 — NO CAPTURE** (same failure mode, same morning). Tape-only:
+  COMPETITOR-ANATOMY §Per-tape ALK — CONTESTED (machine sweeps in-call on
+  HEAD/AMAZ/ONE/TAIL/OIL incl. an 85 ms double-burst on ONE; markets not yet
+  settled at analysis time 18:00 UTC).
+- **⚠ Contestedness hypothesis WEAKENED at 4 samples**: GEV and ALK are both
+  bridge-likely with NO public dial-in, yet both contested — "contestedness
+  tracks phone accessibility" (2-sample read from ALLY/DPZ) does not survive.
+  Current best read: contestedness tracks event liquidity/prominence (DPZ =
+  small-cap thin; ALLY/GEV/ALK = liquid, contested). The GOOGL/TSLA Δw
+  samples remain the discriminator that matters — **those captures MUST run
+  today (GOOGL 2:30 PM, TSLA 3:30 PM CDMX) or the week produces zero Δw.**
+- **GOOGL Wed 07-22 — CAPTURED (partial: 14:38–15:33; stream self-ended).**
+  Missed 14:30–14:38: the operator (Claude) killed a healthy capture on a
+  wrong health signal — see the health-check rule above, added from this.
+  Full analysis: COMPETITOR-ANATOMY §Per-tape GOOGL.
+- **TSLA Wed 07-22 — CAPTURED (~43 min) + LIVE OBSERVE-ARM RUN — the week's
+  designed sample DELIVERED.** First measured webcast Δrace: steady-state
+  **−8.7 s mean** (−7.3/−8.5/−10.3) vs the fastest racers, from a CDMX
+  laptop with default yt-dlp join; drain-phase pairs (−135..−224 s) were
+  fetcher join-position artifact. Verdict H1/H3 co-listeners, WINNABLE.
+  Recall 8/11 live (TARI leg-dependent, SAFE/TARA true misses); precision
+  8/11 (IRAN/EURO/CHIN false fires, all settled NO). Full tables:
+  COMPETITOR-ANATOMY §Per-tape TSLA. Say-prior sample #1: FAIL
+  (docs/SAY-QA-PRIOR.md).
+  **Ops post-mortems (all hit today — every fix CODIFIED 2026-07-22 evening):**
+  1. `--wait-for-video` stalls at the pre-live→live transition (GOOGL legs
+     08:00 lost) → CODIFIED: `scripts/launch-webcast.sh --wait-live <url|file>
+     --wait-kind youtube|hls` polls `is_live` (youtube) or the manifest (hls)
+     and launches on the flip; the launcher REFUSES any config that still
+     carries `--wait-for-video` in a source cmd.
+  2. An `is_live` gate INSIDE a pipe-source cmd trips the pipeline's 30 s
+     idle guard → CODIFIED: the `--wait-live` poll runs in the launcher
+     BEFORE arm starts; armed-leg cmds carry no liveness logic.
+  3. A sandboxed arm process was hard-killed ~60 s in (no signal handler
+     ran) → CODIFIED: launch-webcast.sh runs a startup self-check (SIGTERM
+     trap installable + state dir writable, refuses otherwise); launch from
+     a plain shell/nohup only. Validation stays per the standing convention:
+     the exact production mechanism at the next event, not a lookalike drill.
+  4. Live arm and capture legs heard DIFFERENT audio (arm's own yt-dlp
+     stream missed "tariff"; the capture leg's audio contains it) →
+     CODIFIED: `[arbiter] mode = "fanout"` (`pipeline::run_pipeline_fanout`)
+     runs a full detect chain per leg, OR-ed at the shared one-shot decision
+     table; per-leg attribution in `report.per_leg` + `DetectionRecord.leg`.
+     Armed template: `configs/webcast-fanout-arm.toml` (streamlink edge-join
+     primary + tuned-ffmpeg backstop) staged via `scripts/stage-webcast-arm.sh`.
+     Tests: `tests/e2e_fanout.rs`.
+
+**Monitor staging (all validated 2026-07-20 evening, box `44.197.147.18`,
+instance i-04c50d76572aa092e, UP through Thu by operator decision):**
+- Box binary REBUILT from the current webcast-lane tree (the 07-17 binary
+  rejected the `label` field — the Sunday-rebuild trap fired exactly as the
+  DPZ prep note predicted). streamlink 8.4.0 installed (pipx) + symlinked.
+- 4-leg smoke vs DW live HLS (90 s): all legs alive; **xcorr from the
+  us-east vantage: pipe→pipe_tuned −11.65 s (peak 0.999), pipe→streamlink
+  −13.65 s (peak 1.0)** — the 07-17 CDMX ladder replicates from the box
+  (reference stream, NOT an event venue; event numbers still pending W1).
+- Per-event kits generated by `scripts/stage-webcast-capture.sh` (template =
+  `configs/webcast-gev-capture.toml`): config + `~/run-<ev>-capture.sh` with
+  the URL-file + placeholder REFUSING guards. A generated config was
+  live-validated (ALK copy, 15 s, 4/4 legs). URL files are cleaned — guards
+  armed.
+- Post-event tape pulls: `scripts/fetch-tape.sh <EVENT_TICKER>` (public
+  trades endpoint, no auth) → `state/<EVENT>/tape-<date>.json`.
+
+**Scheduled routines (armed 2026-07-20 evening):** 15 one-shot local cron
+jobs in the 07-20 Claude session — per-event prep reminders (~40 min
+pre-call) + post-event tape pulls/analysis (~2.5 h after call start), plus a
+Tue-evening staging check for Wednesday. ⚠ SESSION-BOUND: they die if that
+Claude session closes. If it does, re-arm by asking a new session to
+"recreate the week's webcast monitor cron jobs from RUNBOOK §Week of 07-20"
+— every prompt is reconstructible from this section (prep = runsheet
+reminder + box check; post = `scripts/fetch-tape.sh <EVENT>` + box
+report.json collection + tape/Δw analysis per COMPETITOR-ANATOMY §Webcast
+hypotheses). Cloud routines were considered and rejected: the branch is
+unpushed, no GitHub App on the repo, and the box SSH key is laptop-local.
+
+**⚠ Capture health-check rule (learned GOOGL 2026-07-22, cost 8 min of tape):**
+`capture-bakeoff` holds all frames IN MEMORY and writes `<label>.wav` + `report.json`
+only at END of run — an empty record-dir mid-run is NORMAL. Mid-run health =
+process-level only: the legs' ffmpeg/yt-dlp children exist and consume CPU
+(`ps -o pid,pcpu,etime,command`). Never kill/restart a capture without
+process-level evidence of death; a kill mid-run loses everything recorded so far.
+Also: `yt-dlp --wait-for-video` pre-live is unvalidated at the live transition —
+the codified home of that fix is `scripts/launch-webcast.sh --wait-live`
+(polls `is_live`, launches on True; refuses configs still carrying the flag).
+
+**Morning runsheet per event (attended; ~15 min before the call):**
+1. Open the issuer IR player in a US-VPN browser; surface the `.m3u8` from
+   network requests.
+2. `ssh ubuntu@44.197.147.18`, then:
+   `echo "<m3u8>" > ~/<ev>-stream.url`,
+   `sed -i "s|__<EV>_URL__|<m3u8>|" ~/ear/configs/webcast-<ev>-capture.toml`,
+   `~/ear/scripts/manifest-probe.sh "<m3u8>" | tee ~/<ev>-capture/manifest-probe.txt`
+   (cadence / LL-HLS gate / PDT absolute lag — re-run once mid-call),
+   `~/run-<ev>-capture.sh`, watch `~/<ev>-capture/run.log`.
+3. **Fanout arm (when armed alongside the capture):** stage once with
+   `scripts/stage-webcast-arm.sh <lc> <EVENT_TICKER> <START_ISO>`, paste the
+   `prepare` keywords, then launch from a PLAIN shell:
+   `scripts/launch-webcast.sh --config configs/webcast-<lc>-arm.toml
+   --account <env> --wait-live ~/<lc>-stream.url --wait-kind hls`
+   (the launcher waits for the live flip itself — post-mortems #1–#3).
+   Same-audio note: the arm's legs and the capture's legs share the URL file.
+   **Mixed-leg variant (bridge-class events, e.g. Thu AAL/INTC):** take the
+   `prepare`-generated Twilio arm config, add ONE webcast `[[sources]]` pipe
+   leg (tuned-ffmpeg cmd from the fanout template, distinct `label`) and
+   `[arbiter] mode = "fanout"` — the bridge leg fires first as always; the
+   webcast leg is the TARI-class recall backstop, and its late detections
+   are absorbed by the one-shot (proven in `tests/e2e_fanout.rs`). Launch
+   via the normal launch-event.sh phone flow (the webcast leg needs its URL
+   file written pre-call; a dead webcast leg is leg-local and harmless).
+4. Never debug legs 3–4 during a call — legs 1–2 are the baseline.
+5. Post-call: `scripts/fetch-tape.sh <EVENT_TICKER>`; scp report.json +
+   manifest-probe.txt; Δw analysis per COMPETITOR-ANATOMY §Webcast
+   hypotheses; numbers → this file, verdicts → §Per-tape results. Fanout
+   reports: check `per_leg` (died legs, per-leg detection counts) and
+   per-detection `leg` labels for OR'd-recall wins (words one leg caught).
+
 ## Webcast lane (branch `webcast-lane`, 2026-07-17 — MERGE ONLY AFTER DPZ)
+
+> Strategy + competitor model for this lane: `RACE-STRATEGY.md` (cross-lane
+> synthesis) and `COMPETITOR-ANATOMY.md` §Webcast hypotheses; executable task
+> list: `RACE-CHECKLIST.md` (2026-07-20).
 
 `SourceConfig::Hls`/`Pipe` are now real (`src/source/pipe.rs`: ffmpeg/yt-dlp
 subprocess → s16le PCM → AudioFrames; 6 tests incl. pipeline detection parity

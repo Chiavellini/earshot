@@ -143,9 +143,11 @@ mod tests {
                 audio_ts: MonotonicNs(0),
                 emit_ts: MonotonicNs(emit_ns),
                 audio_pos_ms: pos_ms,
+                source: crate::types::SourceId(0),
             },
             intent: None,
             detect_latency_us: 0,
+            leg: String::new(),
         }
     }
 

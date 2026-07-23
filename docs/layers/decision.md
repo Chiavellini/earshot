@@ -8,13 +8,20 @@ book reads, EV/fee math, risk checks, or anything network — those live in
 the executor.
 
 ## Entry door
-- **Type:** `&types::Detection`.
+- **Type:** `&types::Detection` (carries `source: SourceId` — which audio
+  leg heard it; detectors copy it from the chunk).
 - **Mechanism:** `DecisionTable::decide(&mut self, &Detection) ->
   Option<DecisionIntent>` (`src/decision.rs`), called inline on the `detect`
-  OS thread right after `Detector::process`.
+  OS thread right after `Detector::process`. In fanout mode
+  (`pipeline::run_pipeline_fanout`) the ONE table is shared by every leg's
+  detect thread behind an `Arc<Mutex<..>>`, locked exactly for the O(µs)
+  `decide` call — the one-shot machine is thereby the cross-leg dedupe
+  point: two legs racing the same keyword serialize on the lock and the
+  second gets `None` (`concurrent_decides_yield_exactly_one_intent` test).
 
 ## Exit door
-- **Type:** `types::DecisionIntent` — `keyword`, `market_ticker`,
+- **Type:** `types::DecisionIntent` — `keyword`, `source` (the leg that won
+  the race, copied from the triggering detection), `market_ticker`,
   `max_price_cents`, `tranche_contracts`, `tier`, `audio_ts`,
   `decision_ts: MonotonicNs` (stamped here), `handoff_ts: MonotonicNs`
   (stamped 0 here; the detect loop stamps the real value on the sent clone

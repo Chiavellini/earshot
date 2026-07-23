@@ -15,12 +15,13 @@ use earshot::kalshi::auth::{Presigner, Signer};
 use earshot::kalshi::book::{run_ws, BookCache};
 use earshot::kalshi::executor::{prestage_orders, run_executor, ExecCtx};
 use earshot::kalshi::rest::{OrderBodyV2, RestClient, ORDERS_ENDPOINT};
+use earshot::kalshi::transport::OrderTransport;
 use earshot::kalshi::validator::{
     assert_non_crossing, m2_live_gate, mention_fill_gate, mention_probe_gate, LiveMarketValidator,
 };
 use earshot::kalshi::KalshiEnv;
 use earshot::pipeline::preproc::PreprocCfg;
-use earshot::pipeline::run_pipeline;
+use earshot::pipeline::{run_pipeline, run_pipeline_fanout};
 use earshot::risk::{spawn_kill_watcher, RiskConfig, RiskGate};
 use earshot::source::pipe::PipeSource;
 use earshot::source::replay::ReplaySource;
@@ -250,11 +251,17 @@ fn run(command: Command) -> Result<(), AnyErr> {
         }
         Command::Replay { config, report, speed } => {
             let cfg = config::load(&config)?;
-            let source = build_source(&cfg, &config, speed)?;
-            let detector = detector_factory::build_detector(&cfg)?;
+            let built = build_pipeline_input(&cfg, &config, speed)?;
             let table = DecisionTable::from_keywords(&cfg.keywords);
             let preproc_cfg = PreprocCfg { resample_to_hz: cfg.pipeline.resample_to_hz };
-            let out = run_pipeline(&cfg.event.id, cfg.pipeline.chunk_ms, preproc_cfg, source, detector, table, None, cfg.perf)?;
+            let out = match built {
+                BuiltPipeline::Single { source, detector } => {
+                    run_pipeline(&cfg.event.id, cfg.pipeline.chunk_ms, preproc_cfg, source, detector, table, None, cfg.perf)?
+                }
+                BuiltPipeline::Fanout { legs } => {
+                    run_pipeline_fanout(&cfg.event.id, cfg.pipeline.chunk_ms, preproc_cfg, legs, table, None, cfg.perf)?
+                }
+            };
             print!("\n{}", out.render_table());
             out.write_json(&report)?;
             println!("\nreport written to {}", report.display());
@@ -416,13 +423,13 @@ fn run(command: Command) -> Result<(), AnyErr> {
                 return Err("capture-bakeoff needs at least 2 [[sources]] legs".into());
             }
             if let Some(jb) = jitter_buffer_ms {
-                tracing::warn!(jitter_buffer_ms = jb, "jitter-buffer sweep is a no-op until the SIP/RTP adapter lands (Twilio owns its buffer)");
+                tracing::info!(jitter_buffer_ms = jb, "jitter-buffer sweep applies to SIP/RTP legs (Twilio owns its own buffer)");
             }
             let mut legs = Vec::with_capacity(cfg.sources.len());
             let mut labels = Vec::with_capacity(cfg.sources.len());
             let twilio_auth = resolve_twilio_auth(&cfg, &config)?;
             for (i, s) in cfg.sources.iter().enumerate() {
-                legs.push(build_leg(s, &config, None, SourceId(i as u16), twilio_auth.as_ref())?);
+                legs.push(build_leg(s, &config, None, SourceId(i as u16), twilio_auth.as_ref(), jitter_buffer_ms.map(|v| v as u32))?);
                 labels.push(source_label(s));
             }
             let report = earshot::capture_bakeoff::run_capture_bakeoff(
@@ -486,18 +493,23 @@ fn build_source(
     // stream URL) so every Twilio leg is bound to THIS config's account.
     let twilio_auth = resolve_twilio_auth(cfg, config_path)?;
     if cfg.sources.len() == 1 {
-        return build_leg(&cfg.sources[0], config_path, speed_override, SourceId(0), twilio_auth.as_ref());
+        return build_leg(&cfg.sources[0], config_path, speed_override, SourceId(0), twilio_auth.as_ref(), None);
     }
     // Dual dial-in: each configured source becomes an arbiter leg. Distinct
     // SourceIds so per-leg sequence/gap logging stays attributable.
     let mut legs = Vec::with_capacity(cfg.sources.len());
     for (i, s) in cfg.sources.iter().enumerate() {
-        legs.push(build_leg(s, config_path, speed_override, SourceId(i as u16), twilio_auth.as_ref())?);
+        legs.push(build_leg(s, config_path, speed_override, SourceId(i as u16), twilio_auth.as_ref(), None)?);
     }
     let params = earshot::source::arbiter::ArbiterParams {
         mode: match cfg.arbiter.mode {
             config::ArbiterMode::Failover => earshot::source::arbiter::ArbiterMode::Failover,
             config::ArbiterMode::TakeFirst => earshot::source::arbiter::ArbiterMode::TakeFirst,
+            // Fanout never collapses to one stream; callers route through
+            // build_pipeline_input before ever reaching this point.
+            config::ArbiterMode::Fanout => {
+                return Err("fanout mode has no arbiter source — use build_pipeline_input".into())
+            }
         },
         switch: Duration::from_millis(cfg.arbiter.switch_ms),
         align: Duration::from_millis(cfg.arbiter.align_ms),
@@ -537,6 +549,7 @@ fn build_leg(
     speed_override: Option<f32>,
     source_id: SourceId,
     twilio_auth: Option<&(String, String)>,
+    jitter_buffer_ms: Option<u32>,
 ) -> Result<Box<dyn earshot::source::AudioSource>, AnyErr> {
     match src {
         SourceConfig::Replay { path, speed } => {
@@ -560,32 +573,73 @@ fn build_leg(
             }
             Ok(Box::new(src))
         }
-        SourceConfig::Sip { carrier, sip_uri, .. } => Err(format!(
-            "raw SIP adapter is gated behind the ingress bake-off (carrier={carrier:?}, \
-             sip_uri={sip_uri:?}) — see docs/INGRESS-BAKEOFF.md; use twilio_stream until a \
-             winner is chosen"
-        )
-        .into()),
+        SourceConfig::Sip { carrier, sip_uri, rtp_bind, .. } => {
+            // Media plane: when an RTP bind address is configured, construct the
+            // RTP-receive source (carrier-independent). The SIP signaling that
+            // points a carrier's media here is separate and gated on the bake-off.
+            if !rtp_bind.is_empty() {
+                let jitter = jitter_buffer_ms.unwrap_or(40); // docs/INGRESS-BAKEOFF.md start value
+                tracing::info!(rtp_bind = %rtp_bind, jitter_ms = jitter, carrier = %carrier, "sip/rtp media-plane source");
+                Ok(Box::new(earshot::source::sip::SipRtpSource::bind(rtp_bind, source_id, jitter)?))
+            } else {
+                Err(format!(
+                    "SIP signaling is gated behind the ingress bake-off (carrier={carrier:?}, \
+                     sip_uri={sip_uri:?}); set [[sources]].rtp_bind to run the media plane against \
+                     a gateway/loopback — see docs/INGRESS-BAKEOFF.md §5"
+                )
+                .into())
+            }
+        }
         // Webcast lane (adapter #4, source::pipe): ffmpeg/subprocess decodes
         // to raw PCM. Tens of seconds behind the bridge — capture/observe
         // posture; see docs/RUNBOOK.md webcast-lane notes.
         SourceConfig::Hls { url } => Ok(Box::new(PipeSource::hls(url, source_id)?)),
-        SourceConfig::Pipe { cmd, sample_rate_hz } => {
+        SourceConfig::Pipe { cmd, sample_rate_hz, .. } => {
             Ok(Box::new(PipeSource::new(cmd.clone(), *sample_rate_hz, source_id)?))
         }
     }
 }
 
-/// Provider label for the bake-off report / provider→lead table.
+/// Provider label for the bake-off report / provider→lead table / fanout legs.
 fn source_label(s: &SourceConfig) -> String {
-    match s {
-        SourceConfig::Replay { .. } => "replay".into(),
-        SourceConfig::TwilioStream { .. } => "twilio".into(),
-        SourceConfig::Sip { carrier, .. } if !carrier.is_empty() => carrier.clone(),
-        SourceConfig::Sip { .. } => "sip".into(),
-        SourceConfig::Hls { .. } => "hls".into(),
-        SourceConfig::Pipe { .. } => "pipe".into(),
+    s.label()
+}
+
+/// What the audio side of a run is made of. `Single` is the default path
+/// (arbiter for ≥2 sources); `Fanout` (arbiter.mode = "fanout") carries one
+/// full chain per source — own detector instance per leg — OR-ed at the shared
+/// decision table by `run_pipeline_fanout`.
+enum BuiltPipeline {
+    Single { source: Box<dyn earshot::source::AudioSource>, detector: Box<dyn earshot::detector::Detector> },
+    Fanout { legs: Vec<earshot::pipeline::PipelineLeg> },
+}
+
+/// Single construction point for the audio+detector side of `replay` and
+/// `arm`, so replay validates the exact production path in both modes.
+fn build_pipeline_input(
+    cfg: &config::EventConfig,
+    config_path: &Path,
+    speed_override: Option<f32>,
+) -> Result<BuiltPipeline, AnyErr> {
+    if cfg.arbiter.mode != config::ArbiterMode::Fanout {
+        return Ok(BuiltPipeline::Single {
+            source: build_source(cfg, config_path, speed_override)?,
+            detector: detector_factory::build_detector(cfg)?,
+        });
     }
+    let twilio_auth = resolve_twilio_auth(cfg, config_path)?;
+    let mut legs = Vec::with_capacity(cfg.sources.len());
+    for (i, s) in cfg.sources.iter().enumerate() {
+        legs.push(earshot::pipeline::PipelineLeg {
+            label: source_label(s),
+            source: build_leg(s, config_path, speed_override, SourceId(i as u16), twilio_auth.as_ref(), None)?,
+            // One detector instance per leg: model memory is deliberately
+            // duplicated (docs/layers/detector.md).
+            detector: detector_factory::build_detector(cfg)?,
+        });
+    }
+    tracing::info!(legs = legs.len(), "fanout: per-leg detect chains, OR at decision");
+    Ok(BuiltPipeline::Fanout { legs })
 }
 
 /// Shared bring-up tail: wrap a built signer in a REST client and run the signed
@@ -735,16 +789,46 @@ async fn arm(
     wait_for_books(&cache, &tickers, Duration::from_secs(15)).await?;
     tracing::info!("book snapshots live for all armed markets");
 
-    // Presigned order headers, refreshed every 10 s (measured ±30 s window).
-    let presigner = Presigner::new(
-        signer.clone(),
-        "POST",
-        format!("/trade-api/v2{ORDERS_ENDPOINT}"),
-    );
-    presigner.spawn_refresher(&tokio::runtime::Handle::current());
+    // Order-entry wire (config `[kalshi] transport`, default rest). The FIX
+    // arm connects + logs on NOW — fail-fast before the pipeline starts, the
+    // same posture as `wait_for_books`.
+    let transport = match cfg.kalshi.transport {
+        config::OrderWire::Rest => {
+            // Presigned order headers, refreshed every 10 s (measured ±30 s window).
+            let presigner = Presigner::new(
+                signer.clone(),
+                "POST",
+                format!("/trade-api/v2{ORDERS_ENDPOINT}"),
+            );
+            presigner.spawn_refresher(&tokio::runtime::Handle::current());
+            OrderTransport::Rest { client: rest.clone(), presigner }
+        }
+        config::OrderWire::Fix => {
+            let f = cfg.kalshi.fix.as_ref();
+            let fix_cfg = earshot::kalshi::fix::FixConfig {
+                host: f.map(|f| f.host.clone()).unwrap_or_else(|| "mm.fix.elections.kalshi.com".into()),
+                port: f.map(|f| f.port).unwrap_or(8228),
+                sender_comp_id: f
+                    .and_then(|f| f.fix_key_id.clone())
+                    .unwrap_or_else(|| signer.key_id().to_string()),
+                target_comp_id: f.map(|f| f.target_comp_id.clone()).unwrap_or_else(|| "KalshiNR".into()),
+                heartbeat_secs: f.map(|f| f.heartbeat_secs).unwrap_or(10),
+                tls: true,
+            };
+            tracing::info!(host = %fix_cfg.host, port = fix_cfg.port, "FIX order entry: connecting");
+            let fix = earshot::kalshi::fix::transport::FixTransport::connect(
+                fix_cfg,
+                signer.clone(),
+                Duration::from_secs(5),
+            )
+            .await
+            .map_err(|e| format!("FIX logon failed (refusing to arm): {e}"))?;
+            OrderTransport::Fix { fix }
+        }
+    };
 
-    // Keep the orders connection hot so the first live POST never pays a cold
-    // TLS+TCP handshake (existential when we fire on the first relevant word).
+    // Keep the REST orders connection hot: the fire path under `rest`, and
+    // the ambiguous-status/cancel path under either wire.
     let conn_warmer = rest.spawn_conn_warmer(&tokio::runtime::Handle::current());
 
     // Executor consuming the decision stage's intent channel.
@@ -756,12 +840,13 @@ async fn arm(
         .collect();
     let (intent_tx, intent_rx) = tokio::sync::mpsc::channel(64);
     let registry = earshot::kalshi::OrderRegistry::default();
+    let prestaged = prestage_orders(&cfg.event.id, &cfg.keywords, transport.stage_wire());
     let ctx = Arc::new(ExecCtx {
+        transport,
         rest: rest.clone(),
-        presigner,
         cache: cache.clone(),
         gate: gate.clone(),
-        prestaged: prestage_orders(&cfg.event.id, &cfg.keywords),
+        prestaged,
         haircuts,
         dry_run: !i_am_live,
         registry: registry.clone(),
@@ -822,8 +907,7 @@ async fn arm(
 
     // Audio pipeline runs on its own OS threads (it owns a current-thread
     // runtime for the source, so it must not run inside this runtime).
-    let source = build_source(&cfg, &config_path, speed)?;
-    let detector = detector_factory::build_detector(&cfg)?;
+    let built = build_pipeline_input(&cfg, &config_path, speed)?;
     let table = DecisionTable::from_keywords(&cfg.keywords);
     let event_id = cfg.event.id.clone();
     let chunk_ms = cfg.pipeline.chunk_ms;
@@ -841,8 +925,13 @@ async fn arm(
         Ok(Some(_)) => tracing::warn!("warm-fire id unexpectedly matched an order — ignoring"),
         Err(e) => tracing::warn!("warm-fire query failed (non-fatal): {e}"),
     }
-    let mut report = tokio::task::spawn_blocking(move || {
-        run_pipeline(&event_id, chunk_ms, preproc_cfg, source, detector, table, Some(intent_tx), perf)
+    let mut report = tokio::task::spawn_blocking(move || match built {
+        BuiltPipeline::Single { source, detector } => {
+            run_pipeline(&event_id, chunk_ms, preproc_cfg, source, detector, table, Some(intent_tx), perf)
+        }
+        BuiltPipeline::Fanout { legs } => {
+            run_pipeline_fanout(&event_id, chunk_ms, preproc_cfg, legs, table, Some(intent_tx), perf)
+        }
     })
     .await??;
 

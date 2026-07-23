@@ -332,6 +332,7 @@ impl Detector for StreamingCtcDetector {
                     audio_ts: chunk.first_capture_ts,
                     emit_ts: MonotonicNs::now(),
                     audio_pos_ms: (fidx as f32 * frame_shift_ms) as u64,
+                    source: chunk.source,
                 });
             }
         }
@@ -392,7 +393,11 @@ mod tests {
         let pcm = read_wav_i16(&dir.join("test_wavs/0.wav"));
         let frames = model.accept_pcm(&pcm).unwrap();
         assert!(!frames.is_empty(), "model produced no posterior frames");
-        assert_eq!(model.out_per_chunk(), Some(16), "expected 16 out frames/chunk for zipformer2");
+        // out/chunk is export-specific (decode_chunk_len / subsampling): 16 for
+        // the zh stand-in (640 ms quantum), 8 for ctc-small-en 2024-03-18
+        // (320 ms quantum). The invariant is that the model measured one.
+        let opc = model.out_per_chunk().expect("model never measured out frames/chunk");
+        assert!(opc > 0, "nonsensical out frames/chunk {opc}");
 
         // Greedy-decode to find a real 3-token subsequence, then confirm the CTC
         // scorer fires on it (blank = 0).

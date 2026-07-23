@@ -22,6 +22,24 @@ config.toml ──► config ─────────────────
                                                  [risk gate]
 ```
 
+**Fanout variant** (`[arbiter] mode = "fanout"`, `pipeline::run_pipeline_fanout`):
+N sources each get their OWN full chain — `source-<i>` → `preproc-<i>` →
+`chunker-<i>` → `detect-<i>`, one `Detector` instance per leg — and the flags
+are OR-ed at door 5: every leg's detect thread calls `decide()` on ONE shared
+`DecisionTable` behind an `Arc<Mutex<..>>`, so the one-shot per-keyword machine
+is the dedupe point (first leg to hear a word wins; measured motivation:
+07-22 TARI was heard on one leg and missed on another). Contrast with
+`SourceArbiter`, which collapses N legs into one stream *before* the detector.
+A leg whose source errors dies alone (`per_leg[i].died` in the report);
+siblings keep racing; all-legs-dead returns the first error. Fanout refuses a
+non-default `[perf]` section (core maps are single-chain).
+
+```
+[source-0] ─► [preproc-0] ─► [chunker-0] ─► [detector-0]┐   Arc<Mutex<
+[source-1] ─► [preproc-1] ─► [chunker-1] ─► [detector-1]┼─► DecisionTable>> ─► mpsc
+                                            (per leg)   ┘   (one-shot = dedupe)
+```
+
 Cross-cutting planes (not layers — they touch everything by design):
 **telemetry** (latency recorders + report), **config** (arm-time only,
 never consulted on the hot path), and **perf** (`src/perf.rs` + `[perf]`
@@ -49,8 +67,11 @@ extends per event). The signing/credential layer is `docs/layers/auth.md`.
 | — | telemetry | `LatencyRecorder::record(edge, ns)` — each recorder is single-owner, merged at teardown via `merge()` | `PipelineReport` (`render_table()`, `write_json()`) | owning thread | `src/telemetry.rs` |
 | — | config | per-event TOML file | `config::EventConfig` via `config::load(path)` | arm-time only | `src/config.rs` |
 
-Wiring lives in exactly two places: `pipeline::run_pipeline` (doors 1–5)
-and `main.rs::arm` (doors 6–8 + planes). Nothing else may connect layers.
+Wiring lives in exactly two places: `pipeline::run_pipeline` /
+`run_pipeline_fanout` (doors 1–5; both entry points share the same stage code
+in `src/pipeline/mod.rs`) and `main.rs::arm` (doors 6–8 + planes;
+`build_pipeline_input` picks the entry point from `arbiter.mode`). Nothing
+else may connect layers.
 
 ## Invariants (hold across every layer — breaking one is a bug even if tests pass)
 

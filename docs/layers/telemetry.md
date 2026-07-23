@@ -40,7 +40,14 @@ layer — it never sits between two stages.
   `first_capture_ts` (capture time of chunk seq 0 — anchors wall clock to
   the content timeline for the bench's paced onset→emit latency), per-edge
   `EdgeStats` (count + p50/p90/p95/p99/max in µs; zero-count edges omitted
-  by `snapshot()`), `DetectionRecord`s, `DropCounters`. `main.rs::arm`
+  by `snapshot()`), `DetectionRecord`s (each carries `leg: String` — the
+  fanout leg label; empty and JSON-omitted in single-source mode),
+  `DropCounters`, and `per_leg: Option<Vec<LegSummary>>` — fanout only
+  (`label`, `frames_in`, `chunks_in`, `detections`, per-leg `DropCounters`,
+  `died: Option<String>`); `None`/omitted in single-source mode so those
+  reports keep their exact shape. Fanout top-level numbers are folds:
+  edges via `LatencyRecorder::merge`, frame/chunk/drop sums,
+  `first_capture_ts` = min across legs. `main.rs::arm`
   extends the JSON with `orders` (OrderRecords), `lost_races` (fillable-tier
   only), and `observe_noncross` (designed 1¢ non-crossing — see
   `docs/layers/executor.md`).

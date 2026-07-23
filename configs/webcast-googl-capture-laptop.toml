@@ -1,0 +1,49 @@
+# GOOGL Q2 2026 — WEBCAST STUDY CAPTURE, LAPTOP VARIANT (Wed 2026-07-22
+# 20:30 UTC = 4:30 PM ET = 2:30 PM CDMX). Case 2 of the decision tree in
+# webcast-googl-capture.toml: Alphabet streams on YouTube only, googlevideo
+# manifests are requester-IP-locked and the box is bot-walled → capture runs
+# on the CDMX laptop via yt-dlp (pattern proven 2026-07-17; same two legs as
+# webcast-tsla-capture.toml — the HLS fetching lives INSIDE yt-dlp, so the
+# tuned leg measures only demux/buffer trims; label honestly in analysis).
+# Driven by `earshot capture-bakeoff`: no orders, no Kalshi creds.
+# Run:
+#   echo "https://www.youtube.com/watch?v=LzExSq9DU9w" > ~/googl-stream.url
+#   cargo run --release -- capture-bakeoff --config configs/webcast-googl-capture-laptop.toml \
+#     --secs 6600 --record-dir ~/googl-capture --out ~/googl-capture/report.json
+
+[event]
+id        = "KXEARNINGSMENTIONGOOGL-26JUL22-WEBCAST"
+starts_at = "2026-07-22T20:30:00Z"
+
+[pipeline]
+chunk_ms = 80
+
+[[sources]]
+kind = "pipe"
+label = "ytdlp_default"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "yt-dlp --js-runtimes node -f 'worst*[acodec!=none]' -o - \"$(cat $HOME/googl-stream.url)\" | ffmpeg -loglevel warning -i - -vn -f s16le -ac 1 -ar 16000 -",
+]
+
+[[sources]]
+kind = "pipe"
+label = "ytdlp_tuned"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "yt-dlp --js-runtimes node -f 'worst*[acodec!=none]' -o - \"$(cat $HOME/googl-stream.url)\" | ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 1000000 -analyzeduration 2000000 -i - -vn -f s16le -ac 1 -ar 16000 -",
+]
+
+[kalshi]
+series = "KXEARNINGSMENTIONGOOGL"
+env = "prod"
+
+[[keywords]]
+market_ticker   = "KXEARNINGSMENTIONGOOGL-26JUL22-CAPT"
+phrase          = "gemini"
+variants        = ["gemini"]
+max_price_cents = 1
+budget_contracts = 1
+policy          = "confirmed_only"

@@ -34,6 +34,7 @@ fn sample_intent() -> DecisionIntent {
     let now = MonotonicNs::now();
     DecisionIntent {
         keyword: KeywordId(0),
+        source: earshot::types::SourceId(0),
         // A realistic Kalshi ticker length — the clone cost tracks this String.
         market_ticker: "KXEARNINGSMENTIONMS-26JUL15-RECE".to_string(),
         max_price_cents: 97,

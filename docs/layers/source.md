@@ -56,8 +56,16 @@ of samples stamped at arrival (`clock_domain: "network"`, latency class
 `Webcast` — tens of seconds behind the bridge, unmeasured; this lane is for
 coverage/corpus/slow markets, never racing). Two config spellings:
 `SourceConfig::Hls { url }` (sugar → `ffmpeg -i <url> -f s16le -ac 1 -ar
-16000 -`) and `SourceConfig::Pipe { cmd, sample_rate_hz }` (the honest
+16000 -`) and `SourceConfig::Pipe { cmd, sample_rate_hz, label }` (the honest
 primitive — YouTube via `sh -c "yt-dlp -o - <url> | ffmpeg -i - …"`).
+`label` (optional, default `"pipe"`) names the leg in bake-off reports and
+recordings (`<label>.wav`); the bake-off harness rejects duplicate labels,
+so two same-kind legs in one config MUST set distinct labels (the 07-17
+smoke found the silent-overwrite collision). The subprocess owns all HLS
+protocol behavior — live-edge join point, probe buffering, reconnect — so
+the acquisition latency is set by the command's own flags in the config,
+not by code here (see the tuned-leg flag rationale in
+`configs/webcast-dpz-capture.toml`).
 Obligations kept here: dense `seq`; ring drop policy (send + warn);
 dead-stream guard (`idle_timeout` 30 s, no bytes → `SourceError::Protocol`
 with the decoder's stderr tail — "wall time ≠ audio"); child killed on every
@@ -82,6 +90,14 @@ Two modes:
   recover the fixed inter-leg lag, then forward whichever copy of each audio
   position lands first, deduping the later. Falls back to Failover if the legs
   don't correlate. Configured via `[arbiter]` (`mode`, `switch_ms`, `align_ms`).
+
+**NOT the arbiter: `mode = "fanout"`.** The third `[arbiter]` mode never
+constructs a `SourceArbiter` at all — each source becomes a full independent
+chain with its own detector, OR-ed at the decision table
+(`pipeline::run_pipeline_fanout`; see `docs/ARCHITECTURE.md`). Source
+adapters are untouched by fanout: every leg is still one `AudioSource`
+feeding one ring. The difference is pipeline *shape* (N chains), which is
+pipeline wiring, not a source concern.
 
 ## Exit door
 - **Type:** `types::AudioFrame` — `pcm: Arc<[i16]>` (mono), `sample_rate_hz`,
@@ -126,13 +142,26 @@ Two modes:
   `SourceConfig` variant + a `main.rs::build_leg` match arm. One source →
   the direct path; ≥ 2 sources → `main.rs::build_source` wraps them in a
   `SourceArbiter`. Nothing downstream changes.
-- **Raw SIP/RTP is gated** (Work Order deliverable #6): `SourceConfig::Sip`
-  (`number`, `sip_uri`, `carrier`, `dtmf`, `dial_at`) parses and slots into the
-  arbiter, but `build_leg` refuses to construct it until the ingress bake-off
-  names a winning carrier (`docs/INGRESS-BAKEOFF.md`). When built, the SIP
-  adapter owns its jitter buffer (sweepable, start ~40 ms — UDP/RTP is where we
-  control buffering, unlike Twilio's WS); its own `AudioFrame`/drop obligations
-  are identical to the adapters above.
+### Adapter #5: `SipRtpSource` (`src/source/sip.rs`) — the SIP/RTP media plane
+
+Raw SIP/RTP dial-in, split into the two planes it naturally has:
+- **Media plane — BUILT (2026-07-21).** `SipRtpSource::bind(rtp_bind, source_id, jitter_ms)`
+  binds a UDP socket, parses RTP (RFC 3550: version/CSRC/extension/padding), dejitters/reorders
+  by RTP sequence in an **owned jitter buffer** (start 40 ms, sweepable — bounded reorder depth
+  = `jitter_ms / 20 ms`, persistent gaps skipped, late packets dropped), decodes **G.711 µ-law**
+  (reusing `twilio_ws::decode_ulaw`), and emits `AudioFrame`s (`capture_ts` at arrival, dense
+  capture-order `seq`, send-and-warn drop policy — identical obligations to the adapters above).
+  Idle-timeout guard ends a dead stream. Constructed by `build_leg` when `SourceConfig::Sip.rtp_bind`
+  is set; the `--jitter-buffer-ms` sweep now threads into it (no longer a no-op). Tested against
+  real loopback UDP (`tests/sip_source.rs`: decode, reorder, loss-skip, non-RTP reject, idle) +
+  unit tests (`src/source/sip.rs`: RTP parse, jitter buffer). Codec follow-on: G.722 wideband.
+- **Signaling plane — GATED** (Work Order deliverable #6): SIP REGISTER/INVITE/SDP negotiation
+  against a live carrier stays gated on the ingress bake-off naming a winner
+  (`docs/INGRESS-BAKEOFF.md` §5); an agent cannot place live carrier calls. Until then, `rtp_bind`
+  empty → `build_leg` returns the gated error; a SIP gateway/sidecar (or the eventual signaling)
+  points a carrier's media at `rtp_bind` and the media plane consumes it unchanged.
+
+`SourceConfig::Sip` fields: `number`, `sip_uri`, `carrier`, `dtmf`, `dial_at`, `rtp_bind`.
 - Contract (do NOT change without updating every layer doc): the
   `AudioSource` trait shape, `AudioFrame` field semantics, ingress drop
   policy.
@@ -152,6 +181,11 @@ Two modes:
 - Arbiter: `src/source/arbiter.rs` unit tests (failover switch, take-first
   dedup, single-source rejection) + `tests/arbiter.rs` (two ReplaySource legs
   → arbiter → real pipeline). `xcorr::best_lag` has its own known-lag tests.
-- Ingress bake-off: `src/capture_bakeoff/` unit tests (known cross-delta,
-  WAV/JSONL recording). Run live via `earshot capture-bakeoff`
-  (docs/INGRESS-BAKEOFF.md); region choice via `earshot latprobe`.
+- Ingress bake-off: `src/capture_bakeoff/` unit tests (known cross-delta at
+  100 ms AND at 8 s, duplicate-label rejection, WAV/JSONL recording). Run
+  live via `earshot capture-bakeoff` (docs/INGRESS-BAKEOFF.md); region
+  choice via `earshot latprobe`. Cross-deltas use a two-stage wide-window
+  search (`wide_lag`: 60 s window, ±30 s lag; coarse pass on 16× block-mean
+  decimated audio via `xcorr::best_lag`, sample-exact refine via
+  `xcorr::best_lag_in`) so webcast join-point gaps of tens of seconds are
+  measurable while telephony sub-second deltas stay sample-exact.

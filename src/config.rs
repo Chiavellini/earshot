@@ -193,6 +193,12 @@ pub enum SourceConfig {
         dtmf: String,
         #[serde(default)]
         dial_at: String,
+        /// Local UDP `host:port` the RTP media plane binds to receive the
+        /// carrier's (or a SIP gateway's) media stream. When set, the media-plane
+        /// adapter (`source::sip`) is constructed; when empty, the leg stays gated
+        /// (signaling not built — see docs/INGRESS-BAKEOFF.md §5).
+        #[serde(default)]
+        rtp_bind: String,
     },
     /// Webcast fallback: ffmpeg decodes the URL to raw PCM (adapter #4,
     /// `source::pipe`). Tens of seconds behind the phone bridge — coverage
@@ -205,7 +211,30 @@ pub enum SourceConfig {
         cmd: Vec<String>,
         #[serde(default = "default_pipe_rate")]
         sample_rate_hz: u32,
+        /// Recording/report label override (bake-off files are `<label>.wav`;
+        /// the harness rejects duplicate labels — two same-kind legs MUST
+        /// differ, the 07-17 smoke found the collision). Empty = `"pipe"`.
+        #[serde(default)]
+        label: String,
     },
+}
+
+impl SourceConfig {
+    /// Provider/leg label: names bake-off recordings (`<label>.wav`), fanout
+    /// report rows, and `DetectionRecord.leg`. Same-kind legs MUST set
+    /// distinct `label`s (validated for fanout; the capture harness rejects
+    /// collisions at run time).
+    pub fn label(&self) -> String {
+        match self {
+            SourceConfig::Replay { .. } => "replay".into(),
+            SourceConfig::TwilioStream { .. } => "twilio".into(),
+            SourceConfig::Sip { carrier, .. } if !carrier.is_empty() => carrier.clone(),
+            SourceConfig::Sip { .. } => "sip".into(),
+            SourceConfig::Hls { .. } => "hls".into(),
+            SourceConfig::Pipe { label, .. } if !label.is_empty() => label.clone(),
+            SourceConfig::Pipe { .. } => "pipe".into(),
+        }
+    }
 }
 
 fn default_pipe_rate() -> u32 {
@@ -244,6 +273,13 @@ pub enum ArbiterMode {
     Failover,
     /// Per-position first-arrival wins after cross-correlation alignment.
     TakeFirst,
+    /// NOT an arbiter at all: every source runs its own full detect chain and
+    /// the flags are OR-ed at the shared one-shot decision table
+    /// (`pipeline::run_pipeline_fanout`). Different legs hear different audio
+    /// (07-22: "tariff" present on the capture leg, missing on the arm's own
+    /// stream), so per-leg detection is a measured recall lever. `build_source`
+    /// never constructs a `SourceArbiter` for this mode.
+    Fanout,
 }
 
 fn default_switch_ms() -> u64 {
@@ -280,6 +316,57 @@ pub struct KalshiSection {
     /// to a SPECIFIC expected account is the remote-probe tier (out of scope here).
     #[serde(default)]
     pub expected_key_id: Option<String>,
+    /// Order-entry wire: "rest" (default, unchanged behavior) or "fix"
+    /// (lever E2 — requires FIX/Premier access; offline-built 2026-07-21,
+    /// live validation pending; see VERIFICATIONS.md §Q-FIX).
+    #[serde(default)]
+    pub transport: OrderWire,
+    /// FIX session parameters; consulted only when `transport = "fix"`.
+    /// Omitting the whole section uses production defaults.
+    #[serde(default)]
+    pub fix: Option<FixSection>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OrderWire {
+    #[default]
+    Rest,
+    Fix,
+}
+
+/// `[kalshi.fix]` — see `kalshi::fix::FixConfig` (built from this in
+/// `main.rs::arm`). Defaults are the production KalshiNR endpoint
+/// (VERIFICATIONS Q-FIX F2).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FixSection {
+    #[serde(default = "default_fix_host")]
+    pub host: String,
+    #[serde(default = "default_fix_port")]
+    pub port: u16,
+    #[serde(default = "default_fix_target")]
+    pub target_comp_id: String,
+    /// FIX API key id (SenderCompID, tag 49). Falls back to the REST key id;
+    /// whether they are the same credential is a Q-FIX verify-at-live item.
+    #[serde(default)]
+    pub fix_key_id: Option<String>,
+    /// Heartbeat interval (tag 108). Kalshi requires > 3 s (F4).
+    #[serde(default = "default_fix_heartbeat")]
+    pub heartbeat_secs: u32,
+}
+
+fn default_fix_host() -> String {
+    "mm.fix.elections.kalshi.com".into()
+}
+fn default_fix_port() -> u16 {
+    8228
+}
+fn default_fix_target() -> String {
+    "KalshiNR".into()
+}
+fn default_fix_heartbeat() -> u32 {
+    10
 }
 
 /// `[twilio]` — per-account Twilio Media Streams binding (multi-event isolation).
@@ -385,7 +472,7 @@ fn validate(cfg: &EventConfig) -> Result<(), ConfigError> {
             SourceConfig::Hls { url } if url.is_empty() => {
                 return fail("hls.url must be non-empty".into());
             }
-            SourceConfig::Pipe { cmd, sample_rate_hz } => {
+            SourceConfig::Pipe { cmd, sample_rate_hz, .. } => {
                 if cmd.is_empty() {
                     return fail("pipe.cmd must be non-empty".into());
                 }
@@ -408,6 +495,47 @@ fn validate(cfg: &EventConfig) -> Result<(), ConfigError> {
     if cfg.arbiter.switch_ms == 0 || cfg.arbiter.align_ms == 0 {
         return fail("arbiter.switch_ms and arbiter.align_ms must be > 0".into());
     }
+    if cfg.arbiter.mode == ArbiterMode::Fanout {
+        if cfg.sources.len() < 2 {
+            return fail(format!(
+                "arbiter.mode = \"fanout\" requires >= 2 sources (got {}); a single \
+                 source needs no fanout",
+                cfg.sources.len()
+            ));
+        }
+        // Every leg needs a distinct label: it names the report rows and
+        // DetectionRecord.leg — a duplicate would make per-leg attribution
+        // ambiguous (same collision the 07-17 capture smoke hit).
+        let mut labels: Vec<String> = cfg.sources.iter().map(|s| s.label()).collect();
+        labels.sort();
+        for pair in labels.windows(2) {
+            if pair[0] == pair[1] {
+                return fail(format!(
+                    "arbiter.mode = \"fanout\": duplicate source label {:?} — same-kind \
+                     legs must set distinct `label`s",
+                    pair[0]
+                ));
+            }
+        }
+        // [perf] core maps are single-chain; pinning N legs' threads onto one
+        // core map would silently stack spinning/SCHED_FIFO threads per core.
+        // Refuse loudly — webcast boxes run untuned, nothing is lost.
+        let p = &cfg.perf;
+        if p.realtime
+            || p.spin_hot_rings
+            || p.core_source.is_some()
+            || p.core_preproc.is_some()
+            || p.core_chunker.is_some()
+            || p.core_detect.is_some()
+            || p.core_executor.is_some()
+        {
+            return fail(
+                "arbiter.mode = \"fanout\" requires a default [perf] section (core \
+                 pin maps are single-chain; remove [perf] tuning or use a non-fanout mode)"
+                    .into(),
+            );
+        }
+    }
     // Per-account Kalshi binding: key_id and private_key_path are all-or-nothing,
     // and expected_key_id (a tripwire) is meaningless without a key_id to check.
     match (&cfg.kalshi.key_id, &cfg.kalshi.private_key_path) {
@@ -424,6 +552,19 @@ fn validate(cfg: &EventConfig) -> Result<(), ConfigError> {
             return fail(format!(
                 "[kalshi] expected_key_id {exp:?} != key_id {key_id:?} (config tripwire)"
             ));
+        }
+    }
+    // FIX wire (E2): heartbeat floor is a venue rule (108 must be > 3 s, Q-FIX
+    // F4) — refuse at config time, not at the live Logon.
+    if let Some(fix) = &cfg.kalshi.fix {
+        if fix.heartbeat_secs <= 3 {
+            return fail(format!(
+                "[kalshi.fix] heartbeat_secs {} must be > 3 (Kalshi Logon rule)",
+                fix.heartbeat_secs
+            ));
+        }
+        if fix.host.is_empty() || fix.target_comp_id.is_empty() {
+            return fail("[kalshi.fix] host and target_comp_id must be non-empty".into());
         }
     }
     if let Some(tw) = &cfg.twilio {
@@ -624,6 +765,39 @@ mod tests {
     }
 
     #[test]
+    fn parses_checked_in_dpz_capture_config_verbatim() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("configs/webcast-dpz-capture.toml");
+        let cfg = load(&path).unwrap();
+        // Four capture legs; same-kind pipe legs disambiguate via `label`
+        // (leg 1 keeps the empty default → "pipe" recording filename).
+        assert_eq!(cfg.sources.len(), 4);
+        assert!(matches!(&cfg.sources[0], SourceConfig::Pipe { label, .. } if label.is_empty()));
+        assert!(matches!(&cfg.sources[1], SourceConfig::Hls { .. }));
+        assert!(
+            matches!(&cfg.sources[2], SourceConfig::Pipe { label, .. } if label == "pipe_tuned")
+        );
+        assert!(
+            matches!(&cfg.sources[3], SourceConfig::Pipe { label, .. } if label == "streamlink")
+        );
+    }
+
+    #[test]
+    fn parses_checked_in_ladder_config_verbatim() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("configs/webcast-ladder-bakeoff.toml");
+        let cfg = load(&path).unwrap();
+        assert_eq!(cfg.sources.len(), 3);
+        assert!(matches!(&cfg.sources[0], SourceConfig::Pipe { label, .. } if label.is_empty()));
+        assert!(
+            matches!(&cfg.sources[1], SourceConfig::Pipe { label, .. } if label == "pipe_tuned")
+        );
+        assert!(
+            matches!(&cfg.sources[2], SourceConfig::Pipe { label, .. } if label == "streamlink")
+        );
+    }
+
+    #[test]
     fn rejects_bad_twilio_bind() {
         let text = base_toml().replace(
             "kind  = \"replay\"\npath  = \"fixture.wav\"\nspeed = 1.0                       # 0 = as fast as possible (tests)",
@@ -656,6 +830,71 @@ mod tests {
             "variants                = [\"artificial intelligence\", \"artificial intelligences\"]",
             "variants                = []",
         );
+        let cfg: EventConfig = toml::from_str(&text).unwrap();
+        assert!(validate(&cfg).is_err());
+    }
+
+    #[test]
+    fn parses_checked_in_fanout_arm_template_verbatim() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("configs/webcast-fanout-arm.toml");
+        let cfg = load(&path).unwrap();
+        assert_eq!(cfg.arbiter.mode, ArbiterMode::Fanout);
+        assert_eq!(cfg.sources.len(), 2);
+        assert_eq!(cfg.sources[0].label(), "streamlink");
+        assert_eq!(cfg.sources[1].label(), "pipe_tuned");
+        // Template ships in the probe posture: 1¢ × 1 contract.
+        assert_eq!(cfg.keywords[0].max_price_cents, 1);
+        assert_eq!(cfg.keywords[0].budget_contracts, 1);
+    }
+
+    #[test]
+    fn fanout_parses_and_validates_with_distinct_labels() {
+        let text = base_toml()
+            + "\n[arbiter]\nmode = \"fanout\"\n\n[[sources]]\nkind = \"pipe\"\ncmd = [\"cat\"]\nlabel = \"legb\"\n";
+        let cfg: EventConfig = toml::from_str(&text).unwrap();
+        assert_eq!(cfg.arbiter.mode, ArbiterMode::Fanout);
+        assert_eq!(cfg.sources.len(), 2);
+        assert_eq!(cfg.sources[0].label(), "replay");
+        assert_eq!(cfg.sources[1].label(), "legb");
+        validate(&cfg).unwrap();
+    }
+
+    #[test]
+    fn fanout_rejects_single_source() {
+        let text = base_toml() + "\n[arbiter]\nmode = \"fanout\"\n";
+        let cfg: EventConfig = toml::from_str(&text).unwrap();
+        let err = validate(&cfg).unwrap_err().to_string();
+        assert!(err.contains(">= 2 sources"), "{err}");
+    }
+
+    #[test]
+    fn fanout_rejects_duplicate_labels() {
+        // Two pipe legs both defaulting to label "pipe".
+        let text = base_toml()
+            + "\n[arbiter]\nmode = \"fanout\"\n\
+               \n[[sources]]\nkind = \"pipe\"\ncmd = [\"cat\"]\n\
+               \n[[sources]]\nkind = \"pipe\"\ncmd = [\"cat\"]\n";
+        let cfg: EventConfig = toml::from_str(&text).unwrap();
+        let err = validate(&cfg).unwrap_err().to_string();
+        assert!(err.contains("duplicate source label"), "{err}");
+    }
+
+    #[test]
+    fn fanout_rejects_tuned_perf_section() {
+        let text = base_toml()
+            + "\n[arbiter]\nmode = \"fanout\"\n\
+               \n[[sources]]\nkind = \"pipe\"\ncmd = [\"cat\"]\nlabel = \"legb\"\n\
+               \n[perf]\nrealtime = true\n";
+        let cfg: EventConfig = toml::from_str(&text).unwrap();
+        let err = validate(&cfg).unwrap_err().to_string();
+        assert!(err.contains("default [perf]"), "{err}");
+        // A pinned core alone (realtime off) is refused too — the pin maps
+        // are single-chain.
+        let text = base_toml()
+            + "\n[arbiter]\nmode = \"fanout\"\n\
+               \n[[sources]]\nkind = \"pipe\"\ncmd = [\"cat\"]\nlabel = \"legb\"\n\
+               \n[perf]\ncore_detect = 3\n";
         let cfg: EventConfig = toml::from_str(&text).unwrap();
         assert!(validate(&cfg).is_err());
     }

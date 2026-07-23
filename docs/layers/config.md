@@ -19,7 +19,10 @@ risk gate).
   `min_confidence_*` in [0, 1], `[kalshi]` `key_id`/`private_key_path`
   all-or-nothing with `expected_key_id` == `key_id` when set and
   `expected_key_id` requiring that pair, `[twilio]` `stream_url` is a
-  `wss://` URL).
+  `wss://` URL, and `[arbiter] mode = "fanout"` requires ≥ 2 sources with
+  pairwise-distinct `SourceConfig::label()`s AND a fully-default `[perf]`
+  section — the core pin maps are single-chain, so fanout + tuning refuses
+  to arm instead of silently stacking N pinned threads per core).
 
 ## Exit door
 - **Type:** `EventConfig { event, pipeline, detector: DetectorSection,

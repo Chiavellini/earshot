@@ -40,6 +40,17 @@ sizing — a `Detection` is a pure acoustic event.
   (refractory); the decision layer's state machine is the backstop, not the
   primary dedupe.
 - No allocation in steady state beyond the returned SmallVec (inline cap 2).
+- Copy `chunk.source` into `Detection.source` (leg attribution). Detectors
+  stay otherwise leg-ignorant: in fanout mode each leg gets its OWN detector
+  instance — model memory is deliberately duplicated (the 3.3M KWS model is
+  a few MB per instance; sharing one sherpa recognizer across threads via
+  the FFI would be an unforced thread-safety risk for no meaningful
+  savings). N legs ⇒ N × per-chunk decode CPU; 2–3 legs is trivial.
+- Note on gates: sherpa_kws exposes no per-hit score (`confidence` is a
+  constant 1.0), so the decision layer's `min_confidence_*` gates are INERT
+  on the production engine — per-keyword `fast_threshold` /
+  `confirmed_threshold` / `boost` (compiled into the spotter) are the real
+  precision knobs.
 
 ## Failure policy
 - An engine failure (FFI error, model crash) must surface as a loud log +
@@ -151,7 +162,12 @@ KWS C API does not expose. Two wins over sherpa_kws: real per-hit `confidence`
   posteriors (silence/wrong-token/low-confidence never fire; Fast prefix fires
   while Confirmed waits for the last token; CTC repeat-token rule; refractory) —
   no model needed. `streaming_ctc.rs` integration tests drive a real streaming-
-  CTC model end-to-end: set `EARSHOT_CTC_MODEL_DIR` to a model dir (the Chinese
-  `sherpa-onnx-streaming-zipformer-small-ctc` stand-in works — it exercises fbank
-  + ort + cache + scorer identically) and `ORT_DYLIB_PATH` to the onnxruntime
-  dylib; they SKIP loudly when unset.
+  CTC model end-to-end: set `EARSHOT_CTC_MODEL_DIR` to a model dir and
+  `ORT_DYLIB_PATH` to the onnxruntime dylib; they SKIP loudly when unset.
+  Two models qualify (both in `scripts/fetch-models.sh`): the ENGLISH
+  `sherpa-onnx-streaming-zipformer-ctc-small-2024-03-18` (landed 2026-07-17 —
+  LibriSpeech BPE-500, 320 ms decode quantum, `out_per_chunk` 8; quality
+  gated on the corpus bake-off, see `docs/CTC-MODEL-SOURCING.md`) and the
+  Chinese `sherpa-onnx-streaming-zipformer-small-ctc` stand-in (plumbing
+  only). The out-frames-per-chunk figure is export-specific — tests assert
+  the model reports one, not a fixed number.

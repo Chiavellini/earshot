@@ -20,6 +20,7 @@ use earshot::kalshi::auth::{Presigner, Signer};
 use earshot::kalshi::book::{Book, BookCache};
 use earshot::kalshi::executor::{prestage_orders, run_executor, ExecCtx};
 use earshot::kalshi::rest::RestClient;
+use earshot::kalshi::transport::{OrderTransport, StageWire};
 use earshot::pipeline::preproc::{HalfBandUpsampler2x, PreprocCfg};
 use earshot::pipeline::run_pipeline;
 use earshot::risk::{RiskConfig, RiskGate};
@@ -236,11 +237,11 @@ async fn perf_executor_fire_path() {
         })
         .collect();
     let ctx = Arc::new(ExecCtx {
+        transport: OrderTransport::Rest { client: rest.clone(), presigner },
         rest,
-        presigner,
         cache,
         gate,
-        prestaged: prestage_orders("PERF", &kws),
+        prestaged: prestage_orders("PERF", &kws, StageWire::Rest),
         haircuts: (0..6u16).map(|i| (i, 0u32)).collect::<HashMap<_, _>>(),
         dry_run: false,
         registry: earshot::kalshi::OrderRegistry::default(),
@@ -250,6 +251,7 @@ async fn perf_executor_fire_path() {
         let now = MonotonicNs::now();
         tx.send(DecisionIntent {
             keyword: KeywordId(kw),
+            source: earshot::types::SourceId(0),
             market_ticker: TICKER.into(),
             max_price_cents: 15,
             tranche_contracts: 1,
@@ -328,11 +330,11 @@ async fn perf_full_chain_paced() {
     }];
     let presigner = Presigner::new(signer, "POST", "/trade-api/v2/portfolio/events/orders".into());
     let ctx = Arc::new(ExecCtx {
+        transport: OrderTransport::Rest { client: rest.clone(), presigner },
         rest,
-        presigner,
         cache,
         gate,
-        prestaged: prestage_orders("PERF", &keywords),
+        prestaged: prestage_orders("PERF", &keywords, StageWire::Rest),
         haircuts: HashMap::from([(0u16, 0u32)]),
         dry_run: false,
         registry: earshot::kalshi::OrderRegistry::default(),
@@ -456,11 +458,11 @@ async fn perf_cold_first_fire() {
             })
             .collect();
         let ctx = Arc::new(ExecCtx {
+            transport: OrderTransport::Rest { client: rest.clone(), presigner },
             rest,
-            presigner,
             cache,
             gate,
-            prestaged: prestage_orders("PERF", &kws),
+            prestaged: prestage_orders("PERF", &kws, StageWire::Rest),
             haircuts: (0..6u16).map(|i| (i, 0u32)).collect::<HashMap<_, _>>(),
             dry_run: false,
             registry: earshot::kalshi::OrderRegistry::default(),
@@ -474,6 +476,7 @@ async fn perf_cold_first_fire() {
             let now = MonotonicNs::now();
             tx.send(DecisionIntent {
                 keyword: KeywordId(kw),
+                source: earshot::types::SourceId(0),
                 market_ticker: TICKER.into(),
                 max_price_cents: 15,
                 tranche_contracts: 1,

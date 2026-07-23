@@ -101,6 +101,7 @@ impl DecisionTable {
 
         Some(DecisionIntent {
             keyword: det.keyword,
+            source: det.source,
             market_ticker: entry.market_ticker.clone(),
             max_price_cents: entry.max_price_cents,
             tranche_contracts: tranche,
@@ -144,6 +145,7 @@ mod tests {
             audio_ts: MonotonicNs::now(),
             emit_ts: MonotonicNs::now(),
             audio_pos_ms: 0,
+            source: crate::types::SourceId(0),
         }
     }
 
@@ -200,5 +202,32 @@ mod tests {
     fn default_zero_gates_pass_everything() {
         let mut table = DecisionTable::from_keywords(&[kw(Policy::TwoTier)]);
         assert!(table.decide(&det_conf(Tier::Fast, 0.0)).is_some());
+    }
+
+    /// Fanout-mode dedupe proof: N detect threads race `decide()` for the
+    /// same keyword through a shared mutex — the one-shot machine hands out
+    /// exactly one intent no matter who wins the lock.
+    #[test]
+    fn concurrent_decides_yield_exactly_one_intent() {
+        use std::sync::{Arc, Barrier, Mutex};
+        let table = Arc::new(Mutex::new(DecisionTable::from_keywords(&[kw(Policy::ConfirmedOnly)])));
+        let barrier = Arc::new(Barrier::new(4));
+        let fired: Vec<_> = (0..4)
+            .map(|i| {
+                let table = table.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    let mut d = det(Tier::Confirmed);
+                    d.source = crate::types::SourceId(i);
+                    barrier.wait();
+                    table.lock().unwrap().decide(&d)
+                })
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|h| h.join().unwrap())
+            .filter(|r| r.is_some())
+            .collect();
+        assert_eq!(fired.len(), 1, "one-shot must fire exactly once across racing legs");
     }
 }
