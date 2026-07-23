@@ -388,12 +388,20 @@ instance i-04c50d76572aa092e, UP through Thu by operator decision):**
   latency 160–240 ms class, `detect→decision` p99 = 1 µs (mutex fan-in
   cost invisible). Fanout is GO for the Thu mixed-leg runs (G3).
 - **Thu 07-23 G3 staging (done overnight 07-22→23):** Track A verdicts —
-  BOTH events **webcast-only** (full sweeps pinned in `configs/dial-ins.toml`):
-  INTC no dial-in published since ≥2011; AAL none ever published
-  (2015→2026 identical webcast-only template), analyst bridge = private
-  Zoom-style webinar (star-11 = Zoom convention). AAL player =
-  `edge.media-server.com/mmc/p/jkbexuu7` behind a lightweight no-approval
-  registration form (name/email; no listen-by-phone option). Probe configs generated (`twilio-live-{aal,intc}.toml`) +
+  ALL THREE candidates **webcast-only** (full sweeps pinned in
+  `configs/dial-ins.toml`): INTC no dial-in since ≥2011; AAL none ever
+  (2015→2026), analyst bridge = private Zoom-style webinar; **LMT none in
+  25 years of filings AND its call time MOVED to 8:30 AM ET** (since Q4'25 —
+  the 11 AM prior is stale), so LMT conflicts with AAL. **Slate revision
+  (user decision): LMT is the 8:30 PRIMARY** (arm + box capture; player
+  `edge.media-server.com/mmc/p/k8rv9ajf`), AAL demoted to best-effort
+  secondary capture (`…/mmc/p/jkbexuu7`); INTC unchanged at 5 PM. Both
+  morning events + INTC run AUTONOMOUSLY (operator absent): registration
+  identity bdelriom@actinver.mx / Actinver on all Notified players (watch
+  for analyst-grade differences — the player has a dial_in_instructions
+  surface); Chrome-automation surfaces the m3u8 (read network requests on
+  the player), then the standard launch chain. LMT staged same as
+  AAL/INTC: `webcast-lmt-arm.toml` committed, preflight PASS, box kit up. Probe configs generated (`twilio-live-{aal,intc}.toml`) +
   webcast fanout arm variants (`webcast-{aal,intc}-arm.toml`, committed);
   both preflights PASS (pinned binaries in `state/<EV>/earshot-pinned`);
   box kits staged; per-event account envs `~/.earshot/{aal,intc}.env`.

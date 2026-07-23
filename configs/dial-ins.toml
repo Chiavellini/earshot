@@ -200,6 +200,17 @@ confidence    = "high"
 last_verified = "2026-07-16"
 notes         = "CONFIRMS the star-11 claim at docs/RUNBOOK.md:7-8. OPEN EVENT KXEARNINGSMENTIONDPZ-26JUL20 — the runbook's next event, GO only if a number lands by 07-19. ⚠ ir.dominos.com geo-blocks from Mexico (Akamai) — needs a US VPN or manual check."
 
+[LMT]
+tier          = "bridge_unpublished"
+qa_mechanism  = "dtmf_star"
+listen_access = "unknown"
+evidence      = "Analyst Q&A runs on an unpublished IR-arranged bridge; nothing published. 07-23 Track A sweep: NO earnings dial-in in ANY LMT press release or SEC filing back to ≥2001 (EDGAR full-text 'toll-free' hits are all bond tender/exchange offers); no phone replay. Q2'26 advisory: webcast listen-only."
+evidence_src  = "https://news.lockheedmartin.com/2026-07-01-Lockheed-Martin-Announces-Second-Quarter-2026-Earnings-Results-Webcast"
+number_src    = "https://investors.lockheedmartin.com/events/event-details/lockheed-martin-2q-2026-earnings-results-conference-callwebcast"
+confidence    = "high"
+last_verified = "2026-07-23"
+notes         = "OPEN EVENT KXEARNINGSMENTIONLMT-26JUL23. ⚠ CALL TIME MOVED: 8:30 AM ET since Q4'25 (Jan 2026) — the historical 11:00 AM prior is STALE. VERDICT: webcast-only. Q2'26 player = edge.media-server.com/mmc/p/k8rv9ajf (Notified MMC), soft self-serve registration form (name/email/company, no approval). investors.lockheedmartin.com hangs for bare curl (Akamai) but loads in Chrome. Replay is web-only through 08-06."
+
 [AAL]
 tier          = "bridge_unpublished"
 qa_mechanism  = "dtmf_star"
