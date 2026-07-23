@@ -411,6 +411,24 @@ instance i-04c50d76572aa092e, UP through Thu by operator decision):**
   email guestbook likely gates the m3u8. DRY-RUN the guestbook well before
   5 PM ET; if email-allowlisted, capture may be blocked (record the finding
   either way — it's a venue-table row).
+- **07-23 ~2:20 AM dress rehearsal (exact autonomous mechanism, DW live) —
+  PASSED after fixing two launcher bugs:** (1) CRLF manifests (DW/Akamai)
+  leave a trailing `\r` on the variant URL → curl "malformed URL" → gate
+  never flips (fixed: `tr -d '\r'`); (2) `curl | grep -q` SIGPIPEs curl on
+  first match and under `set -o pipefail` the pipeline rc goes nonzero →
+  `&& break` silently never fires (fixed: capture body, then grep). After
+  the fixes: gate flipped on the live manifest, fanout arm booted off the
+  pinned binary (13 LMT markets active, books live, dry-run confirmed),
+  both legs spawned, STOP → kill-to-cancel 16 ms + disarm + ledger flush.
+  All three players registered (Actinver identity, keep-me-logged-in):
+  LMT + AAL straight through; **INTC's auth guestbook ACCEPTED the
+  registration** — the allowlist risk is retired. ⚠ NEW FINDING: after a
+  STOP-kill, a later SIGTERM does NOT terminate the arm (kill watcher is
+  one-shot) — for endless webcast streams, wind down by killing the leg
+  subprocesses (ffmpeg/streamlink) so sources EOF and the pipeline drains
+  a clean report; fix the watcher before relying on STOP→SIGTERM sequences.
+  Morning caveat: initialize network-request tracking BEFORE clicking play
+  (the first `read_network_requests` call starts capture).
 
 **Scheduled routines (armed 2026-07-20 evening):** 15 one-shot local cron
 jobs in the 07-20 Claude session — per-event prep reminders (~40 min
