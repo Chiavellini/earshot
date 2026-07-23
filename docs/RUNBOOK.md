@@ -387,6 +387,22 @@ instance i-04c50d76572aa092e, UP through Thu by operator decision):**
   (`state/fanout-smoke-report-2026-07-22.json` on the laptop). Detect
   latency 160–240 ms class, `detect→decision` p99 = 1 µs (mutex fan-in
   cost invisible). Fanout is GO for the Thu mixed-leg runs (G3).
+- **Thu 07-23 G3 staging (done overnight 07-22→23):** Track A verdicts —
+  BOTH events **webcast-only** (full sweeps pinned in `configs/dial-ins.toml`):
+  INTC no dial-in published since ≥2011; AAL none ever published
+  (2015→2026 identical webcast-only template), analyst bridge = private
+  Zoom-style webinar (star-11 = Zoom convention). AAL player =
+  `edge.media-server.com/mmc/p/jkbexuu7` behind a lightweight no-approval
+  registration form (name/email; no listen-by-phone option). Probe configs generated (`twilio-live-{aal,intc}.toml`) +
+  webcast fanout arm variants (`webcast-{aal,intc}-arm.toml`, committed);
+  both preflights PASS (pinned binaries in `state/<EV>/earshot-pinned`);
+  box kits staged; per-event account envs `~/.earshot/{aal,intc}.env`.
+  ⚠ **INTC player auth gate**: `edge.media-server.com/mmc/p/rdz8ppwz/`
+  (start 21:00Z, confirmed via player API) returns
+  `authentication_required=true` + empty playlists pre-auth — an in-player
+  email guestbook likely gates the m3u8. DRY-RUN the guestbook well before
+  5 PM ET; if email-allowlisted, capture may be blocked (record the finding
+  either way — it's a venue-table row).
 
 **Scheduled routines (armed 2026-07-20 evening):** 15 one-shot local cron
 jobs in the 07-20 Claude session — per-event prep reminders (~40 min

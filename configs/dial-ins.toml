@@ -200,6 +200,17 @@ confidence    = "high"
 last_verified = "2026-07-16"
 notes         = "CONFIRMS the star-11 claim at docs/RUNBOOK.md:7-8. OPEN EVENT KXEARNINGSMENTIONDPZ-26JUL20 — the runbook's next event, GO only if a number lands by 07-19. ⚠ ir.dominos.com geo-blocks from Mexico (Akamai) — needs a US VPN or manual check."
 
+[AAL]
+tier          = "bridge_unpublished"
+qa_mechanism  = "dtmf_star"
+listen_access = "unknown"
+evidence      = "Operator, Q1'26 (Fool transcript): analysts press 'star 11' for the Q&A queue — the Zoom Webinar convention (classic Chorus/Notified operators use *1), single-quarter evidence. The bridge number/webinar ID is distributed privately by IR; nothing published."
+evidence_src  = "https://www.fool.com/earnings/call-transcripts/2026/04/23/aal-q1-2026-earnings-transcript/"
+number_src    = "https://www.globenewswire.com/news-release/2026/07/09/3324919/0/en/American-Airlines-Group-announces-webcast-of-second-quarter-2026-financial-results.html"
+confidence    = "high"
+last_verified = "2026-07-23"
+notes         = "OPEN EVENT KXEARNINGSMENTIONAAL-26JUL23 (8:30 AM ET). 07-23 Track A full sweep: NO dial-in published in ANY announcement checked (2015/2019/2021/2025/2026 — identical webcast-only template; no phone replay either), so no legacy number exists to try. VERDICT: webcast-only. Q2'26 player = edge.media-server.com/mmc/p/jkbexuu7 (Notified MMC) behind a lightweight registration form (name/email/phone/company, no approval step, no listen-by-phone option). ⚠ aa.com/gcs-web geo-time-out from non-US infra — surface via US-VPN browser. Only phone path = email investor.relations@aa.com for the analyst bridge (human process)."
+
 [INTC]
 tier          = "bridge_unpublished"
 qa_mechanism  = "dtmf_star"
@@ -208,8 +219,8 @@ evidence      = "Operator, Q4'25: 'Thank you for standing by… At this time, pa
 evidence_src  = "https://www.insidermonkey.com/blog/intel-corporation-nasdaqintc-q4-2025-earnings-call-transcript-1680769/"
 number_src    = "https://www.intc.com/news-events/ir-calendar/detail/20260723-q2-2026-intel-corporation-earnings-conference-call"
 confidence    = "high"
-last_verified = "2026-07-16"
-notes         = "CONFIRMS the star-11 claim at docs/RUNBOOK.md:7-8. OPEN EVENT KXEARNINGSMENTIONINTC-26JUL23. Webcast runs on edge.media-server.com (Notified) — a platform that generically issues dial-in+PIN on registration, but NO Intel-specific registration link was found. Platform-pattern inference is NOT evidence; do not record a registration tier without an Intel-specific link."
+last_verified = "2026-07-23"
+notes         = "CONFIRMS the star-11 claim at docs/RUNBOOK.md:7-8. OPEN EVENT KXEARNINGSMENTIONINTC-26JUL23. Webcast runs on edge.media-server.com (Notified) — a platform that generically issues dial-in+PIN on registration, but NO Intel-specific registration link was found. Platform-pattern inference is NOT evidence; do not record a registration tier without an Intel-specific link. 07-23 Track A full sweep: NO published dial-in in ANY earnings release since ≥2011 (Q1'26 8-K + Q3'11 + Q1'13 SEC exhibits all webcast-only template); no phone replay in any quarter; only Intel PSTN number ever SEC-published is the one-off 2009 AMD-settlement call (dead). Analyst *11 bridge is distributed privately by IR (Pitzer's team). VERDICT: webcast-only. Q2'26 player = edge.media-server.com/mmc/p/rdz8ppwz/ start 2026-07-23T21:00Z (confirmed via player API). ⚠ PLAYER AUTH GATE: init-data endpoint returns authentication_required=true, playlists=[] pre-auth, in-player email guestbook ('Not registered? Click here'; may be email-allowlisted) — same flag on the Q1'26 event, so standing config. The m3u8 likely only appears AFTER completing the guestbook; dry-run the gate well before 5 PM ET."
 
 [GEV]
 tier          = "bridge_unpublished"
