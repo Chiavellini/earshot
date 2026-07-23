@@ -357,6 +357,18 @@ the DW dress rehearsal could not have caught it (fat muxed stream). Mid-call cav
 a truncated 100-trade tape pull misread GOLD as "+11.7 s ahead" — the full tape shows the
 sweep ONSET pre-dated our flag; never score Δrace from a tail pull.
 
+#### AAL 2026-07-23 — SECONDARY CAPTURE (no arm by design; box 4-leg capture + tape)
+
+Same venue class as LMT (Notified→CloudFront, audio-only 4 s segments; PDT lag ~10 s),
+captured concurrently with the LMT primary from the box, autonomously. 3 healthy legs
+(~94 min each, hls sugar leg dead as expected). Event-venue ladder REPLICATES LMT:
+pipe→pipe_tuned **−1.15 s**, pipe→streamlink **−0.19 s** (peaks 0.9997) — second
+same-morning confirmation that short-window venues compress the ladder and reverse
+the tuned/streamlink order. Tape: HEAVILY CONTESTED — 8/15 words swept ≥50¢ during
+the call (WORL 12:33:13, CENT 12:33:00, IRAN 12:33:21, CHIC 12:34:39, WEAT 12:34:46,
+AT 12:35:10, ATH 12:41:19, BASI 12:41:52); 7 no-sweep. WAVs banked on the box for
+offline Δw replay vs these sweep stamps (Phase-4 corpus + Δw sample expansion).
+
 ## Open verification items
 
 1. Transcript check on OIL/MIDD (false-alarm confirmation) — needs the MS capture/transcript.

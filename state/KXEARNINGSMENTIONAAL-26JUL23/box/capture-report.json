@@ -1,0 +1,76 @@
+{
+  "legs": [
+    {
+      "label": "pipe",
+      "frames": 271955,
+      "samples": 87025418,
+      "sample_rate_hz": 16000,
+      "duration_ms": 5439088,
+      "jitter_p50_us": 55,
+      "jitter_p95_us": 199,
+      "jitter_p99_us": 806,
+      "jitter_max_us": 26420010,
+      "stalls_over_100ms": 1330,
+      "wav_path": "/home/ubuntu/aal-capture/pipe.wav"
+    },
+    {
+      "label": "hls",
+      "frames": 0,
+      "samples": 0,
+      "sample_rate_hz": 0,
+      "duration_ms": 0,
+      "jitter_p50_us": 0,
+      "jitter_p95_us": 0,
+      "jitter_p99_us": 0,
+      "jitter_max_us": 0,
+      "stalls_over_100ms": 0,
+      "wav_path": "/home/ubuntu/aal-capture/hls.wav"
+    },
+    {
+      "label": "pipe_tuned",
+      "frames": 271499,
+      "samples": 86879411,
+      "sample_rate_hz": 16000,
+      "duration_ms": 5429963,
+      "jitter_p50_us": 55,
+      "jitter_p95_us": 200,
+      "jitter_p99_us": 734,
+      "jitter_max_us": 26421086,
+      "stalls_over_100ms": 1328,
+      "wav_path": "/home/ubuntu/aal-capture/pipe_tuned.wav"
+    },
+    {
+      "label": "streamlink",
+      "frames": 271700,
+      "samples": 86943684,
+      "sample_rate_hz": 16000,
+      "duration_ms": 5433980,
+      "jitter_p50_us": 48,
+      "jitter_p95_us": 150,
+      "jitter_p99_us": 572,
+      "jitter_max_us": 14011938,
+      "stalls_over_100ms": 1351,
+      "wav_path": "/home/ubuntu/aal-capture/streamlink.wav"
+    }
+  ],
+  "cross": [
+    {
+      "reference": "pipe",
+      "other": "pipe_tuned",
+      "delta_ms": -1152.5890850126743,
+      "peak": 0.9996586926873495
+    },
+    {
+      "reference": "pipe",
+      "other": "streamlink",
+      "delta_ms": -186.76337000727654,
+      "peak": 0.9996586926873495
+    }
+  ],
+  "recommendation": {
+    "winner": "streamlink",
+    "runner_up": "pipe_tuned",
+    "runner_up_cost_ms": 0.162,
+    "basis": "lowest p99 inter-frame jitter, tie-broken on stalls (tail-first)"
+  }
+}
