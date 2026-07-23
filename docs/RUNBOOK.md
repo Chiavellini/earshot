@@ -440,7 +440,19 @@ instance i-04c50d76572aa092e, UP through Thu by operator decision):**
   chosen by Kalshi mention-market liquidity (recon JSON in box
   `~/friday-stage/`); arm runs ON THE BOX via `launch-webcast.sh
   --wait-live` (probe posture; refuses fill flags by design), account
-  `~/.kalshi/earshot_env`. ⚠ NETWORK INCIDENT 07-23 evening: the CDMX ISP
+  `~/.kalshi/earshot_env`.
+- **💰 AWS COST CAP (standing user directive, pinned 2026-07-23): $30/month
+  GROSS usage until the system is profitable.** Measured via Cost Explorer
+  07-23: July 1–23 gross $5.07, promo credits −$5.07, net charged $0.00.
+  Box = t3a.large ($0.0752/h ≈ $1.80/day + EBS ~$3/mo) ⇒ 24/7 running
+  breaches the cap (~$55–60/mo gross) — the **stop-when-idle policy is
+  mandatory**: stop after each event's post-mortem, start T−1 evening
+  (night-before preflight cadence), Elastic IP keeps the address stable
+  (~$3.6/mo while stopped; EBS + WAVs persist across stops). Budget
+  tripwire `earshot-monthly-cap-30usd` (acct 986420598115) emails
+  bdelrio333@gmail.com at 50/80/100 % actual. GPU bursts (P2/G2b,
+  g5.xlarge ≈ $1.01/h) must be provision→run→terminate, hours not days.
+  ⚠ NETWORK INCIDENT 07-23 evening: the CDMX ISP
   began dropping ~all traffic into AWS IP space (box SSH, Kalshi API, EC2
   API, CloudFront incl. q4inc + Notified media hosts) — traceroute dies at
   the carrier edge (201.174.x). All box work queued behind retry loops;
