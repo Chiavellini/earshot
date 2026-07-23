@@ -98,11 +98,19 @@ if [[ -n "$WAIT_LIVE" ]]; then
           if grep -q "EXTINF" <<<"$BODY"; then
             break
           fi
-          # Master playlist: follow the first variant.
-          VARIANT=$(grep -v '^#' <<<"$BODY" | head -1)
+          # Master playlist: follow the first variant. tr strips CRLF —
+          # real-world manifests (DW/Akamai) end lines with \r\n and a
+          # trailing \r makes curl reject the URL as malformed.
+          VARIANT=$(grep -v '^#' <<<"$BODY" | head -1 | tr -d '\r')
           if [[ -n "$VARIANT" ]]; then
             [[ "$VARIANT" != http* ]] && VARIANT="${URL%/*}/$VARIANT"
-            curl -fsS --max-time 10 "$VARIANT" 2>/dev/null | grep -q "EXTINF" && break
+            # Capture, then grep: `curl | grep -q` SIGPIPEs curl on first
+            # match, and under pipefail the pipeline rc goes nonzero — the
+            # break silently never fires (found in the 07-23 dress rehearsal).
+            VBODY=$(curl -fsS --max-time 10 "$VARIANT" 2>/dev/null || true)
+            if grep -q "EXTINF" <<<"$VBODY"; then
+              break
+            fi
           fi
         fi
         ;;
