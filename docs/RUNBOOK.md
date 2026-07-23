@@ -376,6 +376,17 @@ instance i-04c50d76572aa092e, UP through Thu by operator decision):**
   armed.
 - Post-event tape pulls: `scripts/fetch-tape.sh <EVENT_TICKER>` (public
   trades endpoint, no auth) → `state/<EVENT>/tape-<date>.json`.
+- **G2 fanout box smoke PASSED (2026-07-23 04:01 UTC, box, DW live HLS,
+  90 s bounded legs, Kalshi-less via `replay`):** binary rebuilt from the
+  fanout tree (1m54s incremental); 2 legs (streamlink edge-join +
+  pipe_tuned) both alive, 4462/4494 frames, 0 drops, clean EndOfStream.
+  UKRA + PRES heard on BOTH legs — first leg fired exactly one intent each,
+  the other leg's copies ~450 ms later absorbed by the shared one-shot
+  ("detection ignored"), incl. a refractory-spaced repeat. `per_leg` +
+  per-detection `leg` labels verified in the JSON
+  (`state/fanout-smoke-report-2026-07-22.json` on the laptop). Detect
+  latency 160–240 ms class, `detect→decision` p99 = 1 µs (mutex fan-in
+  cost invisible). Fanout is GO for the Thu mixed-leg runs (G3).
 
 **Scheduled routines (armed 2026-07-20 evening):** 15 one-shot local cron
 jobs in the 07-20 Claude session — per-event prep reminders (~40 min

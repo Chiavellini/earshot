@@ -185,9 +185,11 @@ one falsifiable outcome with one evidence destination.
       primary + `-live_start_index -1` tuned-ffmpeg backstop,
       `scripts/stage-webcast-arm.sh`), and the codified live gate
       (`launch-webcast.sh --wait-live`, RUNBOOK 07-22 post-mortems #1–#3).
-      Verdict gates: G2 box smoke → G3 mixed-leg live (AAL/INTC Thu, AXP/VZ
-      Fri) → G4 FOMC 07-29 Δrace vs the −8.7 s baseline (bar: steady-state
-      ≥ 0 s, no drain artifact, fanout recall ≥ single-leg).
+      Verdict gates: **G2 box smoke ✅ PASSED 2026-07-23 04:01 UTC** (DW live,
+      2 legs 0 drops, cross-leg dedupe live-proven — RUNBOOK §Monitor
+      staging) → G3 mixed-leg live (AAL/INTC Thu, AXP/VZ Fri) → G4 FOMC
+      07-29 Δrace vs the −8.7 s baseline (bar: steady-state ≥ 0 s, no drain
+      artifact, fanout recall ≥ single-leg).
 
 - [ ] **W2.** Manifest-probe every event venue (cadence, LL-HLS tags, PDT
       absolute lag) and grow a per-venue table (venue/platform → cadence,
