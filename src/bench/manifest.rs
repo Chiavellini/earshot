@@ -60,7 +60,8 @@ pub struct Occurrence {
 #[derive(Debug)]
 pub struct CallManifest {
     pub id: String,
-    /// Absolute path; validated 8 kHz mono s16 at load.
+    /// Absolute path; validated mono s16 at 8 kHz (telephony) or 16 kHz
+    /// (wideband webcast channel) at load.
     pub audio: PathBuf,
     pub split: Split,
     pub duration_ms: u64,
@@ -100,9 +101,12 @@ fn validate(mf: ManifestFile, root: &Path, src: &Path) -> Result<CallManifest, M
         Err(e) => return fail(format!("audio {}: {e}", audio.display())),
     };
     let spec = reader.spec();
-    if spec.channels != 1 || spec.sample_rate != 8000 || spec.bits_per_sample != 16 {
+    if spec.channels != 1
+        || !(spec.sample_rate == 8000 || spec.sample_rate == 16000)
+        || spec.bits_per_sample != 16
+    {
         return fail(format!(
-            "audio must be 8 kHz mono s16 (telephony-processed), got {} ch {} Hz {} bit",
+            "audio must be mono s16 at 8 kHz (telephony) or 16 kHz (wideband), got {} ch {} Hz {} bit",
             spec.channels, spec.sample_rate, spec.bits_per_sample
         ));
     }

@@ -288,8 +288,8 @@ published number) / `webcast-only`.
 | TSLA Wed 07-22 | **5:30 PM (8-K confirmed)** | webcast-only (IR player) | laptop `configs/webcast-tsla-capture.toml` (yt-dlp legs) + observe arm `configs/webcast-tsla.toml` |
 | AAL Thu 07-23 | 8:30 AM | **bridge (star-11 confirmed, Q1 transcript)** | box `~/run-aal-capture.sh` |
 | INTC Thu 07-23 | 5:00 PM | **bridge (star-11 confirmed)** | box `~/run-intc-capture.sh` |
-| AXP Fri 07-24 | 8:30 AM | bridge-likely | box `~/run-axp-capture.sh` |
-| VZ Fri 07-24 | 8:30 AM | bridge-likely | box `~/run-vz-capture.sh` |
+| AXP Fri 07-24 | 8:30 AM | **webcast on Q4 Inc** (`events.q4inc.com/attendee/475264006`, from the IR event page 07-23; no public dial-in in the press release — UNKNOWN platform, `manifest-probe.sh` FIRST) | box `~/run-axp-capture.sh` (re-staged 07-23, probesize-fixed) |
+| VZ Fri 07-24 | 8:30 AM | **webcast, self-hosted player** — link posts ~7:00 AM ET day-of at `verizon.com/about/investors/second-quarter-2026-earnings`; no public dial-in in the press release | box `~/run-vz-capture.sh` (re-staged 07-23, probesize-fixed) |
 
 Same-floor broadcast class this week: House Financial Services FinCEN
 hearing Tue 10:00 AM (committee stream); Navy-commission "Maritime
@@ -429,6 +429,23 @@ instance i-04c50d76572aa092e, UP through Thu by operator decision):**
   a clean report; fix the watcher before relying on STOP→SIGTERM sequences.
   Morning caveat: initialize network-request tracking BEFORE clicking play
   (the first `read_network_requests` call starts capture).
+- **Fri 07-24 AXP/VZ staging (2026-07-23 evening; scope per user decision:
+  capture BOTH, arm ONE in probe posture):** access recon from press
+  releases/IR pages — AXP webcast on **Q4 Inc** (`events.q4inc.com/
+  attendee/475264006`), VZ **self-hosted**, player link posts ~7:00 AM ET
+  day-of; NO public dial-in found for either (IR-reply inbox check blocked —
+  Outlook session expired, needs operator password). Both platforms are
+  NEW (not Notified): run `manifest-probe.sh` FIRST — a long-window venue
+  re-activates the fetch ladder (handoff §4), LL-HLS opens W3. Arm target
+  chosen by Kalshi mention-market liquidity (recon JSON in box
+  `~/friday-stage/`); arm runs ON THE BOX via `launch-webcast.sh
+  --wait-live` (probe posture; refuses fill flags by design), account
+  `~/.kalshi/earshot_env`. ⚠ NETWORK INCIDENT 07-23 evening: the CDMX ISP
+  began dropping ~all traffic into AWS IP space (box SSH, Kalshi API, EC2
+  API, CloudFront incl. q4inc + Notified media hosts) — traceroute dies at
+  the carrier edge (201.174.x). All box work queued behind retry loops;
+  laptop fallback = phone hotspot. AXP player registration deferred to a
+  working window (Q4 attendee pages typically register-at-join).
 
 **Scheduled routines (armed 2026-07-20 evening):** 15 one-shot local cron
 jobs in the 07-20 Claude session — per-event prep reminders (~40 min

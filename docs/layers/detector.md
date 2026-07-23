@@ -156,8 +156,10 @@ KWS C API does not expose. Two wins over sherpa_kws: real per-hit `confidence`
   bundled `test_wavs` (known transcripts) — both tiers fire, Fast first,
   silence/absent keywords stay quiet. SKIPs loudly when `models/` is absent.
   Keyword compilation vectors are unit tests in `kws_compile.rs`.
-- M1 engines: benchmark on the recorded-call corpus (8 kHz telephony), never
-  on clean speech — latency distribution, precision, recall per chunk size.
+- M1 engines: benchmark on the recorded-call corpus matching the production
+  channel (8 kHz telephony for phone events, 16 kHz wideband for webcast
+  events — `docs/BAKEOFF.md` §Corpus), never on clean speech — latency
+  distribution, precision, recall per chunk size.
 - streaming_ctc: `ctc_scorer.rs` unit tests cover the firing logic on synthetic
   posteriors (silence/wrong-token/low-confidence never fire; Fast prefix fires
   while Confirmed waits for the last token; CTC repeat-token rule; refractory) —

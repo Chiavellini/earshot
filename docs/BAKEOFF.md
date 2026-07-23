@@ -17,7 +17,8 @@ all grid cells reported).
 ```
 corpus/
   raw/               # original downloads, any rate/codec — GITIGNORED
-  telephony/         # processed 8 kHz mono s16 WAV — GITIGNORED
+  telephony/         # processed 8 kHz mono s16 WAV (phone channel) — GITIGNORED
+  wideband/          # processed 16 kHz mono s16 WAV (webcast channel) — GITIGNORED
   manifests/*.toml   # ground truth — COMMITTED
 ```
 
@@ -30,6 +31,13 @@ corpus/
 - Telephony processing (`scripts/corpus-process.sh`): mono → 300–3400 Hz
   band-limit → 8 kHz → G.711 µ-law round trip (matches the M3 SIP dial-in
   path). Engines are NEVER benchmarked on clean speech.
+- Wideband processing (webcast channel, W5): mono → 16 kHz s16, NO
+  band-limit — this IS the channel the webcast HLS legs deliver
+  (`resample_to_hz = 16000`, 77 kbps AAC source), so no extra degradation is
+  applied. Bench each engine on the channel it trades on: `telephony/` for
+  phone-bridge events, `wideband/` for webcast events. The manifest's
+  `audio` path selects the domain; the loader accepts mono s16 at 8 or
+  16 kHz (`src/bench/manifest.rs`).
 - Ground truth: forced alignment (faster-whisper word timestamps) on the
   **wideband originals**, keyword extraction per VERIFICATIONS.md Q4
   semantics, then human spot-check of a ~20 % random sample to measure
@@ -562,3 +570,36 @@ face the same physics) but not dramatically *beat* them; the beatable edge is in
 audio transport (SIP) and execution (us-east-2 + FIX) — where we are currently behind but which ARE
 closeable. **Consequence for the GPU RTF test (B): moot for EOU** — no point measuring real-time
 viability of a model that doesn't improve decode-lag. B is gated on TDT reviving the case.
+
+## Webcast fill-tier promotion gate (G4/FOMC) — PRE-REGISTERED 2026-07-23
+
+Written BEFORE any webcast-corpus tuning run (handoff P1). Purpose: decide
+whether FOMC 2026-07-29 may run fill posture. Fill posture remains
+user-gated even on green; red means probe/observe only.
+
+**Corpus (wideband, 16 kHz — §Corpus):** the three 07-23 tapes.
+- **Dev = LMT + INTC** (arm tapes with scored per-word outcomes: false-fire
+  prints APPL/TRUM/PERU/IRAN, misses ARIZ/DESK/GOVE/MOBI/VENT/ORIO).
+  Per-keyword `fast_threshold`/`confirmed_threshold`/`boost`/variants are
+  tuned here, AND generalized into written per-class policy rules
+  (compound-phrase / OOV-proper-noun / short-common-word classes).
+- **Holdout = AAL** (capture-only tape, 8 swept + 7 unswept words). The AAL
+  keyword config is produced by applying the dev class-policy rules WITHOUT
+  looking at AAL audio or truth. One run, frozen config, all cells reported.
+
+Rationale: FOMC's keywords will be unseen, so the gate must test the tuning
+PROCEDURE on an unseen event — per-keyword numbers memorized on dev prove
+nothing about next week.
+
+| Metric (Confirmed tier unless noted) | Bar |
+|---|---|
+| Dev: FA on the four named 07-23 false-fire contexts | 0 |
+| Dev: FA rate overall | ≤ 0.5 / h |
+| Dev: recall on the previously-caught word set | ≥ untuned baseline (no trade of recall for precision on words we already catch) |
+| Holdout (AAL): recall on the 8 swept words | ≥ 6/8 |
+| Holdout (AAL): FA rate | ≤ 1 / h |
+
+Bars drafted by the agent 2026-07-23 and pre-registered pending explicit
+user sign-off; if the user adjusts a bar, the adjustment must land BEFORE
+the holdout run. Verdict lands here; gate state mirrors to
+`docs/RACE-CHECKLIST.md`.
