@@ -75,12 +75,19 @@ fetch \
 # signature), so it needs a streaming zipformer2 CTC export (model.onnx +
 # tokens.txt [+ bpe.model], decode_chunk_len in ONNX metadata).
 #
-# ENGLISH model (the M4 detector-latency unlock) does NOT exist off-the-shelf:
-# the sherpa "online-ctc" release page lists only Chinese CTC exports; English
-# streaming zipformers on the shelf are transducers with no CTC head. Obtaining
-# one is an icefall export (a checkpoint trained with --use-ctc 1, exported via
-# export-onnx-ctc). Pin its URL/sha here + in VERIFICATIONS.md once produced:
-#   fetch "sherpa-onnx-streaming-zipformer-ctc-en-<date>" "<url>" "<sha256>"
+# ENGLISH model (the M4 detector-latency unlock) — FOUND 2026-07-17 (Tier-0
+# hunt, docs/CTC-MODEL-SOURCING.md): csukuangfj's LibriSpeech streaming
+# zipformer SMALL (23.8 M), trained `--causal 1 --use-ctc 1` (evidence: the
+# HF repo's run-streaming-zipformer-ctc.sh + training log; icefall PR #1557),
+# already exported in the streaming-CTC ONNX format (fp32 + int8, tokens.txt,
+# bpe.model). Caveat: the CTC head was an auxiliary loss (scale 0.2) with no
+# published WER — corpus bake-off is the quality gate (docs/BAKEOFF.md).
+# The tarball also ships a 350 MB HLG.fst (unused by earshot — FST decoding
+# only; safe to delete after unpack).
+fetch \
+  "sherpa-onnx-streaming-zipformer-ctc-small-2024-03-18" \
+  "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-ctc-small-2024-03-18.tar.bz2" \
+  "cd8ed7371b1a0c49e919549a606235c8092f9006425aa06a9e8e6395054126bd"
 #
 # CHINESE STAND-IN (opt-in): exercises fbank + ort + cache + scorer identically
 # to the English model — used by the streaming_ctc integration tests

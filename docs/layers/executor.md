@@ -3,9 +3,11 @@
 ## Role
 Turns `DecisionIntent`s into IOC marketable-limit orders on Kalshi within
 single-digit milliseconds of software time (spec §5.7): local book read →
-LOST_RACE check → EV gate → risk gate → pre-staged body + pre-signed headers
-→ HTTPS POST → ack bookkeeping. NOT responsible for: deciding WHAT to buy
-(decision layer) or maintaining the book (book-cache layer).
+LOST_RACE check → EV gate → risk gate → pre-staged wire form →
+`OrderTransport::send_order` → ack bookkeeping. NOT responsible for:
+deciding WHAT to buy (decision layer), maintaining the book (book-cache
+layer), or the wire itself (transport seam — see
+`docs/layers/fix-transport.md` for the FIX arm).
 
 ## Entry door
 - **Type:** `types::DecisionIntent`.
@@ -26,12 +28,22 @@ LOST_RACE check → EV gate → risk gate → pre-staged body + pre-signed heade
   measured as `handoff→exec`, separate from `decision→exec` (the aggregate).
 
 ## Exit door
-- **Wire:** `POST {base}/portfolio/events/orders` with pre-serialized
-  `Bytes` body and `KALSHI-ACCESS-*` headers
-  (`rest::RestClient::create_order_presigned`). The client keeps a warm TCP/h2
-  connection (Nagle off; one-shot pre-warm + a keep-warm task wired in
-  `main.rs::arm`) so the first fire never pays a cold handshake — pinned in
-  VERIFICATIONS.md.
+- **Wire:** `transport::OrderTransport::send_order(&PreStaged)`
+  (`src/kalshi/transport.rs`) — an enum over the two order wires, selected by
+  config `[kalshi] transport` (default `rest`) and wired in `main.rs::arm`:
+  - `Rest`: `POST {base}/portfolio/events/orders` with pre-serialized `Bytes`
+    body and presigned `KALSHI-ACCESS-*` headers
+    (`rest::RestClient::create_order_presigned`; the `Presigner` lives INSIDE
+    this arm). Warm TCP/h2 connection (Nagle off; one-shot pre-warm + a
+    keep-warm task wired in `main.rs::arm`) — pinned in VERIFICATIONS.md.
+  - `Fix`: prestaged 35=D template patched with seqnum/SendingTime and put on
+    the persistent FIX session (`fix::transport::FixTransport`); heartbeats
+    are its native connection warmer. Offline-built; live validation pending
+    (VERIFICATIONS §Q-FIX).
+  Each transport prestages its own wire form (`WireStaged::Rest{body}` /
+  `WireStaged::Fix{template}`) via `StageWire`; the executor is wire-blind.
+  Returns `SendOutcome { ack: TransportAck, send_ts, presign_age_ns }`
+  (`presign_age_ns: None` on FIX — no presign step exists there).
 - **Type:** `executor::OrderRecord` per intent (ticker, price, count, tier,
   `dry_run`, `lost_race`, refusal, status, order_id, full ts chain,
   `best_ask` book snapshot + `book_age_ns` snapshot age) aggregated into
@@ -70,12 +82,15 @@ LOST_RACE check → EV gate → risk gate → pre-staged body + pre-signed heade
 - Record edges `decision→exec`, `handoff→exec`, `book_age`, `presign_age`,
   `exec→send`, `send→hdrs`, `hdrs→ack`, `send→ack`, `decision→ack`,
   `capture→ack` into its own `LatencyRecorder` (merged into the pipeline
-  report at teardown). `send→hdrs` is network + matching-engine time (TTFB),
-  `hdrs→ack` is body read + parse; `send→ack` is kept as the end-to-end
-  aggregate (p95 of a sum ≠ sum of p95s). `book_age` = exec_ts − the book
-  snapshot's `as_of` (skipped while the book is still the seq-0 placeholder);
-  it distinguishes "our book was stale" from "a competitor was genuinely
-  faster" — the MS RECE loss was undiagnosable without it.
+  report at teardown). `send→hdrs` is network + matching-engine time (REST:
+  TTFB; FIX: first ExecutionReport received), `hdrs→ack` is body read +
+  parse; `send→ack` is kept as the end-to-end aggregate (p95 of a sum ≠ sum
+  of p95s). `presign_age` is recorded ONLY when the transport reports one
+  (REST arm) — a fake zero on FIX would poison the stats. `book_age` =
+  exec_ts − the book snapshot's `as_of` (skipped while the book is still the
+  seq-0 placeholder); it distinguishes "our book was stale" from "a
+  competitor was genuinely faster" — the MS RECE loss was undiagnosable
+  without it.
 - **No telemetry lock before the wire**: the pre-send edge values
   (`decision→exec`, `handoff→exec`, `book_age`, `presign_age`) are measured
   at the right instants but recorded via `PendingEdges` only AFTER the send
@@ -88,7 +103,8 @@ LOST_RACE check → EV gate → risk gate → pre-staged body + pre-signed heade
   panic; every intent produces exactly one OrderRecord.
 
 ## How to replace or edit this layer
-- Everything is `src/kalshi/executor.rs`; wiring in `main.rs::arm`.
+- Everything is `src/kalshi/executor.rs` (+ the wire seam in
+  `src/kalshi/transport.rs`); wiring in `main.rs::arm`.
 - Contract: entry/exit types, ledger-before-send, no-blind-retry, registry
   registration, LOST_RACE semantics, tranche sync with `decision.rs`.
 - Wire-format facts (body fields, ack shape) are pinned in VERIFICATIONS.md
@@ -98,4 +114,7 @@ LOST_RACE check → EV gate → risk gate → pre-staged body + pre-signed heade
 - `tests/exec_mock.rs`: wiremock REST server + hand-published `BookCache`
   books + tempdir `RiskGate`. Covers fire path (exactly one signed POST),
   LOST_RACE, dry-run, ambiguous-timeout-no-repost, kill-switch scope.
+- `tests/exec_fix_mock.rs`: the same executor through `OrderTransport::Fix`
+  against an in-process mock FIX server — fill mapping, gates upstream of the
+  wire, and the dual-wire ambiguous path (no ER → REST status query).
 - Live: `earshot probe-order` (1¢/1-contract, non-mention, $1 ledger).

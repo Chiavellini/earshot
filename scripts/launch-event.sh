@@ -51,6 +51,13 @@ done
 }
 [[ -f "$CONFIG" ]]  || { echo "config not found: $CONFIG" >&2; exit 2; }
 [[ -f "$ACCOUNT" ]] || { echo "account env file not found: $ACCOUNT" >&2; exit 2; }
+# Listen-only invariant (docs/TWILIO.md): DTMF is passcode-entry only, charset
+# [0-9#w]; '*' (raise-hand/unmute) hard-rejected so we can never enter a Q&A
+# queue on a live call. Fail here too; twilio-dial.sh is the final chokepoint.
+if [[ -n "$DTMF" && ! "$DTMF" =~ ^[0-9#w]+$ ]]; then
+  echo "REFUSING: --dtmf \"$DTMF\" has a disallowed char (charset [0-9#w]; '*' never permitted)." >&2
+  exit 3
+fi
 # The per-event web-API port is derived from the bind port; keep it >= 4040 so
 # two events (8080/8081/...) map to 4040/4041/... without clashing ngrok's default.
 [[ "$BIND_PORT" =~ ^[0-9]+$ && "$BIND_PORT" -ge 8080 ]] || {

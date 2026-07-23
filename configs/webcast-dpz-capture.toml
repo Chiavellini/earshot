@@ -1,9 +1,17 @@
 # DPZ Q2 2026 — WEBCAST CAPTURE ONLY (Monday 2026-07-20 12:30 UTC).
 # Driven by `earshot capture-bakeoff`: no orders, no Kalshi creds needed.
-# TWO legs with DISTINCT labels (pipe + hls) — identical-label legs collide
-# on the recording filename (found in the 07-17 smoke). Monday morning:
+# FOUR legs with DISTINCT labels (pipe + hls + pipe_tuned + streamlink) —
+# identical-label legs collide on the recording filename (found in the 07-17
+# smoke; the harness now rejects duplicates, and same-kind legs disambiguate
+# via the `label` field). Monday morning:
 #   echo "<m3u8>" > ~/dpz-stream.url
 #   sed -i "s|__DPZ_URL__|<m3u8>|" configs/webcast-dpz-capture.toml
+# Legs 3-4 need no sed — they read ~/dpz-stream.url like leg 1.
+# Legs 3-4 are ISOLATED EXPERIMENTS (harness keeps surviving legs on a leg
+# death): never debug them during the call. Ladder evidence 2026-07-17
+# (Sky News live, 5 s segments, CDMX vantage, configs/webcast-ladder-bakeoff):
+#   pipe → pipe_tuned  −10.6 s (peak 0.98)   pipe → streamlink −11.7 s (1.00)
+# Leg 4 REQUIRES streamlink on the box (Sunday checklist).
 
 [event]
 id        = "KXEARNINGSMENTIONDPZ-26JUL20-WEBCAST"
@@ -23,6 +31,56 @@ cmd = [
 [[sources]]
 kind = "hls"
 url = "__DPZ_URL__"
+
+# Leg 3 (EXPERIMENT — low-latency ffmpeg, same manifest as leg 1): the xcorr
+# cross-delta vs leg 1 measures exactly what the tuning buys on a real event.
+# If this leg dies, legs 1–2 are unaffected (the harness isolates legs) —
+# do NOT debug it during the call.
+# Flags (input options, before -i):
+#   -live_start_index -1   hls demuxer: join at the NEWEST segment. Default
+#                          is -3 (three segments behind live) ≈ 15 s at 5 s
+#                          cadence — the dominant, free win. This is the ONLY
+#                          flag that moves the join point.
+#   -probesize 1000000 -analyzeduration 2000000   probe caps (1 MB / 2 s vs
+#                          5 MB / ~5 s defaults). Probing is STARTUP-ONLY —
+#                          it never moves the join point — so margin beats
+#                          aggression: 32 KB hard-failed on a muxed TS
+#                          ("could not find codec parameters" → zero output,
+#                          2026-07-17 test), 256 KB worked, 1 MB is pinned.
+#                          NOT -analyzeduration 0: in libavformat ≤0 falls
+#                          back to the ~5 s heuristic default.
+#   -fflags nobuffer -flags low_delay   drop input-side demux/decode buffering.
+#   -http_persistent 1     keep-alive segment fetches (explicit pin).
+#   -reconnect …           HTTP(S)-PROTOCOL options: accepted on Monday's
+#                          https input, but a local-FILE smoke must drop them
+#                          (ffmpeg exits 8 "Option reconnect not found").
+# Defaults evidence (ffmpeg 8.1.2 `-h demuxer=hls`, 2026-07-17):
+# live_start_index default -3, http_persistent default true. Re-verify on
+# the box's ffmpeg during the Sunday smoke (version may differ).
+#   -reconnect …           http-level retry on the stable-IP us-east box.
+#                          -reconnect_at_eof deliberately absent: segments
+#                          EOF by design and it can loop/stall.
+[[sources]]
+kind = "pipe"
+label = "pipe_tuned"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 1000000 -analyzeduration 2000000 -live_start_index -1 -http_persistent 1 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2 -i \"$(cat $HOME/dpz-stream.url)\" -vn -f s16le -ac 1 -ar 16000 -",
+]
+
+# Leg 4 (EXPERIMENT — streamlink low-latency): joins 1 segment from the edge
+# AND streams bytes out of in-progress segment downloads — measured ~1.1 s
+# ahead of pipe_tuned with the best stall profile on the 07-17 ladder run.
+# Flags verified on streamlink 8.4.0 (see configs/webcast-ladder-bakeoff.toml).
+[[sources]]
+kind = "pipe"
+label = "streamlink"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "streamlink --stdout --hls-live-edge 1 --hls-segment-stream-data --hls-playlist-reload-time segment \"$(cat $HOME/dpz-stream.url)\" best | ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 1000000 -analyzeduration 2000000 -i - -vn -f s16le -ac 1 -ar 16000 -",
+]
 
 [kalshi]
 series = "KXEARNINGSMENTIONDPZ"

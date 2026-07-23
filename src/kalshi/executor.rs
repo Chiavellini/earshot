@@ -10,13 +10,12 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use bytes::Bytes;
 use serde::Serialize;
 use tokio::sync::mpsc;
 
-use super::auth::Presigner;
 use super::book::BookCache;
-use super::rest::{OrderBodyV2, RestClient};
+use super::rest::RestClient;
+use super::transport::{OrderTransport, StageWire, WireStaged};
 use crate::clock::MonotonicNs;
 use crate::config::KeywordConfig;
 use crate::decision::FAST_TRANCHE_PCT;
@@ -53,7 +52,8 @@ pub const OBSERVE_PRICE_CENTS: u32 = 1;
 
 #[derive(Clone)]
 pub struct PreStaged {
-    pub body: Bytes,
+    /// Per-transport wire form (REST: pre-serialized JSON body).
+    pub wire: WireStaged,
     pub ticker: String,
     pub price_cents: u32,
     pub count: u32,
@@ -65,7 +65,7 @@ pub struct PreStaged {
 /// full), all enumerable at arm time.
 pub type PreStagedMap = HashMap<(u16, Tier, u32), PreStaged>;
 
-pub fn prestage_orders(event_id: &str, keywords: &[KeywordConfig]) -> PreStagedMap {
+pub fn prestage_orders(event_id: &str, keywords: &[KeywordConfig], wire: StageWire) -> PreStagedMap {
     let mut map = PreStagedMap::new();
     for (idx, kw) in keywords.iter().enumerate() {
         let idx = idx as u16;
@@ -86,16 +86,15 @@ pub fn prestage_orders(event_id: &str, keywords: &[KeywordConfig]) -> PreStagedM
             }
             let client_order_id =
                 super::rest::deterministic_client_order_id(&format!("{event_id}:{idx}:{tier:?}"));
-            let body = OrderBodyV2::ioc_buy_yes(
-                &kw.market_ticker,
-                kw.max_price_cents as u32,
-                count,
-                client_order_id.clone(),
-            );
             map.insert(
                 (idx, tier, count),
                 PreStaged {
-                    body: body.to_bytes(),
+                    wire: wire.stage(
+                        &kw.market_ticker,
+                        kw.max_price_cents as u32,
+                        count,
+                        client_order_id.clone(),
+                    ),
                     ticker: kw.market_ticker.clone(),
                     price_cents: kw.max_price_cents as u32,
                     count,
@@ -137,8 +136,11 @@ pub struct OrderRecord {
 }
 
 pub struct ExecCtx {
+    /// Order entry: the one wire the fire path sends through.
+    pub transport: OrderTransport,
+    /// Non-hot-path REST (ambiguous-outcome status query by client id, kill
+    /// cancels). Stays REST for every entry transport — same order store.
     pub rest: RestClient,
-    pub presigner: Arc<Presigner>,
     pub cache: Arc<BookCache>,
     pub gate: Arc<RiskGate>,
     pub prestaged: PreStagedMap,
@@ -259,14 +261,13 @@ async fn handle_intent(
             // Should never happen: tranches are enumerated at arm time.
             tracing::warn!(kw, ?intent.tier, intent.tranche_contracts, "no pre-staged body; building inline");
             let id = super::rest::deterministic_client_order_id(&format!("inline:{kw}:{:?}", intent.tier));
-            let body = OrderBodyV2::ioc_buy_yes(
-                &intent.market_ticker,
-                intent.max_price_cents as u32,
-                intent.tranche_contracts,
-                id.clone(),
-            );
             PreStaged {
-                body: body.to_bytes(),
+                wire: ctx.transport.stage_wire().stage(
+                    &intent.market_ticker,
+                    intent.max_price_cents as u32,
+                    intent.tranche_contracts,
+                    id.clone(),
+                ),
                 ticker: intent.market_ticker.clone(),
                 price_cents: intent.max_price_cents as u32,
                 count: intent.tranche_contracts,
@@ -359,14 +360,15 @@ async fn handle_intent(
         return record;
     }
 
-    // Fire. Presigned headers (RSA off the hot path); debit ledger BEFORE the
-    // send so an ambiguous timeout still counts as spent.
-    let (headers, presign_age) = ctx.presigner.get();
-    pending.presign_age = Some(presign_age);
+    // Fire. Debit ledger BEFORE the send so an ambiguous timeout still counts
+    // as spent. The transport owns its per-send machinery (REST: presigned
+    // headers, RSA off the hot path).
     ctx.gate.record_send(staged.price_cents, staged.count);
 
-    match ctx.rest.create_order_presigned(staged.body.clone(), headers).await {
-        Ok((ack, send_ts)) => {
+    match ctx.transport.send_order(&staged).await {
+        Ok(outcome) => {
+            let (ack, send_ts) = (outcome.ack, outcome.send_ts);
+            pending.presign_age = outcome.presign_age_ns;
             record.send_ts = Some(send_ts.0);
             record.hdrs_ts = Some(ack.hdrs_ts.0);
             record.ack_ts = Some(ack.ack_ts.0);
@@ -451,7 +453,7 @@ mod tests {
             min_confidence_fast: 0.0,
             min_confidence_confirmed: 0.0,
         }];
-        let map = prestage_orders("EV", &kws);
+        let map = prestage_orders("EV", &kws, StageWire::Rest);
         assert!(map.contains_key(&(0, Tier::Fast, 60)));
         assert!(map.contains_key(&(0, Tier::Confirmed, 140)));
         assert!(map.contains_key(&(0, Tier::Confirmed, 200)));
@@ -463,7 +465,10 @@ mod tests {
         // UUID-shaped and stable (idempotency).
         assert_eq!(staged.client_order_id.len(), 36);
         assert_eq!(staged.client_order_id.matches('-').count(), 4);
-        let v: serde_json::Value = serde_json::from_slice(&staged.body).unwrap();
+        let WireStaged::Rest { body } = &staged.wire else {
+            panic!("StageWire::Rest must stage a REST body")
+        };
+        let v: serde_json::Value = serde_json::from_slice(body).unwrap();
         assert_eq!(v["price"], "0.97");
         assert_eq!(v["count"], "60.00");
     }
@@ -485,13 +490,13 @@ mod tests {
             min_confidence_fast: 0.0,
             min_confidence_confirmed: 0.0,
         };
-        let map = prestage_orders("EV", std::slice::from_ref(&kw));
+        let map = prestage_orders("EV", std::slice::from_ref(&kw), StageWire::Rest);
         // fast_only releases the FULL budget on the Fast tier.
         assert!(map.contains_key(&(0, Tier::Fast, 1)));
         assert_eq!(map.len(), 1);
 
         kw.policy = crate::config::Policy::ConfirmedOnly;
-        let map = prestage_orders("EV", &[kw]);
+        let map = prestage_orders("EV", &[kw], StageWire::Rest);
         assert!(map.contains_key(&(0, Tier::Confirmed, 1)));
         assert_eq!(map.len(), 1);
     }

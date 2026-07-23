@@ -8,7 +8,9 @@
 pub mod auth;
 pub mod book;
 pub mod executor;
+pub mod fix;
 pub mod rest;
+pub mod transport;
 pub mod validator;
 
 use thiserror::Error;

@@ -22,14 +22,25 @@
 /// Naive `O(N · max_lag)`: fine for the one-time startup alignment (a couple
 /// seconds of 8 kHz audio) and the offline bake-off. Not a hot-path routine.
 pub fn best_lag(a: &[i16], b: &[i16], max_lag: usize) -> (i64, f64) {
+    best_lag_in(a, b, -(max_lag as i64), max_lag as i64)
+}
+
+/// `best_lag` over an arbitrary lag range `[lo, hi]` (same sign convention).
+/// Lets a caller refine around a coarse peak found on decimated audio
+/// (`capture_bakeoff::wide_lag`) instead of sweeping the full window.
+pub fn best_lag_in(a: &[i16], b: &[i16], lo: i64, hi: i64) -> (i64, f64) {
     if a.is_empty() || b.is_empty() {
         return (0, 0.0);
     }
-    let max_lag = max_lag.min(a.len().saturating_sub(1)).min(b.len().saturating_sub(1));
+    let bound = a.len().saturating_sub(1).min(b.len().saturating_sub(1)) as i64;
+    let (lo, hi) = (lo.max(-bound), hi.min(bound));
+    if lo > hi {
+        return (0, 0.0);
+    }
 
-    let mut best = (0i64, f64::NEG_INFINITY);
+    let mut best = (lo, f64::NEG_INFINITY);
     // Correlate a[i] with b[i + lag] over the overlap.
-    for lag in -(max_lag as i64)..=(max_lag as i64) {
+    for lag in lo..=hi {
         let corr = correlation_at(a, b, lag);
         if corr > best.1 {
             best = (lag, corr);
@@ -117,6 +128,25 @@ mod tests {
         let (lag, peak) = best_lag(&a, &b, 500);
         assert_eq!(lag, -(shift as i64));
         assert!(peak > 0.999, "peak {peak}");
+    }
+
+    #[test]
+    fn range_search_excluding_zero_recovers_lag() {
+        // Same +120-sample shift, but searched in a window that excludes 0 —
+        // the refine-around-coarse-peak use in capture_bakeoff::wide_lag.
+        let a = ramp(4000);
+        let shift = 120usize;
+        let mut b = vec![0i16; shift];
+        b.extend_from_slice(&a[..a.len() - shift]);
+        let (lag, peak) = best_lag_in(&a, &b, 100, 200);
+        assert_eq!(lag, shift as i64);
+        assert!(peak > 0.999, "peak {peak}");
+    }
+
+    #[test]
+    fn empty_range_is_no_match() {
+        let a = ramp(1000);
+        assert_eq!(best_lag_in(&a, &a, 50, 10), (0, 0.0));
     }
 
     #[test]

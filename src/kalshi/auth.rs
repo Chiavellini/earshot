@@ -84,6 +84,14 @@ impl Signer {
     pub fn headers_now(&self, method: &str, path: &str) -> Headers3 {
         self.headers(method, path, now_ms())
     }
+
+    /// Sign arbitrary bytes with the same RSA-PSS/SHA-256 primitive, base64
+    /// output. Used by the FIX Logon RawData (tag 96), whose canonical string
+    /// differs from the REST `{ts}{METHOD}{path}` scheme (VERIFICATIONS Q-FIX).
+    pub fn sign_raw(&self, msg: &[u8]) -> String {
+        let sig = self.signing_key.sign_with_rng(&mut rsa::rand_core::OsRng, msg);
+        base64::engine::general_purpose::STANDARD.encode(sig.to_bytes())
+    }
 }
 
 pub struct PresignedHeaders {

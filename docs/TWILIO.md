@@ -82,6 +82,30 @@ the strategy's structural edge.
    message JSONL and upgrade the pins above.
 6. Repeat with sherpa_kws + a spoken-keyword WAV.
 
+## Listen-only capture invariant (the "never make noise on a live call" guarantee)
+
+The capture leg dials into a live earnings-call bridge; it must be provably
+incapable of putting audio or a Q&A-queue keypress onto that call. Three parts,
+each enforced — not just documented (tests: `tests/twilio_listen_only.rs`):
+
+1. **Audio is one-way by construction.** The TwiML is `<Start><Stream
+   track="inbound_track">` — an async fork of the bridge's audio to our WS with
+   **no return-audio path**. It is never `<Connect><Stream>` (bidirectional) and
+   never `<Dial>`/`<Number>`/`<Sip>`. The WS handler (`src/source/twilio_ws.rs`)
+   is receive-only: the sole outbound frame is a `Pong` keepalive; there is no
+   `media`-send path. To transmit audio someone would have to change the TwiML
+   verb AND add a socket send — both are asserted against.
+2. **DTMF is passcode-ENTRY only.** `<Play digits="wwwwwwww${DTMF}">` sends the
+   passcode; the digit string is validated against `^[0-9#w]+$` in
+   `scripts/twilio-dial.sh` (and again at the `launch-event.sh` /
+   `event-autorun.sh` boundaries). **`*` is hard-rejected** because `*1`/`*11`
+   is the raise-hand/unmute key on operator bridges — so the system can never
+   enter a Q&A queue or open its line. A bridge whose ENTRY requires `*` is not
+   usable under this invariant: skip it.
+3. **We never queue a question** or occupy a questioner slot. Registration
+   (where a bridge requires it) is truthful and real-identity; we join to
+   listen only.
+
 ## Operational cautions
 
 - Trial accounts restrict outbound calls to verified numbers and inject a

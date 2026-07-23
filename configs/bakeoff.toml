@@ -33,14 +33,18 @@ refractory_ms     = 2000
 # `factory::build_detector` does `streaming_ctc.as_ref().expect(...)` — with no
 # section that expect panics (src/bench/mod.rs, src/detector/factory.rs).
 # validate() permits this section alongside sherpa_kws (engine stays sherpa_kws
-# for the sherpa cells). The streaming_ctc cell needs an ENGLISH streaming-CTC
-# model whose tokens.txt covers these keyword pieces; until that exists the cell
-# errors cleanly ("token piece … not in tokens.txt"), it does not panic.
-# model_dir is a TBD placeholder — the model is the M4 detector-latency blocker.
+# for the sherpa cells). ENGLISH model landed 2026-07-17 (Tier-0 hunt,
+# docs/CTC-MODEL-SOURCING.md → csukuangfj streaming-zipformer-small
+# 2024-03-18, trained --causal 1 --use-ctc 1 on full LibriSpeech; fetched by
+# scripts/fetch-models.sh, sha in VERIFICATIONS.md). LibriSpeech BPE-500
+# vocab; 320 ms decode quantum (out_per_chunk 8 vs the kws model's 640 ms).
+# Threshold 0.15 is DEV-TUNED 2026-07-17 (0.5/0.35 identical; 0.15 recovers
+# partnership 0.5→1.0 recall at zero FA cost; tariff threshold-insensitive —
+# domain gap, see BAKEOFF.md streaming_ctc section). Holdout not yet run.
 [detector.streaming_ctc]
-model_dir         = "models/sherpa-onnx-streaming-zipformer-ctc-en-TBD"
+model_dir         = "models/sherpa-onnx-streaming-zipformer-ctc-small-2024-03-18"
 num_threads       = 1
-default_threshold = 0.5
+default_threshold = 0.15
 
 [[sources]]                      # unused by bench-detector (corpus supplies audio)
 kind = "replay"

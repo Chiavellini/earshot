@@ -182,7 +182,12 @@ failover.
   the buffer; Twilio owns its own). Start at 40 ms, find the minimum stable
   value, log the choice. `capture-bakeoff --jitter-buffer-ms` is the sweep hook
   (no-op until the SIP adapter lands).
-- **Listen-only, always.** No DTMF into the Q&A queue, public dial-ins only.
+- **Listen-only, always** — see the canonical **Listen-only capture invariant**
+  in `docs/TWILIO.md`. Precisely: audio is one-way by construction; DTMF is
+  passcode-ENTRY only (charset `[0-9#w]`, `*` hard-rejected in code + tested), so
+  no DTMF can ever enter the Q&A queue; we never queue a question. (This
+  supersedes the older "no DTMF at all" wording, which contradicted the shipped
+  passcode-entry path — `docs/DIAL-INS.md`.)
 
 ## 6. SIP path (Option B/C) — gated pre-flight
 

@@ -48,6 +48,40 @@ headroom; defer until REST latency is measured (latprobe, M5 region work).
 **Confidence:** high (endpoints); medium (no tier gating stated for basic FIX).
 **Re-verify:** before any FIX go-live; access policy may be enforced out-of-band.
 
+**Claim (MEASURED 2026-07-21 — corrects the "2.2 ms colo parity" reading): our
+REST order host is a CloudFront edge; the matching engine is in us-east-2 (Ohio),
+NOT us-east-1 where our box sits.** From the us-east-1 box, read-only DNS + TLS
+handshake timings:
+- `api.elections.kalshi.com` (the host `src/kalshi/rest.rs` posts orders to) →
+  `3.167.99.x` = **AWS CloudFront**; TCP connect **~2.0–2.9 ms** (this is the CDN
+  edge — the number the latprobe reported as "2.2 ms", NOT the engine).
+- `external-api.kalshi.com` (real API backend) → CNAME
+  `elections-external-api-…**us-east-2**.elb.amazonaws.com`; TCP connect **~17 ms**.
+- `mm.fix.elections.kalshi.com` (FIX order entry) → `18.119/18.223.x` =
+  **us-east-2**, no CDN; TCP connect **~12–14 ms**.
+**Implication:** the true box→engine RTT is **~12–17 ms (a full region away)**, not
+2.2 ms; the REST order path is CDN-fronted. Two levers follow: (1) move the box to
+**us-east-2** (the engine's region); (2) FIX is the direct, CDN-free path to
+us-east-2. The `decision→ack ~15–20 ms PREDICTED` in LATENCY-PROOF was, if anything,
+optimistic about *where* those ms go. Real engine send→ack still needs a us-east-2
+probe-order to pin.
+**Source:** live probe from `i-04c50d76572aa092e` (44.197.147.18), 2026-07-21;
+Kalshi FIX/PrivateLink docs (above); third-party us-east-2 reports corroborate.
+**Confidence:** high (resolved hosts + handshake RTTs are direct measurements);
+the exact engine send→ack awaits a us-east-2 probe-order.
+**Re-verify:** after the us-east-2 box move — pin the real probe-order send→ack.
+
+**Claim (CONFIRMED 2026-07-21 — the recovery, measured from us-east-2 itself):** a
+throwaway t3.micro in us-east-2a measured TCP-connect RTT to the same hosts:
+**external-api.kalshi.com (us-east-2 ELB) ~2 ms** (was ~17 ms from us-east-1) and
+**FIX host ~0.8 ms** (was ~12–14 ms) → **box move recovers ~11–14 ms** on the
+direct-to-engine path. `api.elections` stays a CloudFront edge (~2.5 ms) from both
+regions — the CDN-free win is using the direct us-east-2 origin / FIX from a
+us-east-2 box. Instance terminated after measuring (cost ~cents).
+**Source:** `state/latprobe-useast2-2026-07-21.json` (probe `i-0ea6945c58b7af059`).
+**Confidence:** high for the network RTT recovery; the per-order send→ack (warm
+socket ≈ 1 RTT) still needs a relocated box + 1¢ probe-order to pin end-to-end.
+
 **Claim:** Batch endpoints exist (`POST /portfolio/events/orders/batched`,
 batch cancel). A batch costs the same tokens as its parts (create = 10 tokens
 each, cancel = 2) and the **whole batch must fit the bucket at once or the
@@ -508,6 +542,34 @@ a CTC head onto a causal transducer, T2 GPU-days from scratch. `bench-detector
 **Confidence:** high (plumbing); the ≤350 ms latency number awaits the English
 model + paced bake-off.
 
+**Claim (2026-07-17):** an English causal+CTC streaming zipformer EXISTS and
+drives the streaming_ctc engine — the Tier-0 outcome of the sourcing plan.
+**Source:** `sherpa-onnx-streaming-zipformer-ctc-small-2024-03-18` (GitHub
+k2-fsa/sherpa-onnx `asr-models` release; tar.bz2 sha256
+`cd8ed7371b1a0c49e919549a606235c8092f9006425aa06a9e8e6395054126bd`, pinned in
+`scripts/fetch-models.sh`). Checkpoint provenance:
+`csukuangfj/icefall-asr-librispeech-streaming-zipformer-small-2024-03-18` (HF).
+**Evidence:** (a) training command in the HF repo's
+`run-streaming-zipformer-ctc.sh` shows `--causal 1` AND `--use-ctc 1`
+(full LibriSpeech, small config); training log confirms `'causal': True,
+'use_ctc': True`, 23.76 M params; icefall PR #1557 names this repo.
+(b) ONNX metadata read from the int8 export: `model_type=zipformer2`, `T=45`,
+`decode_chunk_len=32` → **320 ms decode quantum, ~130 ms right-context**
+(vs the zh stand-in's 640 ms/130 ms and sherpa_kws's ~320 ms lookahead +
+0.4–0.5 s decode lag). (c) live on this box 2026-07-17: both streaming_ctc
+integration tests PASS against it (`EARSHOT_REQUIRE_MODELS=1`; measured
+`out_per_chunk = 8`), and `compile-keywords` encodes all bench keywords on
+its LibriSpeech BPE-500 with zero tokens.txt gaps (cuts differ from
+gigaspeech — recomputed, e.g. guidance → `▁G U ID ANCE`).
+**Caveats:** the CTC head was an auxiliary loss (`ctc_loss_scale 0.2`) with
+NO published WER — the corpus bake-off is the sole quality gate. The 130 ms
+right-context exceeds the 0–80 ms follow-on ambition; the checkpoint (.pt
+epochs 26–30 on HF) was trained with chunk 16/32/64, so a chunk-16 re-export
+(160 ms quantum) via `export-onnx-streaming-ctc.py` is a legitimate
+latency-trim follow-on if the paced bench lands near the 350 ms bar.
+**Confidence:** high (identity/format/plumbing); detection quality TBD by
+`bench-detector` dev/holdout. **Re-verify:** n/a (immutable release asset).
+
 ## Q-M3 — Twilio Media Streams request signature
 
 **Claim:** Twilio signs each request with
@@ -569,6 +631,113 @@ below, confirming the warmer worked). The lever is upstream: audio transport
 edge). Full decomposition: `docs/RUNBOOK.md` follow-up 2.
 **Confidence:** high — public tape cross-referenced against our own
 monotonic-to-wall mapping (±ms via the decision log line).
+
+## Q-FIX — FIX order entry (lever E2; offline build 2026-07-21)
+
+All facts researched 2026-07-21 against live docs.kalshi.com FIX pages
+(fix/connectivity.md, fix/authentication.md, fix/order-entry.md,
+fix/common-components.md, fix/error-handling.md, fix/subpenny-pricing.md).
+**Nothing here is live-verified yet** — FIX access is Premier-gated. The
+offline build (`src/kalshi/fix/`) codes ONLY to the F-facts below; the open
+questions are parked as verify-at-live-logon items and the code stays
+tolerant where they bite.
+
+**F1 — Protocol.** FIXT.1.1 transport, application version FIX50SP2
+(`8=FIXT.1.1`; Logon `1137=9`).
+**Source:** fix/connectivity.md, fix/common-components.md. **Confidence:**
+high (documented). **Re-verify:** demo logon.
+
+**F2 — Endpoints.** Prod order entry `mm.fix.elections.kalshi.com`, port
+8228 = `KalshiNR` (no retransmission), 8230 = `KalshiRT` (retransmission,
+institutional approval). Demo `fix.demo.kalshi.co`. TLS 1.2+ mandatory (AWS
+NLB); one FIX connection per API key. (Hosts also pinned in Q1.)
+**Source:** fix/connectivity.md. **Confidence:** high.
+
+**F3 — Logon auth.** 35=A carries `96=RawData` = base64 RSA-PSS/SHA-256
+signature over the pre-hash `SendingTime SOH MsgType SOH MsgSeqNum SOH
+SenderCompID SOH TargetCompID` (SOH = 0x01); SendingTime must byte-match tag
+52. Same RSA private key as REST; `49=SenderCompID` is the FIX API key UUID.
+This is a DIFFERENT canonical string than REST's `{ts_ms}{METHOD}{path}` —
+implemented as `Signer::sign_raw` + `fix::encode::logon_prehash`.
+**Source:** fix/authentication.md. **Confidence:** high on the field list;
+trailing-SOH ambiguity is open question OQ7. **Re-verify:** demo logon.
+
+**F4 — Logon tags.** `98=0`, `108=N` with N > 3 s (default 30; config
+enforces > 3), `1137=9`, `95`/`96` (95 immediately precedes 96). `141=Y`
+REQUIRED on KalshiNR. `8013` CancelOrdersOnDisconnect defaults N — we KEEP
+N (see OQ4). `21005=Y` (subpenny dollar prices) deliberately NOT set.
+**Source:** fix/authentication.md, fix/subpenny-pricing.md. **Confidence:**
+high.
+
+**F5 — Session mechanics.** `52` format `YYYYMMDD-HH:MM:SS.mmm`, must be
+within ±30 s of server time (else Reject 373=10). MsgSeqNum from 1,
+monotonic. Standard BodyLength/CheckSum (mod-256, 3 digits).
+**Source:** fix/common-components.md. **Confidence:** high.
+
+**F6 — NewOrderSingle (35=D).** Required: `11` ClOrdID (UUID preferred,
+≤64 chars — our 36-char deterministic UUID fits; SAME idempotency key as
+REST), `38` OrderQty, `40=2` (Limit only), `44` Price = **integer cents
+1–99** in default mode, `54` Side, `55` Symbol = market ticker. Optional:
+`59=3` IOC, `18=6` post-only, `2964` STP (`1`=Taker-At-Cross default,
+explicit in our template), `21006`, `21009`.
+**Source:** fix/order-entry.md. **Confidence:** high on names/codes; `38`
+wire shape is OQ2.
+
+**F7 — ExecutionReport (35=8).** `150` ExecType (0 New / F Trade / 4
+Canceled / 8 Rejected / C Expired / A PendingNew…), `39` OrdStatus, `37`
+exchange OrderID, `14` CumQty, `151` LeavesQty, `31` LastPx (cents), `32`
+LastQty, `6` AvgPx, `103` OrdRejReason. IOC: Trade ER(s) then terminal;
+nothing crossed → Canceled/Expired.
+**Source:** fix/order-entry.md. **Confidence:** high.
+
+**F8 — Cancel.** 35=F requires `11` (new id) + `41` OrigClOrdID + `54` +
+`55`; 35=9 OrderCancelReject carries `102` + `58`. Encoded for completeness;
+NOT wired into the kill switch (which cancels OrderRegistry ids over REST —
+scope invariant).
+**Source:** fix/order-entry.md. **Confidence:** high.
+
+**F9 — Session errors.** Reject 35=3 (45 RefSeqNum, 373 reason 0–11),
+BusinessMessageReject 35=j (380: 6=Not authorized, 8=Rate limit). Seq too
+low on Logon → terminated. Gaps recoverable ONLY on KalshiRT (24 h
+lookback); on NR a gap is fatal → reconnect fresh (our machine's posture).
+Kalshi never resets seqnums during maintenance.
+**Source:** fix/error-handling.md, fix/authentication.md. **Confidence:**
+high.
+
+**F10 — Rate limits.** FIX drains the SAME token buckets as REST (no
+throughput headroom — the wire buys latency only); Logon itself is
+rate-limited (reconnect backoff floor 1 s); Heartbeat/TestRequest/Logout are
+free.
+**Source:** fix/connectivity.md. **Confidence:** high.
+
+**Open questions — resolve at demo logon, do NOT guess in code:**
+- **OQ1** Server-side CompIDs on inbound messages (`Kalshi` vs the session
+  id `KalshiNR`?) — parser/machine are tolerant (log-only mismatch).
+- **OQ2** `38` OrderQty wire shape: plain `38=60` vs `38=60.00` ("decimal"
+  documented without example; REST required `"60.00"` — Q1). Golden vectors
+  use plain integer; FLAGGED.
+- **OQ3** Side semantics for the NO leg (54 on YES leg like REST bid/ask?).
+  Non-blocking — we only ever buy YES (`54=1`).
+- **OQ4** `8013=Y` scope: "all open orders" on disconnect — session-scoped or
+  account-wide? Account carries unrelated resting orders → stays `N` until
+  verified.
+- **OQ5** Whether the FIX API key id equals the REST `KALSHI_API_KEY_ID` or
+  is separately provisioned — config `[kalshi.fix] fix_key_id` overrides,
+  falls back to the REST key id.
+- **OQ6** RSA-PSS salt length for the Logon signature (assumed digest-length,
+  same as the REST signer primitive).
+- **OQ7** Trailing SOH after TargetCompID in the Logon pre-hash (assumed
+  none — separators only).
+- **OQ8** Heartbeat grace behavior server-side (we probe at 1.2×, drop at
+  2× — standard FIX practice, undocumented by Kalshi).
+
+**Implication:** the fire path can swap `POST /portfolio/events/orders`
+(CloudFront-fronted, us-east-1→us-east-2 ≈ 12–17 ms box RTT, see Q1 2026-07-21
+revision) for a persistent session to the FIX gateway (~0.8 ms from us-east-2,
+`state/latprobe-useast2-2026-07-21.json`). Offline build landed 2026-07-21
+behind `[kalshi] transport = "fix"` (default `rest`, behavior unchanged).
+**Live validation ladder:** demo logon (resolves OQ1–OQ8) → prod logon → 1¢
+probe under the $1 ledger → FIX-vs-REST send→ack A/B from the same box.
 
 ## Open items carried forward
 

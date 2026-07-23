@@ -15,6 +15,7 @@ use earshot::kalshi::auth::{Presigner, Signer};
 use earshot::kalshi::book::{Book, BookCache};
 use earshot::kalshi::executor::{prestage_orders, run_executor, ExecCtx};
 use earshot::kalshi::rest::RestClient;
+use earshot::kalshi::transport::{OrderTransport, StageWire};
 use earshot::pipeline::preproc::PreprocCfg;
 use earshot::pipeline::run_pipeline;
 use earshot::risk::{RiskConfig, RiskGate};
@@ -92,11 +93,11 @@ async fn audio_in_order_out_with_all_edges_recorded() {
     }];
     let presigner = Presigner::new(signer, "POST", "/trade-api/v2/portfolio/events/orders".into());
     let ctx = Arc::new(ExecCtx {
+        transport: OrderTransport::Rest { client: rest.clone(), presigner },
         rest,
-        presigner,
         cache,
         gate: gate.clone(),
-        prestaged: prestage_orders("E2E", &keywords),
+        prestaged: prestage_orders("E2E", &keywords, StageWire::Rest),
         haircuts: HashMap::from([(0u16, 0u32)]),
         dry_run: false,
         registry: earshot::kalshi::OrderRegistry::default(),

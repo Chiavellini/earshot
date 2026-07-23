@@ -1,0 +1,70 @@
+# GOOGL Q2 2026 — WEBCAST STUDY CAPTURE ONLY (Wed 2026-07-22 20:30 UTC = 4:30 PM ET).
+# Driven by `earshot capture-bakeoff`: no orders, no Kalshi creds needed.
+# Same 4-leg ladder as the DPZ template (configs/webcast-dpz-capture.toml).
+#
+# ⚠ YOUTUBE CAVEAT (RUNBOOK §Same-floor W1-pre): Alphabet streams on YouTube.
+# googlevideo manifests bake the REQUESTER's IP (`/ip/<addr>/`) — an m3u8
+# surfaced in the user's browser will likely 403 from the box, and box-side
+# yt-dlp is bot-walled from AWS. Decision tree Wednesday:
+#   1. If a non-YouTube manifest surfaces (abc.xyz player / any simulcast):
+#      use THIS config on the box (m3u8 steps below).
+#   2. Otherwise run the capture from the CDMX LAPTOP via the yt-dlp path
+#      (proven 07-17): see the laptop fallback in webcast-tsla-capture.toml —
+#      same pattern, GOOGL watch URL.
+# Morning steps (box, case 1):
+#   echo "<m3u8>" > ~/googl-stream.url
+#   sed -i "s|__GOOGL_URL__|<m3u8>|" ~/ear/configs/webcast-googl-capture.toml
+#   ~/ear/scripts/manifest-probe.sh "<m3u8>" | tee ~/googl-capture/manifest-probe.txt
+#   ~/run-googl-capture.sh
+# Legs 3-4 are ISOLATED EXPERIMENTS — never debug during the call.
+# Leg 4 REQUIRES streamlink on the box.
+# Runs ALONGSIDE the (separate) GOOGL phone autorun; -WEBCAST id keeps state apart.
+
+[event]
+id        = "KXEARNINGSMENTIONGOOGL-26JUL22-WEBCAST"
+starts_at = "2026-07-22T20:30:00Z"
+
+[pipeline]
+chunk_ms = 80
+
+[[sources]]
+kind = "pipe"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "ffmpeg -loglevel warning -i \"$(cat $HOME/googl-stream.url)\" -vn -f s16le -ac 1 -ar 16000 -",
+]
+
+[[sources]]
+kind = "hls"
+url = "__GOOGL_URL__"
+
+[[sources]]
+kind = "pipe"
+label = "pipe_tuned"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 1000000 -analyzeduration 2000000 -live_start_index -1 -http_persistent 1 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2 -i \"$(cat $HOME/googl-stream.url)\" -vn -f s16le -ac 1 -ar 16000 -",
+]
+
+[[sources]]
+kind = "pipe"
+label = "streamlink"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "streamlink --stdout --hls-live-edge 1 --hls-segment-stream-data --hls-playlist-reload-time segment \"$(cat $HOME/googl-stream.url)\" best | ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 1000000 -analyzeduration 2000000 -i - -vn -f s16le -ac 1 -ar 16000 -",
+]
+
+[kalshi]
+series = "KXEARNINGSMENTIONGOOGL"
+env = "prod"
+
+[[keywords]]
+market_ticker   = "KXEARNINGSMENTIONGOOGL-26JUL22-CAPT"
+phrase          = "gemini"
+variants        = ["gemini"]
+max_price_cents = 1
+budget_contracts = 1
+policy          = "confirmed_only"

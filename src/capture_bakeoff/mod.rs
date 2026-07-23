@@ -29,8 +29,13 @@ type AnyErr = Box<dyn std::error::Error>;
 const STALL_THRESHOLD: Duration = Duration::from_millis(100);
 const LEG_RING_CAP: usize = 4096; // generous: the drain loop must never drop
 /// Cross-correlation search bounds (samples are cheap here; this is offline).
-const XCORR_WINDOW_SECS: u64 = 30;
-const XCORR_MAX_LAG_SECS: u64 = 5;
+/// The ±30 s lag window exists to see the webcast tuned-vs-default join gap
+/// (~2 HLS segments plus probe delta); a full-rate naive sweep over that
+/// window is infeasible, so `wide_lag` searches in two stages.
+const XCORR_WINDOW_SECS: u64 = 60;
+const XCORR_MAX_LAG_SECS: u64 = 30;
+/// Coarse-pass decimation factor (16 kHz → 1 kHz) for the two-stage search.
+const XCORR_DECIM: usize = 16;
 
 pub struct CaptureArgs {
     /// Built capture legs (the arbiter/`build_leg` seam constructs these).
@@ -107,6 +112,15 @@ pub fn run_capture_bakeoff(args: CaptureArgs) -> Result<CaptureReport, AnyErr> {
     }
     if args.legs.len() < 2 {
         return Err("capture bake-off needs at least 2 legs".into());
+    }
+    for (i, l) in args.labels.iter().enumerate() {
+        if args.labels[..i].contains(l) {
+            return Err(format!(
+                "duplicate leg label {l:?} — <label>.wav recordings would collide; \
+                 set a distinct `label` on the [[sources]] entry"
+            )
+            .into());
+        }
     }
 
     // Drive all legs on one current-thread runtime (IO enabled for network
@@ -245,7 +259,7 @@ fn cross_deltas(caps: &[LegCapture]) -> Vec<CrossPair> {
             continue;
         }
         let opcm = concat(&other.frames, XCORR_WINDOW_SECS, other.sample_rate_hz);
-        let (lag, peak) = xcorr::best_lag(&ref_pcm, &opcm, max_lag);
+        let (lag, peak) = wide_lag(&ref_pcm, &opcm, max_lag);
         // ref[i] ≈ other[i+lag]: content at ref index i sits at other index
         // i+lag. Arrival of that content: ref_t0 + i/sr vs other_t0 + (i+lag)/sr.
         let start_skew_ms = other.frames[0].capture_ts.0 as f64 / 1e6 - ref_t0.0 as f64 / 1e6;
@@ -258,6 +272,29 @@ fn cross_deltas(caps: &[LegCapture]) -> Vec<CrossPair> {
         });
     }
     out
+}
+
+/// Two-stage wide-window lag search: coarse `best_lag` on block-mean
+/// decimated audio, then a sample-exact `best_lag_in` refine around the
+/// coarse peak. Coarse quantization error is ±1 decimated step, so a
+/// ±4·DECIM full-rate margin covers it with room to spare. Result precision
+/// is identical to a full-rate sweep (the sub-second telephony deltas that
+/// feed the virtual race stay sample-exact) at a small fraction of the cost.
+fn wide_lag(a: &[i16], b: &[i16], max_lag: usize) -> (i64, f64) {
+    let da = decimate(a, XCORR_DECIM);
+    let db = decimate(b, XCORR_DECIM);
+    let (coarse, _) = xcorr::best_lag(&da, &db, max_lag / XCORR_DECIM);
+    let center = coarse * XCORR_DECIM as i64;
+    let margin = (4 * XCORR_DECIM) as i64;
+    xcorr::best_lag_in(a, b, center - margin, center + margin)
+}
+
+/// Block-mean decimation. Mean, not stride sampling — striding aliases
+/// high-frequency content, which can move the correlation peak.
+fn decimate(x: &[i16], factor: usize) -> Vec<i16> {
+    x.chunks(factor)
+        .map(|c| (c.iter().map(|&s| s as i32).sum::<i32>() / c.len() as i32) as i16)
+        .collect()
 }
 
 fn concat(frames: &[Frame], window_secs: u64, sr: u32) -> Vec<i16> {
@@ -274,7 +311,10 @@ fn concat(frames: &[Frame], window_secs: u64, sr: u32) -> Vec<i16> {
 
 /// Rank by p99 tail jitter (the Work Order's first priority), then stalls.
 fn recommend(legs: &[LegReport]) -> Recommendation {
-    let mut ranked: Vec<&LegReport> = legs.iter().collect();
+    // A dead leg (0 frames) reports zero jitter — exclude it so it can't
+    // outrank live legs (a 3-leg run with one failed leg "recommended" the
+    // dead one before this filter).
+    let mut ranked: Vec<&LegReport> = legs.iter().filter(|l| l.frames > 0).collect();
     ranked.sort_by(|a, b| {
         a.jitter_p99_us
             .cmp(&b.jitter_p99_us)
@@ -415,6 +455,90 @@ mod tests {
             "expected ~100 ms cross delta, got {:.1}",
             c.delta_ms
         );
+    }
+
+    #[test]
+    fn recovers_multisecond_cross_delta() {
+        // Webcast tuned-vs-default join gaps are ~2 HLS segments (≈ 10 s) —
+        // far beyond the old ±5 s window. Leg B is leg A delayed by 64 000
+        // samples (8 s @ 8 kHz); the two-stage wide_lag must recover it.
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.wav");
+        let b = dir.path().join("b.wav");
+        noise_wav(&a, 96000, 0);
+        noise_wav(&b, 96000, 64000);
+
+        let report = run_capture_bakeoff(CaptureArgs {
+            legs: vec![
+                Box::new(ReplaySource::from_wav(&a, 0.0, SourceId(0)).unwrap()),
+                Box::new(ReplaySource::from_wav(&b, 0.0, SourceId(1)).unwrap()),
+            ],
+            labels: vec!["pipe".into(), "pipe_tuned".into()],
+            max_secs: 30,
+            record_dir: None,
+        })
+        .unwrap();
+
+        let c = &report.cross[0];
+        assert!(c.peak > 0.8, "weak alignment peak {}", c.peak);
+        assert!(
+            (7900.0..=8100.0).contains(&c.delta_ms),
+            "expected ~8000 ms cross delta, got {:.1}",
+            c.delta_ms
+        );
+    }
+
+    #[test]
+    fn dead_leg_is_never_recommended() {
+        let live = LegReport {
+            label: "pipe".into(),
+            frames: 1000,
+            samples: 320_000,
+            sample_rate_hz: 16000,
+            duration_ms: 20_000,
+            jitter_p50_us: 5,
+            jitter_p95_us: 40,
+            jitter_p99_us: 90,
+            jitter_max_us: 200,
+            stalls_over_100ms: 0,
+            wav_path: None,
+        };
+        let dead = LegReport {
+            label: "pipe_tuned".into(),
+            frames: 0,
+            samples: 0,
+            sample_rate_hz: 0,
+            duration_ms: 0,
+            jitter_p50_us: 0,
+            jitter_p95_us: 0,
+            jitter_p99_us: 0,
+            jitter_max_us: 0,
+            stalls_over_100ms: 0,
+            wav_path: None,
+        };
+        let r = recommend(&[live, dead]);
+        assert_eq!(r.winner, "pipe");
+        assert_eq!(r.runner_up, None);
+    }
+
+    #[test]
+    fn rejects_duplicate_labels() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.wav");
+        let b = dir.path().join("b.wav");
+        noise_wav(&a, 8000, 0);
+        noise_wav(&b, 8000, 0);
+        let err = run_capture_bakeoff(CaptureArgs {
+            legs: vec![
+                Box::new(ReplaySource::from_wav(&a, 0.0, SourceId(0)).unwrap()),
+                Box::new(ReplaySource::from_wav(&b, 0.0, SourceId(1)).unwrap()),
+            ],
+            labels: vec!["pipe".into(), "pipe".into()],
+            max_secs: 10,
+            record_dir: None,
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains("collide"), "unexpected error: {err}");
     }
 
     #[test]

@@ -7,6 +7,7 @@
 pub mod arbiter;
 pub mod pipe;
 pub mod replay;
+pub mod sip;
 pub mod twilio_ws;
 
 use async_trait::async_trait;

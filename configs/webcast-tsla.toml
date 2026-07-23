@@ -5,7 +5,7 @@
 
 [event]
 id        = "KXEARNINGSMENTIONTSLA-26JUL22"
-starts_at = "2026-07-15T00:00:00Z"  # TODO: set the real call time (UTC)
+starts_at = "2026-07-22T21:30:00Z"
 
 [pipeline]
 chunk_ms       = 80
@@ -34,12 +34,19 @@ refractory_ms     = 2000
 # ⚠ Set the real watch URL on call day: @Tesla/live should resolve once the
 # stream is up; verify ~30 min early and check for a faster simulcast
 # (company player / X) — the fastest public feed is the true floor.
+# 07-17 latency pass: low-latency flags added to the ffmpeg STAGE ONLY
+# (-fflags nobuffer -flags low_delay, probe capped at 1 MB / 2 s — probing
+# is startup-only and never moves the join point, so margin beats
+# aggression; 32 KB hard-fails on a muxed TS, see the DPZ tuned-leg
+# rationale). The yt-dlp stage stays byte-for-byte frozen (anti-bot pins
+# above); live-edge/http flags don't apply here — segment fetching is
+# yt-dlp's, not ffmpeg's.
 [[sources]]
 kind = "pipe"
 sample_rate_hz = 16000
 cmd = [
   "/bin/sh", "-c",
-  "$HOME/Library/Python/3.14/bin/yt-dlp -q --js-runtimes node -f 'worst*[acodec!=none]' -o - 'https://www.youtube.com/@Tesla/live' | ffmpeg -loglevel warning -i - -vn -f s16le -ac 1 -ar 16000 -",
+  "/opt/homebrew/bin/yt-dlp -q --js-runtimes node -f 'worst*[acodec!=none]' -o - \"$(cat $HOME/tsla-stream.url)\" | ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 1000000 -analyzeduration 2000000 -i - -vn -f s16le -ac 1 -ar 16000 -",
 ]
 
 [kalshi]

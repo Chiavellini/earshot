@@ -79,6 +79,15 @@ if [[ "$TEST" != 1 && ( "$TO_NUMBER" == *TBD* || "$PASSCODE" == *TBD* ) ]]; then
   echo "TO_NUMBER/PASSCODE still TBD in $EVENT_ENV" >&2
   exit 1
 fi
+# Listen-only invariant (docs/TWILIO.md): a passcode is digits/# only. Reject
+# '*' (raise-hand/unmute) and any other char here — fail before dialing, so a
+# bad env can never enter a Q&A queue on a live call. (twilio-dial.sh re-checks.)
+if [[ -n "$PASSCODE" && ! "$PASSCODE" =~ ^[0-9#]+$ ]]; then
+  notify_min "EARSHOT $EVENT_NAME run: NOT RUN (bad PASSCODE)" \
+    "event-autorun: PASSCODE in $EVENT_ENV has a disallowed char (charset [0-9#]; '*' never permitted). Exiting without launching."
+  echo "PASSCODE in $EVENT_ENV contains a disallowed character ('*' is never permitted)" >&2
+  exit 1
+fi
 # Every email subject carries the mode — a rehearsal alert must be
 # unmistakable from a live one (2026-07-15: an untagged TEST failure alert
 # was read as a real event failure).

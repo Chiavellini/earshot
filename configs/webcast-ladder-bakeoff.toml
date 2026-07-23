@@ -1,0 +1,72 @@
+# ACQUISITION LADDER BAKE-OFF — event-independent webcast-liveness A/B.
+# Three legs fetch the SAME live HLS stream three ways; the capture-bakeoff
+# xcorr cross-deltas measure what each rung buys:
+#   pipe        ffmpeg defaults        (join ~3 segments behind live edge)
+#   pipe_tuned  ffmpeg low-latency     (join at newest segment; the landed
+#                                       flag set from webcast-dpz-capture)
+#   streamlink  streamlink low-latency (join 1 segment from edge AND stream
+#                                       bytes out of in-progress segment
+#                                       downloads — up to a full segment
+#                                       duration ahead of pipe_tuned)
+# Run (any box, any live stream):
+#   echo "<m3u8-or-page-url>" > ~/ladder-stream.url
+#   earshot capture-bakeoff --config configs/webcast-ladder-bakeoff.toml \
+#     --secs 180 --record-dir ~/ladder --out ~/ladder/report.json
+#   scripts/manifest-probe.sh "<m3u8>"   # cadence context for the deltas
+# Notes:
+# - streamlink 8.4.0 flags verified + leg smoke-tested vs a live YouTube
+#   stream 2026-07-17 (local Mac): --hls-live-edge (default 3, same as
+#   ffmpeg's -3), --hls-segment-stream-data, --hls-playlist-reload-time
+#   segment. live-edge 1 trades buffering for liveness — stalls show up in
+#   the jitter/stall table, which is exactly the tradeoff being measured.
+# - streamlink accepts page URLs (plugin resolves) OR direct .m3u8. On a
+#   DATACENTER box YouTube is bot-walled (RUNBOOK W1-pre) for streamlink
+#   same as yt-dlp — use a direct corporate/news HLS manifest there.
+# - The tuned leg's -reconnect flags are http(s)-only: this config is for
+#   live https streams, never file:// smokes.
+
+[event]
+id        = "WEBCAST-LADDER-BAKEOFF"
+starts_at = "2026-07-19T00:00:00Z"
+
+[pipeline]
+chunk_ms = 80
+
+[[sources]]
+kind = "pipe"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "ffmpeg -loglevel warning -i \"$(cat $HOME/ladder-stream.url)\" -vn -f s16le -ac 1 -ar 16000 -",
+]
+
+[[sources]]
+kind = "pipe"
+label = "pipe_tuned"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 1000000 -analyzeduration 2000000 -live_start_index -1 -http_persistent 1 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2 -i \"$(cat $HOME/ladder-stream.url)\" -vn -f s16le -ac 1 -ar 16000 -",
+]
+
+[[sources]]
+kind = "pipe"
+label = "streamlink"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "streamlink --stdout --hls-live-edge 1 --hls-segment-stream-data --hls-playlist-reload-time segment \"$(cat $HOME/ladder-stream.url)\" best | ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 1000000 -analyzeduration 2000000 -i - -vn -f s16le -ac 1 -ar 16000 -",
+]
+
+# capture-bakeoff ignores trading config; sections below satisfy validation.
+[kalshi]
+series = "KXEARNINGSMENTIONDPZ"
+env = "prod"
+
+[[keywords]]
+market_ticker   = "KXEARNINGSMENTIONDPZ-26JUL20-PIZZ"
+phrase          = "pizza"
+variants        = ["pizza"]
+max_price_cents = 1
+budget_contracts = 1
+policy          = "confirmed_only"

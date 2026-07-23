@@ -44,7 +44,7 @@ keyword chunk captured **≈10.672** (−398 ms at audio arrival); decision ≈1
 
 | Leg | CDMX then (measured) | us-east now | Evidence class | Race effect |
 |---|---|---|---|---|
-| box→Kalshi RTT | p50 54.7 ms (floor under the 102 ms warm `send→hdrs`) | p50 **2.2 ms**, p99 7.2 | **MEASURED** (latprobes 07-16/07-17, INGRESS-BAKEOFF §2) | `decision→ack` 104 → **~15–20 ms PREDICTED**; pin via on-box probe-order |
+| box→Kalshi RTT | p50 54.7 ms (floor under the 102 ms warm `send→hdrs`) | p50 2.2 ms ⚠ **= CloudFront edge, NOT the engine** | ⚠ **RE-READ 2026-07-21** (VERIFICATIONS Q1 probe) | the latprobe host `api.elections.kalshi.com` is CloudFront; the engine is in **us-east-2** and our box is us-east-**1** → **true box→engine RTT ~12–17 ms**. **MEASURED 2026-07-21 from a us-east-2 probe**: direct us-east-2 ELB ~2 ms, FIX host ~0.8 ms → **box move recovers ~11–14 ms** (`state/latprobe-useast2-2026-07-21.json`). Real send→ack still needs the relocated box + a probe-order |
 | box→Twilio media | p50 55.3 ms + **4% loss** + ngrok relay | p50 **2.9 ms, 0% loss**, no ngrok | **MEASURED** (RTT/loss); end-to-end audio delta **UNMEASURED** | X_audio recovery: ~100–150 ms by p50 arithmetic; loss-tail removal may be worth much more on the worst chunk — handshake numbers cannot prove it |
 | Twilio bridge→media-stream fork | unknown | unchanged | UNMEASURED | 0; the SIP bake-off exists to bypass it |
 | `capture→decision` | 91.3 ms | ~same (chunk 80, sherpa) | measured then; unchanged | chunk-40 gate ≈ −20 ms when passed on-box |

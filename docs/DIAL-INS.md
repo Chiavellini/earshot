@@ -190,10 +190,14 @@ because remembered access facts are wrong at a meaningful rate.
 
 ## Open questions
 
-- **`INGRESS-BAKEOFF.md:133` says "Listen-only, always … public dial-ins only."** Ten of
-  eighteen issuers are bridge-unpublished, and Track A hunts a *participant* bridge while
-  `launch-event.sh` passes `--dtmf` passcodes. As written, that rule forfeits most of the
-  board. It needs an explicit decision, not silent drift.
+- **RESOLVED 2026-07-21 — the "Listen-only, always" rule is now the precise
+  Listen-only capture invariant** (`docs/TWILIO.md`): audio one-way by
+  construction; **DTMF is passcode-ENTRY only** (charset `[0-9#w]`, `*`
+  hard-rejected in code + `tests/twilio_listen_only.rs`); never queue a
+  question. This *permits* the Track-A participant bridge with a numeric
+  passcode (the common case) while making a Q&A-queue keypress structurally
+  impossible — so it does NOT forfeit the bridge-unpublished board. Only a
+  bridge whose ENTRY itself requires `*` is excluded.
 - **The Tier A/B boundary for the bridge-unpublished set is unresolved.** No registration
   URL was found for any of them. Intel's webcast runs on `edge.media-server.com`
   (Notified), a platform that generically issues dial-in + PIN on registration — but no

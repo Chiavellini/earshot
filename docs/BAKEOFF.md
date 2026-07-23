@@ -171,6 +171,7 @@ only (no positive samples yet); telephony band costs tariff ~2/9 recall
 |---|---|---|---|
 | 2026-07-11 | dev ×4 rounds | configs/bakeoff.toml (frozen at r4) | tuning log above |
 | 2026-07-11 | holdout (single run, frozen config) | chunk 80, sherpa_kws | accuracy below; paced latency on CAT below |
+| 2026-07-18 (transcribed 07-20) | dev paced subset (AAPL, 1.02 h) | chunk 80, sherpa_kws vs streaming_ctc t=0.15 | streaming_ctc paced latency below — **no cut at 320 ms-quantum export; 350 ms bar fails ~4×**; follow-ons P1–P4 |
 
 ### Holdout accuracy (2.68 h, unseen companies: WMT / CAT / GIS)
 
@@ -350,3 +351,214 @@ every FA regression sits on words the live configs hold at 1¢ observe-only
 itself useful validation data. Guard for future configs: before promoting any
 observe-word to a fillable tier, re-check its fp32 FA rate on corpus — the
 "no FA regression" bar applies at promotion time, not only globally.
+
+## streaming_ctc first corpus results (2026-07-17, dev split — English model landed)
+
+The Tier-0 hunt succeeded (`docs/CTC-MODEL-SOURCING.md`):
+`sherpa-onnx-streaming-zipformer-ctc-small-2024-03-18` (LibriSpeech,
+`--causal 1 --use-ctc 1`, 320 ms decode quantum, ~130 ms right-context —
+pins in `VERIFICATIONS.md`). First dev accuracy pass, chunk 80, int8,
+CDMX laptop, vs sherpa_kws at its shipped config (threshold 0.20 boost 2.0):
+
+| keyword (Confirmed) | sherpa_kws recall / FA | streaming_ctc t=0.15 recall / FA |
+|---|---|---|
+| guidance | 1.00 / 3 | **1.00 / 0** |
+| recession (FA ctrl, 0 occurrences) | — / 4 | — / **0** |
+| partnership | 0.75 / 1 | **1.00** / 1 |
+| acquisition | 0.67 / 2 | 0.67 / 1 |
+| tariff | 0.78 / 1 | **0.44** / 3 |
+| **aggregate** | **0.89 recall, 3.9 FA/h** | **0.83 recall, 1.8 FA/h** |
+
+Threshold evidence (dev-tuning surface): 0.5 and 0.35 identical; 0.15
+recovers partnership 0.50→1.00 with zero FA cost; **tariff is pinned at 4/9
+at every threshold and identical under the fp32 encoder** (quantization
+ruled out, same AAPL call). Diagnosis: the telephony-domain gap the sourcing
+doc pre-declared — a LibriSpeech-clean model on 300–3400 Hz band-limited
+audio, on a word whose fricatives the band-limit destroys; sherpa also
+benefits from keyword boost (2.0), which the CTC scorer does not implement.
+
+Read this with two qualifiers: (1) these are telephony numbers — the
+webcast lane feeds 16 kHz wideband, far closer to the model's training
+domain (no wideband ground-truth corpus exists yet to bench it; the NFLX
+07-16 capture is the seed material); (2) the model's PURPOSE is the latency
+bar — the paced run (Fast p95 onset→emit vs sherpa's 1066 ms / the 350 ms
+bar) is the decisive number, pending at time of writing. Follow-ons if
+promoted: CTC keyword boosting in the scorer, telephony finetune (Tier 1),
+chunk-16 re-export (160 ms quantum). Holdout stays UNRUN pending a frozen
+config decision per protocol.
+
+### streaming_ctc paced latency (dev subset: AAPL-Q2-2026, 1.02 h real-time, chunk 80; run 2026-07-18 00:24, transcribed 2026-07-20)
+
+The decisive paced number arrived, and it is a **negative**: at the current
+320 ms-quantum export, streaming_ctc delivers **no onset→emit latency cut**
+over sherpa_kws. Raw artifacts: `state/bench/bench-paced.{json,log}`.
+
+sherpa_kws (in-run comparator, same paced replay):
+
+| phrase | tier | n | p50 | p95 |
+|---|---|---|---|---|
+| tariff | Fast | 6 | 976 ms | 1017 ms |
+| tariff | Confirmed | 7 | 1017 ms | 1329 ms |
+| guidance | Confirmed | 5 | 897 ms | 1785 ms |
+
+streaming_ctc (t=0.15 config from the dev accuracy pass):
+
+| phrase | tier | n | p50 | p95 |
+|---|---|---|---|---|
+| tariff | Fast | 6 | 984 ms | 1294 ms |
+| tariff | Confirmed | 4 | 1016 ms | 1294 ms |
+| guidance | Confirmed | 5 | 965 ms | 2107 ms |
+
+(Latency = word ONSET → detection emitted, wall clock, real-time replay —
+same convention as the holdout table above. guidance produced 0 Fast-tier
+fires on BOTH engines, 5/5 Confirmed on both.)
+
+**Verdict vs the bars:** streaming_ctc tariff Fast p95 **1294 ms** vs the
+**350 ms bar** — fails by ~4×; vs sherpa's in-run 1017 ms (holdout incumbent
+1066 ms) — no cut, slightly worse at p95, p50s equal (~980 ms). The
+geometry hypothesis (0–80 ms lookahead ⇒ large cut) did NOT materialize:
+the 320 ms decode quantum evidently dominates end-to-end emit timing just
+as sherpa's internal chunking does (consistent with the chunk_ms 80→40
+refutation in LATENCY-PROOF.md). Accuracy in-run was consistent with the
+07-17 dev pass — tariff Confirmed 4/9 with 3 FAs (same three autopsy
+timestamps at ~3352–3380 s of AAPL), i.e. the known telephony-domain gap,
+not a new regression; tariff Fast stayed 6/9 with 0 FA.
+
+**Caveats:** thin sample — one call, ~1.0 h, only two phrases produced
+latency rows; laptop run (3.5× wall-clock variance caveat applies, though
+paced replay anchors to audio onset so cross-engine comparison within the
+same run is fair).
+
+**Consequence:** the zero-GPU-spend promotion path is closed at this
+export. Pre-declared follow-on ladder (RACE-CHECKLIST.md): **P1** chunk-16
+re-export (160 ms quantum) + re-bench, **P2** scorer keyword boost, **P3**
+prefix-fire diagnosis (below — the Fast tier IS the prefix tier and IS in
+this table; the question was why it doesn't fire early), **P4** GPU
+finetune go/no-go on the P1–P3 evidence. Holdout remains UNRUN per
+protocol (no frozen config to one-shot).
+
+### streaming_ctc prefix-fire diagnosis (P3, 2026-07-21) — prefix-firing is NOT the overtake lever for this vocabulary
+
+The paced table above already contains the prefix number: streaming_ctc's
+**Fast tier fires on the cut-prefix token target** (`ctc_scorer` Fast entry
+= cut prefix, Confirmed = full word — same tier semantics as sherpa). So the
+"unmeasured overtake mechanism" was in fact measured, and the diagnosis of
+*why it doesn't overtake* is now definitive, from two evidence sources that
+needed no new run:
+
+1. **The measured prefix payoff is ~32 ms, not 250–400 ms.** tariff Fast p50
+   984 ms vs Confirmed p50 1016 ms — the prefix fires 32 ms earlier, and at
+   p95 they are identical (1294 ms). The overtake thesis (COMPETITOR-ANATOMY
+   §"What BEATS them") needs the prefix ~250–400 ms before word-END; it
+   delivers ~one output frame.
+
+2. **Root cause — the safe prefixes only shave the FINAL BPE token** on this
+   model (`compile-keywords --model-dir …-ctc-small-2024-03-18`):
+   - tariff: fast `▁T AR I` vs confirmed `▁T AR I FF` — cut 3/4 (drops only `FF`)
+   - recession: `▁RE CE S S` vs `▁RE CE S S ION` — drops only `ION`
+   - acquisition: `▁A C QUI S` vs `▁A C QUI S ITION` — drops only `ITION`
+   - guidance, partnership: **no safe prefix at all** (`fast_prefixes = []` —
+     `▁G U ID` prefixes guiding/guided, `▁PART` collides with "partner";
+     PREFIX-SAFETY §collision).
+   The earliest *non-colliding* prefix for the earnings-mention vocabulary
+   lands one token before the word end. So the acoustic head start is ~one
+   phoneme (tens of ms), and the 320 ms decode quantum + ~130 ms right
+   context swallows it whole.
+
+**Verdict:** prefix-firing is correctly built and safe, but it **cannot be
+the overtake move for these keywords** — their token structure affords no
+early safe cut. The only remaining lever to beat a full-word competitor ASR
+is a **lower-latency full-word detector** (smaller decode quantum via P1
+chunk-16, or a faster model family — the new G2/model-breadth search).
+This retires the "SIP + prefix-CTC beats wave-1" row of the stack math as
+written; see RACE-STRATEGY §3. (chunk-16/P1 would cut the absolute floor
+~150 ms but does not create an early prefix — it does not, by itself, make
+prefix-firing overtake.)
+
+### G2b — Parakeet-Realtime-EOU-120M measured (2026-07-21, dev call AAPL, telephony-upsampled): marginal, and RTF < 1 on laptop
+
+The G2 "swap to a faster 2026 model" lever, benched via `parakeet-rs` (proven
+featurizer + RNN-T decode; same ort 2.0-rc.12 as us) on the SAME dev call the
+sherpa/CTC paced bench used. Isolated harness streams the 8 kHz telephony call
+(linear-upsampled to the model's 16 kHz) in 160 ms chunks; records the AUDIO
+position at which each keyword first appears in the RNN-T transcript.
+
+| word | word-end (ms) | emit audio-pos (ms) | **decode-lag past word-end** | onset→emit |
+|---|---|---|---|---|
+| tariff (occ 1) | 63580 | 64000 | **420 ms** | 840 ms |
+| guidance (occ 1) | 335520 | 335840 | **320 ms** | 580 ms |
+
+> **⚠ CORRECTION 2026-07-21 (methodology): this run was NOT a fair test — re-open.**
+> Finding #2 below (RTF 0.68×) is **WITHDRAWN**: it was measured on the CDMX **laptop
+> (Apple M2)**, not the server, so it says nothing about the model on production
+> hardware. (The current box, t3a.large / 2-vCPU EPYC 7571, is actually *slower* than
+> the M2 — RTF is a hardware-provisioning choice, fixed by a GPU/high-CPU instance, not
+> a model limit.) Finding #1 (decode-lag) is a valid CPU-independent number but under
+> three unfair conditions — **default `blank_penalty=0`** (the emit-sooner knob, untuned),
+> **telephony audio** (Parakeet is wideband-trained; webcast 16 kHz is its domain), and
+> the **EOU** variant (vs the eager **TDT**). Corrected re-bench in progress (blank_penalty
+> sweep × TDT × wideband, laptop; RTF on a real GPU instance). Treat the verdict below as
+> preliminary/superseded.
+
+**Verdict (PRELIMINARY — see correction above) — the STT swap is NOT the easy win the recon implied:**
+- decode-lag **~320–420 ms past word-end** is only *marginally* better than
+  sherpa's pinned ~400–500 ms — not the ~150–250 ms the 80 ms-quantum hope
+  implied. (Reality check: the EOU export streams at **160 ms chunks**, not
+  80 ms; and these audio-position numbers are the *optimistic* case — see RTF.)
+- onset→emit ~580–840 ms beats sherpa/CTC's ~900–980 ms p50 modestly, but is
+  nowhere near the ~350–500 ms needed to beat a 200–400 ms competitor ASR.
+- **RTF = 0.68× on this laptop CPU (400 s audio took 586 s wall)** — the 120M
+  model *cannot keep up with a live stream here*; in a real-time deployment it
+  falls progressively behind, so the true wall-clock decode-lag is WORSE than
+  the audio-position numbers above. It needs a materially faster CPU (the box,
+  or more) just to run real-time, before any headroom.
+
+**Caveats (why this is preliminary, not a final kill):** n=2 (thin); telephony
+8→16 kHz linear upsample (Parakeet is wideband-trained — on true 16 kHz webcast
+audio accuracy, and possibly latency, would differ); the **EOU** variant is
+end-of-utterance-oriented and may emit at utterance boundaries (a different
+Parakeet variant — TDT, or parakeet-ctc-0.6b — could have tighter emit
+dynamics). Follow-ups: full-corpus run for n; a wideband (16 kHz) call; the TDT
+variant. But the direction is clear: **decode-lag is stubbornly ~350–450 ms
+across every model we've measured (sherpa, streaming_ctc, Parakeet-EOU)** — the
+"faster off-the-shelf model" lever is weaker than hoped, which strengthens the
+case that closing the detector gap may genuinely require the GPU finetune (P4)
+or a wideband-native setup, not just a model swap. Artifacts: session scratch
+`pk-bench/` + `parakeet-eou/`.
+
+#### G2b experiment A.1 — blank_penalty sweep (2026-07-21): NO decode-lag improvement (lever spent)
+
+Tuned the EOU emission-eagerness knob (`set_blank_penalty`) on the tariff 90 s window
+(word-end 63580 ms): penalty 0/−1/−2 all emit tariff at **64000 ms (decode-lag 420 ms,
+identical)**; penalty −3 breaks decoding (tariff no longer emitted). So the emit-sooner
+lever does NOT reduce decode-lag — the ~420 ms is **structural** (the model needs ~2×
+160 ms chunks of audio past word-end to emit, independent of eagerness). (Laptop RTF over
+these identical-work runs ranged 0.28×–1.08× = confirmed noise; RTF is not measurable on
+the laptop — experiment B, a real GPU host, is required for any RTF claim.)
+Remaining A lever: **TDT variant** (different decode architecture). (The wideband test was
+NOT blocked after all — the raw wideband source `corpus/raw/aapl-q2-2026.mp3` exists and the
+manifest onsets were aligned on it; result in A.2 below.)
+
+#### G2b experiment A.2 — WIDEBAND (native 16 kHz) domain: SAME decode-lag (structural)
+
+The fairest test — Parakeet is wideband-trained, and the webcast lane is 16 kHz. Decoded the
+wideband original (`corpus/raw/aapl-q2-2026.mp3`) to 16 kHz (manifest onsets are aligned on the
+wideband source, so they apply directly) and re-ran tariff (word-end 63580 ms):
+**tariff emits at 64000 ms → decode-lag 420 ms — IDENTICAL to the telephony 8 kHz result.**
+
+**Consolidated A verdict (EOU variant): decode-lag ~420 ms is STRUCTURAL.** It is invariant across
+the two levers that could plausibly move it — `blank_penalty` (0/−1/−2 identical) AND audio domain
+(telephony 8 kHz == wideband 16 kHz). tariff pins to the chunk ending 64000 ms = **2× 160 ms chunks
+past word-end**, every time. This is the model's inherent streaming lookahead (chunk + right-context
++ the word must complete in-chunk), the same shape as sherpa's chunk-16 (320 ms) + decode lag.
+**The off-the-shelf model swap (EOU) does NOT beat sherpa on decode-lag, and the tuning levers don't
+help.** Only the **TDT** variant (different decode) remains untested; the trend is strongly negative.
+
+**Deeper implication (firming up):** decode-lag ~350–450 ms now looks like an *irreducible floor for
+full-word streaming ASR* on this vocabulary — sherpa, streaming_ctc, and Parakeet-EOU all land there,
+across domains and tuning. To break it you must fire on a partial word (prefix — retired, no safe
+early prefix for this vocab) or predict ahead. So the detector may let us **MATCH** competitors (who
+face the same physics) but not dramatically *beat* them; the beatable edge is in the OTHER terms —
+audio transport (SIP) and execution (us-east-2 + FIX) — where we are currently behind but which ARE
+closeable. **Consequence for the GPU RTF test (B): moot for EOU** — no point measuring real-time
+viability of a model that doesn't improve decode-lag. B is gated on TDT reviving the case.

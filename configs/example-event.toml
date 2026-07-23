@@ -15,6 +15,11 @@ speed = 1.0                       # 0 = as fast as possible (tests)
 
 [kalshi]
 series = "KXAAPLMENTION"
+# Order-entry wire: "rest" (default) or "fix" (lever E2 — offline-built,
+# requires FIX/Premier access; see VERIFICATIONS.md §Q-FIX). Optional
+# [kalshi.fix] section overrides host/port/target_comp_id/fix_key_id/
+# heartbeat_secs (defaults = production KalshiNR).
+# transport = "rest"
 
 [[keywords]]
 market_ticker           = "KXAAPLMENTION-26Q3-AI"
