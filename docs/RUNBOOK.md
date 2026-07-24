@@ -296,6 +296,24 @@ hearing Tue 10:00 AM (committee stream); Navy-commission "Maritime
 Seapower" hearing Wed 10:00 AM (stream link unverified); the "AI Workforce"
 Fri hearing was NOT verifiable on 07-20. **FOMC: Warsh presser is Wed 07-29
 2:30 PM (next week) — the crown same-floor target.**
+**FOMC VENUE RECON (pinned 2026-07-24 ~00:40, from the June 17 archived
+presser played with network capture):** the Fed's own player is
+**Brightcove** — account `66043936001`, player
+`players.brightcove.com/66043936001/default_default`, HLS via
+`manifest.prod.boltdns.net/manifest/v1/hls/v4/clear/66043936001/…/master.m3u8`
+with a short-lived **`fastly_token`** query param; VOD segments are 10 s
+(`/10s/` path — live cadence TBD via manifest-probe on the day). Surfacing
+paths, fastest first: (1) **Brightcove Playback API** — extract the
+`policy_key` from the player JS (public, in `players.brightcove.com/…/index.min.js`)
+and poll `edge.api.brightcove.com/playback/v1/accounts/66043936001/videos/…`
+for the live event → m3u8 seconds after it exists, no page scraping;
+(2) the standard Chrome network-capture recipe on
+federalreserve.gov/monetarypolicy/fomcpresconf20260729.htm; (3) YouTube
+simulcast (youtube.com/federalreserve) — laptop yt-dlp leg only (googlevideo
+is requester-IP-locked; box is bot-walled, per GOOGL). Tokenized manifests
+mean the box legs must consume the freshly-surfaced tokenized URL; token
+lifetime to be measured day-of. This is a THIRD venue class (Brightcove/
+boltdns/Fastly) — manifest-probe FIRST, fetch-ladder verdict unknown.
 
 **Capture outcomes (per-event, running log):**
 - **ALLY Tue 07-21 — NO CAPTURE.** The m3u8 was never surfaced / the box was
