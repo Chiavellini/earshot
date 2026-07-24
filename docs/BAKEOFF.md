@@ -593,13 +593,23 @@ nothing about next week.
 
 | Metric (Confirmed tier unless noted) | Bar |
 |---|---|
-| Dev: FA on the four named 07-23 false-fire contexts | 0 |
+| Dev: FA on the named 07-23 false-fire contexts (PERU, IRAN, APPL, TRUM, ULTR†) | 0 |
 | Dev: FA rate overall | ≤ 0.5 / h |
-| Dev: recall on the previously-caught word set | ≥ untuned baseline (no trade of recall for precision on words we already catch) |
-| Holdout (AAL): recall on the 8 swept words | ≥ 6/8 |
+| Dev: recall on the settlement-YES caught set (GOLD, MORF, EURO, NASA, CLI, FOUN, PANT, SECU) | ≥ untuned baseline (no trade of recall for precision on words we already catch) |
+| Holdout (AAL): recall on the settlement-YES spoken words (ATH, BASI, CHIC, RECO, WEAT) | ≥ 4/5 |
 | Holdout (AAL): FA rate | ≤ 1 / h |
 
-Bars drafted by the agent 2026-07-23 and pre-registered pending explicit
-user sign-off; if the user adjusts a bar, the adjustment must land BEFORE
-the holdout run. Verdict lands here; gate state mirrors to
-`docs/RACE-CHECKLIST.md`.
+† ULTR pending classification: if the INTC transcript shows "ultra" was spoken,
+it is a keyword→market semantics mismatch (phrase-design fix, excluded from the
+threshold-FA set); if not spoken, it is a phonetic false fire (included).
+
+Bars drafted 2026-07-23 and accepted by the user same day **as originally
+drafted** (holdout bar then read "≥6/8 on the 8 swept words"). **AMENDED
+2026-07-23 evening, BEFORE any bench run**, on settlement evidence: only 4 of
+the 8 "swept" AAL words settled YES (WORL/CENT/IRAN/AT settled NO — release-
+text basket bets, words never spoken; see COMPETITOR-ANATOMY AAL settlement
+correction). The original denominator was factually wrong — a perfect detector
+could score at most 4/8. Amended denominator = the settlement-YES spoken set
+(5 words), bar ≥4/5. **Amendment pending explicit user re-ack; the holdout
+run does NOT happen until that ack is recorded here.** Dev tuning may proceed
+meanwhile. Verdict lands here; gate state mirrors to `docs/RACE-CHECKLIST.md`.

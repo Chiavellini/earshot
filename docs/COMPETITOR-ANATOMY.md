@@ -352,6 +352,20 @@ transcript checks still pending):**
 - PERU (no sweep, post-flag max 36¢) — **settled NO ⇒ FALSE FIRE confirmed**;
   IRAN (max 48¢) — **settled NO ⇒ FALSE FIRE confirmed**.
 - **LMT flag-precision final: 4/6** (GOLD, MORF, EURO, NASA true; PERU, IRAN false).
+
+**FULL-EVENT SETTLEMENT GRADE (pinned 2026-07-23 evening; evidence
+`state/KXEARNINGSMENTIONLMT-26JUL23/settlements-full-2026-07-23.json` + whisper
+transcript, 13/13 transcript↔settlement concordance):** YES = EURO, GOLD, MORF,
+NASA, **SIKO**; NO = all others **including ORIO and VENT**. Reclassifications:
+- **ORIO and VENT were NOT recall misses** — "orion" appears nowhere in the
+  88-min transcript and the speaker said "Lockheed Martin **Ventures**", never
+  "venture fund"; both settled NO. Their sweeps (13:31:08 / 13:21:35) were
+  wrong bets by other traders; **our silence was correct**.
+- **SIKO is the real LMT recall miss**: "sikorsky" said 2×, settled YES, and
+  never swept ≥50¢ — **market-missed mention #3**. We did not flag it either.
+- MORF was caught even though whisper spells it "Morpheus" — the sherpa keyword
+  "morfius" matched the audio phonetically.
+**LMT settlement-graded scorecard: recall 4/5 (missed SIKO), precision 4/6.**
 - **ORIO (13:31:08) and VENT (13:21:35) swept with NO flag from us — candidate recall
   misses** (VENT = "venture fund", compound-class).
 
@@ -373,6 +387,20 @@ the tuned/streamlink order. Tape: HEAVILY CONTESTED — 8/15 words swept ≥50¢
 the call (WORL 12:33:13, CENT 12:33:00, IRAN 12:33:21, CHIC 12:34:39, WEAT 12:34:46,
 AT 12:35:10, ATH 12:41:19, BASI 12:41:52); 7 no-sweep. WAVs banked on the box for
 offline Δw replay vs these sweep stamps (Phase-4 corpus + Δw sample expansion).
+
+**SETTLEMENT-GRADED CORRECTION (pinned 2026-07-23 evening; evidence
+`state/KXEARNINGSMENTIONAAL-26JUL23/settlements-full-2026-07-23.json` + whisper
+word-level transcript of the 87.5-min capture):** only **5 of 15 settled YES —
+ATH, BASI, CHIC, RECO, WEAT** — and the transcript finds exactly those five
+spoken (athens 1×, basic economy 3×, chicago 5×, record 5×, weather 1×): **15/15
+transcript↔settlement concordance**. Consequences: (1) the 12:33Z basket sweeps
+of WORL/CENT/IRAN (and AT at 12:35) were **wrong bets** — words never spoken,
+settled NO; wave-1's early sweeps are release-text-driven baskets, NOT heard
+mentions. (2) **RECO settled YES without ever sweeping ≥50¢ — market-missed
+mention #2** (after LMT NASA). (3) Only 4 of the 8 "swept" words were real
+(CHIC/WEAT/ATH/BASI) — Δw replay is valid only against those four stamps.
+**Methodology rule going forward: sweeps ≠ mentions; recall/precision are scored
+against settlements + transcript, never against tape sweeps alone.**
 
 #### INTC 2026-07-23 — FIRST LIVE FILL RUN (fill-all ≤50¢, $1 envelope, ARM ON US-EAST BOX)
 
@@ -397,6 +425,26 @@ frozen-cap refusal at ask 19¢ was a correct save (+19¢ counterfactual).** Evid
 day-verdict: fill machinery + envelope + no-pump guard all validated exactly;
 detector recall AND precision are now indisputably the binding constraint on
 making money (Phase-4). Two-day realized program P&L: −26¢.
+
+**FULL-EVENT SETTLEMENT GRADE (pinned 2026-07-23 evening; evidence
+`state/KXEARNINGSMENTIONINTC-26JUL23/settlements-full-2026-07-23.json`) —
+REVERSES the recall verdict above:** YES = **CLI, FOUN, PANT, SECU** only; NO =
+everything else **including ARIZ, DESK, GOVE, MOBI and ULTR**. The four "clean
+recall misses" never happened — arizona/desktop/government/mobileye settled NO;
+their 21:01–21:03Z sweeps were release-text basket bets (same wrong-bet pattern
+as AAL WORL/CENT/IRAN), not heard mentions. Our 7 intents by market:
+PANT✓ SECU✓ FOUN✓ CLI✓ (all four real mentions flagged — **recall 4/4**) +
+APPL✗ TRUM✗ ULTR✗ (false fires; ULTR settled NO despite trading ≥80¢ — if the
+transcript shows "ultra"/"Core Ultra" was spoken, ULTR is a **keyword→market
+semantics mismatch** (market required "Ultra 3 / Ultra Series 3"), a phrase-
+design defect, not a threshold defect — classify when the replay transcript
+lands). **INTC settlement-graded scorecard: recall 4/4, precision 4/7.**
+
+**TWO-EVENT SETTLEMENT-GRADED SYNTHESIS (armed events, 2026-07-23): recall 8/9
+(sole miss SIKO), precision 8/13 (false fires PERU, IRAN, APPL, TRUM, ULTR).
+Detector PRECISION is the money leak; recall is near-ceiling. Market-missed
+mentions settlement-confirmed 3× (NASA 52 min @~20¢, RECO never swept, SIKO
+never swept) — a standing edge channel that requires no race win at all.**
 
 Ops: INTC box capture recorded 0 frames — the probesize fix had been applied to the
 LMT/AAL capture configs but not INTC's (staged pre-fix). Fixed in the TEMPLATE
