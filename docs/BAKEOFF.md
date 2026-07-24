@@ -610,6 +610,8 @@ the 8 "swept" AAL words settled YES (WORL/CENT/IRAN/AT settled NO — release-
 text basket bets, words never spoken; see COMPETITOR-ANATOMY AAL settlement
 correction). The original denominator was factually wrong — a perfect detector
 could score at most 4/8. Amended denominator = the settlement-YES spoken set
-(5 words), bar ≥4/5. **Amendment pending explicit user re-ack; the holdout
-run does NOT happen until that ack is recorded here.** Dev tuning may proceed
-meanwhile. Verdict lands here; gate state mirrors to `docs/RACE-CHECKLIST.md`.
+(5 words), bar ≥4/5. **Amendment ACKED by the user 2026-07-23 evening**
+(offered stricter 5/5 and keep-original options; user chose the amended
+≥4/5 bar). The holdout is unblocked once dev tuning converges; it still runs
+exactly ONCE with the frozen class-policy config. Verdict lands here; gate
+state mirrors to `docs/RACE-CHECKLIST.md`.
