@@ -1,0 +1,218 @@
+# WEBCAST FANOUT ARM TEMPLATE — direct-m3u8 events (IR players, FOMC).
+# The production armed posture from the 07-22 race findings (docs/RACE-STRATEGY.md §5):
+#   leg 1 "streamlink"  — edge-join primary: the measured ladder winner
+#                         (−11.7..−13.65 s vs default join, RUNBOOK 07-17 + 07-20)
+#   leg 2 "pipe_tuned"  — tuned-ffmpeg backstop (-live_start_index -1 = the only
+#                         flag that moves the join point; −10.6..−11.65 s vs default)
+# Both legs run FULL detect chains OR-ed at the one-shot decision table
+# ([arbiter] mode = "fanout") — different legs hear different audio (07-22 TARI).
+#
+# Instantiate per event with scripts/stage-webcast-arm.sh, then:
+#   1. paste the `earshot prepare` keyword/risk sections over the placeholders,
+#   2. on call morning write the m3u8:  echo "<m3u8>" > ~/<lc>-stream.url
+#   3. launch attended: scripts/launch-webcast.sh --config <this> --account <env> \
+#        --wait-live ~/<lc>-stream.url --wait-kind hls
+# The live gate lives in launch-webcast.sh (NEVER inside a source cmd —
+# 07-22 post-mortems #1/#2). YouTube events: do NOT use this template; keep
+# the frozen yt-dlp leg (configs/webcast-tsla.toml) until a streamlink-vs-
+# YouTube ladder number exists (capture first).
+# Posture: mention-probe observe (1¢ non-crossing) — fill posture is gated on
+# the Phase-4 precision verdict (docs/RACE-STRATEGY.md).
+
+[event]
+id        = "KXEARNINGSMENTIONVZ-26JUL24"
+starts_at = "2026-07-24T12:30:00Z"
+
+[pipeline]
+chunk_ms       = 80
+resample_to_hz = 16000
+
+[detector]
+engine = "sherpa_kws"
+
+[detector.sherpa_kws]
+model_dir         = "models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
+num_threads       = 1
+max_active_paths  = 4
+default_threshold = 0.20
+default_boost     = 2.0
+refractory_ms     = 2000
+fp32              = true
+
+[arbiter]
+mode = "fanout"
+
+[[sources]]
+kind = "pipe"
+label = "streamlink"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "streamlink --stdout --hls-live-edge 1 --hls-segment-stream-data --hls-playlist-reload-time segment \"$(cat $HOME/vz-stream.url)\" best | ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 65536 -analyzeduration 1000000 -i - -vn -f s16le -ac 1 -ar 16000 -",
+]
+
+[[sources]]
+kind = "pipe"
+label = "pipe_tuned"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 65536 -analyzeduration 1000000 -live_start_index -1 -http_persistent 1 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2 -i \"$(cat $HOME/vz-stream.url)\" -vn -f s16le -ac 1 -ar 16000 -",
+]
+
+[kalshi]
+series = "KXEARNINGSMENTIONVZ"
+env = "prod"
+
+# ── prepare-generated risk/keywords (spliced 2026-07-23 via twilio-live-vz.toml) ──
+[risk]
+max_order_notional_cents = 100
+max_event_notional_cents = 100
+book_stale_ms            = 2000
+audio_stale_ms           = 2000
+allowlist_tickers = [
+  "KXEARNINGSMENTIONVZ-26JUL24-5G",
+  "KXEARNINGSMENTIONVZ-26JUL24-C",
+  "KXEARNINGSMENTIONVZ-26JUL24-HEAD",
+  "KXEARNINGSMENTIONVZ-26JUL24-HOME",
+  "KXEARNINGSMENTIONVZ-26JUL24-LOYA",
+  "KXEARNINGSMENTIONVZ-26JUL24-OUTA",
+  "KXEARNINGSMENTIONVZ-26JUL24-RURA",
+  "KXEARNINGSMENTIONVZ-26JUL24-SATE",
+  "KXEARNINGSMENTIONVZ-26JUL24-SPEC",
+  "KXEARNINGSMENTIONVZ-26JUL24-STAR",
+  "KXEARNINGSMENTIONVZ-26JUL24-STARL",
+  "KXEARNINGSMENTIONVZ-26JUL24-SYNE",
+  "KXEARNINGSMENTIONVZ-26JUL24-TAIL",
+  "KXEARNINGSMENTIONVZ-26JUL24-TARI",
+]
+
+# 5G (KXEARNINGSMENTIONVZ-26JUL24-5G) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONVZ-26JUL24-5G"
+phrase           = "five g"
+variants         = ["five g"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# C-Band (KXEARNINGSMENTIONVZ-26JUL24-C) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONVZ-26JUL24-C"
+phrase           = "c band"
+variants         = ["c band"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Headwind (KXEARNINGSMENTIONVZ-26JUL24-HEAD) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONVZ-26JUL24-HEAD"
+phrase           = "headwind"
+variants         = ["headwind", "headwinds"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Home / MyHome (KXEARNINGSMENTIONVZ-26JUL24-HOME) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONVZ-26JUL24-HOME"
+phrase           = "home"
+variants         = ["home", "homes", "myhome", "myhomes"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Loyalty (KXEARNINGSMENTIONVZ-26JUL24-LOYA) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONVZ-26JUL24-LOYA"
+phrase           = "loyalty"
+variants         = ["loyalty", "loyaltys"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Outage (KXEARNINGSMENTIONVZ-26JUL24-OUTA) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONVZ-26JUL24-OUTA"
+phrase           = "outage"
+variants         = ["outage", "outages"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Rural (KXEARNINGSMENTIONVZ-26JUL24-RURA) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONVZ-26JUL24-RURA"
+phrase           = "rural"
+variants         = ["rural", "rurals"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Satellite (KXEARNINGSMENTIONVZ-26JUL24-SATE) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONVZ-26JUL24-SATE"
+phrase           = "satellite"
+variants         = ["satellite", "satellites"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Spectrum (KXEARNINGSMENTIONVZ-26JUL24-SPEC) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONVZ-26JUL24-SPEC"
+phrase           = "spectrum"
+variants         = ["spectrum", "spectrums"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Starry (KXEARNINGSMENTIONVZ-26JUL24-STAR) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONVZ-26JUL24-STAR"
+phrase           = "starry"
+variants         = ["starry", "starrys"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Starlink (KXEARNINGSMENTIONVZ-26JUL24-STARL) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONVZ-26JUL24-STARL"
+phrase           = "starlink"
+variants         = ["starlink", "starlinks"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Synergy (KXEARNINGSMENTIONVZ-26JUL24-SYNE) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONVZ-26JUL24-SYNE"
+phrase           = "synergy"
+variants         = ["synergy", "synergys"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Tailwind (KXEARNINGSMENTIONVZ-26JUL24-TAIL) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONVZ-26JUL24-TAIL"
+phrase           = "tailwind"
+variants         = ["tailwind", "tailwinds"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Tariff (KXEARNINGSMENTIONVZ-26JUL24-TARI) — corpus-tuned; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONVZ-26JUL24-TARI"
+phrase           = "tariff"
+variants         = ["tariff", "tariffs"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+confirmed_threshold = 0.1
+boost            = 3.0
+
+# --- prepare summary: 14 tradeable, 0 skipped (said-N-times), 0 skipped (unencodable), 0 variants dropped of 14 markets ---

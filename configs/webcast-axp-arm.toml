@@ -1,0 +1,216 @@
+# WEBCAST FANOUT ARM TEMPLATE — direct-m3u8 events (IR players, FOMC).
+# The production armed posture from the 07-22 race findings (docs/RACE-STRATEGY.md §5):
+#   leg 1 "streamlink"  — edge-join primary: the measured ladder winner
+#                         (−11.7..−13.65 s vs default join, RUNBOOK 07-17 + 07-20)
+#   leg 2 "pipe_tuned"  — tuned-ffmpeg backstop (-live_start_index -1 = the only
+#                         flag that moves the join point; −10.6..−11.65 s vs default)
+# Both legs run FULL detect chains OR-ed at the one-shot decision table
+# ([arbiter] mode = "fanout") — different legs hear different audio (07-22 TARI).
+#
+# Instantiate per event with scripts/stage-webcast-arm.sh, then:
+#   1. paste the `earshot prepare` keyword/risk sections over the placeholders,
+#   2. on call morning write the m3u8:  echo "<m3u8>" > ~/<lc>-stream.url
+#   3. launch attended: scripts/launch-webcast.sh --config <this> --account <env> \
+#        --wait-live ~/<lc>-stream.url --wait-kind hls
+# The live gate lives in launch-webcast.sh (NEVER inside a source cmd —
+# 07-22 post-mortems #1/#2). YouTube events: do NOT use this template; keep
+# the frozen yt-dlp leg (configs/webcast-tsla.toml) until a streamlink-vs-
+# YouTube ladder number exists (capture first).
+# Posture: mention-probe observe (1¢ non-crossing) — fill posture is gated on
+# the Phase-4 precision verdict (docs/RACE-STRATEGY.md).
+
+[event]
+id        = "KXEARNINGSMENTIONAXP-26JUL24"
+starts_at = "2026-07-24T12:30:00Z"
+
+[pipeline]
+chunk_ms       = 80
+resample_to_hz = 16000
+
+[detector]
+engine = "sherpa_kws"
+
+[detector.sherpa_kws]
+model_dir         = "models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
+num_threads       = 1
+max_active_paths  = 4
+default_threshold = 0.20
+default_boost     = 2.0
+refractory_ms     = 2000
+fp32              = true
+
+[arbiter]
+mode = "fanout"
+
+[[sources]]
+kind = "pipe"
+label = "streamlink"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "streamlink --stdout --hls-live-edge 1 --hls-segment-stream-data --hls-playlist-reload-time segment \"$(cat $HOME/axp-stream.url)\" best | ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 65536 -analyzeduration 1000000 -i - -vn -f s16le -ac 1 -ar 16000 -",
+]
+
+[[sources]]
+kind = "pipe"
+label = "pipe_tuned"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 65536 -analyzeduration 1000000 -live_start_index -1 -http_persistent 1 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2 -i \"$(cat $HOME/axp-stream.url)\" -vn -f s16le -ac 1 -ar 16000 -",
+]
+
+[kalshi]
+series = "KXEARNINGSMENTIONAXP"
+env = "prod"
+
+# ── prepare-generated risk/keywords (spliced 2026-07-23 via twilio-live-axp.toml) ──
+[risk]
+max_order_notional_cents = 100
+max_event_notional_cents = 100
+book_stale_ms            = 2000
+audio_stale_ms           = 2000
+allowlist_tickers = [
+  "KXEARNINGSMENTIONAXP-26JUL24-AMAZ",
+  "KXEARNINGSMENTIONAXP-26JUL24-BASE",
+  "KXEARNINGSMENTIONAXP-26JUL24-BLOC",
+  "KXEARNINGSMENTIONAXP-26JUL24-COIN",
+  "KXEARNINGSMENTIONAXP-26JUL24-CURR",
+  "KXEARNINGSMENTIONAXP-26JUL24-LOUN",
+  "KXEARNINGSMENTIONAXP-26JUL24-MILL",
+  "KXEARNINGSMENTIONAXP-26JUL24-NFL",
+  "KXEARNINGSMENTIONAXP-26JUL24-NII",
+  "KXEARNINGSMENTIONAXP-26JUL24-NORD",
+  "KXEARNINGSMENTIONAXP-26JUL24-OPEN",
+  "KXEARNINGSMENTIONAXP-26JUL24-REGU",
+  "KXEARNINGSMENTIONAXP-26JUL24-SPEN",
+  "KXEARNINGSMENTIONAXP-26JUL24-STAB",
+]
+
+# Amazon (KXEARNINGSMENTIONAXP-26JUL24-AMAZ) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAXP-26JUL24-AMAZ"
+phrase           = "amazon"
+variants         = ["amazon", "amazons"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Basel (KXEARNINGSMENTIONAXP-26JUL24-BASE) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAXP-26JUL24-BASE"
+phrase           = "basel"
+variants         = ["basel", "basels"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Blockchain (KXEARNINGSMENTIONAXP-26JUL24-BLOC) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAXP-26JUL24-BLOC"
+phrase           = "blockchain"
+variants         = ["blockchain", "blockchains"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Coinbase (KXEARNINGSMENTIONAXP-26JUL24-COIN) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAXP-26JUL24-COIN"
+phrase           = "coinbase"
+variants         = ["coinbase", "coinbases"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Currency (KXEARNINGSMENTIONAXP-26JUL24-CURR) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAXP-26JUL24-CURR"
+phrase           = "currency"
+variants         = ["currency", "currencys"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Lounge (KXEARNINGSMENTIONAXP-26JUL24-LOUN) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAXP-26JUL24-LOUN"
+phrase           = "lounge"
+variants         = ["lounge", "lounges"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Millennial (KXEARNINGSMENTIONAXP-26JUL24-MILL) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAXP-26JUL24-MILL"
+phrase           = "millennial"
+variants         = ["millennial", "millennials"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# NFL (KXEARNINGSMENTIONAXP-26JUL24-NFL) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAXP-26JUL24-NFL"
+phrase           = "nfl"
+variants         = ["nfl", "nfls"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# NII / Net Interest Income (KXEARNINGSMENTIONAXP-26JUL24-NII) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAXP-26JUL24-NII"
+phrase           = "nii"
+variants         = ["nii", "niis", "net interest income"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Nordstrom (KXEARNINGSMENTIONAXP-26JUL24-NORD) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAXP-26JUL24-NORD"
+phrase           = "nordstrom"
+variants         = ["nordstrom", "nordstroms"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# OpenAI / ChatGPT (KXEARNINGSMENTIONAXP-26JUL24-OPEN) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAXP-26JUL24-OPEN"
+phrase           = "openai"
+variants         = ["openai", "openais", "chatgpt", "chatgpts"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Regulation / Regulatory (KXEARNINGSMENTIONAXP-26JUL24-REGU) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAXP-26JUL24-REGU"
+phrase           = "regulation"
+variants         = ["regulation", "regulations", "regulatory", "regulatorys"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Spending Trend (KXEARNINGSMENTIONAXP-26JUL24-SPEN) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAXP-26JUL24-SPEN"
+phrase           = "spending trend"
+variants         = ["spending trend"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Stablecoin (KXEARNINGSMENTIONAXP-26JUL24-STAB) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAXP-26JUL24-STAB"
+phrase           = "stablecoin"
+variants         = ["stablecoin", "stablecoins"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# --- prepare summary: 14 tradeable, 0 skipped (said-N-times), 0 skipped (unencodable), 0 variants dropped of 14 markets ---

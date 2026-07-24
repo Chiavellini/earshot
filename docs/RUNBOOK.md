@@ -458,6 +458,16 @@ instance i-04c50d76572aa092e, UP through Thu by operator decision):**
   the carrier edge (201.174.x). All box work queued behind retry loops;
   laptop fallback = phone hotspot. AXP player registration deferred to a
   working window (Q4 attendee pages typically register-at-join).
+  ⚠ **`prepare` keyword-generator BUG found 07-23 night (OPEN — code fix
+  needed in the prepare layer):** numeric/symbol market subtitles produce
+  degenerate keywords — INTC "…/ 18A" → variants `["a","as"]`; VZ "5G" →
+  **phrase** `"g"` with variants `["g","gs"]` (a single-letter keyword =
+  constant false fires). Also written-vs-spoken mismatches: "NII" needs
+  variant "net interest income" (ULTR-class lesson: the detector hears
+  SPOKEN forms; markets settle on rule text). 07-24 configs were hand-
+  sanitized on the box (5G → "five g"; degenerates stripped; nii variant
+  added) and re-validated with compile-keywords. Until the generator is
+  fixed, EVERY prepare-generated config gets a variant audit before arming.
 
 **Scheduled routines (armed 2026-07-20 evening):** 15 one-shot local cron
 jobs in the 07-20 Claude session — per-event prep reminders (~40 min
