@@ -139,6 +139,53 @@ First subjects: DPZ 07-20 retroactive virtual race (X2) = sample #1; the Wed 07-
 *(append one subsection per analyzed tape: event, feed/leg used, per-word Δw table, verdict
 H1/H2/H3/uncontested, posture consequence)*
 
+#### AXP + VZ 2026-07-24 — FIRST LIVE ARM ON AMAZON IVS (AXP arm+capture; VZ capture-only)
+
+Two simultaneous 8:30 ET calls, both webcast (no bridge). **New finding — venue
+class matters for edge lag:** AXP is on **Q4 Inc → Amazon IVS**
+(`*.playlist.live-video.net`, us-east-2, tokenized session URL, **2 s segments,
+standard HLS, PDT edge lag ≈ 4 s**); VZ is Notified/CloudFront (known class,
+4 s segments, **edge lag ≈ 10 s**). So an IVS-listening system sits ~6 s closer
+to the room than a Notified consumer — a real venue-selection lever. AXP armed
+in observe/dry-run posture (first arm ever on IVS), 488,306 frames, **0 drops**,
+2-leg fanout perfectly balanced (19/19 detections), detect p50 ≈ 120 ms.
+
+**AXP arm — 7 flagged words, settlement-graded:**
+| word | our flag (UTC) | first ≥50¢ call-window sweep | settle | verdict |
+|---|---|---|---|---|
+| MILL (millennial) | 12:35:18 | 12:35:16 | YES | true; **Δrace −2 s** |
+| NFL | 12:37:29 | 12:37:27 | YES | true; **Δrace −2 s** |
+| LOUN (lounge) | 12:37:08 | 12:29:27 (pre-remarks basket) | YES | true (recall); no audio race |
+| NII | (order journaled) | 12:28:07 (pre-remarks) | YES | true (recall) |
+| AMAZ (amazon) | (order journaled) | 13:20:17 | YES | true (recall) |
+| CURR (currency) | 12:31:01 | none | **NO** | **FALSE FIRE** |
+| REGU (regulation) | 12:36:47 | 12:27:51 (pre-remarks) | **NO** | **FALSE FIRE** |
+
+- **Recall 5/6** on settled-YES words (caught AMAZ/LOUN/MILL/NFL/NII; **missed
+  OPEN** = "openai"/"chatgpt" — OOV-compound class, our known weak spot).
+- **Precision 5/7** (false fires CURR, REGU — the same single/short-word
+  hallucination class as 07-23's PERU/IRAN/APPL/TRUM/ULTR).
+- **Δrace on the two clean post-remarks audio races = −2 s each** (MILL, NFL) —
+  NOT better than the −0.6..−1.0 s at Notified despite IVS being ~6 s closer to
+  the room. Confirms the thesis: wave-1 co-listens on the SAME feed, so venue
+  proximity doesn't flip the sign — it's a pure software race, unchanged since
+  nothing shipped to the live path. Envelope held exactly: 7 orders, 0
+  LOST_RACE, all observe-non-crossing (dry-run) — $0 spend, by design.
+
+**VZ (capture-only, no arm):** 3 healthy legs banked for the wideband corpus;
+Notified ladder confirmed (10 s edge lag). Settlements: YES = HEAD, HOME, LOYA,
+RURA, SATE, SPEC, SYNE, TAIL; NO = 5G, C, OUTA, STARL. No race scoring (no arm);
+value is corpus + venue-class data. Pre-remarks basket bets recur here too
+(5G/C/LOYA/SPEC/SYNE swept 12:26–27, before 12:30 remarks) — same wrong-bet
+pattern; several settled YES anyway (release-text-driven, coincidentally right).
+
+**Program consequence:** the levers are unchanged and confirmed — **precision**
+(false-fire class) and **decode speed** (the −2 s at a 4 s-lag venue proves
+acquisition proximity alone won't win). Detector tuning (P1) + chunk-16 export
+(P2, g5 pending) remain the path. Evidence:
+`state/KXEARNINGSMENTION{AXP,VZ}-26JUL24/{report.json,tape-2026-07-24.json}`,
+`~/{axp,vz}-capture/{report,manifest-probe}` (box).
+
 #### DPZ 2026-07-20 — TAPE-ONLY (our capture never ran; box never started — RUNBOOK §DPZ outcome)
 
 No Δw is computable (no word-end reference). Tape: all 15 markets, 5,244 trades, archived
