@@ -5,7 +5,33 @@ an interleaved A/B or a side-by-side measurement on the same hardware — or an 
 `NOT RESOLVABLE ABOVE NOISE` / `INSTRUMENT-ONLY` verdict. Claims that don't survive measurement are
 recorded as such, not dropped.
 
-## Session 2026-07-24 — ACQUISITION: manifest-poll-interval is a real latency lever (S1/S2)
+## Session 2026-07-24 (evening) — ACQUISITION LEVER REFUTED: our streamlink leg is already at the live edge
+
+**Supersedes the morning S1/S2 entry below.** Deployed the phase-locked fetcher
+as a real leg (`scripts/hls-edge-fetch.py`, `edge_poll`) and measured it
+leg-vs-leg against our ACTUAL streamlink leg via `capture-bakeoff` + windowed
+xcorr on the recorded WAVs (DW, 6 s segments, us-east box).
+
+- `capture-bakeoff` `delta_ms` was start-skew-dominated NOISE: run 1
+  `streamlink→edge_poll −51.6 ms`, run 2 `−603.5 ms` (streamlink stalled/started
+  late that run, 4479 vs 4793 frames). Both peak 1.00 — the CONTENT aligns
+  perfectly; only the leg-startup timing differs. `delta_ms = start_skew +
+  content_lag` and start_skew is not a steady-state term.
+- **Steady-state content lag (the real number), windowed xcorr on 5 independent
+  mid-stream 15 s windows: +0 ms, peak 1.000 in EVERY window.** edge_poll and
+  streamlink deliver the same audio at the same instant.
+
+**Verdict — the acquisition poll-phase lever is ~0 ms against our real leg.**
+streamlink `--hls-segment-stream-data --hls-live-edge 1` already streams the
+in-progress segment download at the live edge; aggressive 250 ms polling adds
+nothing. The morning ~2.25 s figure was a `poll-age.py` proxy comparing against
+a NAIVE reload-per-segment consumer we do not run — it does NOT describe our
+streamlink leg. **Consequence: acquisition is not the −2 s; the gap is DECODE
+(prefix-firing, chunk-8, FastEmit spotter) and/or the competitor's feed.** The
+`edge_poll` leg was NOT deployed (0 benefit, +1 leg CPU on a 2-vCPU box); script
++ `configs/edge-bakeoff.toml` kept as the experiment record.
+
+## Session 2026-07-24 — ACQUISITION: manifest-poll-interval is a real latency lever (S1/S2)  [SUPERSEDED — see above; proxy vs a naive consumer, not our real leg]
 
 Box: us-east-1 (`i-04c50d76572aa092e`), reference stream DW News HLS
 (`dwamdstream102.akamaized.net/…/stream01`, 6 s segments, PDT on every segment).
