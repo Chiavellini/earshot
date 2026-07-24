@@ -5,6 +5,44 @@ an interleaved A/B or a side-by-side measurement on the same hardware — or an 
 `NOT RESOLVABLE ABOVE NOISE` / `INSTRUMENT-ONLY` verdict. Claims that don't survive measurement are
 recorded as such, not dropped.
 
+## Session 2026-07-24 — ACQUISITION: manifest-poll-interval is a real latency lever (S1/S2)
+
+Box: us-east-1 (`i-04c50d76572aa092e`), reference stream DW News HLS
+(`dwamdstream102.akamaized.net/…/stream01`, 6 s segments, PDT on every segment).
+Motivation: Friday AXP/VZ arm measured −2 s vs wave-1 on IVS (2 s segments); the
+internal pipeline is only **88 ms** (`capture→decision` p50 from the AXP arm
+report `edges`), so the −2 s is acquisition + the shared ~1 s decode floor, not
+our pipeline.
+
+**⚠ RETRACTED first attempt (method error, recorded per the rule):** an xcorr of
+a streamlink leg vs a fast-poll fetcher gave −6016 ms (run 1) then 0 ms (run 2),
+both at peak 1.0000. Whole-window xcorr of two independently-started HLS
+consumers measures **start-segment alignment, not steady-state receive latency** —
+the two runs began at different segments. NOT a valid latency measurement.
+
+**Clean measurement (PDT-anchored absolute content-age = wall_time_received −
+segment_PDT, two poll modes run simultaneously against DW, 90 s):**
+
+| Poll mode | n | mean age | median | min | p95 |
+|---|---|---|---|---|---|
+| reload-per-segment (our streamlink `--hls-playlist-reload-time segment`) | 15 | **17.86 s** | 17.82 | 17.81 | 17.86 |
+| 250 ms phase-locked poll | 16 | **15.61 s** | 15.61 | 13.13 | 18.02 |
+
+**Verdict — PROVEN lever: phase-locked sub-500 ms manifest polling holds audio
+~2.25 s fresher on average (up to ~4.7 s at best) than reloading once per
+segment**, on DW's 6 s segments. The effect is poll-phase latency: a
+reload-per-segment client notices a freshly published segment up to a full
+segment-duration late; a 250 ms poller catches it near-instantly. The absolute
+age (~15–18 s) is DW's deep DVR and not transferable; the ~2.25 s DIFFERENCE is
+the transferable lever and scales with segment duration. **On IVS 2 s segments
+this bounds to ≤2 s — consistent with the entire Friday −2 s gap.**
+Caveats before promotion: (a) this models our streamlink reload behavior with a
+matched-config python proxy, not streamlink instrumented directly; (b) needs
+validation on a real 2 s-segment (IVS) stream to confirm it delivers ~2 s there;
+(c) the recovered audio still faces the ~1 s decode floor. Next: build the
+phase-locked fetcher as a real source-leg (S2) and re-measure on IVS.
+Evidence: box `~/poll-age.py`, `~/age-{slow,fast}.txt`; scratchpad `edge-fetch.py`.
+
 ## Session 2026-07-17 — fire-path mechanical pass (commit `7c78863` vs baseline `8eed570`)
 
 Box: CDMX dev laptop (macOS, thermally noisy — measured 3.5× run-to-run swing on uninterleaved
