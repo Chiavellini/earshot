@@ -1,0 +1,224 @@
+[call]
+id    = "intc-q2-2026"
+audio = "wideband/intc-q2-2026.wav"
+split = "dev"
+
+[[occurrences]]
+phrase   = "foundry"
+onset_ms = 235270
+end_ms   = 235790
+
+[[occurrences]]
+phrase   = "foundry"
+onset_ms = 276890
+end_ms   = 277630
+
+[[occurrences]]
+phrase   = "foundry"
+onset_ms = 322910
+end_ms   = 323450
+
+[[occurrences]]
+phrase   = "foundry"
+onset_ms = 326180
+end_ms   = 326820
+
+[[occurrences]]
+phrase   = "foundry"
+onset_ms = 344280
+end_ms   = 344840
+
+[[occurrences]]
+phrase   = "panther lake"
+onset_ms = 354980
+end_ms   = 356320
+
+[[occurrences]]
+phrase   = "panther lake"
+onset_ms = 368270
+end_ms   = 369350
+
+[[occurrences]]
+phrase   = "panther lake"
+onset_ms = 382650
+end_ms   = 383530
+
+[[occurrences]]
+phrase   = "panther lake"
+onset_ms = 402770
+end_ms   = 403470
+
+[[occurrences]]
+phrase   = "foundry"
+onset_ms = 410290
+end_ms   = 410890
+
+[[occurrences]]
+phrase   = "panther lake"
+onset_ms = 431060
+end_ms   = 431860
+
+[[occurrences]]
+phrase   = "panther lake"
+onset_ms = 441630
+end_ms   = 442590
+
+[[occurrences]]
+phrase   = "panther lake"
+onset_ms = 453570
+end_ms   = 454770
+
+[[occurrences]]
+phrase   = "client computing"
+onset_ms = 586520
+end_ms   = 588100
+
+[[occurrences]]
+phrase   = "panther lake"
+onset_ms = 611740
+end_ms   = 612500
+
+[[occurrences]]
+phrase   = "panther lake"
+onset_ms = 630270
+end_ms   = 630990
+
+[[occurrences]]
+phrase   = "foundry"
+onset_ms = 637590
+end_ms   = 638170
+
+[[occurrences]]
+phrase   = "security"
+onset_ms = 821810
+end_ms   = 822470
+
+[[occurrences]]
+phrase   = "foundry"
+onset_ms = 861280
+end_ms   = 861880
+
+[[occurrences]]
+phrase   = "foundry"
+onset_ms = 865440
+end_ms   = 866120
+
+[[occurrences]]
+phrase   = "foundry"
+onset_ms = 921190
+end_ms   = 921790
+
+[[occurrences]]
+phrase   = "panther lake"
+onset_ms = 1113820
+end_ms   = 1114460
+
+[[occurrences]]
+phrase   = "security"
+onset_ms = 1172340
+end_ms   = 1172860
+
+[[occurrences]]
+phrase   = "foundry"
+onset_ms = 1277530
+end_ms   = 1278070
+
+[[occurrences]]
+phrase   = "foundry"
+onset_ms = 1293600
+end_ms   = 1294100
+
+[[occurrences]]
+phrase   = "foundry"
+onset_ms = 1298840
+end_ms   = 1299300
+
+[[occurrences]]
+phrase   = "panther lake"
+onset_ms = 1311690
+end_ms   = 1312250
+
+[[occurrences]]
+phrase   = "panther lake"
+onset_ms = 1315480
+end_ms   = 1315940
+
+[[occurrences]]
+phrase   = "foundry"
+onset_ms = 1317880
+end_ms   = 1318280
+
+[[occurrences]]
+phrase   = "panther lake"
+onset_ms = 1320200
+end_ms   = 1320840
+
+[[occurrences]]
+phrase   = "foundry"
+onset_ms = 1336260
+end_ms   = 1336680
+
+[[occurrences]]
+phrase   = "panther lake"
+onset_ms = 1384300
+end_ms   = 1384880
+
+[[occurrences]]
+phrase   = "foundry"
+onset_ms = 1616400
+end_ms   = 1617000
+
+[[occurrences]]
+phrase   = "foundry"
+onset_ms = 1932860
+end_ms   = 1933380
+
+[[occurrences]]
+phrase   = "foundry"
+onset_ms = 1976370
+end_ms   = 1976950
+
+[[occurrences]]
+phrase   = "panther lake"
+onset_ms = 2331090
+end_ms   = 2331810
+
+[[occurrences]]
+phrase   = "panther lake"
+onset_ms = 2357940
+end_ms   = 2358520
+
+[[occurrences]]
+phrase   = "panther lake"
+onset_ms = 2363960
+end_ms   = 2364400
+
+[[occurrences]]
+phrase   = "foundry"
+onset_ms = 2581730
+end_ms   = 2582090
+
+[[occurrences]]
+phrase   = "panther lake"
+onset_ms = 2616390
+end_ms   = 2617130
+
+[[occurrences]]
+phrase   = "panther lake"
+onset_ms = 2631090
+end_ms   = 2631850
+
+[[occurrences]]
+phrase   = "panther lake"
+onset_ms = 2633850
+end_ms   = 2634350
+
+[[occurrences]]
+phrase   = "security"
+onset_ms = 3340960
+end_ms   = 3341420
+
+[[occurrences]]
+phrase   = "security"
+onset_ms = 3347160
+end_ms   = 3347680

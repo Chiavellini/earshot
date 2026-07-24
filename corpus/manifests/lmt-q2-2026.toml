@@ -1,0 +1,59 @@
+[call]
+id    = "lmt-q2-2026"
+audio = "wideband/lmt-q2-2026.wav"
+split = "dev"
+
+[[occurrences]]
+phrase   = "golden dome"
+onset_ms = 1924670
+end_ms   = 1925310
+
+[[occurrences]]
+phrase   = "europe"
+onset_ms = 2352080
+end_ms   = 2352520
+
+[[occurrences]]
+phrase   = "europe"
+onset_ms = 2364680
+end_ms   = 2365080
+
+[[occurrences]]
+phrase   = "golden dome"
+onset_ms = 2376200
+end_ms   = 2376720
+
+[[occurrences]]
+phrase   = "sikorsky"
+onset_ms = 3100220
+end_ms   = 3100760
+
+[[occurrences]]
+phrase   = "morfius"
+onset_ms = 3259570
+end_ms   = 3259870
+
+[[occurrences]]
+phrase   = "europe"
+onset_ms = 3426220
+end_ms   = 3426580
+
+[[occurrences]]
+phrase   = "sikorsky"
+onset_ms = 3963740
+end_ms   = 3964360
+
+[[occurrences]]
+phrase   = "morfius"
+onset_ms = 4692350
+end_ms   = 4692870
+
+[[occurrences]]
+phrase   = "morfius"
+onset_ms = 4878170
+end_ms   = 4879070
+
+[[occurrences]]
+phrase   = "nasa"
+onset_ms = 5254750
+end_ms   = 5255170

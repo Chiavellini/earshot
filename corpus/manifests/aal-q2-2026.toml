@@ -1,0 +1,79 @@
+[call]
+id    = "aal-q2-2026"
+audio = "wideband/aal-q2-2026.wav"
+split = "holdout"
+
+[[occurrences]]
+phrase   = "record"
+onset_ms = 1826740
+end_ms   = 1827140
+
+[[occurrences]]
+phrase   = "weather"
+onset_ms = 1919660
+end_ms   = 1919860
+
+[[occurrences]]
+phrase   = "chicago"
+onset_ms = 1941240
+end_ms   = 1941560
+
+[[occurrences]]
+phrase   = "record"
+onset_ms = 1973090
+end_ms   = 1973410
+
+[[occurrences]]
+phrase   = "athens"
+onset_ms = 2309730
+end_ms   = 2310030
+
+[[occurrences]]
+phrase   = "basic economy"
+onset_ms = 2355740
+end_ms   = 2356580
+
+[[occurrences]]
+phrase   = "record"
+onset_ms = 2408640
+end_ms   = 2408920
+
+[[occurrences]]
+phrase   = "chicago"
+onset_ms = 2415020
+end_ms   = 2415440
+
+[[occurrences]]
+phrase   = "record"
+onset_ms = 2473810
+end_ms   = 2474090
+
+[[occurrences]]
+phrase   = "chicago"
+onset_ms = 3324830
+end_ms   = 3325410
+
+[[occurrences]]
+phrase   = "record"
+onset_ms = 3406320
+end_ms   = 3406620
+
+[[occurrences]]
+phrase   = "chicago"
+onset_ms = 4710280
+end_ms   = 4710660
+
+[[occurrences]]
+phrase   = "chicago"
+onset_ms = 4711180
+end_ms   = 4711280
+
+[[occurrences]]
+phrase   = "basic economy"
+onset_ms = 4923770
+end_ms   = 4924530
+
+[[occurrences]]
+phrase   = "basic economy"
+onset_ms = 4972860
+end_ms   = 4973640
