@@ -53,9 +53,43 @@ to settle, where DW's 6 s segments always sufficed. That did not surface on any
 6 s-segment run.
 
 **S2 verdict: `L` MEASURED and strong; the leg A/B is `NOT RESOLVABLE` at n=1.**
-Carried forward: (a) fix the short-segment decoder startup, (b) re-run for n≥3,
-(c) find a 2–4 s stream with trustworthy PDT if an absolute number is wanted
-there — otherwise report relative deltas only.
+
+### S2 continued — the A/B is not resolvable on this stream AT ALL: it is a 40 s loop
+
+Chased the two defects; both fixed, and then the real blocker surfaced.
+
+**1. Decoder startup — fixed.** ffmpeg exited before emitting a sample:
+`Could not find codec parameters for stream 0 (Audio: aac …): unspecified sample
+rate`. `probesize 65536 / analyzeduration 1000000` is too little for this
+stream's AAC signalling. At **200000 / 3000000** the leg captures cleanly in
+4 runs of 4. Corrections to my own reasoning, both found by running the command
+instead of theorising:
+- I predicted ffmpeg needed *less* probe data. It needed **more**.
+- I attributed it to pipe-vs-URL. **Wrong** — the direct-URL `prod_tuned` leg
+  fails identically. Only `streamlink` survives, because it demuxes first.
+- It is **NOT** a general short-segment law: **AXP/IVS at 2 s segments captured
+  488,306 frames with 0 drops at 65536.** Stream-specific.
+
+**2. The blocker — the reference content repeats every 40 s.** With all legs
+finally alive, every window comparison returned `NOT STEADY` with absurd medians
+(−21 / −38 / −59 s) between legs that started simultaneously. Autocorrelation of
+the captured audio explains it: near-perfect self-matches (**0.999**) at 0 s,
+40 s, 80 s, 120 s.
+
+**Cross-correlation cannot align looping content** — many offsets match equally
+well, so the peak is arbitrary. That retroactively explains the impossible −7 s
+absolute lag from the earlier attempt: a spurious match at a loop multiple, at
+peak 1.00. The PDT was likely never the problem; **the earlier
+"encoder clock runs fast" explanation is superseded by this simpler one.**
+
+`scripts/leg-lag.py` now **refuses to measure** when it detects repetition,
+naming the period. Verified to discriminate: DW news (real speech) passes
+through to measurement; this demo stream refuses at ~40.0 s.
+
+**Consequence:** `L` (+1.51 s) stands — `spec-probe.py` times HTTP requests and
+never cross-correlates, so looping content cannot affect it. **The leg A/B at
+our venue class remains OPEN**, blocked on finding a 2–4 s-segment stream with
+real non-repetitive audio. S3/S4 are unaffected and can proceed on DW.
 
 ## Session 2026-07-25 — ⚠ ORPHANED-FETCHER INCIDENT: a runaway, and a contamination caveat on part 3/4
 

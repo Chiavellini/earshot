@@ -9,7 +9,7 @@
 # Four legs, ONE run, started simultaneously = a true interleaved A/B.
 # Pairs to compare: (1 vs 2) streamlink chain, (3 vs 4) direct-ffmpeg chain.
 # The ONLY difference within each pair is the probe/flush flag set:
-#     prod: -probesize 65536 -analyzeduration 1000000     (1 SECOND of probe)
+#     prod: -probesize 200000 -analyzeduration 3000000     (1 SECOND of probe)
 #     fast: -probesize 32768 -analyzeduration 0 -flush_packets 1 -avioflags direct
 #
 # Run (box, any live HLS with PDT — DW reference):
@@ -48,19 +48,19 @@ mode = "fanout"
 kind = "pipe"
 label = "prod_tuned"
 sample_rate_hz = 16000
-cmd = ["/bin/sh","-c","ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 65536 -analyzeduration 1000000 -live_start_index -1 -http_persistent 1 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2 -i \"$(cat $HOME/ref-stream.url)\" -vn -f s16le -ac 1 -ar 16000 -"]
+cmd = ["/bin/sh","-c","ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 200000 -analyzeduration 3000000 -live_start_index -1 -http_persistent 1 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2 -i \"$(cat $HOME/ref-stream.url)\" -vn -f s16le -ac 1 -ar 16000 -"]
 
 [[sources]]
 kind = "pipe"
 label = "prod_streamlink"
 sample_rate_hz = 16000
-cmd = ["/bin/sh","-c","streamlink --stdout --hls-live-edge 1 --hls-segment-stream-data --hls-playlist-reload-time segment \"$(cat $HOME/ref-stream.url)\" best | ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 65536 -analyzeduration 1000000 -i - -vn -f s16le -ac 1 -ar 16000 -"]
+cmd = ["/bin/sh","-c","streamlink --stdout --hls-live-edge 1 --hls-segment-stream-data --hls-playlist-reload-time segment \"$(cat $HOME/ref-stream.url)\" best | ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 200000 -analyzeduration 3000000 -i - -vn -f s16le -ac 1 -ar 16000 -"]
 
 [[sources]]
 kind = "pipe"
 label = "spec_edge"
 sample_rate_hz = 16000
-cmd = ["/bin/sh","-c","python3 $HOME/ear/scripts/hls-edge-fetch.py \"$(cat $HOME/ref-stream.url)\" 250 2 --speculative 2>>$HOME/spec_edge.err | ffmpeg -loglevel warning -fflags +discardcorrupt+nobuffer -flags low_delay -probesize 65536 -analyzeduration 1000000 -i - -vn -f s16le -ac 1 -ar 16000 -"]
+cmd = ["/bin/sh","-c","python3 $HOME/ear/scripts/hls-edge-fetch.py \"$(cat $HOME/ref-stream.url)\" 250 2 --speculative 2>>$HOME/spec_edge.err | ffmpeg -loglevel warning -fflags +discardcorrupt+nobuffer -flags low_delay -probesize 200000 -analyzeduration 3000000 -i - -vn -f s16le -ac 1 -ar 16000 -"]
 
 [kalshi]
 series = "KXEARNINGSMENTION"

@@ -53,6 +53,43 @@ def arrival_ns(seqs, tss, sample_idx, spf):
     return int(tss[i])
 
 
+def repetition_period(pcm: np.ndarray, sr: int) -> float | None:
+    """Seconds between self-matches, or None if the audio is non-repetitive.
+
+    Cross-correlation alignment silently assumes the content is DISTINCTIVE. On
+    looping material every window matches at many offsets equally well, so the
+    peak is arbitrary and every number downstream is fiction — measured
+    2026-07-25 on a "stable" demo stream whose audio repeats every 40 s: it
+    produced a physically impossible negative absolute lag and leg deltas of
+    −21/−38/−59 s between legs that started simultaneously, all at peak 1.00.
+    Refuse to measure rather than report that.
+    """
+    if len(pcm) < 60 * sr or pcm.std() < 50:
+        return None
+    probe = pcm[40 * sr : 50 * sr]
+    if len(probe) < sr:
+        return None
+    n = 1 << int(np.ceil(np.log2(len(pcm) + len(probe))))
+    cc = np.fft.irfft(
+        np.fft.rfft(pcm - pcm.mean(), n) * np.conj(np.fft.rfft(probe - probe.mean(), n)), n
+    )[: len(pcm) - len(probe) + 1]
+    denom = np.linalg.norm(probe - probe.mean()) * np.std(pcm) * np.sqrt(len(probe))
+    if denom <= 0:
+        return None
+    cc = cc / denom
+    peaks: list[int] = []
+    for i in np.argsort(cc)[::-1][:400]:
+        if all(abs(int(i) - j) > 2 * sr for j in peaks):
+            peaks.append(int(i))
+        if len(peaks) >= 4:
+            break
+    strong = [p for p in peaks if cc[p] > 0.9]
+    if len(strong) < 2:
+        return None
+    strong.sort()
+    return min(b - a for a, b in zip(strong, strong[1:])) / sr
+
+
 def fft_xcorr_lag(a: np.ndarray, b: np.ndarray) -> tuple[int, float]:
     """Best lag of `a` inside `b` (len(b) >= len(a)); returns (lag, normalized peak)."""
     n = 1 << int(np.ceil(np.log2(len(b) + len(a))))
@@ -83,6 +120,15 @@ def main() -> None:
     if sr != srb:
         sys.exit(f"sample-rate mismatch {sr} vs {srb}")
     spf = 320 if sr == 16000 else sr // 50
+
+    period = repetition_period(pa, sr)
+    if period is not None:
+        print(f"{a.legA} -> {a.legB}")
+        print(f"\nVERDICT: NOT MEASURABLE — reference audio repeats every ~{period:.1f} s.")
+        print("Cross-correlation cannot align looping content: many offsets match equally")
+        print("well, so any lag reported here would be fiction. Use a stream with real,")
+        print("non-repetitive audio (news/speech), not a demo loop.")
+        return
 
     # Coarse global alignment on 100 Hz decimated envelopes. Probe with a MIDDLE
     # slice of A, not its head: legs join a live stream at different points, so

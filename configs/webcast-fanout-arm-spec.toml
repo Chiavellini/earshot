@@ -41,6 +41,21 @@
 # fetcher DROPS AUDIO to catch up, and silent loss is a recall bug. Check
 # ~/spec_edge.err (SUMMARY lines) after every run.
 #
+# ⚠ probesize=200000 / analyzeduration=3000000 — robustness, keep it.
+# Some streams do not give ffmpeg enough to identify the AAC track inside
+# 65536/1000000 and it exits during startup with "Could not find codec
+# parameters ... unspecified sample rate/format", killing the leg before a
+# single sample. Reproduced 2026-07-25 on a 1.92 s-segment stream, where it
+# killed BOTH this leg and a direct-URL ffmpeg leg (so it is NOT a pipe-vs-URL
+# effect — an earlier note here claiming that was wrong). streamlink survived it,
+# because it demuxes before ffmpeg sees the bytes.
+#
+# NOT a general short-segment law: AXP/IVS at 2 s segments captured 488,306
+# frames with 0 drops at 65536. It is stream-specific AAC signalling. The bump
+# is free insurance — these flags measured ~0 ms in steady state, so the only
+# cost is a slightly longer startup probe, and 200000 (~1.5 segments here) stays
+# well under the pipeline's 30 s idle guard.
+#
 # Instantiate with:  scripts/stage-webcast-arm.sh --speculative <lc> <EV> <ISO>
 # then follow the same steps as the base template.
 
@@ -73,7 +88,7 @@ label = "spec_edge"
 sample_rate_hz = 16000
 cmd = [
   "/bin/sh", "-c",
-  "python3 $HOME/ear/scripts/hls-edge-fetch.py \"$(cat $HOME/__LC__-stream.url)\" 250 2 --speculative 2>>$HOME/spec_edge.err | ffmpeg -loglevel warning -fflags +discardcorrupt+nobuffer -flags low_delay -probesize 65536 -analyzeduration 1000000 -i - -vn -f s16le -ac 1 -ar 16000 -",
+  "python3 $HOME/ear/scripts/hls-edge-fetch.py \"$(cat $HOME/__LC__-stream.url)\" 250 2 --speculative 2>>$HOME/spec_edge.err | ffmpeg -loglevel warning -fflags +discardcorrupt+nobuffer -flags low_delay -probesize 200000 -analyzeduration 3000000 -i - -vn -f s16le -ac 1 -ar 16000 -",
 ]
 
 [[sources]]
