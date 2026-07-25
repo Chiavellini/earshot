@@ -5,6 +5,43 @@ an interleaved A/B or a side-by-side measurement on the same hardware — or an 
 `NOT RESOLVABLE ABOVE NOISE` / `INSTRUMENT-ONLY` verdict. Claims that don't survive measurement are
 recorded as such, not dropped.
 
+## Session 2026-07-25 — ⚠ ORPHANED-FETCHER INCIDENT: a runaway, and a contamination caveat on part 3/4
+
+**Found 18 orphaned `hls-edge-fetch.py` processes running on the box.** Killing a
+`capture-bakeoff` orphans its fetcher children, and the fetcher's "NEVER crash
+the leg" invariant assumed a live consumer: with stdout dead it looped forever,
+never advancing the segment cursor, so the `spec_max_probes` budget (15/segment)
+was bypassed entirely — **44,108 speculative 404s and 5,186 broken-pipe writes in
+a single leg's counters**. Exactly the CDN-politeness failure the guardrails were
+written to prevent, arrived at through a path nobody had modelled.
+
+**Fixes (`scripts/hls-edge-fetch.py`):**
+- `BrokenPipeError` on stdout is now **fatal** at all three write sites and exits
+  the process. A dead decoder means the leg is over; looping is never right.
+- **Runaway trip** as defence in depth: >50 × 404s per emitted segment disables
+  speculation and falls back to manifest-driven. Normal operation is ≤15.
+- `scripts/abs-lag.py` no longer crashes on a leg that captured zero frames — it
+  reports `LEG DEAD — n frames` and measures the surviving legs.
+
+**⚠ Contamination caveat, stated because it cuts against our own results.** The
+orphans accumulated across the session and were competing for a 2-vCPU box
+*while the part-3/part-4 A/Bs were being measured*. Load was 1.7–2.1 with 18
+strays; 0.88 once reaped. Two mitigations mean the headline is probably intact
+but NOT clean:
+- every A/B was **interleaved in a single process**, so contention hit all legs
+  in that run together rather than biasing one;
+- the −4.56 s speculative result **replicated across two independent sessions**
+  (−4.560 s paired median, twice).
+
+Still: the absolute lag figures and the leg-spread statistics were taken under
+unknown contention and should be re-measured on the now-quiet box before being
+quoted as final. `spec_buffered` dying with 0 frames in two consecutive runs is
+itself most likely a contention symptom, not a code defect.
+
+**Operational rule added to the loop pre-flight:** reap strays before every
+experiment, and verify with `ps -eo cmd | grep -c "[h]ls-edge-fetch"` — `pgrep
+-cf` self-matches through the ssh command line and will report a false non-zero.
+
 ## Session 2026-07-24 (night, part 4) — progressive body streaming REFUTED; speculative fetch REPLICATED and shipped
 
 ### REFUTED — streaming the segment body buys nothing and costs stability

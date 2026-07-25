@@ -13,10 +13,10 @@
 #     fast: -probesize 32768 -analyzeduration 0 -flush_packets 1 -avioflags direct
 #
 # Run (box, any live HLS with PDT — DW reference):
-#   echo "<m3u8>" > ~/dw-stream.url
+#   echo "<m3u8>" > ~/ref-stream.url    # venue under test (DW 6s, US demo 1.92s, …)
 #   earshot capture-bakeoff --config configs/client-latency-bakeoff.toml \
 #     --secs 180 --record-dir ~/clat --out ~/clat/report.json
-#   python3 scripts/pdt-log.py "$(cat ~/dw-stream.url)" 250 190 > ~/clat/pdt.jsonl   # concurrently
+#   python3 scripts/pdt-log.py "$(cat ~/ref-stream.url)" 250 190 > ~/clat/pdt.jsonl   # concurrently
 #
 # NOTE: capture-bakeoff uses the FIRST leg as the xcorr reference, so leg 1 is
 # the production baseline everything is measured against. Judge on delta_ms, and
@@ -45,7 +45,7 @@ mode = "fanout"
 kind = "pipe"
 label = "prod_tuned"
 sample_rate_hz = 16000
-cmd = ["/bin/sh","-c","ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 65536 -analyzeduration 1000000 -live_start_index -1 -http_persistent 1 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2 -i \"$(cat $HOME/dw-stream.url)\" -vn -f s16le -ac 1 -ar 16000 -"]
+cmd = ["/bin/sh","-c","ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 65536 -analyzeduration 1000000 -live_start_index -1 -http_persistent 1 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2 -i \"$(cat $HOME/ref-stream.url)\" -vn -f s16le -ac 1 -ar 16000 -"]
 
 # The isolation pair: identical fetcher, identical speculation, the ONLY
 # difference is --buffered (whole-segment read, the pre-2026-07-24 behaviour)
@@ -55,13 +55,13 @@ cmd = ["/bin/sh","-c","ffmpeg -loglevel warning -fflags nobuffer -flags low_dela
 kind = "pipe"
 label = "spec_buffered"
 sample_rate_hz = 16000
-cmd = ["/bin/sh","-c","python3 $HOME/ear/scripts/hls-edge-fetch.py \"$(cat $HOME/dw-stream.url)\" 250 2 --speculative --buffered 2>>$HOME/spec_buffered.err | ffmpeg -loglevel warning -fflags +discardcorrupt+nobuffer -flags low_delay -probesize 65536 -analyzeduration 1000000 -i - -vn -f s16le -ac 1 -ar 16000 -"]
+cmd = ["/bin/sh","-c","python3 $HOME/ear/scripts/hls-edge-fetch.py \"$(cat $HOME/ref-stream.url)\" 250 2 --speculative --buffered 2>>$HOME/spec_buffered.err | ffmpeg -loglevel warning -fflags +discardcorrupt+nobuffer -flags low_delay -probesize 65536 -analyzeduration 1000000 -i - -vn -f s16le -ac 1 -ar 16000 -"]
 
 [[sources]]
 kind = "pipe"
 label = "spec_stream"
 sample_rate_hz = 16000
-cmd = ["/bin/sh","-c","python3 $HOME/ear/scripts/hls-edge-fetch.py \"$(cat $HOME/dw-stream.url)\" 250 2 --speculative 2>>$HOME/spec_stream.err | ffmpeg -loglevel warning -fflags +discardcorrupt+nobuffer -flags low_delay -probesize 65536 -analyzeduration 1000000 -i - -vn -f s16le -ac 1 -ar 16000 -"]
+cmd = ["/bin/sh","-c","python3 $HOME/ear/scripts/hls-edge-fetch.py \"$(cat $HOME/ref-stream.url)\" 250 2 --speculative 2>>$HOME/spec_stream.err | ffmpeg -loglevel warning -fflags +discardcorrupt+nobuffer -flags low_delay -probesize 65536 -analyzeduration 1000000 -i - -vn -f s16le -ac 1 -ar 16000 -"]
 
 [kalshi]
 series = "KXEARNINGSMENTION"

@@ -85,6 +85,14 @@ def stream_to(url, out, timeout=4, chunk=32768):
             out.write(buf)
             out.flush()      # hand each chunk to ffmpeg immediately — the point
             written += len(buf)
+    except BrokenPipeError:
+        # Our STDOUT is gone — ffmpeg exited. This is fatal, not a network
+        # blip: the "never crash the leg" rule assumes a live consumer, and
+        # without one the loop would spin forever hammering the CDN with
+        # speculative 404s (observed: 43,812 in a single run, budget cap of 15
+        # per segment bypassed entirely, because a dead pipe never advances the
+        # segment cursor). Let it propagate.
+        raise
     except Exception as e:
         sys.stderr.write(f"mid-body read failed after {written}B: {e}\n"); sys.stderr.flush()
         return written, True
@@ -317,6 +325,8 @@ def main():
                     age = time.time() - p
                     sys.stderr.write(f"seg age={age:.2f}s\n")
                 sys.stderr.flush()
+            except BrokenPipeError:
+                raise
             except Exception as e:
                 n_seg_err += 1
                 sys.stderr.write(f"seg err {u}: {e}\n"); sys.stderr.flush()
@@ -365,9 +375,22 @@ def main():
                 else:
                     n_spec_404 += 1
                     spec_next_probe = time.time() + spec_poll   # not published yet
+            except BrokenPipeError:
+                raise
             except Exception:
                 unclaim(seen, seen_order, probing)
                 spec_next_probe = time.time() + spec_poll
+
+        # Runaway trip (defence in depth behind the BrokenPipe fix): normal
+        # operation is <=spec_max_probes 404s per emitted segment. A ratio this
+        # far out means the cursor has stopped advancing and we are hammering
+        # the origin — stop speculating rather than find out from a 429.
+        if spec_on and n_spec_404 > 50 * max(1, n_segs):
+            spec_on = False
+            sys.stderr.write(
+                f"speculative: DISABLED — runaway guard ({n_spec_404} 404s for "
+                f"{n_segs} segments); falling back to manifest-driven\n")
+            sys.stderr.flush()
 
         if time.time() >= next_summary:
             next_summary = time.time() + 60.0
@@ -383,4 +406,13 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main() or 0)
+    try:
+        sys.exit(main() or 0)
+    except BrokenPipeError:
+        # Downstream (ffmpeg) exited. Leave loudly and promptly rather than
+        # spinning against a dead pipe — see stream_to().
+        sys.stderr.write("FATAL: stdout closed (decoder exited) — stopping fetcher\n")
+        sys.stderr.flush()
+        sys.exit(3)
+    except KeyboardInterrupt:
+        sys.exit(130)

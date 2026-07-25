@@ -62,20 +62,38 @@ def resolve(url: str) -> str:
 
 
 def segments(media_url: str):
+    """Return [(pdt_epoch, duration_s, url)] for EVERY segment.
+
+    Packagers differ: DW/Akamai stamps `EXT-X-PROGRAM-DATE-TIME` on each
+    segment, while the Unified Streaming demo (1.92 s segments — our venue
+    class) carries **one anchor for 313 segments**. Requiring a tag per segment
+    made this tool silently unusable exactly where we most need it, so the clock
+    is carried forward across `EXTINF` and re-synced whenever a fresh tag
+    appears (a tag always wins — it corrects any accumulated drift).
+    """
     body = fetch(media_url).decode("utf-8", "replace")
     base = media_url.rsplit("/", 1)[0]
-    out, pdt, dur = [], None, None
+    out, clock, dur = [], None, None
     for ln in body.splitlines():
         ln = ln.strip()
         if ln.startswith("#EXT-X-PROGRAM-DATE-TIME:"):
-            pdt = ln.split(":", 1)[1]
+            try:
+                clock = datetime.fromisoformat(
+                    ln.split(":", 1)[1].strip().replace("Z", "+00:00")
+                ).timestamp()
+            except ValueError:
+                clock = None
         elif ln.startswith("#EXTINF:"):
-            dur = float(ln.split(":", 1)[1].rstrip(","))
+            try:
+                dur = float(ln.split(":", 1)[1].rstrip(",").split(",")[0])
+            except ValueError:
+                dur = None
         elif ln and not ln.startswith("#"):
             u = ln if ln.startswith("http") else (base + "/" + ln)
-            if pdt and dur:
-                out.append((pdt, dur, u))
-            pdt = None
+            if clock is not None and dur:
+                out.append((clock, dur, u))
+                clock += dur          # advance to the next segment's start
+            dur = None
     return out
 
 
@@ -133,24 +151,32 @@ def main() -> None:
     # probe leg lengths so we can pick a segment inside the capture window
     first = load_leg(rec, legs[0])
     t_lo, t_hi = to_utc(first[2][0]), to_utc(first[2][-1])
-    cands = [
-        s for s in segs
-        if t_lo + 30 < datetime.fromisoformat(s[0].replace("Z", "+00:00")).timestamp() < t_hi - 30
-    ]
+    cands = [s for s in segs if t_lo + 30 < s[0] < t_hi - 30]
     if not cands:
         sys.exit(f"no segment PDT inside capture window "
                  f"{datetime.fromtimestamp(t_lo, timezone.utc):%H:%M:%S}–"
                  f"{datetime.fromtimestamp(t_hi, timezone.utc):%H:%M:%S} "
-                 f"(playlist spans {segs[0][0]}..{segs[-1][0]})")
-    pdt_s, dur, url = cands[len(cands) // 2]
-    pdt = datetime.fromisoformat(pdt_s.replace("Z", "+00:00")).timestamp()
+                 f"(playlist spans "
+                 f"{datetime.fromtimestamp(segs[0][0], timezone.utc):%H:%M:%S}.."
+                 f"{datetime.fromtimestamp(segs[-1][0], timezone.utc):%H:%M:%S})")
+    pdt, dur, url = cands[len(cands) // 2]
     ref = decode(url)
-    print(f"reference segment PDT={pdt_s} EXTINF={dur}s  decoded {len(ref)/16000:.2f}s")
+    print(f"reference segment PDT={datetime.fromtimestamp(pdt, timezone.utc):%H:%M:%S.%f}Z "
+          f"EXTINF={dur}s  decoded {len(ref)/16000:.2f}s")
     print(f"content ends at encoder time {datetime.fromtimestamp(pdt+dur, timezone.utc):%H:%M:%S.%f}\n")
     print(f"{'leg':>18} {'abs_lag_s':>10} {'peak':>6}")
 
     for leg in legs:
-        pcm, sq, ts = load_leg(rec, leg)
+        try:
+            pcm, sq, ts = load_leg(rec, leg)
+        except FileNotFoundError:
+            print(f"{leg:>18} {'-':>10} {'-':>6}   (no capture files)")
+            continue
+        # A leg whose decoder died records zero frames. Report it and keep
+        # going — one dead leg must not cost us the other legs' numbers.
+        if len(ts) == 0 or len(pcm) < 16000:
+            print(f"{leg:>18} {'-':>10} {'-':>6}   (LEG DEAD — {len(ts)} frames captured)")
+            continue
         k, peak = find(ref, pcm)
         end_sample = k + len(ref)
         i = int(np.searchsorted(sq, end_sample // 320))
