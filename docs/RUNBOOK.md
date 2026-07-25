@@ -347,6 +347,19 @@ FOMC 07-29 runs the **non-speculative** template regardless (standing decision �
 a rate-limit would take every leg on the box down); the probe informs the NEXT
 event, and pins `L` for the race ledger either way.
 
+**⚠ OPS TRAP — `pkill -f <pattern>` kills its own shell (2026-07-25).**
+`pkill -f hls-edge-fetch.py` over ssh matches ANY process whose command line
+contains that string — including the `bash -c` wrapper running the command
+itself. The session dies mid-command and returns EMPTY output, intermittently
+(it is a race between the signal and the echo). This was very nearly written off
+as a CDMX→AWS network failure. Use the bracket form, which does not match itself:
+```
+pkill -f "[h]ls-edge-fetch\.py" ; pkill -f "[c]apture-bakeoff"
+ps -eo cmd --no-headers | grep -c "[h]ls-edge-fetch"    # verify 0; pgrep -cf lies too
+```
+When the box "goes quiet", diagnose in this order before blaming the link:
+TCP 22 reachable → `aws ec2 describe-instance-status` → only then the network.
+
 **Capture outcomes (per-event, running log):**
 - **ALLY Tue 07-21 — NO CAPTURE.** The m3u8 was never surfaced / the box was
   never driven, so `~/ally-capture/` was never created — no xcorr/manifest/lag
