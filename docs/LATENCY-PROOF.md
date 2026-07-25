@@ -5,7 +5,47 @@ an interleaved A/B or a side-by-side measurement on the same hardware — or an 
 `NOT RESOLVABLE ABOVE NOISE` / `INSTRUMENT-ONLY` verdict. Claims that don't survive measurement are
 recorded as such, not dropped.
 
-## Session 2026-07-25 (S7) — 90-min drop-safety FAILS the bar: ~86 s of audio silently lost
+## Session 2026-07-25 (S7 re-validation) — PASSES: 46 transient 404s, all recovered, zero loss
+
+Second 90-minute run with the retry fix (10:20 → 11:50Z, DW, 3 legs).
+
+| leg | audio emitted | vs 5400 s wall clock |
+|---|---|---|
+| prod_tuned | 5345.9 s | **−54.1 s** |
+| prod_streamlink | 5398.4 s | −1.6 s |
+| **spec_edge** | **5410.4 s** | **+10.4 s** (join backlog drained) |
+
+| fetcher counter | before fix | after fix |
+|---|---|---|
+| `seg_err` (permanent loss) | 17 | **0** |
+| `seg retry` (recovered) | — | **46** |
+| `seg LOST` | — | **0** |
+| `dropped` (catch-up) | 0 | **0** |
+| `short` | 0 | 0 |
+
+**BOTH bar conditions met: `seg_err=0` AND no audio deficit vs `prod_tuned`.**
+**S7 IS GREEN** — the drop-safety gate that blocked arming the speculative
+posture is cleared.
+
+**46 transient 404s — ~276 s of call audio — were recovered.** Under the old code
+every one would have been a permanent ~6 s gap. The 404 rate is variable (17 in
+the first run, 46 in the second, same stream and duration), which is itself worth
+knowing: the exposure is not a fixed small number.
+
+**No duplication risk from the retry.** In the default buffered path
+`fetch_segment` calls `get()` to completion *before* writing anything, so a 404
+raises before a single byte is emitted — a retry cannot double-emit. (The
+`--stream-body` path can write partially, but mid-body failures return `short`
+rather than raising, so they are not retried.)
+
+**Unexpected result worth flagging: `spec_edge` was the only leg to emit full
+wall-clock audio.** `prod_tuned` — the *fallback* leg in the armed spec template
+— came up **54 s short** with 829 stalls. That is the same leg already retracted
+from "deterministic joiner" to "largest join lottery of the three" (7.22 s
+spread). It is a backstop for *diversity*, not for reliability, and this run is a
+third independent mark against treating it as the safe option.
+
+## Session 2026-07-25 (S7 first run) — 90-min drop-safety FAILED: ~86 s of audio silently lost
 
 The gate that blocks arming the speculative posture. **90 minutes, DW, 3 legs**
 (08:46:50 → 10:17:08Z).
