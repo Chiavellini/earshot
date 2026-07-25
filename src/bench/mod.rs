@@ -72,6 +72,12 @@ pub struct AggRow {
     pub latency_p50_ms: Option<i64>,
     pub latency_p95_ms: Option<i64>,
     pub latency_max_ms: Option<i64>,
+    /// Audio-domain lag behind word end (`score::TierScore::emit_lag_ms`).
+    /// Present in LOSSLESS runs too, unlike the `latency_*` columns.
+    pub emit_lag_p50_ms: Option<i64>,
+    pub emit_lag_p95_ms: Option<i64>,
+    pub emit_lag_max_ms: Option<i64>,
+    pub emit_lag_min_ms: Option<i64>,
 }
 
 pub fn run_bench(args: &BenchArgs) -> Result<BenchReport, AnyErr> {
@@ -166,11 +172,13 @@ fn run_cell(
                     false_alarms: 0,
                     false_alarm_pos_ms: Vec::new(),
                     latency_ms: Vec::new(),
+                    emit_lag_ms: Vec::new(),
                 });
                 entry.true_positives += s.true_positives;
                 entry.misses += s.misses;
                 entry.false_alarms += s.false_alarms;
                 entry.latency_ms.extend(s.latency_ms);
+                entry.emit_lag_ms.extend(s.emit_lag_ms);
             }
         }
     }
@@ -179,6 +187,7 @@ fn run_cell(
         .into_values()
         .map(|mut s| {
             s.latency_ms.sort_unstable();
+            s.emit_lag_ms.sort_unstable();
             AggRow {
                 recall: s.recall(),
                 precision: s.precision(),
@@ -186,6 +195,10 @@ fn run_cell(
                 latency_p50_ms: percentile(&s.latency_ms, 0.50),
                 latency_p95_ms: percentile(&s.latency_ms, 0.95),
                 latency_max_ms: s.latency_ms.last().copied(),
+                emit_lag_p50_ms: percentile(&s.emit_lag_ms, 0.50),
+                emit_lag_p95_ms: percentile(&s.emit_lag_ms, 0.95),
+                emit_lag_max_ms: s.emit_lag_ms.last().copied(),
+                emit_lag_min_ms: s.emit_lag_ms.first().copied(),
                 phrase: s.phrase,
                 tier: s.tier,
                 true_positives: s.true_positives,
@@ -207,14 +220,14 @@ impl BenchReport {
             self.calls.len()
         );
         out.push_str(&format!(
-            "{:<12} {:>6} {:<26} {:>9} {:>4} {:>5} {:>4} {:>7} {:>9} {:>8} {:>8} {:>8}\n",
+            "{:<12} {:>6} {:<26} {:>9} {:>4} {:>5} {:>4} {:>7} {:>9} {:>8} {:>8} {:>8} {:>9} {:>9}\n",
             "engine", "chunk", "phrase", "tier", "tp", "miss", "fa", "recall", "precision", "fa/h",
-            "p50ms", "p95ms"
+            "p50ms", "p95ms", "lag50ms", "lag95ms"
         ));
         for cell in &self.cells {
             for r in &cell.rows {
                 out.push_str(&format!(
-                    "{:<12} {:>6} {:<26} {:>9} {:>4} {:>5} {:>4} {:>7.2} {:>9.2} {:>8.2} {:>8} {:>8}\n",
+                    "{:<12} {:>6} {:<26} {:>9} {:>4} {:>5} {:>4} {:>7.2} {:>9.2} {:>8.2} {:>8} {:>8} {:>9} {:>9}\n",
                     cell.engine,
                     cell.chunk_ms,
                     r.phrase,
@@ -227,6 +240,8 @@ impl BenchReport {
                     r.fa_per_hour,
                     r.latency_p50_ms.map_or("-".into(), |v| v.to_string()),
                     r.latency_p95_ms.map_or("-".into(), |v| v.to_string()),
+                    r.emit_lag_p50_ms.map_or("-".into(), |v| v.to_string()),
+                    r.emit_lag_p95_ms.map_or("-".into(), |v| v.to_string()),
                 ));
             }
         }

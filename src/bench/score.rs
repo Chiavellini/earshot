@@ -37,6 +37,22 @@ pub struct TierScore {
     pub false_alarm_pos_ms: Vec<u64>,
     /// Wall-clock onset→emit latencies, paced (speed=1.0) runs only.
     pub latency_ms: Vec<i64>,
+    /// **Audio-domain** lag per true positive: `audio_pos_ms − occ.end_ms`, i.e.
+    /// how much audio PAST the word's end the engine had to consume before it
+    /// fired. Distinct from `latency_ms` in two ways that matter:
+    ///
+    /// 1. It is wall-clock-free, so lossless (speed=0) runs report it — the
+    ///    laptop's 3.5× run variance cannot touch it.
+    /// 2. On a live HLS feed audio arrives in *segment-sized bursts*, not
+    ///    smoothly, so this lag is FREE when the trailing audio is already in
+    ///    the same segment and costs up to a **full segment duration** when it
+    ///    is not. That phase dependence — not raw compute — is what makes the
+    ///    live `audio→decision` term swing (`docs/LATENCY-PROOF.md`, E0).
+    ///
+    /// Measured against ground truth here for the first time; the standing
+    /// "~0.4 s decode lag" figure is an ONNX-metadata inference
+    /// (`VERIFICATIONS.md` Q-M1 pin 3), not an observed distribution.
+    pub emit_lag_ms: Vec<i64>,
 }
 
 impl TierScore {
@@ -84,6 +100,7 @@ pub fn score_phrase(
 
             let mut tp = 0u32;
             let mut latency_ms = Vec::new();
+            let mut emit_lag_ms = Vec::new();
             let mut matched = vec![false; dets.len()];
             for occ in occurrences {
                 let lo = occ.onset_ms.saturating_sub(window.pre_ms);
@@ -94,6 +111,11 @@ pub fn score_phrase(
                 if let Some((i, d)) = hit {
                     matched[i] = true;
                     tp += 1;
+                    // Signed on purpose: a negative value means the engine fired
+                    // BEFORE the word finished (prefix-style firing), which is a
+                    // real and desirable outcome, not an error to clamp away.
+                    emit_lag_ms
+                        .push(d.detection.audio_pos_ms as i64 - occ.end_ms as i64);
                     if let Some(t0) = first_capture_ts {
                         let emit_since_start_ms =
                             d.detection.emit_ts.saturating_since(t0) as i64 / 1_000_000;
@@ -115,6 +137,7 @@ pub fn score_phrase(
                 false_alarms: false_alarm_pos_ms.len() as u32,
                 false_alarm_pos_ms,
                 latency_ms,
+                emit_lag_ms,
             }
         })
         .collect()
@@ -211,6 +234,31 @@ mod tests {
         let occs = vec![occ(2_000, 2_500)];
         let s = score(&dets, &occs, Some(t0));
         assert_eq!(s[0].latency_ms, vec![350]);
+    }
+
+    #[test]
+    fn emit_lag_is_audio_domain_and_needs_no_clock() {
+        // Word ends at 2500 ms; engine surfaced the hit at 2900 ms of stream
+        // position → it consumed 400 ms of audio past the word before firing.
+        // No wall clock is supplied (t0 = None) — this is the whole point:
+        // lossless speed=0 runs report it, so the laptop's run variance and the
+        // box's oscillator drift are both irrelevant to the number.
+        let dets = vec![rec(Tier::Fast, 2_900, 0)];
+        let occs = vec![occ(2_000, 2_500)];
+        let s = score(&dets, &occs, None);
+        assert_eq!(s[0].emit_lag_ms, vec![400]);
+        assert!(s[0].latency_ms.is_empty(), "no clock ⇒ no wall-clock latency");
+    }
+
+    #[test]
+    fn emit_lag_is_negative_when_the_engine_fires_before_the_word_ends() {
+        // Prefix-style firing: the hit surfaces 200 ms BEFORE the word finishes.
+        // That is the outcome the parked prefix work is chasing, so it must be
+        // representable — clamping to zero here would hide the win.
+        let dets = vec![rec(Tier::Fast, 2_300, 0)];
+        let occs = vec![occ(2_000, 2_500)];
+        let s = score(&dets, &occs, None);
+        assert_eq!(s[0].emit_lag_ms, vec![-200]);
     }
 
     #[test]

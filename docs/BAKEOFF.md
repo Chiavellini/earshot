@@ -80,6 +80,20 @@ Two passes per grid cell:
    onset→emit = `emit_ts − (first_capture_ts + onset_ms)`, reported
    p50/p95/max per tier. This is the number that matters for the trade.
 
+Both passes also report **`lag50ms` / `lag95ms`** — `emit_lag_ms`, the
+**audio-domain** lag `audio_pos_ms − occ.end_ms`: how much audio past the word's
+end the engine consumed before firing. Signed, so prefix-style firing shows as
+**negative**. Unlike the `p50ms`/`p95ms` columns it needs no clock, so the
+LOSSLESS pass reports it too and run-to-run machine variance cannot move it.
+
+It is the number to optimise, because on a live HLS feed audio arrives in
+segment-sized bursts: this lag is free when the trailing audio is in the same
+segment and costs a **whole segment** when it is not, with exposure `A/S`
+(measured 19.2 % at a 2 s venue, 9.9 % at 4 s — `docs/LATENCY-PROOF.md`, E0).
+The standing "~0.4 s engine decode lag" that sizes the 1500 ms post-window above
+is an ONNX-metadata inference (`VERIFICATIONS.md` Q-M1 pin 3), never an observed
+distribution; `lag50ms` is what finally measures it.
+
 Self-test (no model, no corpus): `tests/bench_fixture.rs` — tone fixture +
 stub detector + `FixtureSpec::occurrences()` ⇒ recall 1.0, FA 0, paced
 latency within one chunk.

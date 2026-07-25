@@ -5,6 +5,109 @@ an interleaved A/B or a side-by-side measurement on the same hardware — or an 
 `NOT RESOLVABLE ABOVE NOISE` / `INSTRUMENT-ONLY` verdict. Claims that don't survive measurement are
 recorded as such, not dropped.
 
+## Session 2026-07-25 (E0) — the OURS term is not a number, it is a LOTTERY on where the word falls in the segment
+
+**Campaign 2, item E0.** Goal was to explain ~200 ms that had never been
+attributed: the AXP NFL race scored **289 ms** audio-arrival→decision, but the
+arm's own `capture→decision` p50 was **88–91 ms**. The answer is that the
+question was malformed — there is no single OURS value to attribute.
+
+### Method — measured, not modelled
+
+The detector cannot fire the instant a word ends; it must first consume some
+audio *past* the word end (`sherpa_kws` ≈ 320 ms lookahead + 0.4–0.5 s decode
+lag, `VERIFICATIONS.md` Q-M1 pin 3). On a smooth feed that costs exactly itself.
+On a live HLS feed it does not, because audio does not arrive smoothly.
+
+`scripts/arrival-profile.py` (new) asks one question of a **banked capture**, for
+every frame position, with no model and no assumed segment duration:
+
+    wait(i, A) = capture_ns[i + A/frame_ms] − capture_ns[i]
+
+"Starting from the frame where a word ended, how long until `A` ms more audio had
+physically arrived?" Inputs are the per-frame `capture_ns` logs already banked
+from the live AXP 07-24 and LMT 07-23 arms — no new event, no network, no spend.
+
+### Result 1 — audio arrives in bursts ~85–144× faster than real time
+
+| capture | venue | burst period | audio per burst | delivered over | speed-up |
+|---|---|---|---|---|---|
+| AXP `hls` | Amazon IVS, 2 s seg | **2054 ms** | 2000 ms | **24 ms** | **84.6×** |
+| LMT `streamlink` | Notified, 4 s seg | **4017 ms** | 4020 ms | **30 ms** | **132.8×** |
+| LMT `pipe_tuned` | " | **4050 ms** | 4020 ms | **28 ms** | **144.0×** |
+
+Cross-check: the burst count found here (2380 on AXP) matches the capture
+bake-off's own independently-computed `stalls_over_100ms` (**2379**) — the
+harness had been counting segment boundaries and calling them stalls.
+
+### Result 2 — the wall cost of lookahead is BIMODAL, and the exposure is A/S
+
+Wall cost of `A` ms of detector lookahead, over every frame position:
+
+| capture | segment `S` | `A` | p50 | p90 | p95 | **pays a whole segment** |
+|---|---|---|---|---|---|---|
+| AXP | 2054 ms | 200 ms | 2.4 ms | 11.4 ms | 2030.6 ms | **9.6 %** |
+| AXP | 2054 ms | **400 ms** | **5.0 ms** | 2033.2 ms | 2037.0 ms | **19.2 %** |
+| LMT `streamlink` | 4017 ms | 400 ms | 3.0 ms | 14.6 ms | 3989.0 ms | **9.9 %** |
+| LMT `pipe_tuned` | 4050 ms | 400 ms | 2.7 ms | 10.8 ms | 4022.2 ms | **9.8 %** |
+
+**Four-fifths of the time the trailing audio the engine needs is ALREADY IN
+HAND and lookahead is free (2.7–5.0 ms). One time in five at AXP it is not, and
+the word costs a full ~2.03 s.**
+
+The exposure fraction is predicted by `A/S` and lands within **0.3 percentage
+points** on two venues and three independent legs:
+
+| | predicted `A/S` | measured |
+|---|---|---|
+| AXP, A=400, S=2054 | 19.5 % | **19.2 %** |
+| AXP, A=200, S=2054 | 9.7 % | **9.6 %** |
+| LMT, A=400, S=4017 | 10.0 % | **9.9 %** |
+| LMT, A=400, S=4050 | 9.9 % | **9.8 %** |
+
+### What this changes
+
+1. **The 289 ms was one draw, and a lucky one.** NFL fell in the ~80 % where
+   lookahead was free. The ledger has been quoting a single sample of a
+   two-peaked distribution as if it were the system's latency.
+2. **On ~1 word in 5 at a 2 s venue we are ~2.0 s worse than the figure we have
+   been racing against** — on top of the 1.241 s feed gap. Speculative fetch does
+   **not** touch this: it changes *when* a segment arrives, not the fact that
+   audio arrives in segment-sized lumps, and the trailing audio genuinely does
+   not exist yet at the encoder.
+3. **Shorter segments hit more often but hurt less** (19.2 % × 2.0 s vs 9.9 % ×
+   4.0 s). Expected cost is `A` either way; only the shape differs. So "find a
+   shorter-segment rendition" (F1) is **not** a fix for this term — worth knowing
+   before F1 runs and gets over-credited.
+4. **The lever is `A` itself, and it is linear.** Halving lookahead halves the
+   exposure — AXP 19.2 % → 9.6 %. That is precisely what D1 (chunk-8) and D2
+   (prefix-firing, which drives `A` *negative*) do, and it promotes both from
+   "worth doing" to the largest identified remaining lever on our own side.
+
+### Honest note on the pre-registered bar
+
+The E0 bar was *"the sub-terms reconstruct the measured end-to-end within 10 ms,
+and the largest single term is named with a number."* **I am not claiming a pass:
+the bar was ill-posed and I wrote it.** It presumes OURS is a scalar; the
+measurement's main finding is that it is not. Reconstructing "the" 289 ms to
+±10 ms would mean fitting one draw of a bimodal variable, which would look
+rigorous and mean nothing. What is delivered instead: the distribution, its
+mechanism, the `A/S` law, and its confirmation on three legs at two venues.
+A scalar reconstruction remains open and is now specified correctly in E0b below.
+
+### Still open inside E0 (E0b)
+
+- **`A` has never been measured against ground truth.** The 0.4–0.5 s figure is
+  inferred from ONNX metadata, not observed. `bench-detector` now reports
+  `emit_lag_ms` (`audio_pos_ms − occ.end_ms` per true positive, signed so
+  prefix-firing shows as negative) — wall-clock-free, so lossless speed=0 runs
+  report it and run-to-run variance cannot touch it. Run pending on the box.
+- **Queue-drain term, unmeasured.** When 2 s of audio lands in 24 ms, the
+  detector must chew through it; a word late in a burst waits behind the audio in
+  front of it, ≈ `position_in_burst × RTF`. At RTF 0.1 that is 0–200 ms and is a
+  strong candidate for the residual the 289 ms carries. Needs the RTF number the
+  pending bench run produces.
+
 ## Session 2026-07-25 (S6) — join-lottery characterised at n=16–21
 
 Ten consecutive 150 s runs pooled with every earlier `abs-lag.py` observation.
