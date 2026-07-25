@@ -5,7 +5,42 @@ an interleaved A/B or a side-by-side measurement on the same hardware — or an 
 `NOT RESOLVABLE ABOVE NOISE` / `INSTRUMENT-ONLY` verdict. Claims that don't survive measurement are
 recorded as such, not dropped.
 
-## Session 2026-07-25 (S2) — `L` = +1.51 s at 1.92 s segments; absolute lag NOT RESOLVABLE on that stream
+## Session 2026-07-25 (S3) — probe interval REFUTED at 50 ms, and 200 ms is measured to be at the knee
+
+**Hypothesis:** a segment becomes fetchable at an instant; probing every P ms
+discovers it P/2 late, so 200→50 ms should return ~75 ms.
+
+**Instrument — deliberately NOT the audio pipeline.** A ~75 ms effect is far
+below `leg-lag`'s ~2.5 s noise on DW, so a capture A/B could never resolve it.
+Instead two probers race for the **same** predicted segment, driven by one shared
+manifest poller, comparing first-success times: paired per segment, sub-ms,
+no decode and no cross-correlation. Bounded probes per segment, any 429/403
+aborts (that outcome would itself be the answer).
+
+| comparison | median | range | n | verdict |
+|---|---|---|---|---|
+| 200 ms → **50 ms** (faster) | **−0.1 ms** | −124 .. +86 | 10 | **REFUTED** vs ≥50 ms bar |
+| 200 ms → **500 ms** (slower) | **+45.4 ms LATER** | −34 .. +239 | 10 | real cost |
+
+No 429/403 at 4× the request rate — politeness was not the limiting factor; the
+effect simply is not there.
+
+**Why faster buys nothing — and what it says about `L`.** Six of the ten 50 ms
+deltas land within **±3 ms**. Independently-timed pollers cannot agree that
+tightly unless the 404→200 transition is **externally gated rather than
+probe-gated** — i.e. both probers are released at the same instant by something
+upstream. The natural candidate is **CDN negative-cache expiry on the 404**.
+
+That unifies with the `L` measurements: it explains why the fetchable-lead is a
+**fixed ~1.0–1.5 s per origin regardless of segment duration** (+1.07 s at 6 s,
++1.51 s at 1.92 s) — **`L` would simply BE the negative-cache TTL.** Stated as a
+hypothesis: it is strongly consistent with three independent observations, but
+not directly proven (that would need origin-side cache headers).
+
+**Operational verdict — keep 200 ms, and this argues AGAINST more aggression.**
+Faster costs 4× the requests for nothing; slower costs ~45 ms median (up to
+239 ms). The current setting is at the knee, validated from both directions.
+Good news for the CDN-politeness guardrail: the safe choice is also the fast one.
 
 Overnight loop, item S2: measure `L` and the speculation A/B at **our venue class**
 (1.92 s segments) rather than DW's 6 s.
