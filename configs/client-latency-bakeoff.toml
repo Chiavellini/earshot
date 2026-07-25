@@ -41,27 +41,26 @@ model_dir = "models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
 [arbiter]
 mode = "fanout"
 
+# The PRODUCTION comparison: both armed legs vs the speculative posture.
+# spec_edge runs the DEFAULT body mode (whole-body read) — progressive streaming
+# was refuted (-0.197 s vs a >=0.3 s bar) and lives behind --stream-body now.
 [[sources]]
 kind = "pipe"
 label = "prod_tuned"
 sample_rate_hz = 16000
 cmd = ["/bin/sh","-c","ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 65536 -analyzeduration 1000000 -live_start_index -1 -http_persistent 1 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2 -i \"$(cat $HOME/ref-stream.url)\" -vn -f s16le -ac 1 -ar 16000 -"]
 
-# The isolation pair: identical fetcher, identical speculation, the ONLY
-# difference is --buffered (whole-segment read, the pre-2026-07-24 behaviour)
-# vs progressive streaming. So (spec_buffered -> spec_stream) is the streaming
-# change alone. Pre-registered bar: >=0.3 s.
 [[sources]]
 kind = "pipe"
-label = "spec_buffered"
+label = "prod_streamlink"
 sample_rate_hz = 16000
-cmd = ["/bin/sh","-c","python3 $HOME/ear/scripts/hls-edge-fetch.py \"$(cat $HOME/ref-stream.url)\" 250 2 --speculative --buffered 2>>$HOME/spec_buffered.err | ffmpeg -loglevel warning -fflags +discardcorrupt+nobuffer -flags low_delay -probesize 65536 -analyzeduration 1000000 -i - -vn -f s16le -ac 1 -ar 16000 -"]
+cmd = ["/bin/sh","-c","streamlink --stdout --hls-live-edge 1 --hls-segment-stream-data --hls-playlist-reload-time segment \"$(cat $HOME/ref-stream.url)\" best | ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 65536 -analyzeduration 1000000 -i - -vn -f s16le -ac 1 -ar 16000 -"]
 
 [[sources]]
 kind = "pipe"
-label = "spec_stream"
+label = "spec_edge"
 sample_rate_hz = 16000
-cmd = ["/bin/sh","-c","python3 $HOME/ear/scripts/hls-edge-fetch.py \"$(cat $HOME/ref-stream.url)\" 250 2 --speculative 2>>$HOME/spec_stream.err | ffmpeg -loglevel warning -fflags +discardcorrupt+nobuffer -flags low_delay -probesize 65536 -analyzeduration 1000000 -i - -vn -f s16le -ac 1 -ar 16000 -"]
+cmd = ["/bin/sh","-c","python3 $HOME/ear/scripts/hls-edge-fetch.py \"$(cat $HOME/ref-stream.url)\" 250 2 --speculative 2>>$HOME/spec_edge.err | ffmpeg -loglevel warning -fflags +discardcorrupt+nobuffer -flags low_delay -probesize 65536 -analyzeduration 1000000 -i - -vn -f s16le -ac 1 -ar 16000 -"]
 
 [kalshi]
 series = "KXEARNINGSMENTION"

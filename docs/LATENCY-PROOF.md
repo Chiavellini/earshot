@@ -5,6 +5,58 @@ an interleaved A/B or a side-by-side measurement on the same hardware — or an 
 `NOT RESOLVABLE ABOVE NOISE` / `INSTRUMENT-ONLY` verdict. Claims that don't survive measurement are
 recorded as such, not dropped.
 
+## Session 2026-07-25 (S2) — `L` = +1.51 s at 1.92 s segments; absolute lag NOT RESOLVABLE on that stream
+
+Overnight loop, item S2: measure `L` and the speculation A/B at **our venue class**
+(1.92 s segments) rather than DW's 6 s.
+
+### `L` — MEASURED, and the tightest reading yet
+
+| stream | segment | median `L` | range | n |
+|---|---|---|---|---|
+| DW (Akamai) | 6.0 s | +1.07 s | +1.01..+3.96 | 5 |
+| Unified Streaming | **1.92 s** | **+1.51 s** | **+0.93..+1.54** | **7** |
+
+Third independent reading at this venue (1.40, 1.50, 1.51) and by far the
+tightest distribution. Confirms `L` is a fixed origin property, not a fraction of
+a segment. Projection against the 1.530 s reference deficit: **Δrace ≈ −0.02 s**.
+
+### Absolute lag — `NOT RESOLVABLE` on this stream (its PDT is not wall-clock)
+
+The A/B produced **physically impossible negative lags** (−7.0 / −8.4 / −8.0 s):
+audio cannot reach our ring before the encoder stamped it. Diagnosed rather than
+patched around — the reference segment *is* inside the leg's window and
+correlates at **peak 1.00**, yet its PDT claims encoding 7 s *after* arrival.
+
+**The demo stream's encoder clock runs fast.** `manifest-probe.sh` already
+carries the caveat ("encoder-clock-bounded"); this is the first time it bit.
+Consequence: `abs-lag.py`'s absolute number is only as good as the venue's PDT
+discipline, and this venue has none. DW's numbers are unaffected (per-segment
+PDT, sane 16–19 s readings).
+
+`abs-lag.py` now **refuses to print a negative lag**, reporting `IMPOSSIBLE` with
+the reference PDT, the arrival, and the leg window — so a physically impossible
+figure can never be quoted, and the next run starts from the diagnostic.
+
+**Relative leg deltas survive** — the PDT offset is common to every leg, so
+differences are unaffected. From the one usable run: `spec_edge` **0.97 s
+fresher** than `prod_tuned`, and 0.44 s *behind* `prod_streamlink`.
+
+### Why only one usable run — decoder startup fails at short segments
+
+`spec_edge` recorded **0 frames in 2 of 3 runs**. The new BrokenPipe guard worked
+exactly as designed (clean `FATAL: stdout closed (decoder exited)` instead of the
+runaway), so the fetcher is not at fault — **ffmpeg exited during startup probe**.
+Working hypothesis, untested: the fetcher emits only the newest segment on join,
+and 1.92 s of media is too little for `-probesize 65536 -analyzeduration 1000000`
+to settle, where DW's 6 s segments always sufficed. That did not surface on any
+6 s-segment run.
+
+**S2 verdict: `L` MEASURED and strong; the leg A/B is `NOT RESOLVABLE` at n=1.**
+Carried forward: (a) fix the short-segment decoder startup, (b) re-run for n≥3,
+(c) find a 2–4 s stream with trustworthy PDT if an absolute number is wanted
+there — otherwise report relative deltas only.
+
 ## Session 2026-07-25 — ⚠ ORPHANED-FETCHER INCIDENT: a runaway, and a contamination caveat on part 3/4
 
 **Found 18 orphaned `hls-edge-fetch.py` processes running on the box.** Killing a
@@ -35,8 +87,17 @@ but NOT clean:
 
 Still: the absolute lag figures and the leg-spread statistics were taken under
 unknown contention and should be re-measured on the now-quiet box before being
-quoted as final. `spec_buffered` dying with 0 frames in two consecutive runs is
-itself most likely a contention symptom, not a code defect.
+quoted as final.
+
+> **Correction, same session:** the sentence here originally read "`spec_buffered`
+> dying with 0 frames in two consecutive runs is itself most likely a contention
+> symptom, not a code defect." **That was wrong.** The leg died because the rig
+> still passed `--buffered`, a flag renamed to `--stream-body` when progressive
+> streaming was refuted and the default inverted — argparse rejected it and the
+> process exited before reading a byte. A stale config flag, diagnosed by running
+> the command rather than reasoning about the load average. The contention
+> caveat above stands on its own evidence (18 strays, load 1.7–2.1 → 0.88); this
+> particular attribution did not.
 
 **Operational rule added to the loop pre-flight:** reap strays before every
 experiment, and verify with `ps -eo cmd | grep -c "[h]ls-edge-fetch"` — `pgrep

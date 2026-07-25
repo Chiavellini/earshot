@@ -182,7 +182,24 @@ def main() -> None:
         i = int(np.searchsorted(sq, end_sample // 320))
         i = min(i, len(sq) - 1)
         arrival = to_utc(int(ts[i]))
-        print(f"{leg:>18} {arrival - (pdt + dur):10.3f} {peak:6.2f}"
+        lag = arrival - (pdt + dur)
+        # A NEGATIVE absolute lag is physically impossible — audio cannot reach
+        # our ring before the encoder stamped it. If we compute one, the
+        # reference segment is not really the content we correlated against (a
+        # spurious peak, or a segment outside the capture window slipping past
+        # the candidate filter, which compares ENCODER time to ARRIVAL time and
+        # is only approximately right). Refuse to print a number that cannot be
+        # true, and dump the inputs needed to fix it.
+        if lag < 0:
+            print(f"{leg:>18} {'IMPOSSIBLE':>10} {peak:6.2f}   (lag {lag:+.3f}s < 0)")
+            print(f"{'':>18}   ref PDT+dur={datetime.fromtimestamp(pdt+dur, timezone.utc):%H:%M:%S.%f} "
+                  f"vs arrival={datetime.fromtimestamp(arrival, timezone.utc):%H:%M:%S.%f}")
+            print(f"{'':>18}   leg window ="
+                  f" {datetime.fromtimestamp(to_utc(int(ts[0])), timezone.utc):%H:%M:%S}"
+                  f"–{datetime.fromtimestamp(to_utc(int(ts[-1])), timezone.utc):%H:%M:%S}"
+                  f"  (reference must fall INSIDE this)")
+            continue
+        print(f"{leg:>18} {lag:10.3f} {peak:6.2f}"
               f"{'' if peak > 0.5 else '   (weak — not trustworthy)'}")
     print("\nabs_lag = when the segment's LAST audio reached our ring, minus when the "
           "encoder stamped its end.\nLower is fresher. Differences between legs are the "
