@@ -5,6 +5,53 @@ an interleaved A/B or a side-by-side measurement on the same hardware — or an 
 `NOT RESOLVABLE ABOVE NOISE` / `INSTRUMENT-ONLY` verdict. Claims that don't survive measurement are
 recorded as such, not dropped.
 
+## Session 2026-07-25 (S4) — keep-alive REFUTED: the handshake is real but NOT on the critical path
+
+**Hypothesis:** every probe opens a fresh TCP+TLS connection, including the
+winning one, so a persistent connection removes 1–2 RTT per segment.
+
+**The handshake cost is real and large.** Ranged 1 KB GETs to the same segment,
+interleaved, n=15 each: fresh **55.1 ms** (51.2–56.5) vs reused **4.4 ms**
+(4.0–6.8) ⇒ a **50.7 ms** ceiling, comfortably over the ≥30 ms bar. So the lever
+was worth measuring properly rather than dismissing.
+
+**Realised gain in the race: none.** Same paired-race instrument as S3 — two
+probers, same 200 ms cadence, same shared manifest poller, differing ONLY in
+connection handling:
+
+| | median | range | n | verdict |
+|---|---|---|---|---|
+| fresh → keep-alive | **+0.3 ms** | −55.6 .. +57.7 | 9 | **REFUTED** vs ≥30 ms |
+
+**Why a 50.7 ms cost yields a 0 ms gain** — it follows directly from S3. Because
+we *poll repeatedly* rather than issuing one perfectly-timed request, the
+handshake is absorbed into the waiting window instead of adding to the critical
+path. A fresh-connection probe is **in flight for ~55 ms**, which gives it a
+longer window to catch the CDN's release instant; the keep-alive probe returns in
+4 ms and can miss that instant, then waits a full 200 ms interval. The advantage
+cancels — and the symmetric **±55 ms** spread is exactly the signature of that
+cancellation.
+
+⚠ **Untested sub-case:** this holds for the *speculative* (polling) path, which
+is what we deploy. On a manifest-driven fetch of a segment already known to
+exist, the handshake IS on the critical path and keep-alive should still pay.
+Not measured, and low priority since S3 showed manifest-driven is the slower
+path anyway.
+
+### ⚠ Instrument bug caught — the first S4 run said −250 ms and was WRONG
+
+The first attempt reported keep-alive **250 ms slower**, remarkably consistently
+(−226..−460), and a plausible story was available (fresh connections re-roll
+which CDN edge node answers, so connection churn could be a *feature*). It was
+an artefact: `probe_fresh` timestamped after reading **1 KB**, while the
+keep-alive path must drain the **entire ~500 KB segment** to keep its socket
+reusable, and timestamped after that. First-byte was being compared against
+full-download.
+
+Both paths now timestamp at **response headers**, before any body read. Recording
+this because the wrong number was self-consistent, mechanistically explicable,
+and would have been believed.
+
 ## Session 2026-07-25 (S3) — probe interval REFUTED at 50 ms, and 200 ms is measured to be at the knee
 
 **Hypothesis:** a segment becomes fetchable at an instant; probing every P ms
