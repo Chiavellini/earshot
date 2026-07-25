@@ -1,0 +1,420 @@
+# Webcast-domain bake-off keyword config (docs/BAKEOFF.md §Webcast fill-tier
+# promotion gate, pre-registered 2026-07-23). Union of the LMT/AAL/INTC 07-23
+# event keyword sets (41 phrases; iran + tariff shared across events).
+# Tickers are placeholders — bench-detector only, nothing touches Kalshi.
+# BASELINE state = engine defaults for every keyword (exactly what the 07-23
+# live arms ran: "corpus-UNVALIDATED (engine defaults)"); dev tuning edits
+# per-keyword thresholds/boost here, holdout runs whatever is frozen.
+
+[event]
+id        = "WEBCAST-BAKEOFF"
+starts_at = "2026-07-30T21:00:00Z"
+
+[pipeline]
+chunk_ms       = 160
+resample_to_hz = 16000
+
+[detector]
+engine = "sherpa_kws"
+
+[detector.sherpa_kws]
+model_dir         = "models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
+num_threads       = 1
+max_active_paths  = 4
+default_threshold = 0.20
+default_boost     = 2.0
+refractory_ms     = 2000
+
+[detector.streaming_ctc]
+model_dir         = "models/sherpa-onnx-streaming-zipformer-ctc-small-2024-03-18"
+num_threads       = 1
+default_threshold = 0.15
+
+[[sources]]                      # unused by bench-detector (corpus supplies audio)
+kind = "replay"
+path = "unused.wav"
+
+[kalshi]
+series = "KXEARNINGSMENTION"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-APPLE"
+phrase           = "apple"
+variants         = ["apple", "apples"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "confirmed_only"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-ARIZONA"
+phrase           = "arizona"
+fast_prefixes    = []
+fast_threshold   = 0.15
+variants         = ["arizona", "arizonas"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "two_tier"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-ATANDT"
+phrase           = "at and t"
+variants         = ["at and t"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "confirmed_only"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-ATC"
+phrase           = "atc"
+variants         = ["atc", "atcs"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "confirmed_only"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-ATHENS"
+phrase           = "athens"
+fast_prefixes    = []
+fast_threshold   = 0.15
+variants         = ["athens", "zurich", "zurichs"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "two_tier"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-BASICECONOMY"
+phrase           = "basic economy"
+fast_prefixes    = ["basic ec"]
+fast_threshold   = 0.15
+variants         = ["basic economy"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "two_tier"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-BOEING"
+phrase           = "boeing"
+variants         = ["boeing", "boeings"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "confirmed_only"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-CENTENNIAL"
+phrase           = "centennial"
+fast_prefixes    = []
+fast_threshold   = 0.15
+variants         = ["centennial", "centennials"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "two_tier"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-CHICAGO"
+phrase           = "chicago"
+fast_prefixes    = []
+fast_threshold   = 0.15
+variants         = ["chicago", "chicagos", "ohare", "ohares"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "two_tier"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-CLIENTCOMPUT"
+phrase           = "client computing"
+fast_prefixes    = ["client comp"]
+fast_threshold   = 0.15
+variants         = ["client computing"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "two_tier"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-DARPA"
+phrase           = "darpa"
+variants         = ["darpa", "darpas"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "confirmed_only"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-DESKTOP"
+phrase           = "desktop"
+fast_prefixes    = []
+fast_threshold   = 0.15
+variants         = ["desktop", "desktops"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "two_tier"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-DIVIDEND"
+phrase           = "dividend"
+fast_prefixes    = []
+fast_threshold   = 0.15
+variants         = ["dividend", "dividends"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "two_tier"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-EUROPE"
+phrase           = "europe"
+fast_prefixes    = []
+fast_threshold   = 0.15
+variants         = ["europe", "europes", "european", "europeans"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "two_tier"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-FOUNDRY"
+phrase           = "foundry"
+variants         = ["foundry", "foundrys"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "confirmed_only"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-GOLDENDOME"
+phrase           = "golden dome"
+fast_prefixes    = ["golden d"]
+fast_threshold   = 0.15
+variants         = ["golden dome"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "two_tier"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-GOVERNMENT"
+phrase           = "government"
+fast_prefixes    = []
+fast_threshold   = 0.15
+variants         = ["government", "governments"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "two_tier"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-HOLIDAY"
+phrase           = "holiday"
+fast_prefixes    = []
+fast_threshold   = 0.15
+variants         = ["holiday", "holidays"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "two_tier"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-IRAN"
+phrase           = "iran"
+variants         = ["iran", "irans", "middle east"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "confirmed_only"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-LAVAZZA"
+phrase           = "lavazza"
+fast_prefixes    = []
+fast_threshold   = 0.15
+variants         = ["lavazza", "lavazzas"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "two_tier"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-MOBILEYE"
+phrase           = "mobileye"
+fast_prefixes    = []
+fast_threshold   = 0.15
+variants         = ["mobileye", "mobileyes"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "two_tier"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-MORFIUS"
+phrase           = "morfius"
+fast_prefixes    = []
+fast_threshold   = 0.15
+variants         = ["morfius"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "two_tier"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-NASA"
+phrase           = "nasa"
+variants         = ["nasa", "nasas"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "confirmed_only"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-NORFOLK"
+phrase           = "norfolk"
+fast_prefixes    = []
+fast_threshold   = 0.15
+variants         = ["norfolk", "norfolks", "virginia", "virginias"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "two_tier"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-NVIDIA"
+phrase           = "nvidia"
+fast_prefixes    = []
+fast_threshold   = 0.15
+variants         = ["nvidia", "nvidias"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "two_tier"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-ORION"
+phrase           = "orion"
+variants         = ["orion", "orions"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "confirmed_only"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-PANTHERLAKE"
+phrase           = "panther lake"
+fast_prefixes    = ["panther"]
+fast_threshold   = 0.15
+variants         = ["panther lake"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "two_tier"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-PERU"
+phrase           = "peru"
+variants         = ["peru", "perus", "peruvian", "peruvians"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "confirmed_only"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-RECORD"
+phrase           = "record"
+variants         = ["record", "records"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "confirmed_only"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-SATELLITE"
+phrase           = "satellite"
+fast_prefixes    = []
+fast_threshold   = 0.15
+variants         = ["satellite", "satellites"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "two_tier"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-SECURITY"
+phrase           = "security"
+fast_prefixes    = []
+fast_threshold   = 0.15
+variants         = ["security", "securitys"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "two_tier"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-SHUTDOWN"
+phrase           = "shutdown"
+fast_prefixes    = []
+fast_threshold   = 0.15
+variants         = ["shutdown", "shutdowns", "shut down"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "two_tier"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-SIEMENS"
+phrase           = "siemens"
+fast_prefixes    = []
+fast_threshold   = 0.15
+variants         = ["siemens"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "two_tier"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-SIKORSKY"
+phrase           = "sikorsky"
+fast_prefixes    = []
+fast_threshold   = 0.15
+variants         = ["sikorsky", "sikorskys"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "two_tier"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-TARIFF"
+phrase           = "tariff"
+fast_prefixes    = []
+fast_threshold   = 0.15
+variants         = ["tariff", "tariffs"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "two_tier"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-TRUMP"
+phrase           = "trump"
+variants         = ["trump", "trumps"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "confirmed_only"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-ULTRA"
+phrase           = "ultra"
+variants         = ["ultra", "ultras", "ultra series"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "confirmed_only"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-VENTUREFUND"
+phrase           = "venture fund"
+fast_prefixes    = ["venture f"]
+fast_threshold   = 0.15
+variants         = ["venture fund"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "two_tier"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-VENUSAEROSPA"
+phrase           = "venus aerospace"
+fast_prefixes    = ["venus a"]
+fast_threshold   = 0.15
+variants         = ["venus aerospace"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "two_tier"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-WEATHER"
+phrase           = "weather"
+variants         = ["weather", "weathers"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "confirmed_only"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-WORLDCUP"
+phrase           = "world cup"
+fast_prefixes    = ["world c"]
+fast_threshold   = 0.15
+variants         = ["world cup"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "two_tier"

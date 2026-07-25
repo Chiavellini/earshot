@@ -296,6 +296,23 @@ hearing Tue 10:00 AM (committee stream); Navy-commission "Maritime
 Seapower" hearing Wed 10:00 AM (stream link unverified); the "AI Workforce"
 Fri hearing was NOT verifiable on 07-20. **FOMC: Warsh presser is Wed 07-29
 2:30 PM (next week) — the crown same-floor target.**
+**⚠ SLATE CORRECTION 2026-07-24 (night) — BA IS NOT THE TUESDAY EVENT.**
+Kalshi lists `KXEARNINGSMENTIONBA-26JUL21` (**already past**) and no future BA
+event. Queried the API for every earnings-mention series with an event dated
+Jul 25–31:
+
+| date | events |
+|---|---|
+| **Tue 07-28** | `KXEARNINGSMENTIONF-26JUL28` (Ford), `KXEARNINGSMENTIONPYPL-26JUL28` (PayPal) |
+| Wed 07-29 | Carvana, **Meta**, Wingstop (+ FOMC 14:30 ET) |
+| Thu 07-30 | **Amazon**, Ferrari, Reddit, Yum! Brands |
+
+**Arm PayPal, not Ford, if only one.** The pre-arm collision screen
+(`docs/BAKEOFF.md` §Collision screen) measured Ford's generated keyword set at
+**65 false alarms** over 2.5 h of unrelated calls vs PayPal's **12** — 38 of
+Ford's from the two-character `ev`/`evs`/`ai`/`ais` variants that `prepare`
+emits. Ford is armable only after those variants are fixed.
+
 **FOMC VENUE RECON (pinned 2026-07-24 ~00:40, from the June 17 archived
 presser played with network capture):** the Fed's own player is
 **Brightcove** — account `66043936001`, player
@@ -314,6 +331,21 @@ is requester-IP-locked; box is bot-walled, per GOOGL). Tokenized manifests
 mean the box legs must consume the freshly-surfaced tokenized URL; token
 lifetime to be measured day-of. This is a THIRD venue class (Brightcove/
 boltdns/Fastly) — manifest-probe FIRST, fetch-ladder verdict unknown.
+
+**RUN `scripts/manifest-probe.sh <m3u8>` THE MOMENT THE m3u8 IS SURFACED.** It
+now ends with a `== speculative posture ==` section (`scripts/spec-probe.py`)
+that answers, for that venue: are segment URLs numerically predictable, and how
+far ahead of the manifest can a segment be fetched (`L`)? That is the term the
+speculative leg converts into race position — measured `L` +1.07 s at 6 s
+segments (Akamai) and +1.50 s at 1.92 s (Unified Streaming), both **GO**.
+**Brightcove is UNKNOWN and cannot be probed before the stream is live**, because
+the manifest carries a short-lived `fastly_token`. Two venue-specific risks to
+watch in the probe output: (a) if each SEGMENT carries its own token, N+1 is not
+nameable → NO-GO; (b) if the live cadence really is the VOD's 10 s, one segment
+is a very long time to be wrong about.
+FOMC 07-29 runs the **non-speculative** template regardless (standing decision —
+a rate-limit would take every leg on the box down); the probe informs the NEXT
+event, and pins `L` for the race ledger either way.
 
 **Capture outcomes (per-event, running log):**
 - **ALLY Tue 07-21 — NO CAPTURE.** The m3u8 was never surfaced / the box was

@@ -22,6 +22,10 @@ use crate::risk::MENTION_FILL_CAP_CENTS;
 /// validation table can never disagree.
 pub const KWS_MODEL_DIR: &str = "models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01";
 
+/// Shortest variant we will emit. Two-letter keywords match a syllable, not a
+/// word — measured 38 false alarms in one event's set (docs/BAKEOFF.md).
+const MIN_VARIANT_CHARS: usize = 3;
+
 /// One market turned into a keyword candidate.
 pub struct PreppedKeyword {
     pub ticker: String,
@@ -38,6 +42,8 @@ pub struct PreppedKeyword {
     /// Variants removed by encode-validation (not in the detector vocab even
     /// after sanitizing). Emitted as comments so the operator sees the loss.
     pub dropped: Vec<String>,
+    /// Variants removed for being too short to be acoustically distinct.
+    pub dropped_short: Vec<String>,
 }
 
 /// Normalize a raw subtitle alternate into the detector's input alphabet
@@ -132,7 +138,50 @@ fn prep_market(m: &Value) -> Option<PreppedKeyword> {
         can_close_early: m["can_close_early"].as_bool().unwrap_or(false),
         compound,
         dropped: Vec::new(),
+        dropped_short: Vec::new(),
     })
+}
+
+/// Remove variants too short to be acoustically distinct, recording each in
+/// `dropped_short` so the emitted config shows the loss.
+///
+/// MEASURED, not a hunch: screening the 2026-07-28 Ford keyword set over 2.5 h
+/// of unrelated calls, the generated `ai`/`ais` fired 17 times and `ev`/`evs`
+/// 21 — 38 of that event's 65 false alarms, on "ever", "than ever", even
+/// "2027" (docs/BAKEOFF.md §Collision screen). A two-letter keyword matches a
+/// syllable, not a word. Dropping is LOUD (warn + config comment) so an
+/// operator who genuinely needs "EV" can re-add it and own the precision cost.
+fn strip_short_variants(preps: &mut [PreppedKeyword]) {
+    for k in preps.iter_mut() {
+        // A GENERATED plural must die with its base, or the floor leaks: "ev"
+        // is 2 chars and drops, but `prep_market`'s "evs" is 3 and would
+        // survive to fire on "ever" exactly as measured. Only plurals of a
+        // dropped base are removed — a real 3-char market word ("ads", "atc")
+        // is untouched.
+        let short_bases: Vec<String> = k
+            .variants
+            .iter()
+            .filter(|v| v.trim().len() < MIN_VARIANT_CHARS)
+            .cloned()
+            .collect();
+        let doomed: Vec<String> = short_bases.iter().map(|b| format!("{b}s")).collect();
+        let (kept, short): (Vec<String>, Vec<String>) = k.variants.drain(..).partition(|v| {
+            v.trim().len() >= MIN_VARIANT_CHARS && !doomed.contains(v)
+        });
+        k.variants = kept;
+        for s in short {
+            tracing::warn!(keyword = %k.word, variant = %s, "dropped ultra-short variant");
+            k.dropped_short.push(s);
+        }
+        // The phrase must remain a real variant — it names the keyword in
+        // reports and drives the tuned-library lookup.
+        if let Some(first) = k.variants.first() {
+            if k.phrase != *first {
+                k.phrase = first.clone();
+                k.tuned = tuned_library(&k.phrase);
+            }
+        }
+    }
 }
 
 /// The per-keyword cap for the fill posture: the live ask, bounded by the fill
@@ -180,6 +229,15 @@ pub async fn run_prepare(
 
     let mut preps: Vec<PreppedKeyword> = markets.iter().filter_map(prep_market).collect();
     preps.sort_by(|a, b| a.ticker.cmp(&b.ticker));
+
+    // Ultra-short variants are acoustically indefensible and MEASURED harmful:
+    // screening the 2026-07-28 Ford set over 2.5 h of unrelated calls, the
+    // generated `ai`/`ais` fired 17 times and `ev`/`evs` 21 — 38 of that event's
+    // 65 false alarms, on "ever", "than ever", even "2027"
+    // (docs/BAKEOFF.md §Collision screen). A two-letter keyword matches a
+    // syllable, not a word. Dropped LOUDLY (never silently) so an operator who
+    // genuinely needs "EV" can re-add it and own the precision cost.
+    strip_short_variants(&mut preps);
 
     // Encode-validation: drop variants the detector vocab cannot represent.
     // The sanitizer already normalized punctuation; this is the ground truth.
@@ -286,6 +344,13 @@ pub async fn run_prepare(
         for d in &k.dropped {
             body.push_str(&format!(
                 "# DROPPED unencodable variant {d:?} — not in the detector vocab\n"
+            ));
+        }
+        for d in &k.dropped_short {
+            body.push_str(&format!(
+                "# DROPPED ultra-short variant {d:?} — <{MIN_VARIANT_CHARS} chars matches a \
+                 syllable, not a word (measured: 38 FA in one event set). Re-add \
+                 deliberately if this phrasing matters, and own the precision cost.\n"
             ));
         }
         body.push_str("[[keywords]]\n");
@@ -397,5 +462,43 @@ mod tests {
             toks.iter().any(|p| p.contains('-')),
             "expected raw \"non-stop\" to encode via a '-' piece (the silent hazard), got {toks:?}"
         );
+    }
+
+    #[test]
+    fn ultra_short_variants_are_dropped_loudly_not_silently() {
+        // "Electric vehicle / EV" is a REAL 2026-07-28 Ford market. The bare
+        // "ev"/"evs" alternates fired 21 times over 2.5 h of unrelated calls.
+        let m = json!({
+            "ticker": "KX-T-EV",
+            "yes_sub_title": "Electric vehicle / EV",
+            "rules_primary": "resolves yes if said",
+            "yes_ask_dollars": "0.25",
+            "can_close_early": true,
+        });
+        let mut preps = vec![prep_market(&m).expect("prepped")];
+        assert!(preps[0].variants.iter().any(|v| v == "ev"), "generator still emits the short alternate");
+
+        strip_short_variants(&mut preps);
+        let k = &preps[0];
+        assert!(!k.variants.iter().any(|v| v == "ev" || v == "evs"), "short variants must not survive");
+        assert!(k.variants.contains(&"electric vehicle".to_string()), "the real phrase must survive");
+        assert!(k.dropped_short.contains(&"ev".to_string()), "the drop must be recorded, not silent");
+        assert_eq!(k.phrase, "electric vehicle", "phrase must stay a kept variant");
+    }
+
+    #[test]
+    fn three_char_variants_are_kept() {
+        // The bar is <3 chars. "atc" and "ads" are real market words and must
+        // survive — the filter is a floor, not a general shortness heuristic.
+        let m = json!({
+            "ticker": "KX-T-ATC",
+            "yes_sub_title": "ATC",
+            "rules_primary": "resolves yes if said",
+            "can_close_early": true,
+        });
+        let mut preps = vec![prep_market(&m).expect("prepped")];
+        strip_short_variants(&mut preps);
+        assert!(preps[0].variants.contains(&"atc".to_string()));
+        assert!(preps[0].dropped_short.is_empty());
     }
 }

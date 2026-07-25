@@ -615,3 +615,172 @@ could score at most 4/8. Amended denominator = the settlement-YES spoken set
 ≥4/5 bar). The holdout is unblocked once dev tuning converges; it still runs
 exactly ONCE with the frozen class-policy config. Verdict lands here; gate
 state mirrors to `docs/RACE-CHECKLIST.md`.
+
+## Prefix-firing on the WEBCAST vocabulary (paced, 2026-07-24) — PARKED pending parity
+
+Paced dev bench, sherpa_kws, chunk 160, INTC-Q2-2026 (0.98 h real-time, us-east
+box), `configs/bakeoff-webcast-prefix.toml` (27 designed cuts, all accepted by
+`compile-keywords`). Ran because the webcast vocabulary — 41 phrases of long
+proper nouns and **multi-word compounds** — is structurally unlike the 5-word
+earnings vocabulary the P3 diagnosis retired prefix-firing on.
+
+| phrase | Fast p50 | Confirmed p50 | **lead** | Fast TP | Conf TP | Fast FA/h |
+|---|---|---|---|---|---|---|
+| client computing | 1489 ms | 2130 ms | **+641 ms** | 1 | 1 | 0 |
+| panther lake | 676 ms | 1243 ms | **+567 ms** | 2 | 3 | 0 |
+| security | 949 ms | 949 ms | **+0 ms** | 4 | 4 | **8.2** |
+| foundry | — (**0 Fast fires**) | 1033 ms | — | 0 | **11** | 0 |
+
+**Both P3 and the earlier estimate were right, about different word classes.**
+Single words gain **nothing** (`security` +0 ms) — exactly P3's structural
+result (§P3: safe cuts shave only the final BPE token). Multi-word phrases gain
+**~0.6 s**, because the cut drops an entire *leading word* — a different
+mechanism than P3 measured, and the first positive prefix result in the program.
+
+**Verdict: PARKED, not promoted.** Three blockers: (a) n=3 paired words, on 1
+and 2 true positives for the two large leads; (b) `foundry` — the most-spoken
+keyword on the call — produced **0 Fast fires against 11 Confirmed**, so the
+lever is absent exactly where recall is richest; (c) Fast-tier FA runs **~8/h**
+(`europe`, `security`) against this doc's pre-registered G4 bars of ≤0.5/h dev
+and ≤1/h holdout — over by ~16×.
+
+Program reason for parking (operator directive 2026-07-24): prefix-firing is a
+*beat*-the-competitor lever, and the measured gap is **not** decode — 81 % of it
+is upstream of our audio (`LATENCY-PROOF.md` §THE GAP IS LOCATED). Reach parity
+on the feed first; revisit this table after.
+
+### Unpark attempt (2026-07-24 night) — two structural rules, −96 % FA, still FAILS the gate
+
+Not tuning-by-memorization: both rules follow from the measured mechanism, which
+is what the G4 gate asks for ("generalized into written per-class policy rules").
+
+1. **Multi-word phrases only.** The Fast cut drops a whole *leading word*, which
+   only exists for multi-word phrases; on a single word it shaves the final BPE
+   token (P3's finding above). Attribution over the INTC bench: single-word
+   phrases carried **25 of 29** Fast FAs and returned **+0 ms**. Prefixes removed
+   from all 20 single-word phrases.
+2. **Gate (b) at the word level.** Of the 7 surviving multi-word prefixes, two
+   stopped at a word people say standalone — `venture`, `golden` — and those were
+   the FA sources. Extended to `venture f` / `golden d`; `panther` kept (rare
+   word). All 7 recompile with valid token-boundary cuts, zero rejects. The
+   safety costs lead: `golden d` is a 5/6 cut where `golden` was 4/6.
+
+**Result — dev split (INTC + LMT, 2.527 h, `sherpa_kws`):**
+
+| tier | TP | FA | FA/h | G4 dev bar |
+|---|---|---|---|---|
+| Fast | 5 | 3 | **1.19/h** | ≤0.5/h — **FAIL** |
+| Confirmed | 49 | 53 | 20.97/h | (untuned union config, see caveat) |
+
+Residual Fast FAs: `panther lake`, `venture fund`, `venus aerospace` — one each.
+
+**VERDICT: still PARKED.** The marginal FA cost of prefixes fell from 29.6/h to
+**1.19/h (−96 %)** and both measured leads survive (`golden dome` now fires Fast
+2/2 with 0 FA), but the pre-registered bar is a point estimate and 1.19/h misses
+it by 2.4×. Per the gate as written, that is a fail — it is not re-negotiated
+after seeing the number.
+
+**Two honest caveats, in both directions:**
+- *Against the fail:* 3 FA events over 2.527 h is thin. Against a true rate of
+  0.5/h you would expect 1.26 events, and observing ≥3 has p ≈ 0.13 — so this is
+  **not significantly above the bar**, merely above its point estimate. A longer
+  corpus could land either side.
+- *Against the pass:* only **5 Fast true positives** across the whole dev split,
+  so the latency benefit is still resting on very few events.
+- The absolute rates come from the untuned 41-phrase union bench config
+  (Confirmed alone is 20.97/h), NOT an armed posture. The transferable number is
+  the **marginal** +1.19/h that prefixes add, not the totals.
+
+Next move if this is revisited: FA autopsy (`fa_autopsy` in `bench-report.json`)
+on the three residual phrases, and more corpus hours to shrink the interval —
+not threshold-fiddling on three events.
+
+## Collision screen — detection quality is a KEYWORD-RISK problem (2026-07-24)
+
+`scripts/collision-screen.py` answers the question a bench report cannot: not
+*that* a keyword false-fires but **what the detector actually heard**. It joins
+each `fa_autopsy` position (`src/bench/mod.rs`) to the word-level transcript
+(`corpus/transcripts/<call>.words.json`) and classifies each fire.
+
+Classification follows Q4 semantics (`VERIFICATIONS.md`): **plurals/possessives
+ARE the same mention; substrings of closed compounds and verb forms are NOT.**
+That distinction is the whole point — `tailwinds` is a true hit, `ultramaritime`
+and `recorded` are not.
+
+**Dev corpus taxonomy — 48 of 56 FAs are genuine, and they are NOT diffuse:**
+
+| keyword | fires on | n | class |
+|---|---|---|---|
+| `trump` | "strong" | 8 | phonetic near-miss |
+| `record` | "recorded" | 6 | **SUBSTRING** — verb form, not a mention |
+| `weather` | "whether" | 4 | **TRUE HOMOPHONE — unwinnable** |
+| `orion` | "invent**ory on**" | 2 | word-boundary artifact |
+| `ultra` | "ultramaritime" | 2 | **SUBSTRING** — closed compound |
+| `shutdown` | "shoot down" | 1 | phonetic near-miss |
+
+Meanwhile the distinctive words are already near-perfect: `foundry` 11/0,
+`government` 13/1, `morfius` 3/0, `panther lake` 5/1, `golden dome` 2/0.
+
+**So "flawless detection" is not a global tuning target — it is a per-keyword
+risk classification produced BEFORE arming.** Some collisions are
+threshold-fixable; a true homophone is not, and a market on such a word is
+simply not winnable on precision. Know which is which, then act only on the
+words that are clean.
+
+### Pre-arm screen of a real event's keywords (2026-07-28 candidates)
+
+Ran the screen on the ACTUAL `earshot prepare` output for both Tuesday events,
+against 2.527 h of unrelated calls (INTC + LMT) — so nearly every fire is a
+collision by construction:
+
+| event | total FA | worst offenders |
+|---|---|---|
+| **Ford** (`KXEARNINGSMENTIONF-26JUL28`) | **65** | `electric vehicle` 21, `ai` 17, `china` 7, `recall` 6 |
+| **PayPal** (`KXEARNINGSMENTIONPYPL-26JUL28`) | **12** | `regulation` 5, `stripe` 4 (on "strike"/"outstrip"), `google` 2 |
+
+**38 of Ford's 65 come from two-character variants**: `prepare` emitted
+`ai → ["ai","ais","artificial intelligence"]` and
+`electric vehicle → ["electric vehicle","ev","evs"]`. A 2-char keyword fires on
+"ever", "than ever", even "2027". This is the generator bug (task #10) with
+teeth — it also emits non-words (`autonomys`, `subsidys`, `recalleds`) which are
+harmless, but the short variants are not.
+
+**Consequences, decided before the event rather than after:**
+- **PayPal is the materially safer arm** — its vocabulary is distinctive
+  (bitcoin, blockchain, braintree, perplexity, biometric, stablecoin, agentic
+  commerce all score zero FA).
+- No event gets armed on an unscreened keyword set. Fold this into
+  `scripts/preflight-event.sh`.
+
+### Generator fix (task #10) — measured 65 → 29 FA
+
+`prepare` now drops variants shorter than `MIN_VARIANT_CHARS` (3), **loudly** —
+`tracing::warn` at generation plus a `# DROPPED ultra-short variant` comment in
+the emitted config, so an operator who genuinely needs "EV" can re-add it and own
+the precision cost. Silent dropping would have been its own bug.
+
+Subtlety the regression test caught: a **generated plural must die with its
+base**. `ev` is 2 chars and drops, but `prep_market`'s derived `evs` is 3 and
+would have survived to fire on "ever" exactly as measured. Only plurals of a
+dropped base are removed, so real 3-char market words (`ads`, `atc`) are
+untouched. Tests: `ultra_short_variants_are_dropped_loudly_not_silently`,
+`three_char_variants_are_kept` (`src/prepare.rs`).
+
+Re-screened the regenerated Ford config on the same 2.527 h:
+
+| keyword | before | after |
+|---|---|---|
+| `electric vehicle` (`ev`,`evs`) | 21 | **0** |
+| `ai` (`ai`,`ais`) | 17 | **0** |
+| `china` / `recall` / `apple` / `autonomy` | 21 | 21 (next tier) |
+| **event total** | **65** | **29** |
+
+**And the market was not lost, only made precise**: the phrase promoted to
+`artificial intelligence`, which now fires **once, correctly**, on a real
+utterance. Of the 29 remaining, **6 are GROUND-TRUTH** (`market share`,
+`tailwinds`, `artificial intelligence`, `skunk works` — genuinely spoken, the
+manifest missed them), so genuine collisions are **23**: 25.7/h → **9.1/h**.
+
+Next tier for Ford if it is armed: `china` (7), `recall` (6), `apple` (4),
+`autonomy` (4) — `autonomy` is the interesting one, since "auto" prefixes
+"automotive"/"automatic", which are constant on a car maker's call.
