@@ -385,6 +385,40 @@ the process you are killing in the same command line.
 
 When the box "goes quiet", diagnose in this order before blaming the link:
 TCP 22 reachable → `aws ec2 describe-instance-status` → only then the network.
+A saturated box fails at **SSH banner exchange**, which looks exactly like a
+dead link: seen 2026-07-25 at load 18 on 2 vCPU while `describe-instance-status`
+reported `ok/ok`. Back off and retry; do not conclude anything about the network.
+
+**⚠ OPS TRAP — `cargo: not found` over ssh, and a pipe that hides it (2026-07-25).**
+Two defects stacked, and together they produced a *silently stale* measurement.
+
+1. **Root cause — minimal env.** `ssh box 'sh -c "cargo build …"'` runs
+   NON-INTERACTIVE: `~/.profile` / `~/.bashrc` are not sourced, so `~/.cargo/env`
+   never runs and cargo is not on PATH. The box printed `sh: 1: cargo: not
+   found`. Use an absolute path or source the env explicitly:
+   ```
+   ~/.cargo/bin/cargo build --release       # or: . ~/.cargo/env && cargo …
+   ```
+   Same class as the launchd-minimal-env rule in `CLAUDE.md` — an unattended
+   path validated interactively is not validated.
+2. **What hid it.** The launcher was
+   `cargo build --release 2>&1 | tail -5 && echo BUILD-OK && ./target/release/earshot …`
+   The `&&` tests **`tail`'s** exit code, not cargo's, so BUILD-OK printed and
+   the chain ran the **previous** binary — 20 h old. The result was a complete
+   bench run, well-formed JSON, plausible recall, entirely from pre-change code.
+   Caught only because one expected new field was absent; a run whose output
+   merely *looked* right would have been believed.
+
+Gate the run on the build actually having happened:
+```
+set -o pipefail                      # or drop the pipe entirely
+~/.cargo/bin/cargo build --release || exit 1
+test target/release/earshot -nt src/bench/mod.rs || { echo STALE; exit 1; }
+```
+**Defect 2 is the same one as commit `7c6081c`** (pipefail/SIGPIPE swallowing the
+live-flip in `launch-webcast.sh`). The lesson was already banked in this repo and
+still got repeated — when driving the box, never put a pipe between a build and
+the `&&` that gates the run on it.
 
 **Capture outcomes (per-event, running log):**
 - **ALLY Tue 07-21 — NO CAPTURE.** The m3u8 was never surfaced / the box was
