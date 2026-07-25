@@ -5,6 +5,33 @@ an interleaved A/B or a side-by-side measurement on the same hardware — or an 
 `NOT RESOLVABLE ABOVE NOISE` / `INSTRUMENT-ONLY` verdict. Claims that don't survive measurement are
 recorded as such, not dropped.
 
+## Session 2026-07-25 (S6) — join-lottery characterised at n=16–21
+
+Ten consecutive 150 s runs pooled with every earlier `abs-lag.py` observation.
+Characterisation only — no pre-registered bar.
+
+| leg | n | median | IQR | min | max | **spread** | stdev |
+|---|---|---|---|---|---|---|---|
+| prod_tuned | 21 | 17.06 s | 1.98 | 12.01 | 19.23 | **7.22 s** | 1.92 |
+| prod_streamlink | 19 | 17.28 s | 1.55 | 13.39 | 19.23 | **5.84 s** | 1.50 |
+| **spec_edge** | 16 | **12.39 s** | **0.71** | 11.71 | 13.01 | **1.30 s** | **0.40** |
+
+**`spec_edge` is 4.67 s fresher at the median and 5.6× tighter in spread**
+(stdev 0.40 s vs 1.92 s). Both production legs carry a 6–7 s join lottery that
+persists for a whole event; the speculative leg does not, because it continuously
+re-aims at the newest segment rather than living with wherever it happened to
+join.
+
+> **⚠ CORRECTION.** On the n=6 sample I wrote that `spec_edge`'s *worst* draw beat
+> the production legs' *best-ever* draw "by a hair". At n=16 that is **false**:
+> worst `spec_edge` is 13.01 s, best `prod_tuned` is 12.01 s — **the
+> distributions overlap.** The separation is large and consistent in the medians,
+> but it is not the clean no-overlap dominance the small sample suggested. Ninth
+> claim of this campaign corrected by a larger measurement.
+
+Consistent across sampling windows: within the 10-run batch alone, spreads were
+`spec_edge` 1.30 s, `prod_tuned` 2.78 s, `prod_streamlink` 5.23 s.
+
 ## Session 2026-07-25 (S7 re-validation) — PASSES: 46 transient 404s, all recovered, zero loss
 
 Second 90-minute run with the retry fix (10:20 → 11:50Z, DW, 3 legs).
