@@ -357,6 +357,14 @@ as a CDMX→AWS network failure. Use the bracket form, which does not match itse
 pkill -f "[h]ls-edge-fetch\.py" ; pkill -f "[c]apture-bakeoff"
 ps -eo cmd --no-headers | grep -c "[h]ls-edge-fetch"    # verify 0; pgrep -cf lies too
 ```
+**Bracketing alone is NOT enough** — it only helps if the bracketed pattern is
+the ONLY occurrence in your command line. Killing and launching in one ssh call
+still self-kills, because the `nohup ...capture-bakeoff...` payload puts the
+PLAIN string there too and `[c]apture-bakeoff` matches it. Bit twice on
+2026-07-25; the second time the launch silently never ran.
+**Rule: reap in one ssh invocation, launch in a separate one.** Never mention
+the process you are killing in the same command line.
+
 When the box "goes quiet", diagnose in this order before blaming the link:
 TCP 22 reachable → `aws ec2 describe-instance-status` → only then the network.
 

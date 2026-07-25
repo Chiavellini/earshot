@@ -5,6 +5,43 @@ an interleaved A/B or a side-by-side measurement on the same hardware — or an 
 `NOT RESOLVABLE ABOVE NOISE` / `INSTRUMENT-ONLY` verdict. Claims that don't survive measurement are
 recorded as such, not dropped.
 
+## Session 2026-07-25 (S7) — 90-min drop-safety FAILS the bar: ~86 s of audio silently lost
+
+The gate that blocks arming the speculative posture. **90 minutes, DW, 3 legs**
+(08:46:50 → 10:17:08Z).
+
+| leg | audio emitted | vs `prod_tuned` |
+|---|---|---|
+| prod_tuned | 5387.9 s | — |
+| prod_streamlink | 5391.9 s | +4.0 s |
+| **spec_edge** | **5302.0 s** | **−85.9 s** |
+
+**The thing the gate was written to test PASSED: `dropped=0`.** The
+skip-to-newest catch-up — the known-lossy path — never fired once in 90 minutes.
+
+**But the leg lost ~86 s of audio anyway, by a different mechanism nobody had
+modelled.** `seg_err=17`, and every one is an **HTTP 404 on the
+MANIFEST-DRIVEN path**: the manifest announces a segment, we fetch it
+immediately, and our CDN edge does not have it yet — the *same* negative-cache
+lag that gives speculation its lead (S3). The fetcher marked the segment `seen`
+before fetching and **never retried**, so each 404 permanently lost that
+segment. 17 × 6 s ≈ 102 s against an 85.9 s observed deficit.
+
+**Why this matters more than the number:** the loss is **~14–17 gaps of ~6 s
+each, scattered through the call**, and any one of them can swallow a keyword.
+It is a recall bug wearing a latency bug's clothes. **Every 150 s run showed
+`seg_err=0`** — only the full-length run surfaced it, which is exactly why the
+gate is 90 minutes.
+
+**VERDICT: FAILS the pre-registered bar** ("zero audio deficit vs `pipe_tuned`").
+The speculative posture stays un-armable until re-validated.
+
+**Fix:** a manifest-path fetch failure now **un-claims the segment so the next
+poll retries it**, bounded at `SEG_RETRY_MAX = 12` polls (~3 s, comfortably over
+the ~1–1.5 s negative-cache window S3 measured) before declaring it lost and
+counting it. Directly implied by the S3 model: the segment is not missing, we
+asked too early.
+
 ## Session 2026-07-25 (S5) — N+2 speculation NULL, exactly as the S3 model predicted
 
 **Question:** speculation aims one segment ahead. If the origin published in

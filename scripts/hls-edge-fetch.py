@@ -46,6 +46,10 @@ import argparse, re, sys, time, urllib.error, urllib.request, urllib.parse
 
 UA = {"User-Agent": "earshot-edge-fetch/1"}
 
+# A manifest-announced segment can 404 at the edge briefly (S3 negative-cache
+# lag). Retry that many manifest polls (~250 ms apart) before declaring it lost.
+SEG_RETRY_MAX = 12
+
 
 def get(url, timeout=4):
     """Whole-body fetch — for the MANIFEST only (it must be parsed as a unit)."""
@@ -236,6 +240,7 @@ def main():
     # and we emit a periodic summary — silent audio loss would otherwise be an
     # invisible recall bug.
     n_segs = n_short = n_seg_err = n_spec_404 = 0
+    retry_n: dict[str, int] = {}
     next_summary = time.time() + 60.0
 
     # resolve master→media once, but tolerate startup failure with retries
@@ -298,6 +303,7 @@ def main():
         if len(seen_order) > 600:
             for u in seen_order[:-500]:
                 seen.discard(u)
+                retry_n.pop(u, None)
             seen_order = seen_order[-500:]
 
         if first:
@@ -316,6 +322,7 @@ def main():
         for u, p in new:
             try:
                 _, short = fetch_segment(urllib.parse.urljoin(base, u), out, poll + 3, a.stream_body)
+                retry_n.pop(u, None)
                 n_segs += 1
                 last_seg_at = time.time()
                 if short:
@@ -328,8 +335,23 @@ def main():
             except BrokenPipeError:
                 raise
             except Exception as e:
-                n_seg_err += 1
-                sys.stderr.write(f"seg err {u}: {e}\n"); sys.stderr.flush()
+                # A manifest-announced segment can still 404 at our CDN edge for
+                # a moment — the same negative-cache lag that gives speculation
+                # its lead (docs/LATENCY-PROOF.md S3). Treating that as permanent
+                # LOSES the audio: the 90 min drop-safety run measured 17 such
+                # 404s = ~86 s of missing call, as ~6 s gaps scattered through it,
+                # any one of which could swallow a keyword. Un-claim so the next
+                # manifest poll retries, bounded so a genuinely dead segment
+                # cannot spin.
+                tries = retry_n.get(u, 0) + 1
+                retry_n[u] = tries
+                if tries <= SEG_RETRY_MAX:
+                    unclaim(seen, seen_order, u)
+                    sys.stderr.write(f"seg retry {tries}/{SEG_RETRY_MAX} {u}: {e}\n")
+                else:
+                    n_seg_err += 1
+                    sys.stderr.write(f"seg LOST after {tries} tries {u}: {e}\n")
+                sys.stderr.flush()
 
         # Re-aim speculation at the segment AFTER the newest one we already hold.
         if spec_on and spec_verified and seen_order:
