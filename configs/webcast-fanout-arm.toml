@@ -60,11 +60,21 @@ cmd = [
   "ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 65536 -analyzeduration 1000000 -live_start_index -1 -http_persistent 1 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2 -i \"$(cat $HOME/__LC__-stream.url)\" -vn -f s16le -ac 1 -ar 16000 -",
 ]
 
-# NOTE: a phase-locked minimal-edge fetcher leg (edge_poll,
-# scripts/hls-edge-fetch.py) was measured leg-vs-leg here and delivers +0 ms
-# vs the streamlink leg (streamlink is already at the live edge via
-# --hls-segment-stream-data --hls-live-edge 1). NOT deployed — see
-# docs/LATENCY-PROOF.md 2026-07-24 evening. The gap is decode, not acquisition.
+# NOTE (SUPERSEDED 2026-07-24 night — kept as the evidence trail): this file
+# used to say the edge-fetcher leg delivers "+0 ms" and that "the gap is decode,
+# not acquisition". BOTH clauses are now refuted (docs/LATENCY-PROOF.md parts
+# 1-3): the AXP NFL race decomposed to 1.241 s FEED + 0.289 s OURS, so the gap
+# is NOT decode; and the +0 ms reading came from an instrument that compared two
+# ffmpeg legs to each other and was structurally blind to a cost they shared.
+# Measured against the encoder instead, a speculative fetcher runs 4.5 s fresher
+# than this template's legs with ~5x less run-to-run variance.
+#
+# THIS TEMPLATE IS DELIBERATELY UNCHANGED — it is the proven stack, and FOMC
+# 2026-07-29 runs it. The speculative posture lives in
+# configs/webcast-fanout-arm-spec.toml (staged with
+# `stage-webcast-arm.sh --speculative`) and is gated on off-FOMC validation,
+# because its probing could get the box's IP rate-limited and that would take
+# every leg down, not just one.
 
 [kalshi]
 series = "__SERIES__"

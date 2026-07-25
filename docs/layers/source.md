@@ -53,8 +53,17 @@ two events. Scheme pinned in `VERIFICATIONS.md`.
 Generic subprocess audio: spawns a decoder command and reads **raw s16le mono
 PCM** at a declared rate from its stdout, emitting one `AudioFrame` per 20 ms
 of samples stamped at arrival (`clock_domain: "network"`, latency class
-`Webcast` — tens of seconds behind the bridge, unmeasured; this lane is for
-coverage/corpus/slow markets, never racing). Two config spellings:
+`Webcast`). **This lane IS the racing lane as of 2026-07-24** — the earlier
+"tens of seconds behind the bridge, unmeasured … never racing" is retired; the
+webcast lane is now measured and armed. Pinned numbers
+(`docs/LATENCY-PROOF.md`): on the AXP NFL race the loss decomposed to
+**1.241 s feed + 0.289 s ours**, so the pipeline is NOT the constraint — the
+audio arriving late is. Leg choice dominates: absolute lag behind the encoder
+ran 12.50 s median for the speculative fetcher vs 16.95–17.18 s for the
+streamlink/tuned-ffmpeg legs, and the **join point is stochastic and persists
+for the whole event** (up to 6.5 s of run-to-run spread on the production legs).
+A leg is therefore a latency draw as well as a recall draw. Two config
+spellings:
 `SourceConfig::Hls { url }` (sugar → `ffmpeg -i <url> -f s16le -ac 1 -ar
 16000 -`) and `SourceConfig::Pipe { cmd, sample_rate_hz, label }` (the honest
 primitive — YouTube via `sh -c "yt-dlp -o - <url> | ffmpeg -i - …"`).

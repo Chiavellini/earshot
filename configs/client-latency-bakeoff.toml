@@ -1,0 +1,75 @@
+# CLIENT-LATENCY BAKE-OFF — isolates ffmpeg probe/buffer cost in our webcast legs.
+#
+# Why: Step 1 (docs/LATENCY-PROOF.md §THE GAP IS LOCATED) measured the
+# competitor moving the market ~1.06 s BEFORE the word's audio reaches our ring,
+# and the gap does NOT co-vary with our segment batching (slope -0.08 vs +1.00
+# predicted for a continuous feed) => same segmented feed, delivered to them
+# ~1 s earlier. This config A/Bs the prime suspect: our own client chain.
+#
+# Four legs, ONE run, started simultaneously = a true interleaved A/B.
+# Pairs to compare: (1 vs 2) streamlink chain, (3 vs 4) direct-ffmpeg chain.
+# The ONLY difference within each pair is the probe/flush flag set:
+#     prod: -probesize 65536 -analyzeduration 1000000     (1 SECOND of probe)
+#     fast: -probesize 32768 -analyzeduration 0 -flush_packets 1 -avioflags direct
+#
+# Run (box, any live HLS with PDT — DW reference):
+#   echo "<m3u8>" > ~/dw-stream.url
+#   earshot capture-bakeoff --config configs/client-latency-bakeoff.toml \
+#     --secs 180 --record-dir ~/clat --out ~/clat/report.json
+#   python3 scripts/pdt-log.py "$(cat ~/dw-stream.url)" 250 190 > ~/clat/pdt.jsonl   # concurrently
+#
+# NOTE: capture-bakeoff uses the FIRST leg as the xcorr reference, so leg 1 is
+# the production baseline everything is measured against. Judge on delta_ms, and
+# cross-check with the per-frame capture_ns in the recorded .jsonl — the
+# built-in delta extrapolates arrival from frame 0 (src/capture_bakeoff/mod.rs
+# cross_deltas), which a stall corrupts.
+
+[event]
+id        = "CLIENT-LATENCY-BAKEOFF"
+starts_at = "2026-07-24T00:00:00Z"
+
+[pipeline]
+chunk_ms       = 160
+resample_to_hz = 16000
+
+[detector]
+engine = "sherpa_kws"
+
+[detector.sherpa_kws]
+model_dir = "models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
+
+[arbiter]
+mode = "fanout"
+
+[[sources]]
+kind = "pipe"
+label = "prod_tuned"
+sample_rate_hz = 16000
+cmd = ["/bin/sh","-c","ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 65536 -analyzeduration 1000000 -live_start_index -1 -http_persistent 1 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2 -i \"$(cat $HOME/dw-stream.url)\" -vn -f s16le -ac 1 -ar 16000 -"]
+
+# The isolation pair: identical fetcher, identical speculation, the ONLY
+# difference is --buffered (whole-segment read, the pre-2026-07-24 behaviour)
+# vs progressive streaming. So (spec_buffered -> spec_stream) is the streaming
+# change alone. Pre-registered bar: >=0.3 s.
+[[sources]]
+kind = "pipe"
+label = "spec_buffered"
+sample_rate_hz = 16000
+cmd = ["/bin/sh","-c","python3 $HOME/ear/scripts/hls-edge-fetch.py \"$(cat $HOME/dw-stream.url)\" 250 2 --speculative --buffered 2>>$HOME/spec_buffered.err | ffmpeg -loglevel warning -fflags +discardcorrupt+nobuffer -flags low_delay -probesize 65536 -analyzeduration 1000000 -i - -vn -f s16le -ac 1 -ar 16000 -"]
+
+[[sources]]
+kind = "pipe"
+label = "spec_stream"
+sample_rate_hz = 16000
+cmd = ["/bin/sh","-c","python3 $HOME/ear/scripts/hls-edge-fetch.py \"$(cat $HOME/dw-stream.url)\" 250 2 --speculative 2>>$HOME/spec_stream.err | ffmpeg -loglevel warning -fflags +discardcorrupt+nobuffer -flags low_delay -probesize 65536 -analyzeduration 1000000 -i - -vn -f s16le -ac 1 -ar 16000 -"]
+
+[kalshi]
+series = "KXEARNINGSMENTION"
+
+[[keywords]]
+market_ticker    = "KX-BENCH-DUMMY"
+phrase           = "guidance"
+variants         = ["guidance"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"

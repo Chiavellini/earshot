@@ -70,3 +70,14 @@ if [ -n "$pdt" ]; then
 else
   echo "(no EXT-X-PROGRAM-DATE-TIME — absolute lag not derivable from manifest)"
 fi
+
+echo
+echo "== speculative posture (GO/NO-GO + the L term) =="
+# Whether the speculative fetcher can work HERE, and how much it buys.
+# Costs a bounded number of 404s; aborts on 429/403. Skip with SPEC_PROBE=0.
+if [ "${SPEC_PROBE:-1}" = "1" ] && command -v python3 >/dev/null 2>&1; then
+  python3 "$(dirname "$0")/spec-probe.py" "$media_url" "${SPEC_PROBE_N:-5}" \
+    || echo "(spec-probe failed — treat as NO-GO)"
+else
+  echo "(skipped — SPEC_PROBE=0 or no python3)"
+fi

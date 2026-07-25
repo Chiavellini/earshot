@@ -165,12 +165,26 @@ in observe/dry-run posture (first arm ever on IVS), 488,306 frames, **0 drops**,
   OPEN** = "openai"/"chatgpt" — OOV-compound class, our known weak spot).
 - **Precision 5/7** (false fires CURR, REGU — the same single/short-word
   hallucination class as 07-23's PERU/IRAN/APPL/TRUM/ULTR).
-- **Δrace on the two clean post-remarks audio races = −2 s each** (MILL, NFL) —
-  NOT better than the −0.6..−1.0 s at Notified despite IVS being ~6 s closer to
-  the room. Confirms the thesis: wave-1 co-listens on the SAME feed, so venue
-  proximity doesn't flip the sign — it's a pure software race, unchanged since
-  nothing shipped to the live path. Envelope held exactly: 7 orders, 0
+- ~~**Δrace on the two clean post-remarks audio races = −2 s each** (MILL, NFL)~~
+  — **CORRECTED 2026-07-24 night, see below.** Envelope held exactly: 7 orders, 0
   LOST_RACE, all observe-non-crossing (dry-run) — $0 spend, by design.
+
+> **⚠ CORRECTION 2026-07-24 (night) — re-scored at µs resolution
+> (`LATENCY-PROOF.md` §THE GAP IS LOCATED).** The "−2 s each" was read off
+> whole-second timestamps and scored against non-price-moving prints.
+>
+> - **MILL is NOT A RACE.** It traded 94–95¢ from **11:25**, over an hour before
+>   the utterance; the 12:35:18.030 print is 127 contracts at a **flat 95¢**.
+>   The doc's "wave-1" at 12:35:16 was a **single 1-contract** print. Pre-priced
+>   words carry no rally to lose and are excluded from Δrace.
+> - **NFL is the one genuine race: Δrace = −1.530 s** (our flag
+>   12:37:29.042311 vs the price-moving sweep 12:37:27.512739 — 853 contracts,
+>   30¢→72¢, 13 µs-identical fills).
+> - **Decomposed (arm + capture on the same box): 1.241 s is FEED — the audio
+>   had not yet reached us when they swept — and 0.289 s is our entire decode +
+>   pipeline.** So the "pure software race" reading is wrong: 81 % of the gap is
+>   upstream of our audio, and the venue-proximity inference below is superseded
+>   (the feed gap is ~1 s at BOTH a 4 s- and a 9 s-edge-lag venue).
 
 **VZ (capture-only, no arm):** 3 healthy legs banked for the wideband corpus;
 Notified ladder confirmed (10 s edge lag). Settlements: YES = HEAD, HOME, LOYA,
@@ -379,6 +393,20 @@ identical stream positions; exactly one intent per keyword (cross-leg dedupe 16/
 | GOLD ("golden dome" — compound, detected!) | 12:34:54.803 | 12:34:54.198 | **−0.6 s** | tuned leg |
 | MORF ("morfius") | 12:57:10.364 | 12:57:09.337 | **−1.0 s** | tuned leg |
 | EURO ("europe") | 12:42:03.136 | 12:42:00.316 | **−2.8 s** | tuned leg |
+
+> **⚠ CORRECTION 2026-07-24 (night) — GOLD and EURO were scored against flat-price
+> prints, not the price-moving sweep** (`LATENCY-PROOF.md` §THE GAP IS LOCATED):
+>
+> | word | as pinned | scored against | price-moving sweep | corrected Δrace |
+> |---|---|---|---|---|
+> | GOLD | −0.6 s | 12:34:54.198 (129 ct, flat 77¢) | 12:34:55.310 (730 ct, 77→95¢) | **+0.507 s — AHEAD** |
+> | EURO | −2.8 s | 12:42:00.316 (156 ct, flat 64¢) | 12:42:01.112 (89 ct, 75→85¢) | **−2.024 s** |
+> | MORF | −1.0 s | 12:57:09.337 | 12:57:09.336 (51 ct, 45→55¢) | −1.028 s (unchanged) |
+>
+> **GOLD flips sign — we beat the rally by 0.5 s.** Independently, the box capture
+> puts the FEED term at **+1.112 / +1.125 / +0.754 s** for GOLD/EURO/MORF: the sweep
+> lands before the word's audio reaches the box, at a venue 5 s *further* from the
+> room than AXP's — which is what makes the feed gap venue-invariant.
 
 Steady-state Δrace mean **−1.5 s** vs the −8.7 s TSLA baseline: the acquisition stack
 recovered ~6–8 s but did NOT flip the sign at this venue. **Why: the ladder COMPRESSES

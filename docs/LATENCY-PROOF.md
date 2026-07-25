@@ -5,6 +5,418 @@ an interleaved A/B or a side-by-side measurement on the same hardware — or an 
 `NOT RESOLVABLE ABOVE NOISE` / `INSTRUMENT-ONLY` verdict. Claims that don't survive measurement are
 recorded as such, not dropped.
 
+## Session 2026-07-24 (night, part 4) — progressive body streaming REFUTED; speculative fetch REPLICATED and shipped
+
+### REFUTED — streaming the segment body buys nothing and costs stability
+
+The reasoning looked airtight: `hls-edge-fetch.py` read each segment whole
+(`urlopen(...).read()`) before writing a byte, and the reference probe showed
+first-byte at 1.753 s vs last-byte at 2.697 s — **~0.94 s of already-arrived
+audio sitting in a buffer.** Emitting progressively should have handed ffmpeg the
+head of a segment while its tail was still in flight.
+
+Implemented behind a flag so it was a pure A/B (identical fetcher, identical
+speculation, only the body read differs), 3 interleaved runs, all peaks 1.00:
+
+| run | spec_buffered | spec_stream | Δ |
+|---|---|---|---|
+| 1 | 11.709 s | 11.512 s | −0.197 |
+| 2 | 11.466 s | 11.541 s | **+0.075** |
+| 3 | 12.731 s | 12.486 s | −0.245 |
+
+**Median −0.197 s against a pre-registered ≥0.3 s bar → REFUTED.** And it is not
+free: `spec_stream` logged **3 / 32 / 62 short reads** per run against **0 / 0 / 0**
+for buffered (many-small-writes hit a closing ffmpeg pipe where one large write
+does not), with jitter p99 12–18 ms vs ~1 ms. **Default reverted to buffered**;
+the path survives behind `--stream-body` for a venue whose bodies genuinely
+arrive slowly. The ~0.94 s of "wasted" buffer was never on the critical path —
+ffmpeg was already draining the pipe faster than the body arrived.
+
+*Process note: the first attempt at this A/B produced a leg with 0 frames because
+the box was running a pre-flag copy of the script. That is a broken instrument,
+not a result — re-run, do not interpret.*
+
+### REPLICATED — the speculative fetch number holds
+
+Same runs, `spec_buffered` vs `prod_tuned`: paired **−0.632 / −4.560 / −6.496 s,
+median −4.560 s** — landing on the **−4.56 s** measured independently the run
+before, on different runs against a moving live stream. The headline stands.
+
+### Shipped
+
+- `scripts/hls-edge-fetch.py` — `--speculative`, `--selftest` (pure-function
+  regression checks; `tests/` is Rust-only), periodic `SUMMARY` health line
+  (segments, catch-up drops, short reads, spec hits, 404 rate), and a
+  pre-emptive `seen` claim that is **un-claimed on every failure path** — without
+  that, a 404 (the normal case while a segment is still publishing) would make
+  the leg skip that segment forever.
+- `configs/webcast-fanout-arm-spec.toml` — armed template where `spec_edge`
+  **replaces** `streamlink` (leg count stays 2, CPU flat on the 2-vCPU box).
+- `scripts/stage-webcast-arm.sh --speculative` — selects it, and refuses to stage
+  if `--selftest` fails.
+- `configs/webcast-fanout-arm.toml` — **unchanged as the proven default** (FOMC
+  runs it); its stale NOTE claiming "+0 ms" and "the gap is decode, not
+  acquisition" is corrected in place with the evidence trail.
+
+## Session 2026-07-24 (night, part 3) — SPECULATIVE SEGMENT FETCH: −4.56 s median, and the join lottery collapses
+
+**PROVEN, and it clears the pre-registered ≥0.5 s bar by ~9×.** Follows part 2
+(the client term is ~1 segment of waiting to be told a segment exists).
+
+### The idea and its measured basis
+
+Segment URLs are numerically predictable. On the reference stream a segment is
+fetchable by **predicted URL** a median **+1.02 s before the manifest announces
+it** (n=5, range −0.77..+2.89) — almost exactly the ~1.06 s lead the competitor
+holds. So `scripts/hls-edge-fetch.py` gained `--speculative`: aim at `N+1`, ask
+for it directly, retry 404s inside a politeness budget.
+
+Safety rails, because this is a more aggressive consumer than a normal client
+and a block would hit **every leg on the box**: probing starts only after 80 % of
+a segment duration, ≤15 probes/segment, and **any 429/403 permanently disables
+speculation** and falls back to manifest-driven. The URL pattern is verified
+against real consecutive segments before speculation is enabled at all.
+
+### Result — 6 runs, DW reference stream, all peaks ≥0.98
+
+Absolute lag behind the encoder (`abs-lag.py`), 4 legs in ONE process per run so
+each run is a true interleaved A/B:
+
+| leg | r1 | r2 | r3 | r4 | r5 | r6 | **median** | **spread** |
+|---|---|---|---|---|---|---|---|---|
+| prod_streamlink | 18.59 | 13.65 | 17.32 | 16.78 | 17.05 | 18.03 | 17.18 | 4.94 |
+| prod_tuned | 16.54 | 13.88 | 12.01 | 17.37 | 17.81 | 18.54 | 16.95 | 6.53 |
+| edge_poll (no spec) | 17.17 | 13.67 | 12.26 | 14.63 | 12.57 | 13.47 | 13.57 | 4.92 |
+| **spec_edge** | **12.00** | **12.85** | **12.25** | **12.79** | **11.94** | **12.76** | **12.50** | **0.91** |
+
+Paired per-run differences (median):
+
+| comparison | isolates | median |
+|---|---|---|
+| spec_edge − prod_tuned | the whole change | **−4.56 s** |
+| spec_edge − edge_poll | **speculation alone** | **−0.76 s** |
+| edge_poll − prod_tuned | phase-locked poll + catch-up | −1.48 s |
+
+**Two distinct wins, and the second is the bigger one:**
+
+1. **Speculation is worth ~0.76 s**, consistent with the +1.02 s
+   fetchable-before-announced measurement that motivated it.
+2. **The join lottery collapses.** `spec_edge` spread is **0.91 s** against
+   4.9–6.5 s for every other leg. Because it always pulls the newest segment the
+   instant it exists, it converges to the edge regardless of where it joined —
+   it reliably achieves what the production legs reach only on a lucky draw
+   (their best-ever draw was 12.01 s; spec_edge's *worst* was 12.85 s). For
+   racing this matters more than the mean: a bad draw currently costs up to
+   6.5 s **for the entire event**.
+
+Speculation health across the instrumented runs: **65 hits, 0 rate-limit or
+disable events**, URL pattern verified. The 131 `seg err` entries are all
+`Broken pipe` at shutdown (ffmpeg exiting first) — benign.
+
+### Drop-safety — checked, not assumed
+
+The fetcher's skip-to-newest catch-up **drops audio by design**, which would cost
+recall. It fired once per run (2–3 segments). Two checks say those drops drained
+the *startup backlog* rather than mid-call content:
+
+- `spec_edge` never carried **less** audio than the production baseline in any
+  run (r4 8093 vs 8095 frames; r5 7795 vs 7795; r6 7788 vs 7494).
+- Windowed `leg-lag.py` across a whole run oscillates within one segment
+  duration (−2.6..−5.9 s) with **no persistent 12–18 s step**, which a mid-run
+  drop of 2–3 segments would have produced.
+
+⚠ **Still a deployment gate:** the lossy path exists, was exercised, and has only
+been observed over 3×150 s. Before arming, validate over a full ~90 min event and
+surface a drop counter in the report.
+
+### The fetchable-lead does NOT scale with segment duration (2026-07-24, follow-up)
+
+The open worry was that the +1.02 s lead was a fraction of DW's 6 s segment and
+would shrink to ~0.33 s at our 2 s venues, making speculation useless where it
+matters. **Refuted.** Measured on a **1.92 s-segment** stream (Unified Streaming
+demo, `demo.unified-streaming.com`, standard HLS, no LL-HLS — same class as
+AXP/IVS):
+
+| stream | segment duration | median lead | range | n |
+|---|---|---|---|---|
+| DW (Akamai) | 6.0 s | +1.02 s | −0.77 .. +2.89 | 5 |
+| Unified Streaming demo | **1.92 s** | **+1.40 s** | **+1.36 .. +1.96** | 8 |
+
+**The lead is a fixed origin property, not a fraction of a segment** — it is
+*larger* at short segments, and far tighter (range 0.6 s vs 3.7 s). The likely
+mechanism is the **manifest's CDN cache TTL**: the playlist is served stale for
+~1–1.5 s while the segment object itself is already fetchable. That predicts a
+roughly constant lead per origin, which is what we see across two independent
+CDNs.
+
+**Consequence for the race:** the AXP feed gap is **1.241 s**. A lead of
+1.0–1.4 s at 2 s segments means **speculation alone is of the right size to close
+the whole measured gap** — where before we could only claim a 6 s-segment number.
+⚠ Still origin-specific: neither test used Amazon IVS (AXP) or Brightcove (FOMC),
+and the lead must be re-measured per venue before it is claimed for an event.
+
+### Caveats
+
+- The −4.56 s A/B headline is a **6 s-segment number and does not transfer**;
+  `COMPETITOR-ANATOMY.md` records that the ladder compresses at short-window
+  venues. The transferable claims are the *fetchable-lead* (measured at both 6 s
+  and 1.92 s above) and the variance collapse.
+- `scripts/abs-lag.py` assumes a PDT tag per segment. The 1.92 s stream carries a
+  **single PDT anchor** plus cumulative `EXTINF` (a common packager choice), so
+  the script needs to derive per-segment PDT from the anchor before it can run an
+  absolute A/B there. Open.
+- 6 runs × 150 s, one venue, one CDN (Akamai). Other origins may 404 until
+  announce, in which case speculation degrades to exactly `edge_poll`.
+- **Not deployed for FOMC 07-29** (operator decision): prove it off-FOMC first,
+  because a rate-limit would take the production legs down with it.
+
+## Session 2026-07-24 (night, part 2) — Step 2: ffmpeg flags REFUTED; the client term is ~1 SEGMENT and the join is stochastic
+
+Follows the entry below (the gap is upstream of our audio). Two new instruments,
+one refuted hypothesis, one located mechanism.
+
+### New instruments (the old ones structurally could not see this)
+
+- **`scripts/abs-lag.py`** — absolute lag of a leg behind the **encoder**, by
+  downloading a segment with a known `EXT-X-PROGRAM-DATE-TIME`, decoding it, and
+  cross-correlating it into the leg's recording to read the real `capture_ns` of
+  the frame carrying it. `capture-bakeoff` compares legs to *each other*, so any
+  cost every leg shares is invisible to it — that is why the 0 ms acquisition
+  proof (below) could not see ffmpeg's own cost. This measures against the CDN's
+  own clock instead.
+- **`scripts/leg-lag.py`** — steady-state leg-vs-leg arrival delta from the
+  **real** frame timestamps over several mid/late windows, with a spread-based
+  NOT-STEADY guard. `capture_bakeoff::cross_deltas` extrapolates arrival as
+  `ref_t0 + i/sr` from frame 0, so a live-HLS join backlog (each leg drains a
+  different one faster than real time) makes its whole-run `delta_ms` measure
+  **join luck** — the defect behind the retracted "−6016 ms then 0 ms, both peak
+  1.0000" pair. Coarse alignment probes with a MIDDLE slice, since a
+  later-joining leg simply does not contain the other's early content.
+- **`scripts/pdt-log.py`** — continuous manifest edge log (PDT, media sequence,
+  segment count) so segment-appearance can be tied to ring arrival.
+- Rig: `configs/client-latency-bakeoff.toml` — 4 legs, one run, so each pair is a
+  true interleaved A/B.
+
+### REFUTED — the ffmpeg probe/buffer flags are worth ~0 ms
+
+Hypothesis: our legs pay `-analyzeduration 1000000` (a full second) plus AVIO
+output buffering. Tested `-probesize 32768 -analyzeduration 0 -flush_packets 1
+-avioflags direct` against production flags, both client chains, 2 replicate
+runs on DW (6 s segments, PDT on every segment), all peaks 1.00:
+
+| pair | leg-lag (steady state) | abs-lag run 1 | abs-lag run 2 |
+|---|---|---|---|
+| streamlink: prod → fast | **−14.7 ms** (IQR 27.9, spread 60.6) | −24 ms | −20 ms |
+| tuned-ffmpeg: prod → fast | **+6.7 ms** (IQR 87.0, spread 294) | +1 ms | −31 ms |
+
+**Verdict: NOT RESOLVABLE ABOVE NOISE — the flag set buys nothing.** Replicated.
+Do not spend more time on ffmpeg input flags.
+
+### LOCATED — the client term is ~1 segment, and streamlink's join is erratic
+
+Absolute lag behind the encoder (`abs-lag.py`, DW, segment-end reference):
+
+| leg | run 1 | run 2 | run-to-run spread |
+|---|---|---|---|
+| prod_streamlink | 19.232 s | 16.261 s | **2.97 s** |
+| prod_tuned | 16.750 s | 16.620 s | **0.13 s** |
+
+Two findings, both new:
+
+1. **The leg ordering FLIPS between runs** — streamlink was 2.48 s *behind*
+   tuned in run 1 and 0.36 s *ahead* in run 2. This is the same instability seen
+   live (streamlink won on AXP, tuned-ffmpeg won 5/6 on LMT). It is not a
+   property of the client, it is the **stochastic join point**.
+2. ~~**`-live_start_index -1` joins deterministically (0.13 s spread)**~~ —
+   **RETRACTED, see correction below.** What survives: for racing, variance is as
+   costly as mean, because a bad draw persists for the whole event — a live
+   stream plays at 1× from wherever you joined.
+
+> **⚠ CORRECTION 2026-07-24 (night, part 5) — "deterministic joiner" was a
+> 2-sample artifact.** The 0.13 s spread above is the only two observations that
+> existed when it was written. Pooling every `abs-lag.py` observation since:
+>
+> | leg | n | min | max | **spread** |
+> |---|---|---|---|---|
+> | prod_tuned | 11 | 12.006 s | 19.227 s | **7.22 s** |
+> | prod_streamlink | 9 | 13.653 s | 19.232 s | ~4.9 s |
+> | spec_edge | 6 | 11.935 s | 12.847 s | **0.91 s** |
+>
+> **`-live_start_index -1` is NOT deterministic — it carries the largest lottery
+> of the three.** Both production legs draw badly on a bad day; only the
+> speculative fetcher is stable, because it continuously re-aims at the newest
+> segment instead of living with wherever it happened to join. Consequence: the
+> `pipe_tuned` fallback in `configs/webcast-fanout-arm-spec.toml` is a *fallback*,
+> not a *reliable* one — the fanout's OR-at-decision is what protects us, and it
+> only protects us while the speculative leg is actually working. That is what
+> makes a per-venue GO/NO-GO probe worth having.
+
+**Mechanism.** DW's manifest edge lag was 16 s to the newest segment's *start*,
+so its freshest content-end is ~10 s old; our best leg sits 16.3 s behind that
+content — i.e. **~6.3 s ≈ one segment duration behind the freshest available
+audio.** That is structural for standard HLS: you join at the newest *complete*
+segment and play from its beginning, so you are permanently ~1 segment back.
+
+Scaled to our real venues this predicts a client term of **~2 s at AXP (2 s
+segments)** — and the competitor's measured lead is **~1.06 s**, i.e. roughly
+half a segment. Consistent with them consuming the segment *progressively* while
+we wait for it to complete. This matches the batching-covariance result below
+(they share our segment cadence but receive it ~1 s earlier).
+
+**The lever is therefore partial/progressive segment consumption, not flags and
+not the venue.** Note "just skip forward to the live edge" is NOT the fix: being
+one segment back means we process all audio ~1 segment late, whereas skipping
+would *drop* speech and cost recall. The competitor is not skipping — they are
+getting the bytes earlier. Since these venues advertise no LL-HLS, the open
+candidate is a **speculative chunked fetch of the in-progress segment** (request
+N+1 before it is announced; origins that serve chunked-transfer stream it as it
+is produced). Untested.
+
+### Caveats
+
+- DW has 6 s segments; our venues run 2–4 s, and `docs/COMPETITOR-ANATOMY.md`
+  already records that the acquisition ladder **compresses at short-window
+  venues**. The ~6.3 s client term is DW-specific; the *≈1 segment* shape is the
+  transferable claim, and it is untested at 2 s.
+- n=2 runs. The flag refutation is replicated; the join-variance figure is two
+  draws and should be treated as "≥3 s of variance exists", not a distribution.
+
+## Session 2026-07-24 (night) — THE GAP IS LOCATED: ~1 s of it is UPSTREAM OF OUR AUDIO, not decode
+
+**The competitor moves the market before the word's audio reaches our box.** Measured on
+4 races across 2 venue classes, from artifacts already banked (no new event, no GPU).
+This supersedes the "the gap is DECODE" consequence written in the entry below.
+
+### Method
+
+Per-race, all timestamps reduced to one UTC timeline:
+
+1. **Our audio-arrival** — word-end located in the box's recorded capture leg with
+   faster-whisper word timestamps (`scripts/corpus-align.py` method), then the *frame*
+   carrying that word-end looked up in the leg's `.jsonl` (`seq`,`capture_ns`) to get the
+   instant the audio actually reached the pipeline (includes client buffering — which is
+   the point).
+2. **Monotonic→UTC** — `clock::MonotonicNs` is `CLOCK_MONOTONIC_RAW` (`src/clock.rs:17`),
+   which chrony does NOT slew, so it drifts against UTC at the box's oscillator error.
+   Two *contemporaneous* anchor pairs (arm `decision_ts` ↔ its own log wall-clock line) at
+   INTC 07-23 21:09 and AXP 07-24 12:37 fit the map at **6.47 ppm** — matching chrony's
+   independently-reported 6.899 ppm. Anchor cross-validated on a second log line (MILL)
+   to **774 µs**. ⚠ A naive `CLOCK_MONOTONIC` anchor is wrong by ~2.1 s over this box's
+   3.7-day uptime; do not use one.
+3. **Wave-1** — µs-resolution Kalshi tape, scored on the **price-moving** sweep (see
+   scoring correction below). Box clock is disciplined to **1.6 µs** RMS vs AWS Time Sync.
+
+### Result — the feed term dominates and is venue-invariant
+
+| event | venue (PDT edge lag) | word | word-end audio **@ our box** | price-moving sweep | **FEED gap** |
+|---|---|---|---|---|---|
+| AXP 07-24 | Amazon IVS, 2 s seg (**~4 s**) | NFL | 12:37:28.754 | 12:37:27.513 | **+1.241 s** |
+| LMT 07-23 | Notified/CDN, 4 s seg (**~9 s**) | golden dome | 12:34:56.421 | 12:34:55.310 | **+1.112 s** |
+| LMT 07-23 | " | european | 12:42:02.236 | 12:42:01.112 | **+1.125 s** |
+| LMT 07-23 | " | morfius | 12:57:10.089 | 12:57:09.336 | **+0.754 s** |
+
+Full decomposition of the one race with a live arm on the same box (AXP NFL):
+
+| term | value | share |
+|---|---|---|
+| **FEED** — sweep → word-end audio arrives at us | **1.241 s** | **81 %** |
+| **OURS** — audio arrival → order decision (decode + pipeline + decision) | **0.289 s** | 19 % |
+| **total Δrace** | **1.530 s** | |
+
+**Verdict — PROVEN: the dominant term is upstream of our audio.** A detector with *zero*
+latency would still have flagged NFL 1.241 s after the competitor had already swept 853
+contracts 30¢→72¢. **No model, quantum, or pipeline work can close this gap.** Our own
+end-to-end path measured **289 ms** live — better than the ~510 ms the corpus benches
+imply, and not the problem.
+
+**Venue-invariance is the discriminating finding.** The feed gap is ~1 s at a 4 s-edge-lag
+venue AND at a 9 s-edge-lag venue. So the competitor is **not** on a fixed-latency
+independent source (a phone bridge would make the 9 s venue far worse — it isn't); they
+co-listen on the same feed class with a systematic ~1 s advantage. That points at
+**segment consumption / client buffering**, not venue selection and not the detector.
+
+⚠ **Why the 0 ms acquisition proof below did not see this.** That experiment compared our
+streamlink leg against a phase-locked fetcher by cross-correlating **two recorded WAVs —
+both produced through an ffmpeg decode**. Any buffering shared by both legs cancels
+exactly and is invisible to that instrument. It proved "we poll our chosen manifest
+optimally"; it did **not** and could not test "our `streamlink | ffmpeg` chain adds ~1 s
+before the samples reach the ring." That remains open and is now the prime suspect.
+
+### Scoring correction — wave-1 must be the PRICE-MOVING sweep
+
+Re-scoring the tapes at µs resolution found the previously-pinned Δrace figures were
+scored against **flat-price prints**, not the sweep that causes the rally:
+
+| word | doc figure | scored against | price-moving sweep | corrected |
+|---|---|---|---|---|
+| AXP MILL | −2 s | a **single 1-contract** print 12:35:16.500 | — none — | **NOT A RACE** |
+| AXP NFL | −2 s | 12:37:27 (whole-second) | 12:37:27.513 (853 ct, 30→72¢) | **−1.530 s** |
+| LMT GOLD | −0.6 s | 12:34:54.198 (129 ct, flat 77¢) | 12:34:55.310 (730 ct, 77→95¢) | **+0.507 s (AHEAD)** |
+| LMT EURO | −2.8 s | 12:42:00.316 (156 ct, flat 64¢) | 12:42:01.112 (89 ct, 75→85¢) | **−2.024 s** |
+
+**AXP MILL was never a race** — it traded 94–95¢ from 11:25, over an hour before the
+utterance; the 12:35:18.030 print is 127 contracts at a *flat* 95¢. Pre-priced words must
+be excluded from Δrace entirely: there is no rally to lose.
+
+**On LMT GOLD, read "+0.507 s" precisely: we beat the sweep that moved the price, but a
+machine print preceded us.** 12:34:54.198 took 129 contracts at a flat 77¢ in 3
+µs-identical fills — a machine signature that did *not* move the market, 0.605 s before
+our flag. Whether that or the 12:34:55.310 sweep is "wave-1" is a definitional choice, and
+the two give opposite signs. This ledger scores the **price-moving** sweep (the operator's
+framing: the competitor who causes the first rally), so GOLD reads as ahead — but the
+honest statement is *"we beat the rally, and someone machine-traded ahead of us without
+moving price."* Both numbers are given above so the choice stays visible.
+
+### Caveats
+
+- **n = 4 races, 2 events.** AXP contributes the only full decomposition (the only race
+  with a live arm on the same box as the capture); LMT's arm ran on the CDMX laptop, so
+  LMT contributes the FEED term only.
+- faster-whisper word boundaries are ±~100 ms; the finding is 7–12× that. `morfius` was
+  rendered "Smorpheus" and is the least reliable of the four.
+- If the competitor fires on word-*start* rather than word-end (prefix-style), credit them
+  ~0.3–0.5 s of the gap — GOLD "Golden"/"Dome" differ by 300 ms, EURO "European" spans
+  460 ms. Even then ~0.6–0.8 s of feed advantage survives.
+- INTC 07-23 could not be used: its capture bake-off recorded **0 frames on all 4 legs**
+  (`~/intc-capture/run.log`) — a silent capture failure worth its own follow-up.
+
+### Are they even on our feed? — batching-covariance says YES
+
+Two tests, and the weaker one is the famous one:
+
+- **Segment-phase (Rayleigh) test — underpowered, do not cite alone.** Phase of
+  each machine-signature price-moving sweep relative to our segment-arrival
+  boundaries. All sweeps: n=68, R=0.072, p=0.71. Audio-triggered first-rally
+  only: n=14, R=0.229, **p=0.49** — at n=14 significance needs R>0.46, so this
+  cannot distinguish clustered from uniform. Also note pooling across events is
+  itself wrong: each capture joins at an arbitrary phase, so a real per-event
+  cluster would wash out.
+- **Batching-covariance test — decisive.** If they were on a *continuous* feed,
+  their delay would be constant and our measured gap would track OUR
+  within-segment batching 1:1 (slope +1.00). If they share our segment cadence,
+  their delay absorbs the same batching and the slope is ~0.
+
+| race | our batching excess | feed gap |
+|---|---|---|
+| AXP NFL | 0.360 s | 1.241 s |
+| LMT GOLD | 2.800 s | 1.112 s |
+| LMT EURO | 1.380 s | 1.125 s |
+| LMT MORF | 1.880 s | 0.754 s |
+
+**Observed slope −0.084 (r² 0.17) against +1.00 predicted for a continuous
+feed.** Our batching swings **2.44 s** across these races while the gap moves
+only **0.49 s**. ⇒ **They are on the same segmented feed, receiving it ~1.06 s
+before us.** (n=4 — but the effect size is unambiguous: a continuous feed would
+have made the gap vary by 2.4 s.)
+
+### What this makes next
+
+Not decode, and not the venue. The question is why the same segment reaches us
+~1 s later than a co-listener — pursued in the Step 2 entry above, which refutes
+the ffmpeg-flag explanation and localizes it to ~1 segment of
+wait-for-complete-download. Evidence: box `~/{axp,lmt}-capture/`,
+`state/KXEARNINGSMENTION{AXP-26JUL24,LMT-26JUL23}/`, `~/axp-arm-launch.log`.
+
 ## Session 2026-07-24 (evening) — ACQUISITION LEVER REFUTED: our streamlink leg is already at the live edge
 
 **Supersedes the morning S1/S2 entry below.** Deployed the phase-locked fetcher
