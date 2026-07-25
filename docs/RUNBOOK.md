@@ -347,6 +347,24 @@ FOMC 07-29 runs the **non-speculative** template regardless (standing decision �
 a rate-limit would take every leg on the box down); the probe informs the NEXT
 event, and pins `L` for the race ledger either way.
 
+**SPECULATIVE POSTURE IS NOW SAFETY-CLEARED (2026-07-25).** The 90-minute
+drop-safety gate that blocked `configs/webcast-fanout-arm-spec.toml` is GREEN
+(`docs/LATENCY-PROOF.md` §S7 re-validation): `seg_err=0`, 46 transient 404s all
+recovered, `dropped=0`, and `spec_edge` was the only leg to emit full wall-clock
+audio. What this changes:
+
+- **Tue 07-28 (Ford / PayPal) MAY run the speculative posture.** The standing
+  "non-speculative only" decision was specific to **FOMC 07-29**, where a
+  rate-limit would take every leg down on the quarter's marquee event. Tuesday is
+  not that event.
+- **Gate it on the venue probe, day-of.** Run `scripts/manifest-probe.sh <m3u8>`
+  the moment the stream is surfaced; it ends with a `SPECULATIVE: GO/NO-GO` line
+  and the venue's `L`. GO ⇒ stage with `scripts/stage-webcast-arm.sh
+  --speculative`. NO-GO ⇒ the default template, and expect no improvement.
+- **Still true regardless:** arm PayPal over Ford on precision grounds
+  (`docs/BAKEOFF.md` §Collision screen), and check `~/spec_edge.err` `SUMMARY`
+  after any speculative run — `seg LOST` must be 0.
+
 **⚠ OPS TRAP — `pkill -f <pattern>` kills its own shell (2026-07-25).**
 `pkill -f hls-edge-fetch.py` over ssh matches ANY process whose command line
 contains that string — including the `bash -c` wrapper running the command
