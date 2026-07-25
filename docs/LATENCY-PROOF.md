@@ -5,6 +5,34 @@ an interleaved A/B or a side-by-side measurement on the same hardware — or an 
 `NOT RESOLVABLE ABOVE NOISE` / `INSTRUMENT-ONLY` verdict. Claims that don't survive measurement are
 recorded as such, not dropped.
 
+## Session 2026-07-25 (S5) — N+2 speculation NULL, exactly as the S3 model predicted
+
+**Question:** speculation aims one segment ahead. If the origin published in
+bursts, aiming TWO ahead could jump a whole segment.
+
+**S3's cache-gating model predicted a null** — if discovery is gated by CDN
+negative-cache expiry *per URL*, then N+2's gate simply opens one segment
+duration after N+1's, buying nothing. This is the model's first out-of-sample
+prediction, so it is a test of the model as much as of the lever.
+
+Two probers off one shared manifest poller, one chasing N+1 and one N+2 from the
+same manifest state:
+
+| gen | N+2 fetchable, relative to N+1 |
+|---|---|
+| 1 | −4.46 s |
+| 4 | −4.81 s |
+| 8 | −5.05 s |
+
+**median −4.81 s against a 6.0 s segment duration ⇒ NULL.** N+2 arrives roughly a
+full segment later; there is no jump to take. n=3 paired (N+2 only completes on
+generations where it can wait out an extra segment), but the three samples agree
+to within 0.6 s and the direction is unambiguous.
+
+**The model held.** S3's negative-cache hypothesis made a falsifiable prediction
+and it was confirmed — modest evidence, but it is the first thing that has
+distinguished that model from "the CDN is just slow".
+
 ## Session 2026-07-25 (S4) — keep-alive REFUTED: the handshake is real but NOT on the critical path
 
 **Hypothesis:** every probe opens a fresh TCP+TLS connection, including the
