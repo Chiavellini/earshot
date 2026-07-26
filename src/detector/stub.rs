@@ -52,6 +52,7 @@ impl Detector for EnergyStubDetector {
                 audio_ts: chunk.first_capture_ts,
                 emit_ts: MonotonicNs::now(),
                 audio_pos_ms: chunk_start_ms,
+                audio_consumed_ms: chunk_start_ms,
                 source: chunk.source,
             }];
         }

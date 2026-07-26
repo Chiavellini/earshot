@@ -145,6 +145,7 @@ mod tests {
             audio_ts: MonotonicNs::now(),
             emit_ts: MonotonicNs::now(),
             audio_pos_ms: 0,
+            audio_consumed_ms: 0,
             source: crate::types::SourceId(0),
         }
     }

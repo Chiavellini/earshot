@@ -252,6 +252,11 @@ pub struct StreamingCtcDetector {
     model: StreamingCtcModel,
     scorer: CtcKeywordScorer,
     refractory_ms: u64,
+    /// Total PCM samples handed to this detector. `audio_pos_ms` reports the
+    /// SCORING FRAME, which is earlier than the audio the encoder actually
+    /// needed by its right-context — fine for match scoring, wrong for
+    /// cross-engine latency. This counter is the comparable quantity.
+    samples_fed: u64,
 }
 
 impl StreamingCtcDetector {
@@ -281,7 +286,7 @@ impl StreamingCtcDetector {
             targets.push(KeywordTarget { keyword: e.keyword, tier: e.tier, tokens: ids, threshold: e.threshold });
         }
         let scorer = CtcKeywordScorer::new(&targets, cfg.blank_id as usize);
-        Ok(StreamingCtcDetector { model, scorer, refractory_ms: cfg.refractory_ms })
+        Ok(StreamingCtcDetector { model, scorer, refractory_ms: cfg.refractory_ms, samples_fed: 0 })
     }
 
     /// Construct directly from token-id targets, bypassing text compilation.
@@ -296,6 +301,7 @@ impl StreamingCtcDetector {
             model,
             scorer: CtcKeywordScorer::new(targets, blank_id),
             refractory_ms,
+            samples_fed: 0,
         }
     }
 }
@@ -307,6 +313,11 @@ impl Detector for StreamingCtcDetector {
             chunk.sample_rate_hz, EXPECTED_RATE_HZ,
             "streaming_ctc requires 16 kHz input — set pipeline.resample_to_hz = 16000"
         );
+
+        // Count BEFORE inference: by the time a frame scores, this whole chunk
+        // has been handed to the encoder, so it is audio that had to arrive.
+        self.samples_fed += chunk.pcm.len() as u64;
+        let consumed_ms = self.samples_fed * 1000 / EXPECTED_RATE_HZ as u64;
 
         let frames = self
             .model
@@ -332,6 +343,9 @@ impl Detector for StreamingCtcDetector {
                     audio_ts: chunk.first_capture_ts,
                     emit_ts: MonotonicNs::now(),
                     audio_pos_ms: (fidx as f32 * frame_shift_ms) as u64,
+                    // NOT the same as audio_pos_ms here: the scoring frame is
+                    // earlier than the audio the encoder needed to produce it.
+                    audio_consumed_ms: consumed_ms,
                     source: chunk.source,
                 });
             }

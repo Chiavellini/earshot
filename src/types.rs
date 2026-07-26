@@ -57,7 +57,24 @@ pub struct Detection {
     /// Position of the triggering audio on the stream timeline (ms since the
     /// stream's first sample). Wall-clock-free, so bench scoring works in
     /// lossless speed=0 replays where MonotonicNs gaps are meaningless.
+    ///
+    /// **Engine-defined and NOT comparable across engines** — it is whatever
+    /// each engine can say most precisely about *where the evidence was*:
+    /// `sherpa_kws` reports its fed-sample counter (160 ms grid), while
+    /// `streaming_ctc` reports the scoring frame (40 ms grid). Use it for
+    /// match scoring, never for cross-engine latency. See `audio_consumed_ms`.
     pub audio_pos_ms: u64,
+    /// Total audio FED to the detector at the moment this fired, in ms of
+    /// stream time. Unlike `audio_pos_ms` this means the same thing for every
+    /// engine — "how much audio had to arrive before we could act" — which is
+    /// exactly the latency question, so it IS comparable across engines.
+    ///
+    /// Exists because D1b's `streaming_ctc` vs `sherpa_kws` comparison was
+    /// confounded: one overstated by up to a chunk, the other understated by
+    /// the encoder's right-context, together ~210 ms of a 300 ms "win"
+    /// (`docs/LATENCY-PROOF.md`, D1b/D1c). The same failure mode produced S4's
+    /// confident and wrong −250 ms.
+    pub audio_consumed_ms: u64,
 }
 
 /// Output of the decision stage; the M2 executor consumes these from a ring.

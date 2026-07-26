@@ -53,6 +53,17 @@ pub struct TierScore {
     /// "~0.4 s decode lag" figure is an ONNX-metadata inference
     /// (`VERIFICATIONS.md` Q-M1 pin 3), not an observed distribution.
     pub emit_lag_ms: Vec<i64>,
+    /// **Cross-engine-comparable** lag per true positive:
+    /// `audio_consumed_ms − occ.end_ms` — how much audio had to ARRIVE past the
+    /// word's end before the engine could act.
+    ///
+    /// `emit_lag_ms` above is engine-defined and must NOT be compared across
+    /// engines: `sherpa_kws` reports its fed-sample counter (160 ms grid) while
+    /// `streaming_ctc` reports the scoring frame (40 ms grid, earlier than the
+    /// audio its encoder needed). Comparing those two directly credited CTC with
+    /// ~210 ms it had not earned (`docs/LATENCY-PROOF.md`, D1b). This field is
+    /// the same quantity for every engine, so it is the one to race on.
+    pub consumed_lag_ms: Vec<i64>,
 }
 
 impl TierScore {
@@ -101,6 +112,7 @@ pub fn score_phrase(
             let mut tp = 0u32;
             let mut latency_ms = Vec::new();
             let mut emit_lag_ms = Vec::new();
+            let mut consumed_lag_ms = Vec::new();
             let mut matched = vec![false; dets.len()];
             for occ in occurrences {
                 let lo = occ.onset_ms.saturating_sub(window.pre_ms);
@@ -116,6 +128,8 @@ pub fn score_phrase(
                     // real and desirable outcome, not an error to clamp away.
                     emit_lag_ms
                         .push(d.detection.audio_pos_ms as i64 - occ.end_ms as i64);
+                    consumed_lag_ms
+                        .push(d.detection.audio_consumed_ms as i64 - occ.end_ms as i64);
                     if let Some(t0) = first_capture_ts {
                         let emit_since_start_ms =
                             d.detection.emit_ts.saturating_since(t0) as i64 / 1_000_000;
@@ -138,6 +152,7 @@ pub fn score_phrase(
                 false_alarm_pos_ms,
                 latency_ms,
                 emit_lag_ms,
+                consumed_lag_ms,
             }
         })
         .collect()
@@ -157,6 +172,7 @@ mod tests {
     use super::*;
     use crate::types::{Detection, KeywordId};
 
+    /// `consumed_ms` defaults to `pos_ms`; `rec_split` sets them apart.
     fn rec(tier: Tier, pos_ms: u64, emit_ns: u64) -> DetectionRecord {
         DetectionRecord {
             detection: Detection {
@@ -166,6 +182,7 @@ mod tests {
                 audio_ts: MonotonicNs(0),
                 emit_ts: MonotonicNs(emit_ns),
                 audio_pos_ms: pos_ms,
+                audio_consumed_ms: pos_ms,
                 source: crate::types::SourceId(0),
             },
             intent: None,
@@ -259,6 +276,19 @@ mod tests {
         let occs = vec![occ(2_000, 2_500)];
         let s = score(&dets, &occs, None);
         assert_eq!(s[0].emit_lag_ms, vec![-200]);
+    }
+
+    #[test]
+    fn consumed_lag_can_differ_from_emit_lag_and_that_is_the_point() {
+        // A frame-scoring engine says "the evidence was at 2400 ms" while having
+        // already consumed 2700 ms of audio to say it. emit_lag reads -100,
+        // consumed_lag reads +200. Racing on emit_lag would credit this engine
+        // with 300 ms it did not earn — exactly the D1b confound.
+        let mut r = rec(Tier::Fast, 2_400, 0);
+        r.detection.audio_consumed_ms = 2_700;
+        let s = score(&[r], &[occ(2_000, 2_500)], None);
+        assert_eq!(s[0].emit_lag_ms, vec![-100]);
+        assert_eq!(s[0].consumed_lag_ms, vec![200]);
     }
 
     #[test]

@@ -205,6 +205,10 @@ impl Detector for SherpaKwsDetector {
                 audio_ts: chunk.first_capture_ts,
                 emit_ts: MonotonicNs::now(),
                 audio_pos_ms: pos_ms,
+                // Identical here by construction: this engine's position source
+                // ALREADY is the fed-sample counter, so "where the evidence was"
+                // and "how much audio had arrived" are the same number.
+                audio_consumed_ms: pos_ms,
                 source: chunk.source,
             });
         }
