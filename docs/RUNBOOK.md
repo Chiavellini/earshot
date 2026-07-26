@@ -279,6 +279,23 @@ Everything below is pre-validated. Nothing here needs a decision except step 3.
 possible. Venue **webcast-only** (IR page + EDGAR + the Q1 2026 SEC-filed
 release), platform **Q4 Inc** = AXP's ⇒ expect **Amazon IVS, 2 s segments**.
 
+**BOTH Tuesday events are staged and keyword-validated on the CTC vocab:**
+
+| | config | call ET | keywords | encode check |
+|---|---|---|---|---|
+| **PayPal** | `configs/webcast-pypl-26jul28-arm.toml` | **8:00 AM** | 16 (37 variants) | ✅ 0 gaps, shortest target **2 tokens** (`stash`) |
+| **Ford** | `configs/webcast-f-26jul28-arm.toml` | **5:00 PM** | 15 (32 variants) | ✅ 0 gaps, shortest target **3 tokens** |
+
+They do not conflict. Run PayPal first; it is the safer detection problem (long
+rare words vs Ford's short common earnings language). **If only one runs, run
+PayPal.** The steps below apply to both — substitute `ford` for `pypl` in the
+stream-url path and config name.
+
+**Ford's extra constraint:** its player is empty until 5:00 PM ET, so step 4's
+probe cannot be done in advance and the venue class is unknown going in. Surface
+the m3u8 on the **logged-in laptop** and hand the URL to the box — a
+laptop-minted `fastly_token` is box-consumable (F1c: HTTP 200 from us-east).
+
 **T−1 evening**
 1. `scripts/preflight-event.sh` — pins the binary, live-probes creds, mailer,
    disk, scheduled wake. **Event runs REQUIRE this** (CLAUDE.md).
