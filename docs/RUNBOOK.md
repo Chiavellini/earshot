@@ -296,6 +296,38 @@ probe cannot be done in advance and the venue class is unknown going in. Surface
 the m3u8 on the **logged-in laptop** and hand the URL to the box — a
 laptop-minted `fastly_token` is box-consumable (F1c: HTTP 200 from us-east).
 
+**WEDNESDAY 2026-07-29 · FOMC / Warsh — STAGED (`configs/webcast-fed-26jul29-arm.toml`).**
+Event ticker **`KXFEDMENTION-26JUL`** — *"What will Kevin Warsh say during his
+July press conference"* — **found 2026-07-26; it had never been pinned.**
+43 markets (≈3× Tuesday's), 83 variants, CTC encode **0 gaps**, observe posture.
+Runs the **NON-speculative** legs by standing decision.
+
+**⚠⚠ THE BOARD CONTAINS AN OPENING-GREETING MARKET, AND THAT CHANGES THE CALCULUS.**
+`good afternoon` (`-GOOD`) and `good day` are near-certain in the **first seconds**
+of the presser. They resolve **purely on the race** — detection quality and
+keyword risk are irrelevant to them. That is exactly what the speculative posture
+buys, and this config deliberately does not use it. **The standing
+non-speculative decision was taken on rate-limit risk, before anyone noticed the
+board had a greeting market. Worth re-weighing before Wednesday — flagged, not
+decided.**
+
+**Highest false-alarm risk in this set (2-token targets):** `egg`, `gas`, `oil`,
+and `good day`. `trump` also carries a HIGH-RISK collision flag (fires on
+"strong"). `event does not qualify` is a Kalshi housekeeping market, not a phrase
+Warsh will utter — harmless, but it occupies a slot.
+
+**Full week's mention board (verified against the API 2026-07-26):**
+
+| day | events |
+|---|---|
+| Tue 07-28 | **PYPL** (8:00 AM), **F** (5:00 PM) — both staged |
+| Wed 07-29 | **KXFEDMENTION-26JUL** (2:30 PM, staged), META, CVNA, WING |
+| Thu 07-30 | AMZN, RDDT, YUM, RACE (Ferrari) |
+
+⚠ The unfiltered `/events?status=open` endpoint paginates past the mention
+series — query `?series_ticker=KXEARNINGSMENTION<TICKER>` directly. And it
+**429s** under rapid repeat queries; space them out.
+
 **T−1 evening**
 1. `scripts/preflight-event.sh` — pins the binary, live-probes creds, mailer,
    disk, scheduled wake. **Event runs REQUIRE this** (CLAUDE.md).

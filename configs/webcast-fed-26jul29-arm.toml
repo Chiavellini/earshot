@@ -1,0 +1,541 @@
+# ── WEDNESDAY 2026-07-29 · FOMC / Kevin Warsh press conference · 2:30 PM ET ──
+# Event: KXFEDMENTION-26JUL — "What will Kevin Warsh say during his July press
+# conference". Ticker found 2026-07-26; it had never been pinned. 43 markets,
+# nearly 3x Tuesday's.
+#
+# NON-SPECULATIVE legs, by STANDING DECISION. The speculative fetcher spends
+# 404s to buy latency, and a rate-limit would take out EVERY leg on the box.
+# This is the crown target; it runs the proven stack. Engine is streaming_ctc
+# (D1d) — that is a separate axis from the fetch posture and the swap is
+# adopted; revert with a one-line edit to `engine =`.
+#
+# VENUE: Brightcove / boltdns / Fastly, tokenized `fastly_token` (RUNBOOK FOMC
+# recon). THREE THINGS ALREADY KNOWN ABOUT IT:
+#   - the token is NOT IP-bound — a laptop-surfaced URL works from the box
+#     (F1c: HTTP 200 from us-east), so surface on the laptop and hand it over;
+#   - the fastest surfacing path is the Brightcove METRICS BEACON, whose
+#     `media_url` query param carries the full tokenized master and which fires
+#     on `video_impression`, ahead of the Playback-API and network-capture
+#     routes;
+#   - the archived June presser has 10 renditions, all ~10 s, no EXT-X-PART and
+#     no SERVER-CONTROL, plus 3 audio-only renditions (worth only ~10 ms — the
+#     fetch is round-trip bound, not bandwidth bound). Re-run variant-audit.py,
+#     f2-probe.py and manifest-probe.sh DAY-OF; the live cadence may differ.
+#
+# ⚠⚠ THE FASTEST-RESOLVING MARKETS ON THIS BOARD ARE GREETINGS.
+# `good afternoon` (KXFEDMENTION-26JUL-GOOD) and `good day` are near-certain in
+# the FIRST SECONDS of the presser. They are decided PURELY by the race — not by
+# detection quality, not by keyword risk. That is precisely what the speculative
+# posture buys, and this config deliberately does not use it. **Operator call:
+# the standing non-speculative decision was made on rate-limit risk, before
+# anyone noticed the board contains an opening-greeting market.** Worth
+# re-weighing before Wednesday; recorded here rather than decided unilaterally.
+#
+# ⚠ SHORT KEYWORDS — highest false-alarm risk in this set:
+#   egg, oil, gas, tax, adp  (3 chars each, at the MIN_VARIANT_CHARS floor)
+# and `trump` carries a HIGH-RISK collision flag (fires on "strong", 8 FAs
+# measured). Preflight will list any 1-2 token targets; review before arming.
+#
+# ⚠ `event does not qualify` is a Kalshi housekeeping market, not a phrase Warsh
+# will utter. Harmless (it will never fire) but it occupies a keyword slot.
+#
+# POSTURE: 1¢ non-crossing observe, no fill possible.
+#
+# WEBCAST FANOUT ARM TEMPLATE — direct-m3u8 events (IR players, FOMC).
+# The production armed posture from the 07-22 race findings (docs/RACE-STRATEGY.md §5):
+#   leg 1 "streamlink"  — edge-join primary: the measured ladder winner
+#                         (−11.7..−13.65 s vs default join, RUNBOOK 07-17 + 07-20)
+#   leg 2 "pipe_tuned"  — tuned-ffmpeg backstop (-live_start_index -1 = the only
+#                         flag that moves the join point; −10.6..−11.65 s vs default)
+# Both legs run FULL detect chains OR-ed at the one-shot decision table
+# ([arbiter] mode = "fanout") — different legs hear different audio (07-22 TARI).
+#
+# Instantiate per event with scripts/stage-webcast-arm.sh, then:
+#   1. paste the `earshot prepare` keyword/risk sections over the placeholders,
+#   2. on call morning write the m3u8:  echo "<m3u8>" > ~/<lc>-stream.url
+#   3. launch attended: scripts/launch-webcast.sh --config <this> --account <env> \
+#        --wait-live ~/<lc>-stream.url --wait-kind hls
+# The live gate lives in launch-webcast.sh (NEVER inside a source cmd —
+# 07-22 post-mortems #1/#2). YouTube events: do NOT use this template; keep
+# the frozen yt-dlp leg (configs/webcast-tsla.toml) until a streamlink-vs-
+# YouTube ladder number exists (capture first).
+# Posture: mention-probe observe (1¢ non-crossing) — fill posture is gated on
+# the Phase-4 precision verdict (docs/RACE-STRATEGY.md).
+
+[event]
+id        = "KXFEDMENTION-26JUL"
+starts_at = "2026-07-29T18:30:00Z"  # 2:30 PM ET = 18:30 UTC (EDT)
+
+[pipeline]
+chunk_ms       = 80
+resample_to_hz = 16000
+
+[detector]
+engine = "streaming_ctc"
+
+[detector.streaming_ctc]
+model_dir         = "models/sherpa-onnx-streaming-zipformer-ctc-small-2024-03-18"
+num_threads       = 1
+default_threshold = 0.15
+refractory_ms     = 2000
+
+# kept so the engine reverts with a one-line edit to `engine =` above
+
+
+[detector.sherpa_kws]
+model_dir         = "models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
+num_threads       = 1
+max_active_paths  = 4
+default_threshold = 0.20
+default_boost     = 2.0
+refractory_ms     = 2000
+fp32              = true
+
+[arbiter]
+mode = "fanout"
+
+[[sources]]
+kind = "pipe"
+label = "streamlink"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "streamlink --stdout --hls-live-edge 1 --hls-segment-stream-data --hls-playlist-reload-time segment \"$(cat $HOME/fed-stream.url)\" best | ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 65536 -analyzeduration 1000000 -i - -vn -f s16le -ac 1 -ar 16000 -",
+]
+
+[[sources]]
+kind = "pipe"
+label = "pipe_tuned"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 65536 -analyzeduration 1000000 -live_start_index -1 -http_persistent 1 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2 -i \"$(cat $HOME/fed-stream.url)\" -vn -f s16le -ac 1 -ar 16000 -",
+]
+
+# NOTE (SUPERSEDED 2026-07-24 night — kept as the evidence trail): this file
+# used to say the edge-fetcher leg delivers "+0 ms" and that "the gap is decode,
+# not acquisition". BOTH clauses are now refuted (docs/LATENCY-PROOF.md parts
+# 1-3): the AXP NFL race decomposed to 1.241 s FEED + 0.289 s OURS, so the gap
+# is NOT decode; and the +0 ms reading came from an instrument that compared two
+# ffmpeg legs to each other and was structurally blind to a cost they shared.
+# Measured against the encoder instead, a speculative fetcher runs 4.5 s fresher
+# than this template's legs with ~5x less run-to-run variance.
+#
+# THIS TEMPLATE IS DELIBERATELY UNCHANGED — it is the proven stack, and FOMC
+# 2026-07-29 runs it. The speculative posture lives in
+# configs/webcast-fanout-arm-spec.toml (staged with
+# `stage-webcast-arm.sh --speculative`) and is gated on off-FOMC validation,
+# because its probing could get the box's IP rate-limited and that would take
+# every leg down, not just one.
+
+[kalshi]
+series = "KXFEDMENTION"
+env = "prod"
+
+# ── Placeholders below: replace with the `earshot prepare` output ──────────
+[risk]
+max_order_notional_cents = 100
+max_event_notional_cents = 100
+book_stale_ms            = 2000
+audio_stale_ms           = 2000
+allowlist_tickers = [
+  "KXFEDMENTION-26JUL-CAPT",
+]
+
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-ADP"
+phrase           = "adp"
+variants         = ["adp", "adps"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# AI / Artificial Intelligence (KXFEDMENTION-26JUL-AI) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+# DROPPED ultra-short variant "ai" — <3 chars matches a syllable, not a word (measured: 38 FA in one event set). Re-add deliberately if this phrasing matters, and own the precision cost.
+# DROPPED ultra-short variant "ais" — <3 chars matches a syllable, not a word (measured: 38 FA in one event set). Re-add deliberately if this phrasing matters, and own the precision cost.
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-AI"
+phrase           = "artificial intelligence"
+variants         = ["artificial intelligence"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Anchor / Anchored (KXFEDMENTION-26JUL-ANCH) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-ANCH"
+phrase           = "anchor"
+variants         = ["anchor", "anchors", "anchored", "anchoreds"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Balance Sheet (KXFEDMENTION-26JUL-BAL) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-BAL"
+phrase           = "balance sheet"
+variants         = ["balance sheet"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Bitcoin (KXFEDMENTION-26JUL-BITC) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-BITC"
+phrase           = "bitcoin"
+variants         = ["bitcoin", "bitcoins"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Central Bank (KXFEDMENTION-26JUL-CENT) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-CENT"
+phrase           = "central bank"
+variants         = ["central bank"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Consumer Confidence (KXFEDMENTION-26JUL-CONS) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-CONS"
+phrase           = "consumer confidence"
+variants         = ["consumer confidence"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Credit (KXFEDMENTION-26JUL-CRED) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-CRED"
+phrase           = "credit"
+variants         = ["credit", "credits"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Crypto / Cryptocurrency (KXFEDMENTION-26JUL-CRYP) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-CRYP"
+phrase           = "crypto"
+variants         = ["crypto", "cryptos", "cryptocurrency", "cryptocurrencys"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Dissent (KXFEDMENTION-26JUL-DISS) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-DISS"
+phrase           = "dissent"
+variants         = ["dissent", "dissents"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Dollar (KXFEDMENTION-26JUL-DOLL) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-DOLL"
+phrase           = "dollar"
+variants         = ["dollar", "dollars"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Egg (KXFEDMENTION-26JUL-EGG) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-EGG"
+phrase           = "egg"
+variants         = ["egg", "eggs"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Gas / Gasoline / Natural Gas (KXFEDMENTION-26JUL-GAS) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-GAS"
+phrase           = "gas"
+variants         = ["gas", "gasoline", "gasolines", "natural gas"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Gold (KXFEDMENTION-26JUL-GOLD) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-GOLD"
+phrase           = "gold"
+variants         = ["gold", "golds"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Good Afternoon (KXFEDMENTION-26JUL-GOOD) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-GOOD"
+phrase           = "good afternoon"
+variants         = ["good afternoon"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Good Day (KXFEDMENTION-26JUL-GOODD) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-GOODD"
+phrase           = "good day"
+variants         = ["good day"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Goods inflation (KXFEDMENTION-26JUL-GOODS) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-GOODS"
+phrase           = "goods inflation"
+variants         = ["goods inflation"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Iran (KXFEDMENTION-26JUL-IRAN) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-IRAN"
+phrase           = "iran"
+variants         = ["iran", "irans"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Layoff (KXFEDMENTION-26JUL-LAYO) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-LAYO"
+phrase           = "layoff"
+variants         = ["layoff", "layoffs"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# National Debt (KXFEDMENTION-26JUL-NATI) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-NATI"
+phrase           = "national debt"
+variants         = ["national debt"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Event does not qualify (KXFEDMENTION-26JUL-NQE) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-NQE"
+phrase           = "event does not qualify"
+variants         = ["event does not qualify"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Oil (KXFEDMENTION-26JUL-OIL) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-OIL"
+phrase           = "oil"
+variants         = ["oil", "oils"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Pandemic (KXFEDMENTION-26JUL-PAND) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-PAND"
+phrase           = "pandemic"
+variants         = ["pandemic", "pandemics"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# President (KXFEDMENTION-26JUL-PRES) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-PRES"
+phrase           = "president"
+variants         = ["president", "presidents"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Probability (KXFEDMENTION-26JUL-PROB) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-PROB"
+phrase           = "probability"
+variants         = ["probability", "probabilitys"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Productivity (KXFEDMENTION-26JUL-PROD) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-PROD"
+phrase           = "productivity"
+variants         = ["productivity", "productivitys"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Projection (KXFEDMENTION-26JUL-PROJ) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-PROJ"
+phrase           = "projection"
+variants         = ["projection", "projections"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# QE / Quantitative Easing (KXFEDMENTION-26JUL-QE) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+# DROPPED ultra-short variant "qe" — <3 chars matches a syllable, not a word (measured: 38 FA in one event set). Re-add deliberately if this phrasing matters, and own the precision cost.
+# DROPPED ultra-short variant "qes" — <3 chars matches a syllable, not a word (measured: 38 FA in one event set). Re-add deliberately if this phrasing matters, and own the precision cost.
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-QE"
+phrase           = "quantitative easing"
+variants         = ["quantitative easing"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# QT / Quantitative Tightening (KXFEDMENTION-26JUL-QT) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+# DROPPED ultra-short variant "qt" — <3 chars matches a syllable, not a word (measured: 38 FA in one event set). Re-add deliberately if this phrasing matters, and own the precision cost.
+# DROPPED ultra-short variant "qts" — <3 chars matches a syllable, not a word (measured: 38 FA in one event set). Re-add deliberately if this phrasing matters, and own the precision cost.
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-QT"
+phrase           = "quantitative tightening"
+variants         = ["quantitative tightening"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Recession (KXFEDMENTION-26JUL-RECE) — corpus-tuned; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-RECE"
+phrase           = "recession"
+variants         = ["recession", "recessions"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+confirmed_threshold = 0.28
+boost            = 2.0
+
+# Renovation (KXFEDMENTION-26JUL-RENO) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-RENO"
+phrase           = "renovation"
+variants         = ["renovation", "renovations"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Restrictive (KXFEDMENTION-26JUL-REST) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-REST"
+phrase           = "restrictive"
+variants         = ["restrictive", "restrictives"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Shock (KXFEDMENTION-26JUL-SHOC) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-SHOC"
+phrase           = "shock"
+variants         = ["shock", "shocks"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Shutdown / Shut Down (KXFEDMENTION-26JUL-SHUT) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-SHUT"
+phrase           = "shutdown"
+variants         = ["shutdown", "shutdowns", "shut down"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Slowdown / Slow Down (KXFEDMENTION-26JUL-SLOW) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-SLOW"
+phrase           = "slowdown"
+variants         = ["slowdown", "slowdowns", "slow down"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Softening (KXFEDMENTION-26JUL-SOFT) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-SOFT"
+phrase           = "softening"
+variants         = ["softening", "softenings"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Stagflation (KXFEDMENTION-26JUL-STAG) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-STAG"
+phrase           = "stagflation"
+variants         = ["stagflation", "stagflations"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Tax (KXFEDMENTION-26JUL-TAX) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-TAX"
+phrase           = "tax"
+variants         = ["tax", "taxs"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Truflation (KXFEDMENTION-26JUL-TRU) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-TRU"
+phrase           = "truflation"
+variants         = ["truflation", "truflations"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Trump (KXFEDMENTION-26JUL-TRUM) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+# ⚠⚠ HIGH-RISK KEYWORD — collides with "strong": small phonetic distance and 'strong' is ubiquitous on earnings calls.
+                 # This is a property of English, not of one corpus: it recurs on EVERY call where this keyword is armed. Kept here on purpose (dropping it forfeits the market) — decide deliberately before arming, and expect fires that settle NO. See docs/BAKEOFF.md §Keyword arming blocklist.
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-TRUM"
+phrase           = "trump"
+variants         = ["trump", "trumps"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Uncertainty (KXFEDMENTION-26JUL-UNCE) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-UNCE"
+phrase           = "uncertainty"
+variants         = ["uncertainty", "uncertaintys"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Unchanged (KXFEDMENTION-26JUL-UNCH) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-UNCH"
+phrase           = "unchanged"
+variants         = ["unchanged", "unchangeds"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Volatility (KXFEDMENTION-26JUL-VOLA) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-VOLA"
+phrase           = "volatility"
+variants         = ["volatility", "volatilitys"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# --- prepare summary: 43 tradeable, 0 skipped (said-N-times), 0 skipped (unencodable), 0 variants dropped of 43 markets ---
