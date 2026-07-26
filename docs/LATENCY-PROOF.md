@@ -390,6 +390,27 @@ estimate was not sufficient.**
   **20.97 → 13.06 (−38 %)** with recall slightly up.
 - **STANDS: the 2.2× CPU cost.**
 
+### The CPU cost is NOT just CPU — it lands on the critical path (never priced before)
+
+`2.2× RTF` sounds like a capacity question. Under **armed 3-leg fanout** it is a
+latency question, because E0 showed audio arrives in bursts and the detector must
+drain each burst before a word late in it can fire (E0b's queue-drain term).
+
+| engine | CPU per leg per burst | 3 legs on 2 cores | **drain (wall)** |
+|---|---|---|---|
+| `sherpa_kws` | 138 ms | 413 ms | **207 ms** |
+| `streaming_ctc` | 304 ms | 911 ms | **455 ms** |
+
+**+249 ms of extra drain**, worst case (word at the end of a burst), on top of the
+measured `consumed_lag` regression. Total added latency for the swap under armed
+fanout: **≈ +300 ms at p50**, not the +50 ms the bench alone suggests.
+
+Assumptions stated so they can be attacked: `num_threads = 1` per leg (as
+configured), perfect parallelism, no other load, AXP-class 2 s bursts. **Real
+drain can only be worse than this.** Averaged over a call the duty cycle is
+comfortable (23 % of 2 vCPU) — it is the *burst* drain that lands on the critical
+path, and averages hide it completely.
+
 ### The trade, restated honestly
 
 Adopting `streaming_ctc` now buys **−38 % false alarms and +0.013 recall** and
