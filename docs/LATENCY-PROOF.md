@@ -369,6 +369,53 @@ Caught by the running bench starting a 5th call when I had budgeted for 4 — th
 **runtime disagreeing with my arithmetic** was the tell, not the numbers
 themselves.
 
+## Session 2026-07-26 — manifest-divergence flag RESOLVED: it was a ground-truth CORRECTION, not tuning
+
+I flagged the box/repo manifest divergence as "provenance unknown, needs the
+operator". It was checkable, and checking it clears the concern.
+
+**Timestamps.** Repo versions committed 2026-07-23 (*"pre-committed before any
+tuning run"*). Box versions all modified **2026-07-24 05:21:50** — the same
+second for all three, so one scripted regeneration, not hand edits.
+
+**The decisive test is not WHEN but FROM WHAT.** Occurrences derived from the
+word transcripts are a legitimate aligner fix; occurrences derived from detector
+output would be circular. `scripts/verify-occurrences.py` (new) looks each added
+occurrence up in `corpus/transcripts/<call>.words.json`:
+
+| call | added phrase | transcript context |
+|---|---|---|
+| AAL | `boeing` | *"new deliveries of **Boeing** 787-9"* |
+| AAL | `ultra` | *"**ultra** premium config"* |
+| AAL | `europe` | *"secondary cities in **Europe**"* |
+| LMT | `government` ×13 | *"the U.S. **government** awarded us…"*, *"our **government** and our allies"*, … |
+| LMT | `sikorsky` ×2 | *"production ramps at **Sikorsky**"* |
+| LMT | `dividend` | *"$796 million to shareholders through **dividends**"* |
+| LMT | `nasa` | *"our partners at **NASA**"* |
+
+**Every added occurrence is a word genuinely spoken in the transcript.** The
+regeneration was the aligner catching mentions the first pass missed —
+transcript-derived, detector-blind. **This is ground truth getting MORE correct,
+which is the opposite of tuning on the answer.**
+
+### What still stands from the finding
+
+The reproducibility break was real and worth fixing: the committed manifests did
+not match what every measurement was scored against, so a fresh checkout would
+have reproduced none of the numbers. That is now repaired (`4dd121a`).
+
+**And the direction of the correction matters for reading old numbers.** LMT went
+11 → 31 occurrences, so recall figures computed against the *old* manifest were
+scored against a denominator that was ~3× too small — they flattered the detector
+by not counting mentions it missed. Any LMT recall number predating 2026-07-24
+05:21 should be treated as optimistic, not as evidence.
+
+⚠ `ultra` is worth a note: on AAL it is a genuine mention (*"ultra premium"*),
+while on LMT the collision screen classed `ultra` fires as SUBSTRING hits on
+*"ultramaritime"*. **The same keyword is a true positive on one call and an
+unwinnable collision on another** — which is exactly why keyword risk is
+per-event, not global.
+
 ## Session 2026-07-26 (D2b) — prefix gate FAILS at 0.78 FA/h on 2× the corpus. Prefix-firing stays parked.
 
 `configs/bakeoff-prefix-only.toml` (the 7 keywords carrying a `fast_prefix`) over
