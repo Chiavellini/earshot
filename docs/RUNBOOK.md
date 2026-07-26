@@ -511,12 +511,20 @@ PayPal remains the pick if only one runs, on different grounds than before:
 - **Ford's stream is login-gated** with an empty player until call time, so its
   m3u8 cannot be probed in advance. PayPal's Q4 Inc venue is a known class.
 
-**Open question on `recall`, do not guess it:** Ford's `recall` market will fire
-on the ordinary phrase "as I recall". Whether that SETTLES YES depends on
-whether the market scores the **word** or the **meaning** — the rules text
-decides, and it has not been read. If it scores the word, this is an easy early
-resolve, not a false alarm. **Read `state/rules/*.json` for the RECA market
-before treating those fires as errors either way.**
+**RESOLVED — `recall` is an OPPORTUNITY, not a risk.** I first logged this as a
+false-alarm risk ("as I recall" is common speech). Wrong framing. Kalshi's own
+market title is **"Recall / Recalled"** — it explicitly names the verb form, so
+the market scores the **word**, not a product-recall event. `prepare` emits
+variants `recall / recalls / recalled / recalleds` accordingly.
+
+Consequence: "as I recall" is a **true positive that settles YES**, and on a long
+earnings call it is close to inevitable. RECA is therefore a high-probability,
+early-resolving market — like PayPal's REGU — where the **RACE decides the
+outcome, not detection**. Those are the markets worth arming the speculative
+posture for.
+
+(`recalleds` is a generated plural of a non-word; harmless — never spoken — but
+another instance of the pluraliser not checking.)
 
 **Arm PayPal, not Ford, if only one.** The pre-arm collision screen
 (`docs/BAKEOFF.md` §Collision screen) measured Ford's generated keyword set at
