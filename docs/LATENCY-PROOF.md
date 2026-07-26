@@ -266,6 +266,56 @@ requires changing the model quantum (D1) or firing before the word ends (D2).
   the box and neither has an `emit_lag` number. That is D1, and it is now a
   direct comparison on the metric that matters rather than a proxy.
 
+## Session 2026-07-25 (F1) — first variant audit on a REAL venue class: segment-duration axis NULL, but 3 AUDIO-ONLY renditions exist
+
+`scripts/variant-audit.py` had never run against a venue we actually trade.
+Ran it on **Brightcove/boltdns — the FOMC venue** (Wed 07-29, the crown target),
+using the archived 2026-06-17 presser (same account `66043936001`; rendition
+structure is a property of the encoding profile, so it transfers even though the
+archive is VOD).
+
+**10 renditions where our tools have only ever read 1:**
+
+| kind | name | segment | packaging |
+|---|---|---|---|
+| **media** | **AUDIO en (Main)** ×3 | 9.92 s | TS |
+| media | SUBTITLES en | 30.0 s | VTT |
+| variant | 559 900 – 2 336 400 bps, 480x270 → 1280x720 (×6) | 10.01 s | TS |
+
+### Verdict on the pre-registered bar: NULL on the axis it was written for
+
+The bar was *"≥250 ms median advantage of the best rendition over the default"*.
+**Every rendition here is ~10 s — no rendition is shorter, so that axis is NULL
+at this venue.** No `EXT-X-PART`, no `SERVER-CONTROL`, no PDT: standard HLS, and
+the first-variant probe was not missing anything on cadence.
+
+### But the audit found a different lever the bar did not anticipate
+
+**Three audio-only renditions exist, and we decode audio only.** Today's legs
+pull a *video* variant — 560–2336 kbps of video bytes fetched, decoded, and
+discarded. The audio rendition carries the same speech at a fraction of the size.
+
+That is **not** a segment-duration win and must not be scored as one. It is a
+*download-duration* win: E0 measured segments arriving as bursts (a 2 s segment
+delivered in 24 ms at AXP), and burst duration scales with bytes. Smaller segment
+⇒ shorter burst ⇒ audio in the ring sooner, additively on the critical path.
+**Size unmeasured — this is a new sub-experiment (F1b), not a result.**
+
+### Operationally the most valuable part — a faster FOMC surfacing path
+
+The runbook lists two ways to get Wednesday's tokenized master: the Playback API
+(needs `policy_key` from player JS) or a Chrome network capture of the m3u8. A
+third, found here and faster than both: **the Brightcove metrics beacon carries
+the full tokenized master URL in its `media_url` query parameter** —
+`metrics.brightcove.com/v2/tracker?…&media_url=https%3A%2F%2Fmanifest.prod.boltdns.net%2F…master.m3u8%3Ffastly_token%3D…`
+— and it fires on `video_impression`, i.e. as soon as the player initialises,
+before segment fetching settles. It also carries `video_duration`, the video id,
+and the event title, so the right asset can be identified unambiguously.
+
+⚠ **VOD caveat:** this is the `/10s/` archive path. The LIVE presser may publish a
+different cadence and profile. **Re-run `variant-audit.py` + `manifest-probe.sh`
+day-of** — this establishes the venue's *shape*, not Wednesday's numbers.
+
 ## Session 2026-07-25 (D1c) — the CTC latency win was NOT REAL: it REVERSES to −50 ms on the comparable metric
 
 Head-to-head re-run with `audio_consumed_ms` (D1c instrument), dev split,
