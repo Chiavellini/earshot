@@ -3,7 +3,16 @@
 # docs/BAKEOFF.md §A3 specifies news/talk audio so the prefix gate is judged
 # against a realistic adversary rather than a handful of earnings calls.
 #
-# ⚠⚠ MEASURED CAVEAT (2026-07-26): DW World News is NOT continuous news. A
+# ⛔⛔ MEASURED 2026-07-26 (A3b): 0 of 6 sampled 60 s windows contain ANY
+# finance/policy vocabulary — 0 domain terms across 604 words. DW at this hour is
+# documentary programming (art, architecture, personal narrative, peacekeeping).
+# THIS CALL IS NOT A VALID PREFIX-GATE ADVERSARY on the evidence so far. Do NOT
+# quote an FA rate from it, and never compare one with the 0.78 FA/h measured on
+# 5.15 h of real earnings calls. Re-sample across the FULL 8 h before deciding
+# whether any of it is usable; the capture spans 08:12-16:12 CEST so bulletins
+# may appear later.
+#
+# ⚠⚠ EARLIER CAVEAT (superseded by the measurement above): DW World News is NOT continuous news. A
 # transcribed sample of this very capture caught an art-photography programme, a
 # China documentary trailer, a segment about hair, and a sports promo — with ZERO
 # finance/policy vocabulary in a 3-minute window. An unknown fraction of these 8 h

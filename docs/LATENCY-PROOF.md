@@ -416,6 +416,57 @@ while on LMT the collision screen classed `ultra` fires as SUBSTRING hits on
 unwinnable collision on another** — which is exactly why keyword risk is
 per-event, not global.
 
+## Session 2026-07-26 (A3b) — the DW negative-control plan does NOT work: 0/6 windows are finance/policy speech
+
+I wrote the prerequisite into the manifest myself — *no FA rate may be quoted
+from this corpus until the news-vs-other split is known.* Measured it. The answer
+kills the plan.
+
+Six 60 s windows sampled evenly across the first 2.02 h of capture, transcribed
+and scored against 27 finance/policy terms (market, economy, inflation, bank,
+rate, dollar, tariff, trade, stock, earnings, growth, recession, budget, tax,
+debt, fed, government, president, minister, election, policy, oil, gas, energy,
+billion, million, percent):
+
+| window | domain terms | content |
+|---|---|---|
+| 1 | **0** | *"Crises, conflicts, and their histories… brings maps to life"* |
+| 2 | **0** | personal narrative |
+| 3 | **0** | *"whoever I'll marry will be good and he'll be kind"* |
+| 4 | **0** | peacekeeping / schools |
+| 5 | **0** | architecture, *"stylised columns reminiscent of the 1…"* |
+| 6 | **0** | *"That's all from Art Unveiled"* |
+
+**0 of 6 windows, 0 domain terms across 604 words.** DW at this hour is
+documentary programming, not news.
+
+### The consequence: A3-via-DW does not deliver an adversary
+
+`docs/BAKEOFF.md` §A3 specifies news/talk audio so the prefix gate faces *"a
+realistic adversary"*. **The stream named "DW World News" is, at this hour, not
+news.** A false-alarm rate measured on documentary narration about photography
+and architecture says almost nothing about false alarms on an earnings call —
+it would be flatteringly low and **must not be reported as a prefix-gate result**,
+and never compared with the 0.78 FA/h measured on 5.15 h of real calls.
+
+**This invalidates the plan, not just the number.** The capture continues (it is
+free and disk is fine), and the full 8 h spans 06:12–14:12 UTC = 08:12–16:12 CEST,
+which should include actual bulletins — so re-sample across the WHOLE capture
+before writing it off entirely. But on the evidence so far the yield is low, and
+**the corpus blocker is not solved by more DW.**
+
+### What the corpus problem actually needs
+
+Earnings-call audio, which is a **sourcing project rather than a loop iteration**:
+~15 h more to make ≤0.5 FA/h distinguishable from 0.78. Per-company
+earnings-call podcast RSS exists (the corpus-v1 method, `docs/BAKEOFF.md`) but one
+company yields ~4 calls/year. **Flagged as blocked on sourcing, not on effort.**
+
+⚠ Generalises past this campaign: **a negative control's validity is a property of
+what is IN it, not of what the source is called.** Two separate checks tonight —
+D1h's zero-detection scare and this one — came back to the same root: I assumed
+the content of a stream from its name. Transcribe a sample first.
+
 ## Session 2026-07-26 (D1h) — FOMC config dry-run PASSES, and the zero-detection scare was resolved by transcript, not by debugging
 
 The Wednesday config uses **`streamlink` legs**, a combination never run with the
