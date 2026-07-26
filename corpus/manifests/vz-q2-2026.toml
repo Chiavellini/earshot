@@ -1,0 +1,21 @@
+# NEGATIVE CONTROL for the prefix gate (D2). Real webcast audio banked from the
+# live VZ 2026-07-24 arm — same channel the legs deliver (16 kHz, 77 kbps AAC
+# source), not clean studio speech.
+#
+# ⚠ ZERO occurrences is a CLAIM ABOUT THE PREFIXED PHRASES ONLY.
+# A zero-occurrence manifest makes EVERY detection a false alarm, so it is only
+# valid when the audio truly contains none of the SCORED keywords. VZ will
+# legitimately say things like "record" and "government", so scoring this call
+# against the full 41-keyword bake-off set would count real mentions as false
+# alarms and inflate FA/h.
+#
+# Score it ONLY with a config restricted to the 7 prefixed phrases
+# (configs/bakeoff-prefix-only.toml). Of those, three are not impossible on a
+# financial/telecom call — "venture fund", "world cup", "basic economy" — so a
+# fire on any of THOSE must be verified against the audio before it is counted;
+# the other four (client computing, golden dome, panther lake, venus aerospace)
+# are product/programme names from other issuers and are safe.
+[call]
+id    = "VZ-Q2-2026"
+audio = "wideband/vz-q2-2026.wav"
+split = "dev"
