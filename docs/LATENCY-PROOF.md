@@ -316,7 +316,33 @@ they were mid-teardown. **Do not read an instantaneous post-kill process count a
 an orphan leak;** the earlier 18-orphan incident was real and persistent, this is
 not the same thing.
 
-## Session 2026-07-25 — ⚠ CORRECTION: the dev split is ~7.96 h, not the 5.15 h I quoted
+## Session 2026-07-26 — ⚠⚠ THE CORRECTION BELOW WAS ITSELF WRONG. RETRACTED.
+
+The entry below "corrects" 5.15 h → 7.96 h. **It is wrong and the original 5.15 h
+was right.** The bench scored exactly 4 calls — `AXP-Q2-2026`, `intc-q2-2026`,
+`lmt-q2-2026`, `VZ-Q2-2026` — and reported `corpus_hours: 5.15`.
+
+**Why:** the telephony manifests exist, but `corpus/telephony/` on the box holds
+**zero WAVs** (`ls corpus/telephony/*.wav | wc -l` = 0). `manifest::load_dir`
+skips a call whose audio is absent, so AAPL/MSFT/QCOM were never scored. I
+counted **manifests** and assumed audio; the corpus is wideband-only on this box.
+
+**The reasoning that produced the error is worth more than the error.** I saw
+`grep -c "bench run"` = 4, believed dev had 7 calls, and concluded the run was
+"57 % through" — then wrote a confident correction on that basis. It was already
+finished. The tell I invented ("the runtime disagrees with my arithmetic") was
+real; I just resolved it in the wrong direction, trusting my model of the corpus
+over the machine's own report of what it loaded.
+
+**Standing consequence:** `corpus_hours` in the bench report is the authority on
+what was scored. Manifests describe intent; the report describes fact.
+
+*(The mixed-channel ARGUMENT in the retracted entry still stands as a rule — if
+telephony audio is ever present, it must be scored separately from wideband. It
+simply was not present here. `scripts/prefix-gate-score.py` splits by channel
+anyway, which is why D2b's number is unambiguous.)*
+
+## Session 2026-07-25 — [RETRACTED, see above] CORRECTION: the dev split is ~7.96 h, not the 5.15 h I quoted
 
 I stated "5.15 h" in `64aa07c` and in several loop prompts. That counted the
 **wideband calls only**. The dev split is **7 calls**:
