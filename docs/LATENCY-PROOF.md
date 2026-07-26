@@ -301,6 +301,36 @@ delivered in 24 ms at AXP), and burst duration scales with bytes. Smaller segmen
 ⇒ shorter burst ⇒ audio in the ring sooner, additively on the critical path.
 **Size unmeasured — this is a new sub-experiment (F1b), not a result.**
 
+### F1b — the audio-only rendition is 5–19× smaller, MEASURED
+
+Same 10 s of the same press conference, first segment of each, byte-exact:
+
+| rendition | bytes | bitrate | vs audio-only |
+|---|---|---|---|
+| **AUDIO en (Main)** | **177 848 B** | 143 kbps | — |
+| video 559 900 bps | 914 808 B | 731 kbps | **5.1×** |
+| video 1 455 300 bps | 2 108 984 B | 1686 kbps | **11.9×** |
+| video 2 336 400 bps | 3 363 320 B | 2688 kbps | **18.9×** |
+
+**Why we are paying this today.** The webcast legs point at the *master*, and
+ffmpeg resolves a master by selecting a **video** variant — which in turn
+references the audio group, so the leg fetches video segments *and* audio
+segments and throws every video byte away after decode. Pointing the leg at the
+**audio rendition playlist directly** removes 5–19× of the bytes with **no change
+to the audio** — the same encoded track either way.
+
+⚠ **The time this saves is NOT measured and must not be assumed.** Bytes convert
+to milliseconds only through throughput, and the measurement above was taken from
+the CDMX laptop, not the us-east box whose link is far better. E0 showed segments
+arriving in bursts whose duration scales with bytes (2 s delivered in 24 ms at
+AXP), so the effect is real in direction and additive on the critical path — but
+its size needs a box-side timing test against this CDN. **Claim the ratio; do not
+claim a latency number yet.**
+
+This is a lever that was invisible for the whole campaign purely because nothing
+ever enumerated the renditions, and it is a one-line config change rather than
+new machinery.
+
 ### Operationally the most valuable part — a faster FOMC surfacing path
 
 The runbook lists two ways to get Wednesday's tokenized master: the Playback API
