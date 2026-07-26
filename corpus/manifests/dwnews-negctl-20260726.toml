@@ -1,0 +1,33 @@
+# NEGATIVE CONTROL for the prefix gate — DW World News, captured 2026-07-26.
+# 16 kHz mono s16, the same wideband channel the webcast legs deliver.
+# docs/BAKEOFF.md §A3 specifies news/talk audio so the prefix gate is judged
+# against a realistic adversary rather than a handful of earnings calls.
+#
+# ⚠⚠ THIS CONTROL IS WEAKER THAN THE EARNINGS-CALL ONES, and the difference
+# matters. A zero-occurrence manifest makes EVERY detection a false alarm, so it
+# is only sound where the audio genuinely cannot contain the scored phrase. On a
+# WORLD NEWS channel the seven prefixed phrases split three ways:
+#
+#   SAFE — other issuers' product/segment names, not news vocabulary:
+#     panther lake        (Intel client CPU)
+#     client computing    (Intel segment name)
+#     venus aerospace     (small private launch startup)
+#
+#   ⚠ MUST VERIFY before counting — plausible on a news channel:
+#     world cup           (football coverage — LIKELY, not merely possible)
+#     golden dome         (US missile-defence programme — DW covers US defence)
+#     venture fund        (business segment)
+#     basic economy       (travel/business segment)
+#
+# So score this call ONLY with configs/bakeoff-prefix-only.toml, and treat a fire
+# on any of the four risky phrases as UNRESOLVED until the audio is checked, not
+# as a false alarm. Counting them blind would manufacture a worse number and call
+# it evidence.
+#
+# It is still worth having: `panther lake` is the prefix that FAILED D2b (2 of 4
+# false alarms, on LMT and VZ), and it sits in the SAFE group here — so this
+# corpus tests the failing case cleanly even though it is loose on the others.
+[call]
+id    = "DWNEWS-NEGCTL-20260726"
+audio = "wideband/dwnews-negctl-20260726T0612.wav"
+split = "dev"

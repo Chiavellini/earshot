@@ -27,6 +27,20 @@ BAR_FA_PER_HOUR = 0.5          # PRE-REGISTERED. Not negotiable after the fact.
 # these is NOT automatically a false alarm and must be checked against the audio.
 NEEDS_VERIFY = {"venture fund", "world cup", "basic economy"}
 
+# Per-call overrides: on a WORLD NEWS control, `golden dome` is a US
+# missile-defence programme DW covers, so it joins the must-verify set there
+# even though it is safe on an earnings call. Keyed by substring of the call id.
+NEEDS_VERIFY_BY_CALL = {
+    "DWNEWS": NEEDS_VERIFY | {"golden dome"},
+}
+
+
+def needs_verify(call_id):
+    for key, phrases in NEEDS_VERIFY_BY_CALL.items():
+        if key in call_id:
+            return phrases
+    return NEEDS_VERIFY
+
 
 def domain_map(corpus):
     """call id -> (domain, audio path), read from the committed manifests."""
@@ -125,7 +139,7 @@ def main():
             phrase, tier, cid, pos = m.group(1), m.group(2), m.group(3), int(m.group(4))
             dom = dm.get(cid, ("unknown", None))[0]
             per_dom.setdefault((tier, dom), []).append((phrase, cid, pos))
-            if tier == "Fast" and phrase in NEEDS_VERIFY:
+            if tier == "Fast" and phrase in needs_verify(cid):
                 verify.append((phrase, cid, pos))
 
         print()
