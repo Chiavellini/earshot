@@ -49,6 +49,32 @@ done
 command -v yt-dlp >/dev/null 2>&1 || echo "note: yt-dlp not found — YouTube pipe configs will fail" >&2
 command -v streamlink >/dev/null 2>&1 || echo "note: streamlink not found — streamlink legs will fail" >&2
 
+# streaming_ctc loads onnxruntime DYNAMICALLY. With ORT_DYLIB_PATH unset the
+# detector fails to build and the arm dies at startup — and a launchd-fired run
+# has a minimal env, which is exactly the class of failure CLAUDE.md warns about
+# (an interactively-validated path is not a validated path). Resolve it HERE so
+# the launcher works identically from a shell and from launchd, and REFUSE
+# before the call rather than failing 0 s into it.
+if grep -qE '^[[:space:]]*engine[[:space:]]*=[[:space:]]*"streaming_ctc"' "$CONFIG"; then
+  if [[ -z "${ORT_DYLIB_PATH:-}" ]]; then
+    # NOT `[[ -n "$_ort" ]] && export ...` — under `set -e` that compound
+    # returns 1 when the find comes up empty and kills the script SILENTLY,
+    # before the REFUSING message below can explain why. Same family as the
+    # pipefail traps in docs/RUNBOOK.md. Use an if.
+    _ort=$(find "${EARSHOT_ROOT:-$HOME/ear}/vendor" -name 'libonnxruntime*.so*' 2>/dev/null | head -1 || true)
+    if [[ -n "$_ort" ]]; then
+      export ORT_DYLIB_PATH="$_ort"
+    fi
+  fi
+  [[ -n "${ORT_DYLIB_PATH:-}" && -f "${ORT_DYLIB_PATH}" ]] || {
+    echo "REFUSING: config uses engine=streaming_ctc but ORT_DYLIB_PATH is unset/invalid." >&2
+    echo "  run scripts/fetch-models.sh (it fetches the dylib and prints the export), or" >&2
+    echo "  export ORT_DYLIB_PATH=/path/to/libonnxruntime.so before launching." >&2
+    exit 2
+  }
+  echo "streaming_ctc: ORT_DYLIB_PATH=${ORT_DYLIB_PATH}"
+fi
+
 # Armed-leg cmds must not gate on liveness themselves (post-mortems #1/#2).
 if grep -q "wait-for-video" "$CONFIG"; then
   echo "REFUSING: $CONFIG contains --wait-for-video in a source cmd — the live gate" >&2
