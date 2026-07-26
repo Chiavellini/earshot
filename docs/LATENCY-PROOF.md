@@ -316,6 +316,33 @@ they were mid-teardown. **Do not read an instantaneous post-kill process count a
 an orphan leak;** the earlier 18-orphan incident was real and persistent, this is
 not the same thing.
 
+## Session 2026-07-25 — ⚠ CORRECTION: the dev split is ~7.96 h, not the 5.15 h I quoted
+
+I stated "5.15 h" in `64aa07c` and in several loop prompts. That counted the
+**wideband calls only**. The dev split is **7 calls**:
+
+| domain | calls | occurrences | ≈ hours |
+|---|---|---|---|
+| wideband | AXP(0), INTC(44), LMT(11), VZ(0) | 55 | **5.15** |
+| **telephony** | **AAPL(14), MSFT(8), QCOM(13)** | **35** | **2.81** |
+
+Two consequences, pulling in opposite directions:
+
+1. **More power than claimed.** At ~8 h the ≤0.5 FA/h bar permits **~4** false
+   alarms, not the 2.6 I stated.
+2. **It is a MIXED-CHANNEL corpus, and that matters more.** The telephony calls
+   are 8 kHz, band-limited and G.711 round-tripped. `docs/BAKEOFF.md` is explicit
+   that an engine is benched on the channel it trades. **We are arming a WEBCAST
+   event, so the decision-relevant false-alarm rate is the WIDEBAND subset** — a
+   single blended FA/h mixes two channels and describes neither.
+
+**Therefore D2b must be split by call id** (the `fa_autopsy` lines carry them)
+and reported per domain, not as one number.
+
+Caught by the running bench starting a 5th call when I had budgeted for 4 — the
+**runtime disagreeing with my arithmetic** was the tell, not the numbers
+themselves.
+
 ## Session 2026-07-25 (F2) — RESOLVED: segments are COMPLETE ON PUBLISH. Progressive consumption is impossible here.
 
 The ledger has carried *"speculative **chunked** fetch — untested"* for the whole
