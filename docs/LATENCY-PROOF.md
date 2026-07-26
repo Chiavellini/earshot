@@ -266,6 +266,77 @@ requires changing the model quantum (D1) or firing before the word ends (D2).
   the box and neither has an `emit_lag` number. That is D1, and it is now a
   direct comparison on the metric that matters rather than a proxy.
 
+## Session 2026-07-25 (D2) — prefix-firing buys ~320 ms, FAILS its precision bar, and is BLOCKED ON CORPUS
+
+`configs/bakeoff-webcast-prefix.toml`, `sherpa_kws`, chunk 160, dev split — same
+corpus/split/chunk as E0c so the Confirmed rows compare directly. Two spotters
+(Fast + Confirmed), hence 1229 s vs the 630 s single-spotter baseline.
+
+### The speed side — measured, and real
+
+Within-run, same-phrase Fast-vs-Confirmed `emit_lag`. This is the honest metric:
+
+| phrase | prefix | Fast `emit_lag` | Confirmed `emit_lag` | **gain** |
+|---|---|---|---|---|
+| client computing | `client comp` | **−100 ms** | 540 ms | **+640 ms** |
+| panther lake | `panther` | 240 ms | 560 ms | **+320 ms** |
+| golden dome | `golden d` | 290 ms | 400 ms | **+110 ms** |
+
+**Median gain +320 ms (n=3, range +110..+640)** — consistent with the 300–500 ms
+this was parked at, now measured rather than estimated. `client computing` went
+**negative**: it fired *before the phrase finished*.
+
+⚠ I had been saying "a win means `emit_lag` goes negative". Corrected **before**
+seeing this: a prefix fire still pays the engine's ~520 ms lookahead after the
+*prefix* ends, so negative requires the skipped tail to exceed 520 ms. Two of the
+three stayed positive and were still wins. Had I kept the wrong criterion I would
+have scored two real wins as failures.
+
+### The precision side — FAIL, replicating the prior number exactly
+
+| tier | TP | FA | **FA/h** | bar | verdict |
+|---|---|---|---|---|---|
+| Fast | 5 | 3 | **1.19** | ≤0.5 | **FAIL** |
+| Confirmed | 49 | 53 | 20.97 | — | **no regression** vs E0c (49/53 identical) |
+
+**1.19/h reproduces the parked figure to the digit.** The two-spotter isolation
+is clean — Confirmed is bit-for-bit what it was without prefixes.
+
+### Why the obvious remedy is NOT honest here
+
+Collision screen on the real transcripts: the three Fast false alarms are
+`panther lake`, `venture fund`, `venus aerospace`, all classed **PHONETIC** —
+not `SUBSTRING`. So the screen gives **no principled a-priori reason** to drop
+them; it says "review, often threshold-fixable". It does not rescue D2.
+
+Applying "eligible only if no collision" would keep `basic economy`,
+`client computing`, `golden dome`, `world cup` → Fast FA **0**, 0.00/h, a pass.
+**That pass would be an artifact.** Those four are *defined* as the ones with no
+false alarms on this corpus; scoring them on the same corpus is selection on the
+outcome. It passes by construction.
+
+### The binding constraint is the corpus, not the technique
+
+| problem | number |
+|---|---|
+| prefixed phrases with **zero occurrences** in dev | **4 of 7** (basic economy, venture fund, venus aerospace, world cup) |
+| `venture fund` / `venus aerospace` | produced false alarms while having **no true occurrences at all** |
+| true Fast recall over prefixed phrases | **5/23 = 0.217** (the 0.065 headline counts all 77 occurrences including 34 keywords that have no prefix — meaningless) |
+| what the bar permits at 2.53 h | **1.26 false alarms total** |
+
+At this corpus size **≤0.5/h cannot be distinguished from 0.8/h**. And the
+holdout would not fix it: of the four eligible prefixes only `basic economy`
+plausibly occurs on AAL, so a holdout "pass" would mostly measure three prefixes
+having no chance to fire. Burning the once-only holdout on that would spend it
+for nothing.
+
+**Verdict: D2 FAILS its pre-registered bar (1.19/h vs ≤0.5/h) and prefix-firing
+stays parked — as pre-registered, no renegotiation.** But the reason it cannot
+yet be rescued is that the false-alarm corpus is too small and too poorly matched
+to the prefixed phrases to resolve the bar at all. **A3 (expand the FA corpus) is
+therefore promoted from housekeeping to a blocking dependency for D2.** The
++320 ms is real and says the technique is worth unblocking.
+
 ## Session 2026-07-25 (S6) — join-lottery characterised at n=16–21
 
 Ten consecutive 150 s runs pooled with every earlier `abs-lag.py` observation.
