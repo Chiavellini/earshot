@@ -316,6 +316,38 @@ they were mid-teardown. **Do not read an instantaneous post-kill process count a
 an orphan leak;** the earlier 18-orphan incident was real and persistent, this is
 not the same thing.
 
+## Session 2026-07-25 (D1g) — FIRING GAP CLOSED: 6/6 keywords → correct decision intents
+
+D1f proved the plumbing but nothing fired, so detection → decision had never
+been exercised under fanout + CTC. Closed by planting known keywords in the
+audio: a 19.2 s TTS clip speaking six of PayPal's actual market words inside
+plausible earnings-call sentences, added as a **third replay leg** alongside the
+two live pipe legs, with the real event and real Kalshi markets.
+
+| spoken | market ticker | decision intent |
+|---|---|---|
+| stablecoin | `…-STAB` | ✅ |
+| blockchain | `…-BLOC` | ✅ |
+| bitcoin | `…-BITC` | ✅ |
+| regulation | `…-REGU` | ✅ |
+| braintree | `…-BRAI` | ✅ |
+| agentic commerce | `…-AGEN` | ✅ |
+
+**6 planted, 6 detected, 6 routed to the correct market**, all `tranche=1
+tier=Confirmed`, plus 2 `detection ignored (keyword state machine)` — the
+one-shot dedupe working as designed. Shutdown clean; journal shows
+`ledger_spent_cents: 0`, `session_order_ids: []`, `terminated: SIGTERM`.
+
+**What this validates that nothing else did:** keyword text → CTC BPE targets →
+frame scorer → detection → decision table → market ticker → intent, under the
+real arm, real launcher, real Kalshi markets, with two other legs competing.
+Every stage between the config and the order path is now exercised.
+
+**What it does NOT validate:** TTS is clean studio speech, not a compressed
+77 kbps webcast of a CFO on a bad line. It proves the path is *wired*, not that
+recall on real audio is 6/6 — the holdout (D1d, recall 0.833) is the honest
+recall figure.
+
 ## Session 2026-07-25 (D1d) — HOLDOUT: the CTC accuracy win GENERALISES, and is bigger than dev
 
 Unseen audio (AAL, 1.51 h), run **once**, config frozen — BAKEOFF discipline.
