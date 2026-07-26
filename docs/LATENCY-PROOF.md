@@ -191,20 +191,68 @@ sharply: not ~0 ms, but bit-identical.
 ("measured at 160, production arms at 80") is discharged — the two are the same
 run in all but name. Exposure stands at **25.3 % (AXP)** and **12.9 % (LMT)**.
 
-⚠ **Not yet discriminated (E0d, running).** "The override works and 40, 80, 160
-all happen to divide the 160 ms grid" and "the override is silently ignored by
-the plumbing" predict this result equally well. 240 does not divide 160, so it
-separates them: under the first it must shift the positions, under the second it
-cannot. Do not treat the mechanism above as settled until that lands.
+### E0d — the discriminating test: the override WORKS, and the grid is `max(chunk_ms, 160 ms)`
+
+E0c's byte-identical cells had two explanations that fit equally well — "the
+override works and 40, 80, 160 all divide a 160 ms model grid" versus "the
+override is silently ignored by the plumbing" (which would be a real bug). 240
+does not divide 160, so it separates them. Control and test interleaved in one
+run, single call (INTC, 0.98 h) so the comparison is within-run.
+
+| chunk | TP | miss | FA | **GCD of FA stream positions** | `emit_lag` p50 |
+|---|---|---|---|---|---|
+| 160 | 21 | 25 | 25 | **160 ms** | **460 ms** |
+| 240 | 21 | 25 | 25 | **240 ms** | **550 ms** |
+
+**Cells differ (`rows-sha` 60bfae6b… vs d31f9bce…), and the grid tracks
+`chunk_ms` exactly. The override works — no plumbing bug.**
+
+**Refined mechanism, now confirmed by two independent routes.** `sherpa_kws`
+stamps `audio_pos_ms` at OUR chunk boundary (`sherpa_kws.rs:92`) but only decodes
+when the model has a complete internal frame. The model quantum is **160 ms**.
+So the effective emission grid is:
+
+    grid = chunk_ms          when chunk_ms >= 160 ms   (our boundary is coarser)
+    grid = 160 ms            when chunk_ms  < 160 ms   (the model's frame dominates)
+
+Every E0c case (40, 80, 160) lands in the second branch — which is exactly why
+they were byte-identical — and 240 lands in the first, which is why it moved.
+
+**Operational verdict, and it cuts both ways:**
+
+- **Below 160 ms, `chunk_ms` buys nothing.** Production arming at 80 ms is
+  output-identical to 160 ms. Confirmed twice.
+- **Above 160 ms it actively costs.** 160 → 240 is **+90 ms of `emit_lag`** for
+  nothing (within-run, n=21 TPs). A future "let's use bigger chunks to save CPU"
+  change would silently buy a 90 ms latency regression — and E0c already showed
+  the CPU saving is nil, since all cells cost ~627 s.
+- **160 ms is the knee**: the largest chunk that costs nothing. Production's 80 ms
+  is safe but pointlessly fine-grained.
+
+⚠ Cross-run caution: chunk-160's `emit_lag` p50 is 460 ms here vs 520 ms on the
+full dev split — different call mix, not a contradiction. Only the within-run
+460 → 550 comparison is valid, which is why control and test ran interleaved.
+
+**E0 is complete.** `A` = 520 ms (armed), exposure 25.3 % at AXP / 12.9 % at LMT,
+and the chunk dial is now fully characterised as a non-lever. Reducing `A`
+requires changing the model quantum (D1) or firing before the word ends (D2).
 
 > **⚠ Correction to my own first read of this run.** I initially pooled the Fast
 > and Confirmed tiers and reported recall 0.318. That is wrong: `score_phrase`
 > emits one `TierScore` per tier, each carrying `misses = occurrences − tp` for
 > that tier, so pooling double-counts every occurrence. Per tier, Confirmed
-> recall is **0.636** and Fast fires **zero times** — 0 TP *and* 0 FA across all
-> 77 occurrences, i.e. the Fast tier is emitting nothing at all on this config.
-> That is a separate finding and a latency lever that is silently switched off;
-> it is what D2 has to turn on.
+> recall is **0.636** (49/77) at **20.97 FA/h**, and Fast records 0 TP / 0 FA.
+>
+> **⚠⚠ Second correction — and this one retracts an alarm I raised.** I wrote that
+> the zero-firing Fast tier was "a latency lever silently switched off". **That is
+> wrong and I should have checked before saying it.** `configs/bakeoff-webcast.toml`
+> declares **no `fast_prefixes` at all** and marks all 41 keywords
+> `policy = "confirmed_only"`. Fast entries are built only from `fast_prefixes`
+> (`src/detector/kws_compile.rs:224`), so there is nothing to fire and zero
+> firings is the *correct* result for this config. Not a bug, not a regression —
+> a confirmed-only baseline behaving as declared. The prefix work lives in
+> `configs/bakeoff-webcast-prefix.toml`, which does carry per-keyword prefixes
+> (e.g. `"basic ec"`, `"client comp"`). D2 measures that config, not this one.
 
 ### Still open after E0b
 
