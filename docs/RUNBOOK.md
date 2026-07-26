@@ -270,6 +270,74 @@ friendlier same-floor venue for direct low-latency fetching; (c) Wednesday's
 TSLA v0 runs from the CDMX box via yt-dlp (proven path) — proximity matters
 less for a v0 whose goal is cadence + corpus.
 
+## ▶ TUESDAY 2026-07-28 · PayPal · DAY-OF CHECKLIST (execute top to bottom)
+
+Everything below is pre-validated. Nothing here needs a decision except step 3.
+
+**Call: 8:00 AM ET (12:00 UTC).** Config `configs/webcast-pypl-26jul28-arm.toml`
+— speculative CTC fanout, 16 markets, observe posture, every cap 1¢, no fill
+possible. Venue **webcast-only** (IR page + EDGAR + the Q1 2026 SEC-filed
+release), platform **Q4 Inc** = AXP's ⇒ expect **Amazon IVS, 2 s segments**.
+
+**T−1 evening**
+1. `scripts/preflight-event.sh` — pins the binary, live-probes creds, mailer,
+   disk, scheduled wake. **Event runs REQUIRE this** (CLAUDE.md).
+2. Box up, `df -h /` (it hit 100 % on 07-14), `ps -eo cmd --no-headers | grep -c "[h]ls-edge-fetch"` must be **0**.
+
+**T−20 min — surface the stream**
+3. Get the m3u8 from the IR player and write it:
+   `echo "<m3u8>" > $HOME/pypl-stream.url`
+4. `scripts/manifest-probe.sh "$(cat $HOME/pypl-stream.url)"`
+   Read three things:
+   - `== speculative posture ==` → **GO / NO-GO** and the venue's **`L`**
+   - `== all renditions ==` → is there an **audio-only** rendition? (worth ~10 ms,
+     F1c — take it if free, do **not** delay the launch for it)
+   - segment duration → expect ~2 s; if it is 6–10 s the exposure maths change
+   **NO-GO ⇒ swap to `configs/webcast-fanout-arm.toml` (non-speculative).** The
+   speculative leg spends 404s to buy latency; a rate-limit would take out
+   EVERY leg on the box.
+
+**T−10 min — launch**
+5. ```
+   bash scripts/launch-webcast.sh \
+     --config configs/webcast-pypl-26jul28-arm.toml \
+     --account $HOME/.kalshi/earshot_env
+   ```
+6. **Confirm all four lines appear before the call starts** — each one is a
+   thing that has broken before:
+   - `streaming_ctc: ORT_DYLIB_PATH=…` — without it the CTC detector cannot
+     build and the arm dies at startup
+   - `book snapshots live for all armed markets` — Kalshi validated all 16
+   - `fanout: per-leg detect chains, OR at decision legs=2`
+   - `pipe source: spawning decoder` **×2**
+
+**During**
+7. Leave it alone. Detections log as `decision intent … ticker=… tier=Confirmed`.
+   Repeats inside the refractory window log as `detection ignored (keyword state
+   machine)` — that is the one-shot dedupe, not a fault.
+
+**After**
+8. `grep SUMMARY $HOME/spec_edge.err` → **`seg LOST` must be 0.** A non-zero
+   value is silently lost audio, which is a recall bug (this cost 86 s once).
+9. `state/KXEARNINGSMENTIONPYPL-26JUL28/report.json` → `ledger_spent_cents`
+   must be **0** in observe posture.
+10. Score Δrace against the µs tape on the **price-moving** sweep, never a flat
+    print — that scoring error inverted three figures once already.
+
+**Known risks, decided in advance:**
+- `stash` → `▁STA SH`, 2 tokens, the shortest target of the 37. Watch it; if it
+  fires loose, drop it rather than tune it.
+- `regulation` inherits `regulator`/`regulatory` from the market rules, and
+  "regulatory" is said constantly on earnings calls ⇒ REGU likely resolves
+  early and is decided by the RACE, not by detection.
+- Engine reverts to `sherpa_kws` with a one-line edit to `engine =` if anything
+  about CTC misbehaves; the tuned sherpa block is still in the config.
+
+**Ford is the same day at 5:00 PM ET** — also webcast-only, but LOGIN-GATED with
+an empty player until call time, so its m3u8 cannot be probed in advance. A
+laptop-surfaced token IS box-consumable (F1c: HTTP 200 from us-east), so surface
+on the logged-in laptop and hand the URL over.
+
 ## Week of 07-20 — mention-event slate + webcast study monitors (staged 2026-07-20 evening)
 
 Slate from the public API (`GET /events?status=open`, 45 open MENTION events,
