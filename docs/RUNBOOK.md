@@ -313,7 +313,7 @@ Verified in-browser, post-registration, not inferred:
 | Event | Call ET | Access | Platform | Notes |
 |---|---|---|---|---|
 | **PayPal** | **Tue 8:00 AM** | **WEBCAST ONLY** | **Q4 Inc** (`investor.pypl.com`, footer "Powered By Q4 Inc.") | **Same platform that fronted AXP 07-24** → AXP resolved to **Amazon IVS, 2 s segments**, the venue class where `L` was measured three times (1.40/1.50/1.51 s). Expect the same. |
-| **Ford** | **Tue 5:00 PM** | **WEBCAST ONLY** | OpenExchange | Registered; post-login the ONLY access is a "WEBCAST" link. No phone, no join-by-audio. |
+| **Ford** | **Tue 5:00 PM** | **WEBCAST ONLY** | OpenExchange | Registered; post-login the ONLY access is a "WEBCAST" link. **AND the IR "Advisory" PDF was read** (`s205.q4cdn.com/882619693/files/doc_events/2026/Jul/28/Ford-Q2-2026-Earnings-Advisory.pdf`) — it lists only the webcast + replay. **No bridge, no passcode.** |
 | Meta | Wed 4:30 PM | webcast-only (high conf) | — | release names webcast only |
 | Amazon | Thu 5:00 PM | webcast-only (high conf) | — | release names webcast only |
 
@@ -326,6 +326,29 @@ consequences: (1) the venue probe must run day-of, at call time; (2) the manifes
 may be session/token-bound like the FOMC Brightcove case, in which case the
 us-east box cannot fetch it with a bare URL and capture has to carry the session
 (or run from the logged-in laptop). **Plan for tokenized.**
+
+**⚠ METHOD CORRECTION — I nearly closed this on one source.** I first declared
+Ford webcast-only from the *registration portal alone*. The operator pushed back:
+issuers often bury the dial-in in an **"Advisory" PDF** on the IR events page, not
+in the portal or the press-release body. That is the correct method and it is what
+this runbook's own phone-first note already said ("check transcripts / registration
+/ IR / legacy 8-K numbers before calling an event webcast-only"). **Always open the
+Advisory / 8-K before writing off an event.**
+
+Having done so for Ford Q2 2026: the Advisory contains **no conference bridge**.
+Its only phone numbers are IR staff contacts — Media 1.773.682.7954, Equity
+Investment Community 1.248.510.9092, Fixed Income 1.313.248.1587, Shareholder
+Inquiries 1.800.555.5259 — which do **not** join the call. Ford reportedly
+published a participant number in earlier quarters (1-844-282-4573), so this looks
+like an issuer that **dropped** its dial-in for OpenExchange — evidence the
+webcast-only trend is visible inside a single issuer's own document set.
+
+**Boeing is the counter-example and it does not help us.** BA publishes toll-free
+numbers + passcode openly on `investors.boeing.com` with no gate — but **Kalshi has
+no BA mention event next week** (`KXEARNINGSMENTIONBA-26JUL21` is misdated and
+already past; the Jul 25–31 API sweep returned only F, PYPL, Carvana, Meta,
+Wingstop, Amazon, Ferrari, Reddit, Yum). Easiest bridge on the street, nothing to
+trade on it. **Access class and tradability are independent — check both.**
 
 **Operator note:** registration accepted "Individual investor" as an affiliation —
 the portal is not analyst-gated — and the confirmation says only *"return to this
