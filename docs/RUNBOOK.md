@@ -307,6 +307,24 @@ Jul 25–31:
 | Wed 07-29 | Carvana, **Meta**, Wingstop (+ FOMC 14:30 ET) |
 | Thu 07-30 | **Amazon**, Ferrari, Reddit, Yum! Brands |
 
+**⚠ FORD HAS AN OPEN REGISTRATION PORTAL — VERIFIED 2026-07-25 (browser).**
+`https://ford-motor-company-q2-2026-earnings-call.open-exchange.net/registration`
+is a real OpenExchange gate for "Q2 2026 Financial Results, TUESDAY, JULY 28, 2026".
+Fields: First/Last name, Email, Organization, **Affiliation** — and the affiliation
+list is **Buy-side / Sell-side / Individual investor / Media / Employee / Other**.
+**"Individual investor" is accepted, so registration is NOT analyst-gated.**
+
+Whether it yields a **telephone dial-in** (vs webcast-only access) is only knowable
+after completing registration, which means submitting real identity details — an
+operator decision, not an automated one. **Unresolved; ask before registering.**
+If it does yield a number, Ford becomes a PHONE-capture target (~20 s ahead of the
+webcast per the phone-first finding), which would outweigh its keyword-collision
+problem and change Tuesday's plan.
+
+**Timing (both Tuesday runnable — they do NOT conflict):**
+- **PayPal 8:00 AM ET** (results pre-market)
+- **Ford 5:00 PM ET** (results 4:05 PM ET) — `shareholder.ford.com`
+
 **Arm PayPal, not Ford, if only one.** The pre-arm collision screen
 (`docs/BAKEOFF.md` §Collision screen) measured Ford's generated keyword set at
 **65 false alarms** over 2.5 h of unrelated calls vs PayPal's **12** — 38 of
