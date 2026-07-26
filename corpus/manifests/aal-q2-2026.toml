@@ -24,6 +24,11 @@ onset_ms = 1973090
 end_ms   = 1973410
 
 [[occurrences]]
+phrase   = "boeing"
+onset_ms = 2227680
+end_ms   = 2227940
+
+[[occurrences]]
 phrase   = "athens"
 onset_ms = 2309730
 end_ms   = 2310030
@@ -57,6 +62,16 @@ end_ms   = 3325410
 phrase   = "record"
 onset_ms = 3406320
 end_ms   = 3406620
+
+[[occurrences]]
+phrase   = "ultra"
+onset_ms = 3982590
+end_ms   = 3982810
+
+[[occurrences]]
+phrase   = "europe"
+onset_ms = 4509340
+end_ms   = 4509620
 
 [[occurrences]]
 phrase   = "chicago"

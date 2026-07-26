@@ -4,6 +4,16 @@ audio = "wideband/lmt-q2-2026.wav"
 split = "dev"
 
 [[occurrences]]
+phrase   = "security"
+onset_ms = 1692390
+end_ms   = 1692870
+
+[[occurrences]]
+phrase   = "security"
+onset_ms = 1809600
+end_ms   = 1810140
+
+[[occurrences]]
 phrase   = "golden dome"
 onset_ms = 1924670
 end_ms   = 1925310
@@ -24,9 +34,29 @@ onset_ms = 2376200
 end_ms   = 2376720
 
 [[occurrences]]
+phrase   = "government"
+onset_ms = 2391040
+end_ms   = 2391180
+
+[[occurrences]]
+phrase   = "record"
+onset_ms = 2506860
+end_ms   = 2507340
+
+[[occurrences]]
+phrase   = "dividend"
+onset_ms = 2729110
+end_ms   = 2729410
+
+[[occurrences]]
 phrase   = "sikorsky"
 onset_ms = 3100220
 end_ms   = 3100760
+
+[[occurrences]]
+phrase   = "security"
+onset_ms = 3127700
+end_ms   = 3128260
 
 [[occurrences]]
 phrase   = "morfius"
@@ -34,14 +64,74 @@ onset_ms = 3259570
 end_ms   = 3259870
 
 [[occurrences]]
+phrase   = "government"
+onset_ms = 3313170
+end_ms   = 3313550
+
+[[occurrences]]
 phrase   = "europe"
 onset_ms = 3426220
 end_ms   = 3426580
 
 [[occurrences]]
+phrase   = "government"
+onset_ms = 3572240
+end_ms   = 3572640
+
+[[occurrences]]
+phrase   = "government"
+onset_ms = 3595700
+end_ms   = 3596080
+
+[[occurrences]]
+phrase   = "record"
+onset_ms = 3685890
+end_ms   = 3686310
+
+[[occurrences]]
+phrase   = "government"
+onset_ms = 3731160
+end_ms   = 3731520
+
+[[occurrences]]
 phrase   = "sikorsky"
 onset_ms = 3963740
 end_ms   = 3964360
+
+[[occurrences]]
+phrase   = "government"
+onset_ms = 4167310
+end_ms   = 4167770
+
+[[occurrences]]
+phrase   = "government"
+onset_ms = 4306040
+end_ms   = 4306460
+
+[[occurrences]]
+phrase   = "government"
+onset_ms = 4514030
+end_ms   = 4515330
+
+[[occurrences]]
+phrase   = "government"
+onset_ms = 4585070
+end_ms   = 4585270
+
+[[occurrences]]
+phrase   = "government"
+onset_ms = 4605250
+end_ms   = 4605470
+
+[[occurrences]]
+phrase   = "government"
+onset_ms = 4620190
+end_ms   = 4620550
+
+[[occurrences]]
+phrase   = "government"
+onset_ms = 4628130
+end_ms   = 4628330
 
 [[occurrences]]
 phrase   = "morfius"
@@ -54,6 +144,16 @@ onset_ms = 4878170
 end_ms   = 4879070
 
 [[occurrences]]
+phrase   = "record"
+onset_ms = 5062340
+end_ms   = 5062700
+
+[[occurrences]]
 phrase   = "nasa"
 onset_ms = 5254750
 end_ms   = 5255170
+
+[[occurrences]]
+phrase   = "government"
+onset_ms = 5279660
+end_ms   = 5279860

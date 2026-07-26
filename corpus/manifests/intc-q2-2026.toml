@@ -89,6 +89,11 @@ onset_ms = 637590
 end_ms   = 638170
 
 [[occurrences]]
+phrase   = "record"
+onset_ms = 687910
+end_ms   = 688290
+
+[[occurrences]]
 phrase   = "security"
 onset_ms = 821810
 end_ms   = 822470
@@ -107,6 +112,11 @@ end_ms   = 866120
 phrase   = "foundry"
 onset_ms = 921190
 end_ms   = 921790
+
+[[occurrences]]
+phrase   = "record"
+onset_ms = 996990
+end_ms   = 997390
 
 [[occurrences]]
 phrase   = "panther lake"
