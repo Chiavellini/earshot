@@ -266,6 +266,72 @@ requires changing the model quantum (D1) or firing before the word ends (D2).
   the box and neither has an `emit_lag` number. That is D1, and it is now a
   direct comparison on the metric that matters rather than a proxy.
 
+## Session 2026-07-25 (D1d) — HOLDOUT: the CTC accuracy win GENERALISES, and is bigger than dev
+
+Unseen audio (AAL, 1.51 h), run **once**, config frozen — BAKEOFF discipline.
+With the latency case refuted in D1c, accuracy was the entire argument, so this
+was the decisive test.
+
+| metric | `sherpa_kws` | `streaming_ctc` | delta |
+|---|---|---|---|
+| true positives | 15 | **15** | **0** |
+| misses | 3 | **3** | **0** |
+| recall | 0.833 | **0.833** | **0.000** |
+| **total detections fired** | **41** | **23** | **−18** |
+| **FA/h** | **17.21** | **5.30** | **−69 %** |
+| `consumed_lag` p50 | 540 ms | **540 ms** | **0 ms** |
+| RTF | 0.0688 | 0.1524 | 2.2× |
+
+### It catches exactly the same words and fires 18 fewer times
+
+**Identical true positives, identical misses, identical recall — and 18 fewer
+firings.** There is no recall cost at all on unseen audio: the entire difference
+is false alarms. `−69 %` on holdout against `−38 %` on dev, so the effect is not
+only reproduced, it is **larger on the split that counts**.
+
+### The dev latency regression did NOT reproduce
+
+D1c measured `consumed_lag` +50 ms on dev. On holdout it is **+0 ms** (540 vs
+540). Two splits, two different answers ⇒ **the +50 ms is call-dependent noise,
+not a property of the engine.** Honest statement: **no consistent per-detection
+latency penalty; bound it at ≤+50 ms rather than claiming zero.** n = 15 TPs on
+holdout, so this is a small sample and should not be over-read either way.
+
+### What still costs, and it is the only thing that does
+
+The `2.2× RTF` is unchanged and real, and via D1e it converts to burst drain:
+
+| legs | `sherpa_kws` drain | `streaming_ctc` drain | penalty |
+|---|---|---|---|
+| 1 | 138 ms | 304 ms | **+166 ms** |
+| 3 (armed fanout) | 207 ms | 455 ms | **+249 ms** |
+
+**That is now the whole cost of the swap** — and it is partly a *configuration*
+choice, not a fixed property: the fanout ORs at decision, so leg count is a dial.
+
+### Recommendation
+
+**Adopt `streaming_ctc`**, on this reasoning:
+
+1. **It wins on the axis that loses money.** A false alarm buys YES on a market
+   that settles NO — a direct loss every time. 17.21 → 5.30 FA/h is ~26 → ~8
+   false fires on a 1.5 h call. A slow fire costs a race; a false fire costs
+   premium, and there are far more of them.
+2. **It costs no recall whatsoever** on unseen audio — same 15 catches, same 3
+   misses.
+3. **Its latency cost is bounded and mostly configurable**: ≤+50 ms per detection
+   (not consistently present), plus 166–249 ms of burst drain that shrinks with
+   leg count.
+4. **It unlocks the only fix for the structural collisions.** `sherpa_kws` has no
+   per-hit confidence (Q-M1 pin 2: constant 1.0), so `record` ← "quarter over
+   quarter" can only be handled by forfeiting the market. `streaming_ctc` exposes
+   frame posteriors, which is what a negative-context rule requires.
+
+⚠ **Against it, stated plainly:** the drain penalty lands on the critical path in
+exactly the 25 % of words that E0 showed already pay a full segment, so the worst
+case gets worse. If the operator's priority is the race above all else, staying on
+`sherpa_kws` is defensible — but then the 17 FA/h stays too.
+
 ## Session 2026-07-25 (F1) — first variant audit on a REAL venue class: segment-duration axis NULL, but 3 AUDIO-ONLY renditions exist
 
 `scripts/variant-audit.py` had never run against a venue we actually trade.
