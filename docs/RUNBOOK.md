@@ -312,7 +312,7 @@ Verified in-browser, post-registration, not inferred:
 
 | Event | Call ET | Access | Platform | Notes |
 |---|---|---|---|---|
-| **PayPal** | **Tue 8:00 AM** | **WEBCAST ONLY** | **Q4 Inc** (`investor.pypl.com`, footer "Powered By Q4 Inc.") | **Same platform that fronted AXP 07-24** → AXP resolved to **Amazon IVS, 2 s segments**, the venue class where `L` was measured three times (1.40/1.50/1.51 s). Expect the same. |
+| **PayPal** | **Tue 8:00 AM** | **WEBCAST ONLY — SEC-CONFIRMED** | **Q4 Inc** (`investor.pypl.com`, footer "Powered By Q4 Inc.") | **Same platform that fronted AXP 07-24** → AXP resolved to **Amazon IVS, 2 s segments**, the venue class where `L` was measured three times (1.40/1.50/1.51 s). Expect the same. |
 | **Ford** | **Tue 5:00 PM** | **WEBCAST ONLY** | OpenExchange | Registered; post-login the ONLY access is a "WEBCAST" link. **AND the IR "Advisory" PDF was read** (`s205.q4cdn.com/882619693/files/doc_events/2026/Jul/28/Ford-Q2-2026-Earnings-Advisory.pdf`) — it lists only the webcast + replay. **No bridge, no passcode.** |
 | Meta | Wed 4:30 PM | webcast-only (high conf) | — | release names webcast only |
 | Amazon | Thu 5:00 PM | webcast-only (high conf) | — | release names webcast only |
@@ -349,6 +349,23 @@ no BA mention event next week** (`KXEARNINGSMENTIONBA-26JUL21` is misdated and
 already past; the Jul 25–31 API sweep returned only F, PYPL, Carvana, Meta,
 Wingstop, Amazon, Ferrari, Reddit, Yum). Easiest bridge on the street, nothing to
 trade on it. **Access class and tradability are independent — check both.**
+
+**PAYPAL — rule 3 applied, closed on the AUTHORITATIVE source (2026-07-25).**
+Checked three ways, not one:
+1. IR event page (`investor.pypl.com/…/PayPals-Second-Quarter-2026-Earnings-Call`)
+   — access listed as "Webcast", nothing else.
+2. **EDGAR: PayPal has filed NO 8-K since 2026-05-21**, so there is no Q2
+   call-announcement filing to hide a number in. PayPal does not 8-K its call
+   dates; the quarterly results release is the operative template.
+3. **The Q1 2026 results release** (8-K exhibit `pypl1q-26earningsrelease.htm`,
+   acc-no 0001633917-26-000065, filed 2026-05-05) — its **"Conference Call &
+   Webcast"** section offers only a live webcast via the IR website, plus a 90-day
+   archive. **No dial-in, no toll-free number, no international number, no
+   passcode, no conference ID.**
+
+⇒ **PayPal is webcast-only, confirmed from an SEC-filed document.** Combined with
+the Q4 Inc platform (= AXP's, which resolved to Amazon IVS / 2 s segments), Tuesday
+morning is a known venue class and the speculative-posture numbers should transfer.
 
 **Operator note:** registration accepted "Individual investor" as an affiliation —
 the portal is not analyst-gated — and the confirmation says only *"return to this
