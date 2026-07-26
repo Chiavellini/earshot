@@ -20,6 +20,11 @@ master="$(fetch "$url")"
 
 # Master playlists carry EXT-X-STREAM-INF; follow the first variant so the
 # tags below come from a media playlist.
+# NOTE: everything below describes THAT ONE variant. A master routinely carries
+# renditions with different segment durations, different packaging, separate
+# audio-only tracks, and even different EXT-X-SERVER-CONTROL. Run
+# `scripts/variant-audit.py <master>` to see all of them — the section at the
+# bottom of this script does exactly that.
 media="$master"
 media_url="$url"
 if grep -q '^#EXT-X-STREAM-INF' <<<"$master"; then
@@ -80,4 +85,16 @@ if [ "${SPEC_PROBE:-1}" = "1" ] && command -v python3 >/dev/null 2>&1; then
     || echo "(spec-probe failed — treat as NO-GO)"
 else
   echo "(skipped — SPEC_PROBE=0 or no python3)"
+fi
+
+echo
+echo "== all renditions (NOT just the first variant) =="
+# The cadence/LL-HLS/PDT sections above describe variant #1 only. A venue can
+# publish shorter segments, CMAF packaging, an audio-only track, or LL-HLS
+# capability on a rendition we have never looked at.
+if command -v python3 >/dev/null 2>&1; then
+  python3 "$(dirname "$0")/variant-audit.py" "$url" \
+    || echo "(variant-audit failed — the single-variant facts above still stand)"
+else
+  echo "(skipped — no python3)"
 fi
