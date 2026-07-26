@@ -385,6 +385,42 @@ segments and throws every video byte away after decode. Pointing the leg at the
 **audio rendition playlist directly** removes 5–19× of the bytes with **no change
 to the audio** — the same encoded track either way.
 
+### F1c — MEASURED from us-east: the byte saving buys ~10 ms. My framing was wrong.
+
+Same two segments, fetched three times each from the box against this CDN:
+
+| rendition | bytes | **TTFB** | **total** | transfer (total−TTFB) |
+|---|---|---|---|---|
+| audio-only | 177 848 | 51.1 ms | **54.8 ms** | 3.7 ms |
+| video variant | 1 359 992 | 55.3 ms | **65.1 ms** | 9.8 ms |
+| **saving** | **7.6× fewer bytes** | 4.2 ms | **≈ 10 ms** | 6.1 ms |
+
+**A 7.6× byte reduction buys ~10 ms, not the hundreds I implied.** The fetch is
+**round-trip-dominated, not bandwidth-dominated**: TTFB is ~52 ms and the box
+pulls 18–22 MB/s, so 1.36 MB transfers in under 10 ms of actual wire time. Bytes
+were never the constraint on this link.
+
+**Verdict: the audio-rendition lever is REAL but SMALL (~10 ms, ~0.5 % of a 2 s
+segment).** Still worth taking — it is a one-line config change with identical
+audio and it also spares ffmpeg the work of demuxing and discarding video, which
+matters more now that D1e showed detector CPU lands on the critical path — but it
+is **not** a latency lever of consequence and must not be sold as one.
+
+This is why F1b claimed the ratio and refused the millisecond figure. Had I
+converted bytes to time by assuming throughput was the constraint, I would have
+reported a ~150 ms win that does not exist.
+
+### F1c — and the fastly_token is NOT IP-bound (Wednesday go/no-go)
+
+The token was minted for the **laptop's** session in CDMX; both fetches returned
+**HTTP 200 from the us-east box**. So a URL surfaced on the logged-in laptop can
+be handed to the box and consumed there. **This clears the FOMC staging path**
+that the runbook flagged as unknown — the box does not need its own session, only
+a freshly-surfaced URL. Token *lifetime* is still unmeasured and remains the
+day-of risk.
+
+⚠ **Superseded framing below — kept because the reasoning error is instructive.**
+
 ⚠ **The time this saves is NOT measured and must not be assumed.** Bytes convert
 to milliseconds only through throughput, and the measurement above was taken from
 the CDMX laptop, not the us-east box whose link is far better. E0 showed segments
