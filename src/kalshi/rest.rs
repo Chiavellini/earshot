@@ -259,7 +259,48 @@ impl RestClient {
         let v = self
             .signed_get(&format!("/portfolio/orders?client_order_id={client_order_id}"))
             .await?;
-        Ok(v["orders"].as_array().and_then(|a| a.first().cloned()))
+        // NEVER trust the server to have applied the filter. If the query param
+        // is ignored — which it demonstrably can be, e.g. for a non-UUID id
+        // (VERIFICATIONS.md: client_order_id must be UUID-shaped) — `orders` is
+        // the WHOLE account and `.first()` returns an ARBITRARY order.
+        //
+        // That is not a cosmetic bug. `executor.rs` calls this on an ambiguous
+        // send error and, on Some, does `registry.register(order_id)`. The kill
+        // switch cancels ONLY OrderRegistry ids precisely because this account
+        // carries unrelated resting orders from other systems (CLAUDE.md), so an
+        // unfiltered match would silently widen kill scope to a FOREIGN order.
+        // Re-check the id we asked for; the server's filtering is an optimisation,
+        // never the guarantee.
+        //
+        // Conservative rule: reject only a MISMATCH, never an absence. If the
+        // response echoes `client_order_id` and it differs, that order is not
+        // ours and must not be returned. If the field is absent we cannot tell,
+        // so keep the previous behaviour (first entry) rather than turning a
+        // landed order into "not on book" — a false negative here mis-records a
+        // real fill.
+        Ok(v["orders"].as_array().and_then(|a| {
+            let mine = a.iter().find(|o| match o["client_order_id"].as_str() {
+                Some(id) => id == client_order_id,
+                None => true,
+            });
+            if let Some(o) = mine {
+                if o["client_order_id"].as_str().is_none() {
+                    tracing::warn!(
+                        "order query response omits client_order_id — cannot verify \
+                         the server filtered; accepting first entry"
+                    );
+                }
+            } else if !a.is_empty() {
+                tracing::warn!(
+                    returned = a.len(),
+                    "order query returned {} order(s), NONE matching the requested \
+                     client_order_id — server filter ignored; refusing to adopt a \
+                     foreign order id",
+                    a.len()
+                );
+            }
+            mine.cloned()
+        }))
     }
 
     // -- order entry -------------------------------------------------------

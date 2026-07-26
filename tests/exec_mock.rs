@@ -258,6 +258,53 @@ async fn ambiguous_timeout_queries_status_and_never_reposts() {
 }
 
 #[tokio::test]
+async fn status_query_refuses_a_foreign_order_id() {
+    // The kill switch cancels ONLY OrderRegistry ids, because this account
+    // carries unrelated resting orders from other systems (CLAUDE.md). If the
+    // server ignores the client_order_id filter — which it demonstrably can,
+    // e.g. for a non-UUID id — the query returns the WHOLE account, and adopting
+    // orders[0] would register a FOREIGN id and silently widen kill scope.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/portfolio/events/orders"))
+        .respond_with(
+            ResponseTemplate::new(201)
+                .set_delay(Duration::from_secs(3))
+                .set_body_json(serde_json::json!({"order": {"order_id": "slow"}})),
+        )
+        .mount(&server)
+        .await;
+    // Unfiltered response: someone else's resting order, explicitly tagged with
+    // a DIFFERENT client_order_id.
+    Mock::given(method("GET"))
+        .and(path("/portfolio/orders"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "orders": [{
+                "order_id": "SOMEONE-ELSES-ORDER",
+                "client_order_id": "00000000-0000-0000-0000-0000deadbeef",
+                "status": "resting"
+            }]
+        })))
+        .mount(&server)
+        .await;
+
+    let rig = rig(&server, 90, 1, false, Duration::from_millis(300)).await;
+    let (tx, rx) = tokio::sync::mpsc::channel(8);
+    tx.send(intent(1, Tier::Confirmed)).await.unwrap();
+    drop(tx);
+    let report = run_executor(rx, rig.ctx.clone()).await;
+
+    let o = &report.orders[0];
+    assert_ne!(
+        o.order_id.as_deref(),
+        Some("SOMEONE-ELSES-ORDER"),
+        "adopted a foreign order id — kill-switch scope would be widened"
+    );
+    assert_eq!(o.order_id, None, "no order of ours landed, so none must be recorded");
+    assert!(o.refusal.is_some(), "an unmatched status query must record a refusal");
+}
+
+#[tokio::test]
 async fn burst_intents_overlap_not_serialize() {
     let server = MockServer::start().await;
     // Every POST takes 200 ms. Six intents fired in one burst must complete
