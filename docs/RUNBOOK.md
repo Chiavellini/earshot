@@ -307,6 +307,32 @@ Jul 25–31:
 | Wed 07-29 | Carvana, **Meta**, Wingstop (+ FOMC 14:30 ET) |
 | Thu 07-30 | **Amazon**, Ferrari, Reddit, Yum! Brands |
 
+**✅ RESOLVED 2026-07-25 — THE WHOLE TUESDAY SLATE IS WEBCAST-ONLY. NO DIAL-INS.**
+Verified in-browser, post-registration, not inferred:
+
+| Event | Call ET | Access | Platform | Notes |
+|---|---|---|---|---|
+| **PayPal** | **Tue 8:00 AM** | **WEBCAST ONLY** | **Q4 Inc** (`investor.pypl.com`, footer "Powered By Q4 Inc.") | **Same platform that fronted AXP 07-24** → AXP resolved to **Amazon IVS, 2 s segments**, the venue class where `L` was measured three times (1.40/1.50/1.51 s). Expect the same. |
+| **Ford** | **Tue 5:00 PM** | **WEBCAST ONLY** | OpenExchange | Registered; post-login the ONLY access is a "WEBCAST" link. No phone, no join-by-audio. |
+| Meta | Wed 4:30 PM | webcast-only (high conf) | — | release names webcast only |
+| Amazon | Thu 5:00 PM | webcast-only (high conf) | — | release names webcast only |
+
+**They do NOT conflict** — PayPal morning, Ford evening. Both runnable.
+
+**⚠ FORD CAPTURE RISK — the stream is LOGIN-GATED.** The webcast lives behind
+the OpenExchange session (`/webcast`, nav shows Sign Out), and the player is
+**empty until 5:00 PM ET**, so no m3u8 exists to probe beforehand. Two
+consequences: (1) the venue probe must run day-of, at call time; (2) the manifest
+may be session/token-bound like the FOMC Brightcove case, in which case the
+us-east box cannot fetch it with a bare URL and capture has to carry the session
+(or run from the logged-in laptop). **Plan for tokenized.**
+
+**Operator note:** registration accepted "Individual investor" as an affiliation —
+the portal is not analyst-gated — and the confirmation says only *"return to this
+site … to view the presentation"*. That wording alone was the first signal there
+is no dial-in.
+
+**⚠ SUPERSEDED — the pre-registration reconnaissance below is kept for method.**
 **⚠ FORD HAS AN OPEN REGISTRATION PORTAL — VERIFIED 2026-07-25 (browser).**
 `https://ford-motor-company-q2-2026-earnings-call.open-exchange.net/registration`
 is a real OpenExchange gate for "Q2 2026 Financial Results, TUESDAY, JULY 28, 2026".
