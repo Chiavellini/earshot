@@ -416,6 +416,56 @@ while on LMT the collision screen classed `ultra` fires as SUBSTRING hits on
 unwinnable collision on another** — which is exactly why keyword risk is
 per-event, not global.
 
+## Session 2026-07-26 (D1h) — FOMC config dry-run PASSES, and the zero-detection scare was resolved by transcript, not by debugging
+
+The Wednesday config uses **`streamlink` legs**, a combination never run with the
+CTC engine (PayPal's dry-run exercised `spec_edge`). Validated the same way:
+`env -i`, real launcher, real event.
+
+| check | result |
+|---|---|
+| `ORT_DYLIB_PATH` under `env -i` | ✅ |
+| Kalshi validation, **all 43 markets** | ✅ `book snapshots live for all armed markets` |
+| CTC detector per leg | ✅ arm at **67.3 % CPU**, matching PayPal's dry-run |
+| fanout wiring | ✅ `OR at decision legs=2` |
+| streamlink + ffmpeg chains | ✅ both alive, no stalls/drops/errors |
+| SIGTERM | ✅ kill switch complete, ledger flushed, **0 survivors** |
+
+### The scare, and why the cheap test beat the debugging instinct
+
+**0 detections in ~3 minutes of DW with 43 Fed keywords** — including `president`,
+`tax`, `oil`, `dollar`, `trump`. Those are near-certain in three minutes of world
+news, so I called it a red flag and prepared to hunt a detection bug. **I was
+wrong, and one transcript proved it.**
+
+Transcribing the same stream over the same window (the negative-control capture is
+recording it) shows DW was airing an **art-photography programme, a China
+documentary trailer, a segment about hair, and a sports promo** — *"In Lutson's
+photographs… 24 hours in Young China… let's talk about hair… Life driven by
+sport."* **Not one Fed keyword was spoken.** Zero detections was the CORRECT
+answer. It also retro-validates the PayPal dry-run's zero, which I had explained
+away as rare vocabulary — the explanation was right for the wrong reason.
+
+### ⚠ The finding that actually matters: the news corpus is a WEAKER adversary than its manifest claims
+
+`corpus/manifests/dwnews-negctl-20260726.toml` says news audio gives the prefix
+gate *"a realistic adversary"*. **DW World News is not continuous news.** In the
+sampled window it ran documentary, lifestyle and sports programming. An art
+documentary about photography is not adversarial for earnings-call keywords in
+any meaningful sense.
+
+So the 8 h capture is **not 8 h of dense financial speech**; an unknown fraction is
+vocabulary nowhere near the target domain. **A false-alarm rate measured on it will
+be optimistically low, and must not be compared like-for-like against the 5.15 h
+earnings-call figure of 0.78 FA/h.** Same failure family as the zero-occurrence
+caveat: the validity of a negative control depends on what is actually *in* it,
+not on what the source is called.
+
+**What to do about it:** when the capture lands, transcribe a sample of windows
+and estimate the news-vs-other split before quoting any rate — or restrict scoring
+to windows verified as news. Reporting a blended figure would be manufacturing a
+better number and calling it evidence.
+
 ## Session 2026-07-26 (D2b) — prefix gate FAILS at 0.78 FA/h on 2× the corpus. Prefix-firing stays parked.
 
 `configs/bakeoff-prefix-only.toml` (the 7 keywords carrying a `fast_prefix`) over

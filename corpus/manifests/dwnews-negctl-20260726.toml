@@ -3,6 +3,17 @@
 # docs/BAKEOFF.md §A3 specifies news/talk audio so the prefix gate is judged
 # against a realistic adversary rather than a handful of earnings calls.
 #
+# ⚠⚠ MEASURED CAVEAT (2026-07-26): DW World News is NOT continuous news. A
+# transcribed sample of this very capture caught an art-photography programme, a
+# China documentary trailer, a segment about hair, and a sports promo — with ZERO
+# finance/policy vocabulary in a 3-minute window. An unknown fraction of these 8 h
+# is therefore vocabulary nowhere near the target domain, which makes it a WEAKER
+# adversary than "news audio" implies. A false-alarm rate measured here will be
+# optimistically low and must NOT be compared like-for-like with the 0.78 FA/h
+# measured on 5.15 h of earnings calls. Before quoting any rate from this call,
+# sample-transcribe windows and estimate the news-vs-other split, or restrict
+# scoring to windows verified as news.
+#
 # ⚠⚠ THIS CONTROL IS WEAKER THAN THE EARNINGS-CALL ONES, and the difference
 # matters. A zero-occurrence manifest makes EVERY detection a false alarm, so it
 # is only sound where the audio genuinely cannot contain the scored phrase. On a
