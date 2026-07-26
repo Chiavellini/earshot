@@ -343,6 +343,40 @@ Caught by the running bench starting a 5th call when I had budgeted for 4 — th
 **runtime disagreeing with my arithmetic** was the tell, not the numbers
 themselves.
 
+## Session 2026-07-25 (F3) — the multi-IP vantage race is REFUTED BY ARCHITECTURE, not by measurement
+
+F3 was written as *"resolve all A records for the CDN host, fetch the same
+predicted segment from N distinct edge IPs concurrently, take first."* DNS
+answers whether that is even possible, before any probing:
+
+| host | CDN | A records |
+|---|---|---|
+| `dwamdstream102.akamaized.net` | Akamai | **2** (`189.216.110.16`, `.24`) — same `/24` |
+| `manifest.prod.boltdns.net` | **Fastly** | **1** (`199.232.158.27`) |
+| `fastly-signed-us-east-1-prod.brightcovecdn.com` | **Fastly** | **1** (`146.75.94.27`) |
+
+**Fastly is anycast.** One address, and which POP you actually reach is decided
+by BGP from your network location — not by which IP you dial. There is no second
+IP to race. Both Brightcove hosts (the FOMC venue) are Fastly, so the experiment
+has nothing to vary there. Akamai returns two addresses but they sit in the same
+`/24`, i.e. two machines in one POP, not two POPs.
+
+**⇒ You cannot choose a POP from a single vantage point on these CDNs.** The
+"N distinct edge IPs" design cannot work, and no amount of probing would have
+made it work — this is a property of how the CDNs are addressed.
+
+**What survives is the expensive version:** reach a *different POP* by being in a
+different network location, i.e. a **second-region box**. That is in scope under
+the $60 cap as provision → run → terminate, but it is a different, costlier
+experiment than the one queued, and it should be justified before it is spent —
+the bar (≥200 ms median spread) is unchanged.
+
+⚠ **Scope:** resolved from the CDMX laptop. Akamai and Fastly both return
+location-appropriate answers, so the box in us-east-1 will see *different
+addresses* — but the **counts** are the load-bearing part, and Fastly's single
+anycast address is architectural, not locational. Worth re-running from the box
+to confirm the Akamai count; it would not change the Fastly conclusion.
+
 ## Session 2026-07-25 (F2) — RESOLVED: segments are COMPLETE ON PUBLISH. Progressive consumption is impossible here.
 
 The ledger has carried *"speculative **chunked** fetch — untested"* for the whole
