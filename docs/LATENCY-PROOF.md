@@ -266,6 +266,56 @@ requires changing the model quantum (D1) or firing before the word ends (D2).
   the box and neither has an `emit_lag` number. That is D1, and it is now a
   direct comparison on the metric that matters rather than a proxy.
 
+## Session 2026-07-25 (D1f) — ARMED DRY-RUN of the Tuesday config: PASSES, and armed-fanout CPU matches prediction
+
+The CTC engine had only ever run inside `bench-detector`. This is the first time
+it has run inside a real **arm**, through the real launcher, under a deliberately
+minimal env (`env -i HOME=… PATH=…`) to mimic launchd.
+
+| check | result |
+|---|---|
+| `ORT_DYLIB_PATH` resolves under `env -i` | ✅ `Loaded ONNX Runtime dylib from …/vendor/…` |
+| Kalshi validation of all 16 PayPal markets | ✅ `book snapshots live for all armed markets` |
+| dry-run posture | ✅ `orders will be computed and journaled, never sent` |
+| CTC detector built **per leg** | ✅ two ORT sessions initialised |
+| fanout wiring | ✅ `fanout: per-leg detect chains, OR at decision legs=2` |
+| both decoder subprocesses | ✅ `spec_edge` + `pipe_tuned` spawned and feeding |
+| **SIGTERM** | ✅ **259 ms**, kill switch complete, orders cancelled, disarmed, ledger flushed, `report.json` written |
+| orphaned processes | ✅ **0** |
+
+### Armed-fanout CPU — D1e's arithmetic VALIDATED
+
+D1e predicted 2 CTC legs at `2 × 0.1518 = 0.304` ⇒ **30.4 % of a 2-vCPU box**,
+derived from single-leg RTF and never observed. Measured live: the arm sits at
+**67.3 % of one core = 33.7 % of the box**. Prediction 30.4 %, measured 33.7 %.
+**The burst-drain estimate rests on arithmetic that now has a live check under
+it.** Headroom is ample; the concern was never duty cycle, it is burst drain.
+
+### Two honest gaps
+
+1. **Nothing fired.** Six minutes of DW World News produced **0 detections** with
+   PayPal's keyword set — plausible (these are payments words on a news channel)
+   but it means the **detection → decision path was not exercised end-to-end in
+   this run**. Plumbing is proven; the firing path is inferred from the bench and
+   from the earlier sherpa fanout smoke (`82739d3`). Closing it properly needs a
+   replay leg carrying a known keyword.
+2. **`WARN warm-fire id unexpectedly matched an order — ignoring`** at startup.
+   Benign here (dry-run, zero orders) but it is a warning nobody has explained;
+   worth chasing before a live-fill posture.
+
+### One thing that looked like a problem and is not
+
+The log takes a **286 KB burst of `ort::logging` INFO** at session init (2140 of
+2155 lines) — arena allocations from both CTC sessions. It then stops: measured
+**0 bytes of growth over 20 s** in steady state. Not a disk risk, which matters
+because the box hit 100 % disk on 07-14. Startup noise, not a leak.
+
+⚠ Also verified during the SIGTERM test: counting survivors **immediately** after
+the arm exits reports 5 leg processes still alive. Five seconds later it is 0 —
+they were mid-teardown. **Do not read an instantaneous post-kill process count as
+an orphan leak;** the earlier 18-orphan incident was real and persistent, this is
+not the same thing.
+
 ## Session 2026-07-25 (D1d) — HOLDOUT: the CTC accuracy win GENERALISES, and is bigger than dev
 
 Unseen audio (AAL, 1.51 h), run **once**, config frozen — BAKEOFF discipline.
