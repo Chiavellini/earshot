@@ -493,6 +493,31 @@ problem and change Tuesday's plan.
 - **PayPal 8:00 AM ET** (results pre-market)
 - **Ford 5:00 PM ET** (results 4:05 PM ET) — `shareholder.ford.com`
 
+**⚠ RE-EVALUATED 2026-07-25 — the Ford blocker is LIFTED (but PayPal still wins).**
+The "Ford is armable only after those variants are fixed" verdict below predates
+the `prepare` short-variant fix. Regenerating Ford's set with current `prepare`:
+**15 keywords, 4 ultra-short variants dropped loudly (`ev`/`evs`/`ai`/`ais` — the
+exact 38-of-65 false alarms), 0 high-risk collisions flagged, shortest surviving
+variant 4 chars.** The stated blocker no longer exists.
+
+PayPal remains the pick if only one runs, on different grounds than before:
+- **Vocabulary distinctiveness.** PayPal's words are long and rare — `agentic
+  commerce`, `stablecoin`, `braintree`, `perplexity`, `european payments
+  council`. Ford's are short, common earnings words — `tariff`, `china`,
+  `headwind`, `tailwind`, `market share`, `subsidy` — which is a harder
+  detection problem regardless of variant length.
+- **Timing.** PayPal 8:00 AM ET vs Ford 5:00 PM ET, so BOTH are runnable; this
+  is not either/or.
+- **Ford's stream is login-gated** with an empty player until call time, so its
+  m3u8 cannot be probed in advance. PayPal's Q4 Inc venue is a known class.
+
+**Open question on `recall`, do not guess it:** Ford's `recall` market will fire
+on the ordinary phrase "as I recall". Whether that SETTLES YES depends on
+whether the market scores the **word** or the **meaning** — the rules text
+decides, and it has not been read. If it scores the word, this is an easy early
+resolve, not a false alarm. **Read `state/rules/*.json` for the RECA market
+before treating those fires as errors either way.**
+
 **Arm PayPal, not Ford, if only one.** The pre-arm collision screen
 (`docs/BAKEOFF.md` §Collision screen) measured Ford's generated keyword set at
 **65 false alarms** over 2.5 h of unrelated calls vs PayPal's **12** — 38 of
