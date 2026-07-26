@@ -416,6 +416,50 @@ while on LMT the collision screen classed `ultra` fires as SUBSTRING hits on
 unwinnable collision on another** — which is exactly why keyword risk is
 per-event, not global.
 
+## Session 2026-07-26 (A3c) — corpus sourcing: BUY is $129/mo, SCRAPE is dead, and the answer is neither
+
+A3b killed the DW plan (0/6 windows finance/policy). Before declaring the corpus
+blocked, three sources checked:
+
+| source | result |
+|---|---|
+| **DW World News**, 8 h capture | **0 %** finance/policy vocabulary in 6 sampled windows — documentary programming, not news |
+| **Apple quarterly-earnings podcast RSS** (`rss.art19.com/apple-quarterly-earnings-call`) — the documented corpus-v1 method | **1 episode, 16 seconds, and it is a PSA.** The "available for two weeks" note is literal; right now the archive is empty |
+| **EarningsCall API** (earningscall.biz) | audio downloads only from the **Ultimate tier, $129/month**. Transcripts-only below that, and transcripts cannot test an acoustic detector |
+
+**A purchase is an operator decision, not mine** — and note the standing AWS cap
+is $60/month gross, so $129/month for a data feed is a materially larger
+commitment than anything this campaign has spent.
+
+### The answer costs nothing: we already generate the corpus by operating
+
+**Every event we run banks ~1–1.5 h of real earnings-call audio on the exact
+channel we trade.** That is where the current 5.15 h came from — AXP, VZ, INTC,
+LMT were all captured from live arms, not downloaded. The corpus is a *by-product
+of running events*, and it is the highest-quality adversary available: same codec,
+same bitrate, same speakers, same acoustics.
+
+Projected from the staged slate alone:
+
+| | adds | running total |
+|---|---|---|
+| today | — | **5.15 h** |
+| Tue 07-28 PayPal + Ford | ~2.5 h | ~7.7 h |
+| Wed 07-29 FOMC (+ META/CVNA/WING if staged) | ~1.5–4 h | ~9–12 h |
+| Thu 07-30 AMZN/RDDT/YUM/RACE | ~2–4 h | **~11–16 h** |
+
+**~20 h is reachable in two to three weeks of ordinary operation, with no
+purchase and no scraping.** The corpus blocker is not a blocker — it is a
+*schedule*.
+
+**Consequence for D2:** prefix-firing stays parked, and the honest reason is now
+"the evidence to judge it will exist in ~2–3 weeks", not "we cannot get evidence".
+The `panther`-is-a-standalone-word hypothesis waits for that corpus, where it can
+be tested on data it was not derived from.
+
+⚠ Do NOT re-run the sources above. Apple RSS is empty, EarningsCall needs a
+purchase, DW is off-domain at this hour. **Capture every event instead.**
+
 ## Session 2026-07-26 (A3b) — the DW negative-control plan does NOT work: 0/6 windows are finance/policy speech
 
 I wrote the prerequisite into the manifest myself — *no FA rate may be quoted
