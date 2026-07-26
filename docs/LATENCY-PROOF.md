@@ -266,7 +266,67 @@ requires changing the model quantum (D1) or firing before the word ends (D2).
   the box and neither has an `emit_lag` number. That is D1, and it is now a
   direct comparison on the metric that matters rather than a proxy.
 
-## Session 2026-07-25 (D1b) — streaming_ctc BEATS sherpa_kws on accuracy outright; the latency win is real but PARTLY CONFOUNDED
+## Session 2026-07-25 (D1c) — the CTC latency win was NOT REAL: it REVERSES to −50 ms on the comparable metric
+
+Head-to-head re-run with `audio_consumed_ms` (D1c instrument), dev split,
+2.53 h, chunk 160, same config — only the engine varies.
+
+| metric | `sherpa_kws` | `streaming_ctc` | delta |
+|---|---|---|---|
+| `emit_lag` p50 — **engine-defined, NOT comparable** | 520 ms | 220 ms | *−300 ms* |
+| **`consumed_lag` p50 — COMPARABLE** | **520 ms** | **570 ms** | **+50 ms** |
+| **`consumed_lag` p95 — COMPARABLE** | **640 ms** | **755 ms** | **+115 ms** |
+| true positives | 49 | **50** | +1 |
+| total detections fired | 102 | **83** | **−19** |
+| recall | 0.636 | **0.649** | +0.013 |
+| FA/h | 20.97 | **13.06** | **−38 %** |
+| RTF | 0.0689 | 0.1518 | **2.2×** |
+
+### The headline: the sign flips
+
+**`emit_lag` said CTC was 300 ms faster. The comparable metric says it is 50 ms
+SLOWER.** The entire apparent win — and 50 ms more — was instrument.
+
+**Artifact size: 350 ms**, all of it on the CTC side (`emit_lag` 220 vs
+`consumed_lag` 570). `sherpa_kws` reads 520/520, identical by construction since
+its position source already *is* the fed-sample counter — which is the internal
+validation that the new metric behaves as designed.
+
+⚠ **My pre-registered estimate of the artifact was 210 ms** (≈80 ms half-chunk +
+≈130 ms right-context from `VERIFICATIONS.md` Q-M1). **Measured, it is 350 ms.**
+So the ONNX-metadata right-context figure understates real consumption by ~140 ms:
+this model consumes ~350 ms of audio beyond the frame it scores on, not ~130.
+Correcting analytically would have produced "CTC wins by ~90 ms" — still wrong,
+and wrong in the flattering direction. **The measurement was necessary; the
+estimate was not sufficient.**
+
+### What survives, and what does not
+
+- **REFUTED: the CTC latency advantage.** It is a 50 ms regression at p50 and
+  115 ms at p95. Against E0's law this *raises* segment-penalty exposure at a 2 s
+  venue from `520/2054 = 25.3 %` to `570/2054 = 27.7 %`.
+- **STANDS: the accuracy advantage**, untouched by any of this. CTC fires **19
+  fewer times** and catches **one more** — raw counts, window-independent. FA/h
+  **20.97 → 13.06 (−38 %)** with recall slightly up.
+- **STANDS: the 2.2× CPU cost.**
+
+### The trade, restated honestly
+
+Adopting `streaming_ctc` now buys **−38 % false alarms and +0.013 recall** and
+costs **+50 ms latency (p50), +115 ms (p95), and 2.2× CPU**. It is an
+accuracy-for-latency trade, **not** the free win the raw numbers implied.
+
+**This changes the basis of a decision already taken.** The operator approved
+pursuing the engine swap on accuracy and CPU grounds (the latency figure was
+correctly withheld as confounded at the time) — that premise survives, but the
+newly measured latency *cost* is adverse information that did not exist when the
+decision was made, and is surfaced here rather than absorbed silently.
+
+⚠ **Third instrument-artifact catch of this campaign**, after S4's keep-alive
+−250 ms and E0c's byte-identical chunk cells. All three were self-consistent,
+plausible, and would have been believed.
+
+## Session 2026-07-25 (D1b) — streaming_ctc BEATS sherpa_kws on accuracy outright; the latency win is real but PARTLY CONFOUNDED  [LATENCY CLAIM SUPERSEDED BY D1c ABOVE — it reversed]
 
 First run of the `streaming_ctc` engine on this box against real corpus audio,
 using the pinned base export `sherpa-onnx-streaming-zipformer-ctc-small-2024-03-18`.
