@@ -22,6 +22,23 @@ use crate::risk::MENTION_FILL_CAP_CENTS;
 /// validation table can never disagree.
 pub const KWS_MODEL_DIR: &str = "models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01";
 
+/// Keywords whose collisions are properties of ENGLISH, not of a corpus — they
+/// will recur on every call where the keyword is armed, and no threshold
+/// separates them. Measured on the webcast dev split (`docs/BAKEOFF.md`
+/// §Keyword arming blocklist). `prepare` FLAGS these; it never drops them,
+/// because dropping a keyword forfeits that market and that is a trading
+/// decision, not a code one.
+const HIGH_RISK_COLLISIONS: &[(&str, &str, &str)] = &[
+    ("record",  "quarter over quarter",
+     "the most common phrase on an earnings call; measured precision 5/19"),
+    ("weather", "whether",
+     "a TRUE HOMOPHONE — no acoustic model separates these, ever"),
+    ("ultra",   "ultramaritime (and any ultra- compound)",
+     "substring of a closed compound; Q4 semantics do NOT settle on substrings"),
+    ("trump",   "strong",
+     "small phonetic distance and 'strong' is ubiquitous on earnings calls"),
+];
+
 /// Shortest variant we will emit. Two-letter keywords match a syllable, not a
 /// word — measured 38 false alarms in one event's set (docs/BAKEOFF.md).
 const MIN_VARIANT_CHARS: usize = 3;
@@ -353,6 +370,17 @@ pub async fn run_prepare(
                  deliberately if this phrasing matters, and own the precision cost.\n"
             ));
         }
+        if let Some((_, collides_with, why)) = HIGH_RISK_COLLISIONS
+            .iter()
+            .find(|(w, _, _)| *w == k.word.to_lowercase())
+        {
+            body.push_str(&format!(
+                "# ⚠⚠ HIGH-RISK KEYWORD — collides with {collides_with:?}: {why}.\n                 # This is a property of English, not of one corpus: it recurs on EVERY \
+                 call where this keyword is armed. Kept here on purpose (dropping it \
+                 forfeits the market) — decide deliberately before arming, and expect \
+                 fires that settle NO. See docs/BAKEOFF.md §Keyword arming blocklist.\n"
+            ));
+        }
         body.push_str("[[keywords]]\n");
         body.push_str(&format!("market_ticker    = \"{}\"\n", k.ticker));
         body.push_str(&format!("phrase           = \"{}\"\n", k.phrase));
@@ -500,5 +528,19 @@ mod tests {
         strip_short_variants(&mut preps);
         assert!(preps[0].variants.contains(&"atc".to_string()));
         assert!(preps[0].dropped_short.is_empty());
+    }
+
+    #[test]
+    fn high_risk_keywords_are_flagged_in_the_emitted_config_not_dropped() {
+        // Dropping a keyword forfeits its market, which is a trading decision.
+        // prepare's job is to make the risk impossible to miss, not to decide.
+        for (word, collides, _why) in HIGH_RISK_COLLISIONS {
+            assert!(!word.is_empty() && !collides.is_empty());
+        }
+        // "record" is the load-bearing case: it collides with "quarter over
+        // quarter", which every earnings call says repeatedly.
+        let rec = HIGH_RISK_COLLISIONS.iter().find(|(w, _, _)| *w == "record");
+        assert!(rec.is_some(), "record must stay flagged — measured precision 5/19");
+        assert!(rec.unwrap().1.contains("quarter"));
     }
 }
