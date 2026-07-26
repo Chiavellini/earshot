@@ -95,18 +95,76 @@ rigorous and mean nothing. What is delivered instead: the distribution, its
 mechanism, the `A/S` law, and its confirmation on three legs at two venues.
 A scalar reconstruction remains open and is now specified correctly in E0b below.
 
-### Still open inside E0 (E0b)
+### E0b — `A` MEASURED against ground truth: 520–540 ms, ~30 % worse than the standing figure
 
-- **`A` has never been measured against ground truth.** The 0.4–0.5 s figure is
-  inferred from ONNX metadata, not observed. `bench-detector` now reports
-  `emit_lag_ms` (`audio_pos_ms − occ.end_ms` per true positive, signed so
-  prefix-firing shows as negative) — wall-clock-free, so lossless speed=0 runs
-  report it and run-to-run variance cannot touch it. Run pending on the box.
-- **Queue-drain term, unmeasured.** When 2 s of audio lands in 24 ms, the
-  detector must chew through it; a word late in a burst waits behind the audio in
-  front of it, ≈ `position_in_burst × RTF`. At RTF 0.1 that is 0–200 ms and is a
-  strong candidate for the residual the 289 ms carries. Needs the RTF number the
-  pending bench run produces.
+First direct measurement of detector lookahead. `bench-detector` now reports
+`emit_lag_ms = audio_pos_ms − occ.end_ms` per true positive (signed; lossless
+speed=0, so no clock is involved). `sherpa_kws`, `chunk_ms=160`.
+
+| split | calls | corpus | TP | per-phrase p50 range | min | max | **TP-weighted median of p50s** |
+|---|---|---|---|---|---|---|---|
+| dev | INTC + LMT | 2.53 h | 49 | 400–670 ms | 260 | 830 | **520 ms** |
+| holdout | AAL | 1.51 h | 15 | 400–710 ms | 360 | 710 | **540 ms** |
+
+*(The report serialises percentiles per phrase, not the raw vector, so the
+aggregate is a TP-weighted median of per-phrase p50s — not a true pooled median.
+Stated as what it is.)*
+
+**The standing figure was 0.4–0.5 s, inferred from ONNX metadata
+(`VERIFICATIONS.md` Q-M1 pin 3) and never observed. Measured, it is 520–540 ms**
+— dev and holdout agree to 20 ms on independent calls, so this is a stable
+property of the engine, not a corpus artifact.
+
+**Recomputing E0's exposure with the measured `A` makes it worse, not better:**
+
+| venue | `S` | old estimate (A=400) | **measured (A=530)** |
+|---|---|---|---|
+| AXP / IVS | 2054 ms | 19.2 % | **25.8 %** |
+| LMT / Notified | 4017 ms | 9.9 % | **13.2 %** |
+
+**One word in four at a 2 s venue pays a full ~2.05 s segment penalty.**
+
+### E0b — the queue-drain term, and RTF
+
+`RTF = 0.0693` (dev) and `0.0699` (holdout) — 14× real time, and the two agree to
+1 %. So draining a whole 2 s AXP burst costs `2000 × 0.069 =` **138 ms**, and a
+word's wait behind the audio ahead of it is ≈ `position_in_burst × RTF`, i.e.
+**0–138 ms, mean ~69 ms**.
+
+⚠ **That RTF is a single leg on an otherwise idle box.** Production fanout runs
+2–3 legs on the same 2 vCPU, so the effective per-leg RTF — and this term — is
+some multiple of it. Unmeasured; do not quote 138 ms as the armed figure.
+
+**Reconstruction of the AXP NFL 289 ms.** The measured terms are: queue drain
+0–138 ms, chunk quantisation 0–160 ms, lookahead wait 0 ms (NFL fell in the ~74 %
+where trailing audio was already in hand) and ~90 ms of compute+decision. Those
+span 289 ms comfortably. I am **not** claiming a ±10 ms fit: NFL's exact position
+within its burst was never recorded, so the reconstruction bounds the value
+rather than pinning it. Every term is now named with a number, which was the part
+of the bar that was well-posed.
+
+**Match window is still correct.** `MatchWindow::post_ms = 1500 ms` was sized to
+absorb "~0.4 s decode lag". Largest lag actually observed is **830 ms**, so the
+window remains adequate with room to spare — no change, and now for a measured
+reason rather than an assumed one.
+
+⚠ **`A` is not yet measured at the production chunk size.** The bake-off config
+runs `chunk_ms=160`; production arms at **80**. Chunk quantisation is part of
+what `audio_pos_ms` reports, so `A` at 80 may differ. The 520–540 ms figure is
+pinned to chunk 160 until the sweep below runs — do not quote it as the armed
+number.
+
+### Still open after E0b
+
+- **`A` vs `chunk_ms`** — the lever's shape. `A` is the whole ballgame now
+  (exposure is `A/S`, linear), and we have one point on the curve. Sweep
+  chunk 40/80/160 interleaved in one run and find out whether smaller chunks
+  buy lookahead or only cost CPU. Directly sizes D1/D2.
+- **Effective RTF under armed fanout** — 0.069 is one leg on an idle box; the
+  queue-drain term under 2–3 concurrent legs on 2 vCPU is unmeasured.
+- **`A` for the streaming_ctc engines** — chunk-8 and chunk-16 exports exist on
+  the box and neither has an `emit_lag` number. That is D1, and it is now a
+  direct comparison on the metric that matters rather than a proxy.
 
 ## Session 2026-07-25 (S6) — join-lottery characterised at n=16–21
 
