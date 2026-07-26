@@ -373,6 +373,40 @@ site … to view the presentation"*. That wording alone was the first signal the
 is no dial-in.
 
 **⚠ SUPERSEDED — the pre-registration reconnaissance below is kept for method.**
+**TUESDAY 07-28 PAYPAL — STAGED AND VALIDATED (2026-07-25).**
+`configs/webcast-pypl-26jul28-arm.toml` — speculative CTC fanout + 16 markets
+generated live from Kalshi. Observe posture, every cap 1¢.
+
+**Keyword encode check PASSED on the vocab we will actually arm.** All 16
+keywords (37 variants) compile on the streaming-CTC LibriSpeech BPE-500 with
+**zero gaps** — token cuts differ from gigaspeech, as expected, but nothing
+falls out of vocab.
+
+**⚠ OPS TRAP — `compile-keywords` validated the WRONG vocab by default.** The
+arm config keeps a `[detector.sherpa_kws]` block so the engine can be reverted
+with a one-line edit; `compile-keywords` then resolves *that* `model_dir` and
+silently checks the **gigaspeech** BPE while the config runs `streaming_ctc`.
+A keyword out of the CTC vocab would never fire and the check would have said
+it was fine. **Always pass `--model-dir` explicitly when the config carries
+more than one detector block:**
+```
+earshot compile-keywords --config <cfg> \
+  --model-dir models/sherpa-onnx-streaming-zipformer-ctc-small-2024-03-18
+```
+
+**Highest false-alarm risk in this set: `stash` → `▁STA SH`, 2 tokens** — the
+shortest target of the 37 and the acoustic analogue of the 2-character variant
+problem that gave Ford 38 false alarms. Watch it; consider dropping if the
+day-of screen shows it firing loose.
+
+**`regulation` carries `regulator` / `regulators` / `regulatory` from the market
+rules.** "Regulatory" is said constantly on earnings calls, so REGU is likely to
+resolve early — a market where the RACE, not detection, decides it.
+
+**Before arming:** put the m3u8 in `$HOME/pypl-stream.url`, run
+`scripts/manifest-probe.sh` for the speculative GO/NO-GO and the venue's `L`.
+Q4 Inc = AXP's platform → expect Amazon IVS, 2 s segments, `L` ≈ 1.4–1.5 s.
+
 **⚠ FORD HAS AN OPEN REGISTRATION PORTAL — VERIFIED 2026-07-25 (browser).**
 `https://ford-motor-company-q2-2026-earnings-call.open-exchange.net/registration`
 is a real OpenExchange gate for "Q2 2026 Financial Results, TUESDAY, JULY 28, 2026".
