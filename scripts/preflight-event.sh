@@ -87,8 +87,36 @@ if cargo build --release 2>&1 | tail -1 | grep -q "Finished"; then
   check PASS "pinned binary: $STATE_DIR/earshot-pinned ($(grep sha256 "$STATE_DIR/pinned.info" | cut -c1-23)…)"
   # Follow-up 6 gate: arm refuses the WHOLE config over one detector-
   # unencodable variant. Exercise the exact encode path with the pin (offline).
-  if "$STATE_DIR/earshot-pinned" compile-keywords --config "$CONFIG" >/dev/null 2>&1; then
-    check PASS "keywords compile (BPE-encodable) against the pinned binary"
+  #
+  # ⚠ --model-dir is LOAD-BEARING, not tidiness. compile-keywords resolves the
+  # FIRST detector block's model_dir, and the armed configs deliberately keep a
+  # [detector.sherpa_kws] block so the engine can be reverted with a one-line
+  # edit. Without this, a streaming_ctc config is validated against the
+  # GIGASPEECH vocab — a keyword outside the CTC vocab would never fire and this
+  # check would report PASS. Hit by hand on 2026-07-25; pinned as a RUNBOOK trap.
+  ENGINE=$(sed -n '/^\[detector\]/,/^\[/s/^engine[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$CONFIG" | head -1)
+  MODEL_DIR=$(sed -n "/^\[detector\.${ENGINE}\]/,/^\[/s/^model_dir[[:space:]]*=[[:space:]]*\"\([^\"]*\)\".*/\1/p" "$CONFIG" | head -1)
+  if [[ -n "$ENGINE" && -n "$MODEL_DIR" ]]; then
+    check PASS "detector engine=$ENGINE → model_dir=$MODEL_DIR"
+    CK_OUT=$("$STATE_DIR/earshot-pinned" compile-keywords --config "$CONFIG" --model-dir "$MODEL_DIR" 2>&1)
+    CK_RC=$?
+  else
+    check FAIL "could not resolve [detector].engine / its model_dir from $CONFIG — cannot validate the RIGHT vocab"
+    CK_OUT=$("$STATE_DIR/earshot-pinned" compile-keywords --config "$CONFIG" 2>&1)
+    CK_RC=$?
+  fi
+  if [[ $CK_RC -eq 0 ]]; then
+    check PASS "keywords compile (BPE-encodable) on the ARMED engine's vocab"
+    # Short token targets are the acoustic analogue of the 2-character variant
+    # problem that produced 38 false alarms in one event set. Warn, never fail —
+    # dropping a keyword forfeits its market and that is a trading decision.
+    SHORT=$(printf '%s\n' "$CK_OUT" | grep -oE "confirmed \[[^]]+\]: .* \(([12]) tokens\)" | sed -E 's/confirmed \[([^]]+)\].*\(([12]) tokens\)/\1 (\2 tokens)/' || true)
+    if [[ -n "$SHORT" ]]; then
+      check WARN "SHORT token targets — highest false-alarm risk, review before arming:"
+      printf '%s\n' "$SHORT" | sed 's/^/        /'
+    else
+      check PASS "no 1-2 token keyword targets"
+    fi
   else
     check FAIL "compile-keywords FAILED — config has detector-unencodable phrases; arm will refuse at fire time"
   fi
