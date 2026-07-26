@@ -266,6 +266,67 @@ requires changing the model quantum (D1) or firing before the word ends (D2).
   the box and neither has an `emit_lag` number. That is D1, and it is now a
   direct comparison on the metric that matters rather than a proxy.
 
+## Session 2026-07-25 (D1b) — streaming_ctc BEATS sherpa_kws on accuracy outright; the latency win is real but PARTLY CONFOUNDED
+
+First run of the `streaming_ctc` engine on this box against real corpus audio,
+using the pinned base export `sherpa-onnx-streaming-zipformer-ctc-small-2024-03-18`.
+Same corpus/split/chunk/config as the `sherpa_kws` baseline (dev, INTC+LMT,
+2.53 h, chunk 160).
+
+| metric | `sherpa_kws` | `ctc-small` | delta |
+|---|---|---|---|
+| `emit_lag` p50 | 520 ms | **220 ms** | **−300 ms** |
+| `emit_lag` min / max | 260 / 830 | **60 / 400** | |
+| recall (Confirmed) | 0.636 | **0.649** | +0.013 |
+| FA/h | 20.97 | **13.06** | **−38 %** |
+| true positives | 49 | **50** | +1 |
+| **total detections fired** | **102** | **83** | **−19** |
+| RTF | 0.0693 | 0.1519 | **2.2× the CPU** |
+
+### The accuracy result is CLEAN and it is the important one
+
+**`ctc-small` fired 19 fewer times in total and still caught one more true
+positive.** That is window-independent — a raw count of firings against a raw
+count of hits — so it cannot be explained by position precision. Strictly better
+precision at equal-or-better recall, on the very axis (`20.97 FA/h`) that has
+been the detector's standing weakness.
+
+### The latency result is CONFOUNDED — do not quote −300 ms
+
+The two engines do not report the same quantity, and the difference favours CTC:
+
+| engine | `audio_pos_ms` source | measured grid | bias |
+|---|---|---|---|
+| `sherpa_kws` | `samples_fed` at decode (`sherpa_kws.rs:92`) | **160 ms** (GCD of FA positions) | **overstates** by 0–160 ms (mean ~80) |
+| `streaming_ctc` | `fidx × frame_shift` (`streaming_ctc.rs:334`) | **40 ms** (GCD of FA positions) | **understates** by the encoder's right-context (~130 ms, Q-M1) |
+
+Net artifact ≈ **80 + 130 = 210 ms in CTC's favour**, so the honest reading of the
+300 ms is roughly:
+
+> **`A` improves by ~90 ms, bounded ~90–300 ms. NOT RESOLVABLE more tightly
+> without an instrument fix.**
+
+~90 ms is still worth having — at AXP's 2054 ms segments it moves exposure from
+25.3 % to ~21 % — but it is **not** the campaign-winning 300 ms the raw table
+suggests. Recorded this way deliberately: S4 (keep-alive) already produced a
+confident, self-consistent, *wrong* −250 ms from exactly this failure mode, an
+instrument comparing two different quantities.
+
+**Instrument fix that would resolve it (D1c):** make both engines report a
+comparable "audio consumed when the fire happened" — i.e. have `streaming_ctc`
+also stamp the chunk's cumulative sample position alongside `fidx`, keeping the
+frame-precise value for match scoring. Until then the accuracy comparison stands
+and the latency comparison is a bound.
+
+### Cost
+
+RTF 0.152 vs 0.069 — **2.2× the CPU**. Three concurrent legs would put the box at
+~0.46 aggregate RTF on 2 vCPU: feasible, but the headroom that made leg fanout
+free is halved. Worth pricing before arming CTC in a fanout posture.
+
+**This is the BASE export.** The chunk-8/16 re-exports D1 proper is blocked on
+target the *quantum* specifically, so they attack the term this one did not.
+
 ## Session 2026-07-25 (D1) — the chunk-8/chunk-16 exports DO NOT EXIST
 
 The campaign queue said *"`models/streaming-ctc-en-20260723-chunk8` is on the box,
