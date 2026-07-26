@@ -266,6 +266,43 @@ requires changing the model quantum (D1) or firing before the word ends (D2).
   the box and neither has an `emit_lag` number. That is D1, and it is now a
   direct comparison on the metric that matters rather than a proxy.
 
+## Session 2026-07-25 (D1) — the chunk-8/chunk-16 exports DO NOT EXIST
+
+The campaign queue said *"`models/streaming-ctc-en-20260723-chunk8` is on the box,
+never benched"*. **It is an empty directory.** So is chunk-16:
+
+| dir | files | size |
+|---|---|---|
+| `sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01` | 15 | 20 M |
+| `streaming-ctc-en-20260723-chunk16` | **0** | 4.0 K |
+| `streaming-ctc-en-20260723-chunk8` | **0** | 4.0 K |
+
+Created 2026-07-24 02:18 and never populated. The base export
+`sherpa-onnx-streaming-zipformer-ctc-small-2024-03-18` that
+`configs/bakeoff-webcast.toml` points at is **also absent** — the box has no
+streaming-CTC model at all. `streaming_ctc` has therefore never run on this box
+against real corpus audio, and the plan's cost estimate for D1 ("bench it") was
+wrong by a whole workstream.
+
+**What D1 actually costs.** `scripts/export-english-streaming-ctc.md` states
+plainly: *"This can't run on the EARSHOT box (no PyTorch/k2 + disk). Run it where
+a GPU + icefall/k2 + torch are installed, then copy the model dir back."* So the
+chunk-8/16 comparison is a GPU export project, not a bench — in scope under the
+raised $60 cap as a provision→run→terminate burst, but not a loop iteration.
+
+**What is measurable today (D1b, running).** The base English streaming-CTC
+export is pinned with a sha256 in `scripts/fetch-models.sh` and is CPU-only. It
+is **not** a foregone conclusion against `sherpa_kws`, because `A` is quantum
+*plus* acoustic lookahead and the two models trade them differently:
+
+| engine | decode quantum | lookahead / right-context | `A` |
+|---|---|---|---|
+| `sherpa_kws` gigaspeech | **160 ms** (measured, E0d) | ~320 ms (Q-M1) | **520 ms** (measured) |
+| `ctc-small` 2024-03-18 | 320 ms (ONNX meta, Q-M1) | ~130 ms (Q-M1) | **?** |
+
+A coarser quantum with a much shorter right-context could land either side of
+520 ms. That is the number D1b is after.
+
 ## Session 2026-07-25 (D2) — prefix-firing buys ~320 ms, FAILS its precision bar, and is BLOCKED ON CORPUS
 
 `configs/bakeoff-webcast-prefix.toml`, `sherpa_kws`, chunk 160, dev split — same
