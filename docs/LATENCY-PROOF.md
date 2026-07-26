@@ -316,6 +316,47 @@ they were mid-teardown. **Do not read an instantaneous post-kill process count a
 an orphan leak;** the earlier 18-orphan incident was real and persistent, this is
 not the same thing.
 
+## Session 2026-07-25 (F2) — RESOLVED: segments are COMPLETE ON PUBLISH. Progressive consumption is impossible here.
+
+The ledger has carried *"speculative **chunked** fetch — untested"* for the whole
+campaign, against S3's competing cache-TTL model which predicts the object simply
+404s until it is whole. Opposite consequences, never separated. `scripts/f2-probe.py`
+separates them at the instant N+1 first returns 200.
+
+| run | `Content-Length` | `Transfer-Encoding` | verdict |
+|---|---|---|---|
+| 1 | **714 776** | *(none)* | complete |
+| 2 | **523 580** | *(none)* | complete |
+| 3 | **654 428** | *(none)* | complete |
+
+**Every run returns a full `Content-Length` and no chunked encoding.** A response
+that is still being written cannot declare its length — so the segment exists
+only once whole, and the header alone is decisive. This is categorical, not
+statistical: three replications guard against a fluke, not against sampling
+error.
+
+### What this settles
+
+1. **The "untested candidate" is CLOSED as impossible** at this origin class.
+   There is no in-progress segment to stream, so a chunked speculative fetch has
+   nothing to fetch.
+2. **`--stream-body`'s null is now EXPLAINED, not merely observed.** It was
+   refuted empirically weeks ago and defaulted off; the reason is that the bytes
+   it wanted to stream do not exist until the whole object does.
+3. **S3's cache-TTL model wins over the chunked-transfer hypothesis.** That model
+   already made one correct out-of-sample prediction (S5's N+2 null); this is the
+   second, and it was the discriminating case.
+
+⚠ **Scope: DW/Akamai only.** Amazon IVS (PayPal's venue class) and
+Brightcove/boltdns (FOMC) have **not** been probed this way — `f2-probe.py` takes
+a manifest URL, so run it day-of alongside `manifest-probe.sh`. An origin that
+*did* stream partials would be a genuine lever worth a segment, so this is worth
+re-asking per venue rather than assuming the answer generalises.
+
+⚠ The `header→body` timings (884 ms for 715 KB) are CDMX-laptop link speed, not
+an origin property, and carry no information about streaming. Only the presence
+of `Content-Length` does.
+
 ## Session 2026-07-25 (D1g) — FIRING GAP CLOSED: 6/6 keywords → correct decision intents
 
 D1f proved the plumbing but nothing fired, so detection → decision had never
