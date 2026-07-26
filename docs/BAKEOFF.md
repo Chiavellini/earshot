@@ -803,3 +803,39 @@ manifest missed them), so genuine collisions are **23**: 25.7/h → **9.1/h**.
 Next tier for Ford if it is armed: `china` (7), `recall` (6), `apple` (4),
 `autonomy` (4) — `autonomy` is the interesting one, since "auto" prefixes
 "automotive"/"automatic", which are constant on a car maker's call.
+
+## Keyword arming blocklist — collisions that NO threshold can fix (2026-07-25)
+
+From the collision screen on the webcast dev split (INTC+LMT, 2.53 h,
+`sherpa_kws`, 56 false alarms across tiers = **22.16 FA/h**). These are
+**keyword-risk** decisions taken before arming, not tuning knobs.
+
+| keyword | FA | TP | collision | verdict |
+|---|---|---|---|---|
+| `record` | 14 | 5 | **"quarter over quarter"** (6 of its FAs) + "being recorded" (2) | **NEVER ARM.** "quarter over quarter" is the most common phrase on an earnings call and "this call is being recorded" is read aloud on every one. Precision 5/19 = **0.26**. |
+| `weather` | 4 | 0 | **"whether"** — a true homophone | **NEVER ARM** on any call. No acoustic model separates these. |
+| `ultra` | 3 | 0 | "ultramaritime" — substring of a closed compound | **NEVER ARM** unless the event's market text explicitly settles on substrings (Q4 says it does not). |
+| `trump` | 8 | 0 | "strong" (8 of 8) | High risk; the phonetic distance is small and "strong" is ubiquitous on earnings calls. |
+
+Removing `record` + `weather` + `ultra` alone: **56 → 35 FA, 22.16 → 13.85 FA/h
+(−38 %)**.
+
+⚠ **Two honest caveats on that headline.**
+
+1. **This config arms 41 keywords spanning several events against two calls'
+   audio.** Keywords belonging to other events cannot score true positives here,
+   so a "0 TP" row does not mean the keyword is worthless in general — only that
+   it was irrelevant to INTC/LMT. A real event arms one event's keywords, so
+   **22.16 FA/h overstates single-event exposure.** Do not quote it as the armed
+   figure.
+2. **The structural collisions above are the exception** — they are properties of
+   the *English*, not of this corpus. `record`/"quarter" and `weather`/"whether"
+   will recur on every call where those keywords are armed, whatever the event.
+
+**Consequence for the engine choice.** `sherpa_kws` exposes no per-hit
+confidence (`VERIFICATIONS.md` Q-M1 pin 2: `Detection.confidence` is a constant
+1.0), so there is no lever here except *drop the keyword*. `streaming_ctc` reads
+raw CTC frame posteriors and produces real confidences, which is what a
+negative-context rule ("suppress `record` when the frames also support
+`quarter`") would need. That is a second, independent argument for the engine
+swap — beyond its measured 38 % FA reduction.
