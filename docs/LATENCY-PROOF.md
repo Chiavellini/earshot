@@ -154,6 +154,58 @@ what `audio_pos_ms` reports, so `A` at 80 may differ. The 520–540 ms figure is
 pinned to chunk 160 until the sweep below runs — do not quote it as the armed
 number.
 
+### E0c — `chunk_ms` is an INERT dial on sherpa_kws: 40/80/160 are bit-identical
+
+Interleaved in one run (dev, INTC+LMT, 2.53 h, `sherpa_kws`), so machine state
+cannot differ between cells.
+
+| chunk | tier | TP | miss | FA | recall | FA/h | `emit_lag` p50 |
+|---|---|---|---|---|---|---|---|
+| 40 | Confirmed | 49 | 28 | 53 | 0.636 | 20.97 | 520 ms |
+| 80 | Confirmed | 49 | 28 | 53 | 0.636 | 20.97 | 520 ms |
+| 160 | Confirmed | 49 | 28 | 53 | 0.636 | 20.97 | 520 ms |
+
+**Not "a small effect" — the three cells are byte-identical.** `sha256` of the
+serialised row set is `3a13cb27…` in all three, and of the sorted FA-autopsy
+line list `7913bd65…` in all three, including all 53 false-alarm stream
+positions. And they cost the same: 1880 s for three cells vs 630 s for the one
+chunk-160 cell in E0b — **~627 s each, so the dial does not even trade CPU.**
+
+**Mechanism — the emission grid is 160 ms, and every size tested divides it.**
+Recovered directly from the data rather than assumed: the GCD of all 53
+false-alarm stream positions is **160 ms**, and while every position is a
+multiple of 40, 80 and 160, **none is a multiple of 320**. `sherpa_kws` stamps
+`audio_pos_ms` from its own fed-sample counter at the moment a decode surfaces
+(`src/detector/sherpa_kws.rs:92`), and decodes only when the model's internal
+quantum is ready — so feeding it in 40, 80 or 160 ms pieces lands the same
+absolute sample position every time.
+
+**Consequence: `chunk_ms` cannot make emission finer than 160 ms on this
+engine.** Production arming at 80 ms is output-identical to 160 ms. This
+supersedes `docs/BAKEOFF.md`'s "chunk_ms is purely a latency dial" for
+sherpa_kws — the dial is connected to nothing below the model's quantum. It also
+replicates commit `2f78fc0` ("chunk_ms 80→40 REFUTED, measured ~0 ms") far more
+sharply: not ~0 ms, but bit-identical.
+
+**So `A` = 520 ms is confirmed as the armed number**, and E0b's caveat
+("measured at 160, production arms at 80") is discharged — the two are the same
+run in all but name. Exposure stands at **25.3 % (AXP)** and **12.9 % (LMT)**.
+
+⚠ **Not yet discriminated (E0d, running).** "The override works and 40, 80, 160
+all happen to divide the 160 ms grid" and "the override is silently ignored by
+the plumbing" predict this result equally well. 240 does not divide 160, so it
+separates them: under the first it must shift the positions, under the second it
+cannot. Do not treat the mechanism above as settled until that lands.
+
+> **⚠ Correction to my own first read of this run.** I initially pooled the Fast
+> and Confirmed tiers and reported recall 0.318. That is wrong: `score_phrase`
+> emits one `TierScore` per tier, each carrying `misses = occurrences − tp` for
+> that tier, so pooling double-counts every occurrence. Per tier, Confirmed
+> recall is **0.636** and Fast fires **zero times** — 0 TP *and* 0 FA across all
+> 77 occurrences, i.e. the Fast tier is emitting nothing at all on this config.
+> That is a separate finding and a latency lever that is silently switched off;
+> it is what D2 has to turn on.
+
 ### Still open after E0b
 
 - **`A` vs `chunk_ms`** — the lever's shape. `A` is the whole ballgame now

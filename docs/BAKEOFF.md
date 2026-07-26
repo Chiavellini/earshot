@@ -156,6 +156,11 @@ error — the wideband alignment is correct). Aligner trusted. A by-ear pass
 Four accuracy rounds at speed=0. Chunk size (80/160/320) produced
 bit-identical accuracy — the model's internal chunking governs decoding, so
 `chunk_ms` is purely a latency dial; production uses 80 ms.
+⚠ **On `sherpa_kws` that dial is INERT below 160 ms** (`docs/LATENCY-PROOF.md`
+E0c, 2026-07-25): chunk 40/80/160 produce **byte-identical** output — same TP,
+misses, FA, and all 53 false-alarm positions — at the same CPU cost. The engine's
+emission grid is 160 ms (GCD of observed stream positions), so any chunk that
+divides it lands on the same sample. Arming at 80 ms is output-identical to 160.
 
 Round 1 (all fast_thresholds 0.08, conf 0.20): guidance Conf recall 1.00 but
 Fast tier FA-heavy everywhere (recession control 6.4/h, partnership 6.05/h).
