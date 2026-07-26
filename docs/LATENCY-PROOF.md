@@ -343,6 +343,62 @@ Caught by the running bench starting a 5th call when I had budgeted for 4 — th
 **runtime disagreeing with my arithmetic** was the tell, not the numbers
 themselves.
 
+## Session 2026-07-26 (D2b) — prefix gate FAILS at 0.78 FA/h on 2× the corpus. Prefix-firing stays parked.
+
+`configs/bakeoff-prefix-only.toml` (the 7 keywords carrying a `fast_prefix`) over
+the doubled wideband dev corpus, scored per channel by
+`scripts/prefix-gate-score.py`.
+
+| tier | TP | miss | FA | hours | **FA/h** | bar ≤0.5/h |
+|---|---|---|---|---|---|---|
+| **Fast** | 5 | 18 | **4** | 5.15 | **0.78** | **FAIL** |
+| Confirmed | 6 | 17 | 0 | 5.15 | 0.00 | — |
+
+| Fast false alarm | call | assessment |
+|---|---|---|
+| `venture fund` | INTC | must-verify — plausible on an Intel call |
+| `venus aerospace` | INTC | real |
+| **`panther lake`** | **LMT** | real |
+| **`panther lake`** | **VZ** | real |
+
+**The verdict does not depend on the ambiguous one.** Crediting `venture fund` as
+a true positive gives 3 FA = **0.58/h** — still a fail. Passing needs ≤2 FAs in
+total. **Prefix-firing stays parked, as pre-registered. The bar is not
+renegotiated.**
+
+Worth noting the direction: **1.19/h at 2.53 h → 0.78/h at 5.15 h.** Doubling the
+corpus moved the estimate down by a third, which says the earlier figure was
+noisy-high — exactly why the bar could not be judged at 2.53 h. It is still a
+fail, and now on twice the evidence.
+
+### The failure is CONCENTRATED, and that suggests a rule
+
+**`panther` alone accounts for 2 of the 4 false alarms**, firing on both LMT and
+VZ — calls that cannot contain an Intel product name. Look at the seven prefixes:
+
+| prefix | standalone English word? |
+|---|---|
+| `basic ec`, `client comp`, `golden d`, `venture f`, `venus a`, `world c` | no — fragments |
+| **`panther`** | **yes** |
+
+**Candidate a-priori rule: a `fast_prefix` must not be a complete standalone
+word.** A fragment cannot be uttered by itself; a whole word can, and then the
+prefix fires on a legitimate use of an unrelated word.
+
+⚠ **I am NOT claiming this rescues the gate, and it must not be applied to this
+corpus as a pass.** The rule is checkable without looking at outcomes — but I
+formed it *after* seeing which prefix failed, which is the same
+selection-on-the-outcome trap that made "keep only the zero-FA prefixes" invalid
+in D2. Dropping `panther` here would leave 2 FAs = 0.39/h and *look* like a pass
+**by construction**. The rule is a hypothesis for the NEXT corpus, not a verdict
+on this one.
+
+### What would actually settle it
+
+More audio the rule was not derived from. At 5.15 h the bar permits 2.6 false
+alarms in total, so even a pass would be a loose bound. The corpus needs to reach
+~20 h of **wideband** for 0.5/h to be distinguishable from 0.78/h with any power.
+
 ## Session 2026-07-25 (F3) — the multi-IP vantage race is REFUTED BY ARCHITECTURE, not by measurement
 
 F3 was written as *"resolve all A records for the CDN host, fetch the same
