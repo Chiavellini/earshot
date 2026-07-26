@@ -425,11 +425,22 @@ blocked, three sources checked:
 |---|---|
 | **DW World News**, 8 h capture | **0 %** finance/policy vocabulary in 6 sampled windows — documentary programming, not news |
 | **Apple quarterly-earnings podcast RSS** (`rss.art19.com/apple-quarterly-earnings-call`) — the documented corpus-v1 method | **1 episode, 16 seconds, and it is a PSA.** The "available for two weeks" note is literal; right now the archive is empty |
-| **EarningsCall API** (earningscall.biz) | audio downloads only from the **Ultimate tier, $129/month**. Transcripts-only below that, and transcripts cannot test an acoustic detector |
+| **EarningsCall API** (earningscall.biz) | **REJECTED ON ARCHITECTURE, not price** — it is downstream of the same webcast, so it can never be faster than our own leg. (For the record: audio only from the $129/month tier; transcripts below that, which cannot test an acoustic detector anyway.) |
 
-**A purchase is an operator decision, not mine** — and note the standing AWS cap
-is $60/month gross, so $129/month for a data feed is a materially larger
-commitment than anything this campaign has spent.
+**⛔ CLOSED ON ARCHITECTURE — do not revisit, for ANY purpose (operator, 2026-07-26).**
+A recording service is **downstream of the same webcast we already consume**: it
+ingests that feed, transcodes, stores, then serves. It is slower than our own leg
+by construction. **You cannot buy your way upstream of the origin.**
+
+That is not a pricing judgement, it is the same finding the batching-covariance
+test already produced: slope **−0.084** against **+1.00** predicted for a
+continuous feed ⇒ **the competitor is on the SAME segmented HLS we are, ~1 s
+ahead.** There is no alternate transmission of an earnings call. **All edge comes
+from consuming that one feed better**, which is what this entire campaign
+measures.
+
+Recorded here only so the source is never re-investigated. (Secondary point, now
+moot: $129/month would also be more than double the standing $60/month AWS cap.)
 
 ### The answer costs nothing: we already generate the corpus by operating
 
