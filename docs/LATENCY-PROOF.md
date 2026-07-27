@@ -416,6 +416,61 @@ while on LMT the collision screen classed `ultra` fires as SUBSTRING hits on
 unwinnable collision on another** — which is exactly why keyword risk is
 per-event, not global.
 
+## Session 2026-07-26 (D1i) — the box has ONE physical core. D1e's drain was understated by 2.3×, and threading makes it worse.
+
+D1e computed "+166 ms burst drain at 2 legs" from single-leg RTF and division by
+2 cores. **Never measured.** Measured now — three runs, one call (INTC, 0.98 h):
+
+| run | wall | vs baseline |
+|---|---|---|
+| A — 1 proc, `num_threads=1` | **538 s** | — |
+| B — 1 proc, `num_threads=2` | **762 s** | **+42 % SLOWER** |
+| C — 2 procs concurrent, `num_threads=1` | **1259 s** | **2.34×** |
+
+### Root cause: `t3a.large` is 1 physical core, not 2
+
+```
+CPU(s): 2   Thread(s) per core: 2   Core(s) per socket: 1
+/sys/.../cpu0/topology/thread_siblings_list = 0-1
+```
+
+**"2 vCPU" is one AMD EPYC core with SMT.** Two compute-bound legs do not run in
+parallel — they contend for a single core. Credit throttling was ruled out first:
+`CPUCreditBalance` is pinned at **864** (the maximum) across every datapoint and
+the instance is in **`unlimited`** mode, so it never throttled.
+
+### Two corrections to the record
+
+**1. The burst drain is ~2.3× worse than reported.** Using the measured 2.34×
+contention factor rather than assumed parallelism:
+
+| engine | solo drain (2 s burst) | **2 legs, measured contention** |
+|---|---|---|
+| `sherpa_kws` | 138 ms | ~323 ms |
+| `streaming_ctc` | 304 ms | **~711 ms** |
+| **CTC penalty** | | **+388 ms**, not the +166 ms in D1e |
+
+**So the engine trade is materially worse than I stated: −69 % false alarms for
++388 ms**, not +166 ms. It is still defensible — a false fire buys YES on a
+market that settles NO — but the operator was given a number half the true size.
+
+**2. "Armed-fanout CPU 33.7 % of the box" was wrong.** The arm measured 67.3 % of
+*one vCPU*; with both vCPUs on a single physical core that is **~67 % of the real
+compute**, not 34 %. There is far less headroom than D1f implied — and FOMC runs
+43 keywords, the largest set staged.
+
+### What this does to the speed plan
+
+**Step 2b survives but changes shape.** Threading is refuted — `num_threads=2`
+is 42 % *slower*, because both threads land on the same physical core. The lever
+is **physical cores**: `t3a.xlarge` is 4 vCPU = **2 physical cores**, doubling
+real compute for ~$0.15/h vs $0.075/h. On event days only, that is negligible
+against the $60/month cap and it directly attacks a term now measured at +388 ms.
+
+⚠ Same failure family as trap 9 and trap 10: a resource figure (`2 vCPU`) taken at
+face value and converted into a latency claim without measuring. **Trap 24: vCPU
+count is not core count — check `lscpu` before dividing by it.**
+
 ## Session 2026-07-26 (A3c) — corpus sourcing: BUY is $129/mo, SCRAPE is dead, and the answer is neither
 
 A3b killed the DW plan (0/6 windows finance/policy). Before declaring the corpus
