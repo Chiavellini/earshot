@@ -416,6 +416,66 @@ while on LMT the collision screen classed `ultra` fires as SUBSTRING hits on
 unwinnable collision on another** — which is exactly why keyword risk is
 per-event, not global.
 
+## Session 2026-07-27 (D1 — CLOSED) — chunk-8 REJECTED: −80 ms bought for +263 ms, and it loses 3 of 57 detections
+
+D1 proper, finally run against a validated control. Pre-registered as a possible
+net loss (e81a4ac); it is one, and by a wider margin than the pre-registration
+allowed for, because the accuracy cost was not anticipated at all.
+
+### Measured
+
+| | SHIPPED / chunk-16 | **chunk-8** |
+|---|---|---|
+| `consumed_lag_p50` (paired, n=10) | — | **−80 ms** (IQR [−120, +0], min −190, max +160) |
+| `emit_lag_p50` (paired, n=10) | — | **+0 ms** (IQR [−10, +0]) |
+| wall, dev split 5.15 h | 2126 s | **3351 s = 1.577×** |
+| recall, **excluding `panther lake`** | **0.842** (TP 48 / miss 9) | **0.789** (TP 45 / miss 12) |
+| FA/h, excluding `panther lake` | 14.96 | 14.38 |
+
+Both splits reported as pre-declared. *Including* `panther lake` the two are
+indistinguishable (0.818 recall, ~470 FA/h) because that phrase is pathological
+in both — see D3b.
+
+### Netting it
+
+`consumed_lag` is the cross-engine-comparable metric, and **−80 ms is exactly
+what theory predicts once the arithmetic is right**: halving the decode quantum
+320 → 160 ms saves *half* the reduction on average, not all of it. My
+pre-registered "≈160 ms quantum" was 2× too high; the measurement and the
+corrected theory agree to the millisecond.
+
+Cost, via D1i-b's measured contention:
+
+| | solo | 2 legs @ 1.50× |
+|---|---|---|
+| chunk-16 drain (2 s burst) | 304 ms | 456 ms |
+| chunk-8 drain @ 1.577× RTF | 479 ms | **719 ms** |
+| **penalty** | +175 ms | **+263 ms** |
+
+**Net at the armed 2-leg configuration: −80 ms gained, +263 ms paid = +183 ms
+NET LOSS**, and a 5.3-point recall regression on top.
+
+⚠ **The exposure term cannot be credited, and it would not save this.** E0's
+`A/S` exposure model predicts a further ~160 ms from shrinking the window
+450 → 290 ms. **This bench cannot measure it** — `bench-detector` replays a WAV
+as fast as backpressure allows, so there are no segment boundaries and no
+segment-phase lottery to win. Even granting the model in full, chunk-8 lands at
+roughly break-even on latency while losing 3 of 57 detections. There is no leg
+count at which it wins.
+
+### VERDICT: REJECT. And that closes the last identified lever on `OURS`.
+
+`configs/bakeoff-webcast-ctc{8,16}.toml` stay for the record; nothing is
+promoted. The exports remain on the box.
+
+**This matters beyond D1.** `OURS` (0.289 s, 19 % of the gap) had exactly one
+identified lever — the model quantum — and it is now measured and rejected.
+`chunk_ms` was already inert (E0d), `num_threads` and `spin_hot_rings` are dead
+ends (D1i-b), and threading is bounded by a 3-stage design that already uses
+~2 vCPU per leg. **Every remaining speed lever is on `FEED`**, which is the
+81 % term anyway — and on the venue class that actually matters that means
+`#EXT-X-PREFETCH` (§V1/V1b/V1c), not the speculative fetcher we shipped.
+
 ## Session 2026-07-27 (D3b) — the control's 31× gap was ONE keyword, not quantization (and my first explanation was wrong)
 
 The pre-registration said: export chunk-16 too, and if it does not reproduce the
