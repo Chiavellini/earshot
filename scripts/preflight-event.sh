@@ -124,6 +124,36 @@ else
   check FAIL "cargo build --release FAILED — fix before event day"
 fi
 
+# ── Allowlist coverage ─────────────────────────────────────────────────────
+# `arm` refuses a partial allowlist at start-up, but that fires at 8 AM on the
+# call. Catch it the night before. The shape: `prepare`'s placeholder allowlist
+# entry survives while [[keywords]] are filled in real — non-empty, so
+# --i-am-live's emptiness check passes, the arm comes up clean, and then EVERY
+# order is refused NotAllowlisted at fire time. All three configs staged for
+# 2026-07-28/29 shipped exactly that way.
+AL_OUT=$(python3 - "$CONFIG" <<'PY'
+import re, sys
+s = open(sys.argv[1]).read()
+m = re.search(r'allowlist_tickers\s*=\s*\[(.*?)\]', s, re.S)
+allow = set(re.findall(r'"([^"]+)"', m.group(1))) if m else set()
+kws = set(re.findall(r'market_ticker\s*=\s*"([^"]+)"', s))
+if not kws:
+    print("SKIP no keywords")
+elif not allow:
+    print(f"EMPTY {len(kws)}")
+else:
+    miss = sorted(kws - allow)
+    print(f"MISS {len(miss)} {len(kws)} " + " ".join(miss[:5]) if miss else f"OK {len(kws)}")
+PY
+) || AL_OUT="ERR"
+case "$AL_OUT" in
+  OK*)    check PASS "[risk].allowlist_tickers covers all ${AL_OUT#OK } keyword markets" ;;
+  EMPTY*) check FAIL "[risk].allowlist_tickers is EMPTY with ${AL_OUT#EMPTY } keywords — every order refused NotAllowlisted; paste prepare's [risk] block" ;;
+  MISS*)  check FAIL "[risk].allowlist_tickers MISSES keyword markets: $AL_OUT — those orders are refused NotAllowlisted at fire time" ;;
+  SKIP*)  check WARN "no [[keywords]] in config — allowlist coverage not checked" ;;
+  *)      check FAIL "allowlist coverage check could not run ($AL_OUT)" ;;
+esac
+
 # ── Credentials (live probes, read-only) ───────────────────────────────────
 if [[ -f "$ACCOUNT" ]]; then
   if [[ "$(uname -s)" == Darwin ]]; then
