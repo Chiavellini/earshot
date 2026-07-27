@@ -520,6 +520,120 @@ against a live IVS stream:
    looked entirely normal doing it. Removed; the runsheet writes it fresh on the
    morning, and it should not exist before then.
 
+## Session 2026-07-27 (R1) — ⚠ ROUGHLY HALF OF THE COMPETITOR'S "FEED ADVANTAGE" MAY NOT BE FEED AT ALL
+
+**Question asked by the operator: what are they doing that we aren't, and are
+they on a cleaner/faster feed?** Answering it turned up a confound that the
+campaign has carried as a one-line caveat and never computed — and it is large
+enough to change what the program should be spending on.
+
+### The answer space is already bounded — three settled facts
+
+1. **There is no alternate transmission of an earnings call.** Recording/API
+   services are downstream of the same webcast (closed on architecture,
+   2026-07-26, never-revisit).
+2. **They are on the same segmented HLS we are** — batching-covariance slope
+   **−0.084** vs **+1.00** predicted for a continuous feed.
+3. **Not a hidden channel.** The pre-registered discriminator says Δw earlier by
+   >~5 s ⇒ H2/hidden. At ~1 s we are firmly in **H1/H3: same feed, better
+   vantage or better fetch.**
+
+So it must be **earlier bytes**, **fewer bytes needed**, **closer vantage**, or
+**faster decode**. This entry separates the first two.
+
+### The confound
+
+The pinned "FEED gap" is the interval between their price-moving sweep and the
+instant the **word-END** audio reached our box. It is anchored on word-end
+because that is when *our* detector can fire. **A competitor firing on
+word-START never needed the word-end audio** — and the audio for the word's
+start reached our box earlier, by exactly the word's duration:
+
+    earlier_audio = FEED_gap − word_duration     (they fire at word start)
+    earlier_audio = FEED_gap                     (they fire at word end)
+
+The word durations come from the same forced alignment that produced the
+word-end anchors and are already banked in `corpus/manifests/`. No new
+measurement was needed. `scripts/rival-decompose.py` (new) does it.
+
+### Which utterance was which race — cross-validated, not eyeballed
+
+The only place bias could enter is picking *which* utterance a race refers to
+when a phrase recurs. That is fixed here by a clock offset Δ between the corpus
+WAV and the arm capture, fitted independently per race:
+
+| race | candidate utterances ⇒ implied Δ | chosen |
+|---|---|---|
+| GOLD | **126.960 s**, −324.450 s | 1924.67–1925.31 s |
+| EURO | **128.046 s**, 115.486 s, −946.014 s | 2352.08–2352.52 s |
+| MORF | **127.927 s**, −1305.073 s, −1491.273 s | 3259.57–3259.87 s |
+
+**Three independent races agree on Δ ≈ 127 s to within 1.1 s**; every rival
+pairing is 324–1491 s away. The identification is unambiguous.
+
+### Result
+
+| race | venue | FEED gap | word | word duration | **residual = genuine earlier AUDIO** |
+|---|---|---|---|---|---|
+| AXP NFL | Amazon IVS | 1.241 s | `nfl` | **unknown — not banked** | **NOT COMPUTABLE** |
+| LMT GOLD | Notified/CDN | 1.112 s | `golden dome` | 0.640 s | **0.472 s** |
+| LMT EURO | Notified/CDN | 1.125 s | `europe` | 0.440 s | **0.685 s** |
+| LMT MORF | Notified/CDN | 0.754 s | `morfius` | 0.300 s | **0.454 s** |
+
+On the same three races: raw gap spread **0.371 s** → residual spread
+**0.231 s**, and `corr(word duration, raw gap) = +0.792`.
+
+**If the word-start model is right, their true feed advantage is ~0.45–0.69 s,
+not ~1.1 s — and the other ~0.5 s is a DETECTOR difference, not a transport
+one.** That is the same ~0.5 s that prefix-firing addresses, and it means the
+campaign has been spending on `FEED` to close a gap that may be half `OURS`.
+
+### ⚠ VERDICT: NOT RESOLVED — and the counter-evidence is real
+
+**I am not claiming the word-start model.** Against it:
+
+- **The MS phone-lane analysis concluded the opposite**, explicitly: *"NOT
+  prefix-firing: they land at/after word-end + their transport, never before"*
+  (`COMPETITOR-ANATOMY` §Decomposition, n=3 words, ±25 ms). If the same actor
+  behaves the same way on webcast, the residual is the **full** gap and their
+  feed advantage really is ~1.1 s.
+- `corr = +0.792` is **n=3**. Significance at n=3 needs |r| > 0.997. **This is
+  `NOT RESOLVABLE ABOVE NOISE`** and the direction is all that may be reported.
+- The spread reduction 0.371 → 0.231 s is descriptive, on 3 points, and could
+  easily be chance.
+- `europe` is the *keyword*; the speaker likely said "European", so the banked
+  occurrence span may be shorter than the word actually uttered — which would
+  **understate** the correction for EURO specifically.
+- All three computable races are the **same venue class**. NFL — the only IVS
+  race — has no banked word duration, so **the venue-invariance question cannot
+  be asked of the residual at all.**
+
+### What resolves it, and it is nearly free
+
+**A designed test on Tuesday's PayPal board.** The two models make opposite
+predictions about the *same* event:
+
+- **word-START firing** ⇒ the apparent feed gap **scales with word duration**.
+- **word-END firing** ⇒ the apparent feed gap is **independent of word duration**.
+
+PayPal's vocabulary is unusually well spread for this: `stash` (2 tokens) against
+`agentic commerce`, `european payments council`, `stablecoin`. Score Δrace per
+market **against that market's word duration** rather than pooling, and the slope
+answers it. This costs nothing beyond scoring the tape we were already going to
+pull.
+
+### Instrumentation gaps this exposed, both cheap to close
+
+1. **No banked PDT.** The A4 physical-bound test — *could any consumer of the
+   public feed have held this audio when they swept?* — is the strongest test
+   available and is **not computable**, because neither `~/axp-capture/run.log`
+   nor the capture `jsonl` records per-segment `EXT-X-PROGRAM-DATE-TIME`. The
+   fetcher already computes `seg age=` and `--arrival-log` exists; the armed legs
+   should bank PDT so future races can be bounded rather than only compared.
+2. **No AXP ground truth.** `corpus/manifests/axp-q2-2026.toml` carries **zero
+   occurrences**, so the one IVS race cannot be decomposed. Aligning the banked
+   `~/axp-capture/*.wav` would recover it and is queued.
+
 ## Session 2026-07-27 (V7) — ⚠ THE HEADLINE IS AN *ARRIVAL* NUMBER: `--stream-body` hands back ~516 ms of it at the decision point
 
 **This is the most important correction of the campaign and it cuts the headline
