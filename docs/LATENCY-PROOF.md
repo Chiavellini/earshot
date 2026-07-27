@@ -416,6 +416,60 @@ while on LMT the collision screen classed `ultra` fires as SUBSTRING hits on
 unwinnable collision on another** — which is exactly why keyword risk is
 per-event, not global.
 
+## Session 2026-07-27 (D3) — "chunk-8 needs a GPU box" was WRONG. It needed five pip packages.
+
+`A` (detector lookahead, 520 ms) is the only identified lever on the `OURS` term,
+and `OURS` becomes 100 % of the race gap the moment speculative fetch closes
+`FEED`. The queue had it filed as **⛔ BLOCKED — needs a GPU box
+(PyTorch/icefall/k2)** since 07-24. That reading came from one line of
+`~/ctc-export.log`:
+
+```
+ModuleNotFoundError: No module named '_k2'
+```
+
+which was taken to mean "k2 needs CUDA". Checked instead of assumed:
+
+1. `_k2.cpython-312-x86_64-linux-gnu.so` **is present** in the venv, and
+   `import k2` succeeds on the box today (`k2 1.24.4.dev20250714+cpu.torch2.7.1`
+   against `torch 2.7.1+cpu`). The 07-24 failure was a stale torch/k2 pairing
+   (the log's own header shows `torch: 2.13.0+cpu`), since repaired.
+2. k2 is referenced in `export-onnx-streaming-ctc.py` in **exactly one place** —
+   `k2.SymbolTable.from_file(params.tokens)`, i.e. reading `tokens.txt`. Even
+   with k2 genuinely broken, that is a 20-line pure-python shim, not a GPU.
+   (The shim is in `~/k2shim` as a fallback; it was not needed.)
+3. The real blockers were **pure-python pip packages** on icefall's import graph
+   — `lhotse`, then `urllib3`, then `kaldialign`, `pypinyin`, `tensorboard` —
+   plus an empty checkpoint glob in the 07-24 script (`cp: cannot stat ''`).
+   Runner `~/ctc-export-retry.sh` installs on `ModuleNotFoundError` and retries.
+
+**Both exports produced, CPU-only, in 49 s, at zero AWS cost.** Verified from
+the ONNX metadata rather than from the file existing:
+
+| model | `x` shape | `decode_chunk_len` | window | shift |
+|---|---|---|---|---|
+| SHIPPED `…-2024-03-18` | `[N,45,80]` | 32 | 450 ms | 320 ms |
+| **ours, chunk 16** (control) | `[N,45,80]` | 32 | 450 ms | 320 ms |
+| **ours, chunk 8** (treatment) | `[N,29,80]` | **16** | **290 ms** | **160 ms** |
+
+The control is byte-for-byte equivalent in geometry to the shipped model, which
+is what makes the treatment interpretable. No Rust change is required:
+`StreamingCtcModel::new` reads `T` from the `x` input shape and `decode_chunk_len`
+from the ONNX metadata — the chunk geometry was never hardcoded.
+
+### ⚠ Pre-registered, before the bench runs
+
+Chunk 16→8 halves the emission quantum (320 → 160 ms) and shrinks the window by
+160 ms, **but doubles encoder invocations per second of audio**, so RTF roughly
+doubles and D1i's burst drain lands on the critical path. This can be a **net
+loss**: ~160–320 ms of quantum bought against a drain increase of the same
+order. `~/bench-lookahead.sh` runs SHIPPED / ours-16 / ours-8 on the dev split
+and decides it. Whatever it says gets recorded, including a loss.
+
+Trap 25: **"needs a GPU" is a diagnosis, and this one was never made** — a
+`ModuleNotFoundError` on a native extension was converted straight into a
+hardware requirement, and it parked the only lever on `OURS` for three days.
+
 ## Session 2026-07-26 (D1i) — the box has ONE physical core. D1e's drain was understated by 2.3×, and threading makes it worse.
 
 D1e computed "+166 ms burst drain at 2 legs" from single-leg RTF and division by
