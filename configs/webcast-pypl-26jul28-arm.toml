@@ -36,6 +36,23 @@
 # This event is the first real-venue test. Leg 1's flags are chosen DAY-OF from
 # the probe — see the decision table in docs/RUNBOOK.md step 4b.
 #
+# ── `--arrival-log` — ADDED 2026-07-27, and it must be here BEFORE the event ──
+# LATENCY-PROOF §R1 wants the strongest test available on a race: *could ANY
+# consumer of the public feed have held this audio at the instant the competitor
+# swept?* That is a physical BOUND, not another correlation — and it was NOT
+# COMPUTABLE on any banked race, because no capture ever recorded the encoder's
+# `EXT-X-PROGRAM-DATE-TIME`. The fix costs one flag and zero extra HTTP: the log
+# writes `{pdt} {t_done} {fetch_secs} {mode} {t_first}` per segment.
+#
+# PDT is the right key and this is verified, not assumed: two independent IVS
+# sessions shared **14 of 14 PDTs to the millisecond while sharing ZERO segment
+# URLs** (see `arrival()` in hls-edge-fetch.py — a run keyed on URL produced 0
+# paired segments). PDT is the encoder's stamp for the media itself, so it is
+# stable across sessions and across competitors.
+#
+# ⚠ Post-event: keep `$HOME/pypl-arrival.log`. Without it Tuesday's race is
+# comparable but not BOUNDABLE, which is the gap R1 flagged.
+#
 # KEYWORD SET: 16 markets, generated live from Kalshi. ZERO high-risk
 # collisions flagged and ZERO variants dropped — a materially cleaner set
 # than Ford's (12 false alarms vs 65 in the pre-arm screen), which is why
@@ -205,7 +222,7 @@ label = "spec_edge"
 sample_rate_hz = 16000
 cmd = [
   "/bin/sh", "-c",
-  "python3 $HOME/ear/scripts/hls-edge-fetch.py \"$(cat $HOME/pypl-stream.url)\" 250 2 --speculative --prefetch --stream-body --prefetch-report 2>>$HOME/spec_edge.err | ffmpeg -loglevel warning -fflags +discardcorrupt+nobuffer -flags low_delay -probesize 200000 -analyzeduration 3000000 -i - -vn -f s16le -ac 1 -ar 16000 -",
+  "python3 $HOME/ear/scripts/hls-edge-fetch.py \"$(cat $HOME/pypl-stream.url)\" 250 2 --speculative --prefetch --stream-body --prefetch-report --arrival-log $HOME/pypl-arrival.log 2>>$HOME/spec_edge.err | ffmpeg -loglevel warning -fflags +discardcorrupt+nobuffer -flags low_delay -probesize 200000 -analyzeduration 3000000 -i - -vn -f s16le -ac 1 -ar 16000 -",
 ]
 
 [[sources]]

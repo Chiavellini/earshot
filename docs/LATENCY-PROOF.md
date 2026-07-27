@@ -651,6 +651,56 @@ live in the armed path and clean.
 absence verified.** Confirmed again here: that file must be written FRESH on
 Tuesday, and RUNBOOK step 3 deletes it first regardless.
 
+## Session 2026-07-27 (A1) — PDT banking armed, and it immediately gives the first ABSOLUTE lag from the armed path
+
+§R1 flagged that its strongest available test — *could ANY consumer of the
+public feed have held this audio at the instant the competitor swept?* — was
+**not computable**, because no capture had ever recorded the encoder's
+`EXT-X-PROGRAM-DATE-TIME`. That is a physical **bound**, not another
+correlation, and it was blocked purely on instrumentation.
+
+**It turned out to need no code at all.** `hls-edge-fetch.py --arrival-log`
+already writes `{pdt} {t_done} {fetch_secs} {mode} {t_first}` per segment. It
+was simply never switched on for an armed leg. Added to leg 1 of
+`configs/webcast-pypl-26jul28-arm.toml`; **zero extra HTTP**, one local line per
+~2 s.
+
+PDT is the correct key and that is verified rather than assumed: two independent
+IVS sessions shared **14 of 14 PDTs to the millisecond while sharing ZERO segment
+URLs** (`arrival()` docstring — a run keyed on URL produced 0 paired segments).
+Being the encoder's own stamp for the media, it is stable across sessions, which
+is what makes it usable against a competitor's timestamps too.
+
+### First absolute-lag measurement from the ARMED configuration
+
+60 s smoke on the IVS demo channel, leg-1 command verbatim, n=29 prefetch-mode
+segments (the one startup `manifest` segment excluded — it has no prefetch lead):
+
+| | p50 | IQR | min | max |
+|---|---|---|---|---|
+| **first-byte lag behind encoder** | **0.484 s** | [0.474, 0.517] | 0.449 | 1.849 |
+| **complete lag behind encoder** | **2.393 s** | — | 2.349 | 2.437 |
+
+The campaign has reasoned in *relative* leads throughout; this is the first
+**absolute** position behind the encoder measured from the armed path. For
+scale, `manifest-probe` put the naive IVS edge position at **~4 s** behind PDT
+(AXP 07-24) — the armed leg now takes first bytes at **0.484 s**.
+
+### A third instrument, and it lands on the V7 model to 1 ms
+
+§V7 modelled the streamed gain as phase-dependent, `lead(f) = 2.073 − f × 1.905`.
+The span between first byte and complete arrival is exactly that slope:
+
+**median (complete − first byte) = 1.904 s, against the model's 1.905 s — 1 ms.**
+
+That is a byte-timestamp join (§V3), a cross-correlation (§V5) and now the armed
+leg's own arrival log all agreeing on the same segment-phase span. The
+distribution is real and it is not an artifact of any one instrument.
+
+⚠ Demo channel, 60 s, n=29, and the complete-lag figure is tight (2.349–2.437 s)
+precisely because the demo channel is well-behaved. Q4's channel on Tuesday is
+the real test — and it will now be logged.
+
 ## Session 2026-07-27 (P1) — prefix-firing RE-OPENED as instructed, and the re-opening says it is not the binding constraint yet
 
 Operator ruling 2026-07-27: **re-open prefix-firing generally**, on the strength

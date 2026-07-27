@@ -604,7 +604,14 @@ series — query `?series_ticker=KXEARNINGSMENTION<TICKER>` directly. And it
     *contested* ones score, and at n=4 the readout is only ~81 % reliable. If
     fewer than ~5 markets are contested, report it as **NOT RESOLVED** and pool
     with Ford/FOMC rather than calling it on one thin event.
-11. **Score the control legs:** `scripts/leg-lag.py $HOME/pcmab-pypl plain pfstream`.
+11. **KEEP `$HOME/pypl-arrival.log`** — one line per segment,
+    `{pdt} {t_done} {fetch_secs} {mode} {t_first}`. This is what makes the race
+    **boundable** rather than merely comparable (LATENCY-PROOF §R1/§A1): with the
+    encoder's own PDT you can ask whether *any* public-feed consumer could have
+    held that audio when the competitor swept. No banked race has it; every race
+    from here does. Demo-channel reference from the armed leg: first-byte lag
+    **p50 0.484 s** behind PDT, complete **p50 2.393 s**.
+12. **Score the control legs:** `scripts/leg-lag.py $HOME/pcmab-pypl plain pfstream`.
     Honour its NOT-STEADY guard — a wide spread is **the segment-phase
     distribution**, not noise and not a number to quote. Report the median with
     n and spread, plus min/max as the tail/head of the distribution.
