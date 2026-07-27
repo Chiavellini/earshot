@@ -4,6 +4,43 @@
 after the first live fill day. Read this before touching anything; then read
 `CLAUDE.md` → `docs/ARCHITECTURE.md` → the layer doc for whatever you change.**
 
+> ## ⚠ STALE AS OF 2026-07-27 — read this box before believing any number below
+>
+> This document was written **2026-07-23 evening, the day BEFORE** the Δrace
+> re-scoring and two campaigns of measurement. It is kept as the record of that
+> moment (annotate, never delete), but several headline figures are superseded.
+>
+> **1. Every Δrace figure here is pre-correction.** GOLD and EURO were scored
+> against flat-price prints rather than the price-moving sweep. Corrected:
+> **GOLD +0.507 s (AHEAD)**, EURO −2.024 s, MORF −1.028 s, plus AXP NFL −1.530 s.
+> Current ledger **n=4: median −1.28 s, mean −1.02 s, range +0.5 … −2.0 s.**
+> The race is a **distribution**, not a scalar, and **we already win some races.**
+>
+> **2. "The race deficit is ~1 second of software we own" is REFUTED.** It is
+> the opposite: the gap decomposes **FEED 1.241 s + OURS 0.289 s** on the one
+> race with a full decomposition — **81 % of it is upstream of our audio.**
+> `OURS` is now CLOSED at 0.289 s with **no identified lever left** (chunk-8
+> rejected at a net +183 ms loss, `chunk_ms` inert, threading refuted).
+>
+> **3. The acquisition ladder numbers here do not transfer.** −10.6/−11.7 s were
+> reference streams; at real event venues the ladder compresses to **−1.18 s /
+> −0.21 s** and the leg order reverses. Fetch flags are exhausted at this venue
+> class.
+>
+> **4. Detector recall here is understated by settlement.** INTC's
+> ARIZ/DESK/GOVE/MOBI and LMT's ORIO/VENT were **not misses** — those words were
+> never spoken and the sweeps were release-text basket bets. Standing rule:
+> **sweeps ≠ mentions; score against settlements + transcript.**
+>
+> **5. The engine changed.** Every event described here ran `sherpa_kws`; every
+> staged config now runs `streaming_ctc` (holdout: same recall 0.833, **FA/h
+> 17.21 → 5.30, −69 %**, cost +249 ms burst drain).
+>
+> **6. `webcast-lane` is 125 commits ahead of `main` and unmerged.**
+>
+> Authoritative today: `docs/LATENCY-PROOF.md` (the only current race source),
+> then `docs/RUNBOOK.md` and `docs/BAKEOFF.md`.
+
 ---
 
 ## 1. What this system is and where it stands

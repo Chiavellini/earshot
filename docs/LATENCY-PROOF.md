@@ -555,6 +555,22 @@ Two *independent* checks, and only the second is precise:
 
 Together with `dropped=0 short=0 seg_err=0` on both legs, the pass is sound.
 
+`short=0` is specifically the counter that matters here, and it holds across
+**every** `SUMMARY` line in the run, not just the last (`grep -o 'short=[0-9]*'
+… | sort -u` returns the single value `short=0`). That is the number that
+**refuted** `--stream-body` on DW/Akamai, where the same flag cost **3 / 32 / 62
+short reads per run** against 0/0/0 buffered. The DW null was venue-scoped, and
+this is the other side of that scope.
+
+### ⚠ What this run did NOT test: the §V6 deaf-leg fix
+
+`reresolve=0` and `deaf_s=0` mean **no media playlist rotated during these 90
+minutes, so the re-resolve path never executed.** The fix that §V6 exists for is
+therefore still evidenced only by `scripts/test-deaf-leg.py` against a **local
+synthetic origin** — never against a real CDN mid-call. A green gate here is not
+a test of it, and the failure it guards was intermittent (1 run in 3 that day),
+so its absence is expected rather than reassuring.
+
 ### V4's "unexplained ~4 s gap" did not reproduce
 
 V4 was called INCONCLUSIVE partly on a 2.16 s shortfall (prefetch 5396.92 vs
@@ -588,6 +604,42 @@ the 1.121 s arrival figure. And it is still **one venue, one channel, the AWS
 demo** — Tuesday is the first real-venue test. The day-of decision table in
 `docs/RUNBOOK.md` step 4b remains the final authority and can still downgrade
 the tier if the probe shows PayPal's channel behaves differently.
+
+### V8 follow-on — the armed streamed tier smoke-tested END TO END through `arm`
+
+Dry-run arm of `configs/webcast-pypl-26jul28-arm.toml` with the new leg-1 flags,
+against the IVS demo stream (110 s, `timeout`-killed, exit 124 as expected):
+
+- `all keyword markets active … markets=16` — allowlist coverage holds.
+- `book snapshots live for all armed markets`
+- `fanout: per-leg detect chains, OR at decision legs=2`, both legs spawned,
+  leg 1 carrying `--speculative --prefetch --stream-body --prefetch-report`.
+- **`ort::logging` allocating continuously ⇒ `streaming_ctc` was running
+  inference on both legs**, which only happens if audio frames actually flowed.
+  (`ORT_DYLIB_PATH` prints no banner; the proof it built is that the arm got
+  past `book snapshots` instead of hanging there — the documented failure mode.)
+- `SIGTERM — killing, then exiting` — clean teardown.
+
+Leg-1 fetcher, from `~/spec_edge.err`:
+
+```
+prefetch: venue publishes #EXT-X-PREFETCH (2 ahead of the live edge)
+speculative: DISABLED — segment URLs are not predictable
+prefetch: FETCHING ahead of announcement
+SUMMARY segs=31 dropped=0 short=0 seg_err=0 spec=OFF
+        poll_err=0 deaf_s=0 reresolve=0
+        prefetch_n=28 lead_med=4.01s  prefetch_fetched=30 pf=on
+```
+
+**`speculative: DISABLED` is the designed self-disable on IVS's opaque signed
+URLs** — the exact reading RUNBOOK step 4 now tells the operator to expect and
+NOT act on. 30 of 31 segments came via prefetch. The §V6 deaf-leg fields are
+live in the armed path and clean.
+
+⚠ **The dry-run required writing the IVS demo URL into `$HOME/pypl-stream.url`
+— the "loaded gun" the runbook warns about. It was deleted immediately after and
+absence verified.** Confirmed again here: that file must be written FRESH on
+Tuesday, and RUNBOOK step 3 deletes it first regardless.
 
 ## Session 2026-07-27 (B1) — our four legs receive audio IDENTICALLY; two of my own instrument constants were lying
 
@@ -865,71 +917,6 @@ detections.)
   fire-time gain directly needs a detector on both legs against keyworded audio —
   which is what Tuesday's control legs plus the armed run can finally provide.
 
-## Session 2026-07-27 (V8) — the streamed tier PASSES the 90-min drop-safety gate on the fixed fetcher
-
-**Verdict: PASS.** This is the clean re-run that V4 (poisoned sample) and V6
-(died at 51.7/90 min) both owed. `--prefetch --stream-body` now clears the same
-pre-registered bar the buffered tier cleared in §V2 — **zero audio deficit vs the
-plain leg over 90 minutes** — and the bar was not renegotiated to get there.
-
-Run: `scripts/prefetch-gate.sh 5400 "--prefetch --stream-body --prefetch-report"`,
-**16:07:03 → 17:37 UTC**, AWS IVS demo master, `~/pfgate4.log`.
-
-### Counters — both legs, whole run
-
-| | candidate (`--prefetch --stream-body`) | plain |
-|---|---|---|
-| segments | **2672** | 2669 |
-| `dropped` / `short` / `seg_err` | **0 / 0 / 0** | **0 / 0 / 0** |
-| `poll_err` / `deaf_s` / `reresolve` | **0 / 0 / 0** | **0 / 0 / 0** |
-| obtained via prefetch | **2671 of 2672** | — |
-| `lead_med` | **4.00 s** (min 0.76, max 5.99) | — |
-
-`short=0` is the number that mattered and it is the one that killed `--stream-body`
-on DW/Akamai, where the same flag cost **3 / 32 / 62 short reads per run**. Over 90
-minutes on IVS: **zero**, and `sort -u` over every `SUMMARY` line in the run returns
-only `short=0` and `dropped=0` — not just the final line.
-
-### Wall-anchored verdict
-
-```
-samples=179  min=+0.00s  max=+8.19s  final=+8.19s  second-half drift=+0.00s
-GATE: PASS — no audio deficit and no duplication
-```
-
-The distribution is two-valued: **107 samples at `delta=0`, 72 at `delta=+262144`**
-(exactly one 256 KB ffmpeg write block, candidate AHEAD). **Never negative, not
-once.** Final files: prefetch `172,770,626` B vs plain `172,769,140` B — the
-candidate is **1,486 bytes larger**, so neither failure mode fires: no deficit, and
-`second-half drift = +0.00 s` rules out the diverging surplus that would indicate
-duplicated segments.
-
-### What this does and does not settle
-
-**Settles:** the streamed tier has a completed 90-minute pass on the fixed fetcher.
-Row 1 of the prefetch decision table (`docs/RUNBOOK.md` step 4b) is now a gated
-option rather than an ungated one.
-
-**Does NOT settle, and none of these are renegotiated by a pass:**
-
-- **Still the AWS IVS *demo* channel, not Q4 Inc's.** Every prefetch number in this
-  campaign carries this caveat and this one does too. Tuesday remains the first
-  real-venue test, and the day-of chunked-body check (`Transfer-Encoding: chunked` /
-  no `Content-Length`) is still **mandatory** — `--stream-body` reaches
-  `fetch_segment` at all three call sites, so on a non-chunked origin it degrades
-  every fetch on the leg.
-- **The V6 deaf-leg fix was NOT exercised.** `reresolve=0` and `deaf_s=0` mean no
-  media playlist rotated during this run, so the re-resolve path never ran. Its only
-  evidence remains `scripts/test-deaf-leg.py` against a **local synthetic origin**.
-  A pass here is not a test of that fix.
-- **V4's second anomaly did not recur, which is not the same as being explained.**
-  There the candidate produced ~4 s *less* audio than its window allowed; here it
-  produced marginally more. One non-recurrence on one run does not convert an
-  unexplained gap into an understood one.
-- This is a **drop-safety** gate. It says the streamed leg loses no audio. It says
-  nothing about the lead — §V3/§V5 measure that, and §V7 is what discounts it from
-  an arrival number to a fire-time one (~+0.605 s p50, not +1.121 s).
-
 ## Session 2026-07-27 (V6) — the gate did NOT complete: a leg can go TOTALLY DEAF with every counter clean
 
 **Verdict: the streamed-tier gate ran 51.7 of its 90 pre-registered minutes and
@@ -1166,7 +1153,13 @@ Trap 28: **`rm -rf` the output directory, or a previous run's artifacts become
 this run's data.** The stale file was the right size to look like a catastrophic
 deficit rather than obvious garbage.
 
-## Session 2026-07-27 (RACE ARITHMETIC — now MEASURED) — prefetch is worth ~1.12 s, not the 1.6 s I modelled, and it is still not parity
+## Session 2026-07-27 (V3 — RACE ARITHMETIC, now MEASURED) — prefetch is worth ~1.12 s, not the 1.6 s I modelled, and it is still not parity
+
+> Tagged **V3** in the header 2026-07-27: three other sections and one config cite
+> "§V3" and there was no such header to land on. §V1b and §V1c are likewise cited
+> but are not headers — they are the two `⚠` correction blocks inside §V1 below
+> (V1b = observe-only `--prefetch-report` + the over-strong V1 claim; V1c = the
+> buffered tier needs no concurrency).
 
 Superseding the model-based table. Measured by `scripts/arrival-ab.sh` +
 `arrival-lead.py` on a live IVS channel, **20 minutes, n=600 paired segments per

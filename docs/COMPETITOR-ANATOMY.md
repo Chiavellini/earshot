@@ -1,5 +1,17 @@
 # Competitor anatomy — per-tape ledger (first tape: MS 2026-07-15)
 
+> ⚠ **SIGN CONVENTION — check before comparing any Δrace across docs.**
+> **In THIS doc, Δrace = wave-1 sweep − our flag, so NEGATIVE = we are behind.**
+> `docs/LATENCY-PROOF.md`'s V-series race-arithmetic tables use the OPPOSITE sign
+> ("+1.530 s behind"). The same race therefore appears as −1.530 here and +1.530
+> there. This is a live misreading hazard and is flagged in both places.
+>
+> Current authoritative ledger (n=4, price-moving-sweep scored): LMT GOLD
+> **+0.507 s AHEAD**, LMT MORF −1.028 s, AXP NFL −1.530 s, LMT EURO −2.024 s —
+> **median −1.28 s**. Do not quote −1.530 s as "the gap": it is one race, adopted
+> as the reference only because it is the only one with a full FEED/OURS
+> decomposition on one box.
+
 Question answered here: **who is beating us, by how much, with what stack, and what would beat
 them.** This doc is a ledger: each traded event's tape gets re-run through the same method
 (§Open verification items, item 3) and appended under §Per-tape results. Every number below is from `state/KXEARNINGSMENTIONMS-26JUL15/report.json` (our 7

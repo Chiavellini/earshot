@@ -431,11 +431,21 @@ series — query `?series_ticker=KXEARNINGSMENTION<TICKER>` directly. And it
    measured on the AWS IVS *demo* channel, not Q4 Inc's**, so the chunked-body check
    below is still mandatory and this event is still the first real-venue test.
 
-   | probe says | leg-1 flags | why |
-   |---|---|---|
-   | PRESENT **and** prefetch bodies **chunked / no `Content-Length`** | `--speculative --prefetch --stream-body --prefetch-report` | streamed tier, **V8-gated** (90 min, `short=0`, never behind); **~+0.605 s at FIRE time**, not the +1.121 s arrival figure — §V7 |
-   | PRESENT but bodies carry `Content-Length` | `--speculative --prefetch --prefetch-report` | buffered tier only (+0.168 s, V2-gated) |
-   | **ABSENT** | `--speculative --prefetch-report` — **as staged, no edit** | nothing to prefetch |
+   ⚠⚠ **THE STAGED DEFAULT CHANGED 2026-07-27 AND THIS TABLE INVERTED WITH IT.**
+   Leg 1 of `configs/webcast-pypl-26jul28-arm.toml` now ships **row 1**
+   (`--speculative --prefetch --stream-body --prefetch-report`), armed on the §V8
+   pass. So **"leave it alone" is now the AGGRESSIVE choice, and rows 2–3 require
+   you to EDIT THE CONFIG DOWN.** That is the reverse of what this table meant
+   yesterday. Read the "action" column, not your memory of it.
+
+   | probe says | leg-1 flags | action | why |
+   |---|---|---|---|
+   | PRESENT **and** bodies **chunked / no `Content-Length`** | `--speculative --prefetch --stream-body --prefetch-report` | **none — as staged** | streamed tier, **V8-gated** (90 min, `short=0`, never behind); worth **~+0.605 s at FIRE time**, not the +1.121 s arrival figure — §V7 |
+   | PRESENT but bodies carry `Content-Length` | `--speculative --prefetch --prefetch-report` | **EDIT: drop `--stream-body`** | buffered tier only (+0.168 s, V2-gated). `--stream-body` on a whole-body origin degrades **every** fetch on the leg |
+   | **ABSENT** | `--speculative --prefetch-report` | **EDIT: drop `--prefetch --stream-body`** | nothing to prefetch |
+
+   ⚠ Whichever row you land on, **step 4c's 90 s smoke is not optional if you
+   edited** — and it is the cheap way to catch a wrong row before the call.
 
    ⚠ **`--stream-body` is NOT prefetch-scoped.** It is passed to `fetch_segment`
    at all three call sites (`scripts/hls-edge-fetch.py:455,518,568`) — normal,
@@ -449,12 +459,25 @@ series — query `?series_ticker=KXEARNINGSMENTION<TICKER>` directly. And it
    Check chunking directly if the probe does not print it:
    `curl -sI "<a prefetch URL>" | grep -iE 'transfer-encoding|content-length'`
 
-**T−15 min — smoke the armed leg-1 command (only if you changed it in 4b)**
-4c. Run the exact leg-1 command against the live m3u8 for ~90 s, stdout to
+**T−15 min — smoke the armed leg-1 command (ALWAYS, changed or not)**
+4c. ⚠ **This step used to read "only if you changed it in 4b". That was correct
+   only while the staged default was the CONSERVATIVE row.** Since 2026-07-27 the
+   config ships the streamed tier, so **"unchanged" is now the path that has never
+   run against Q4 Inc's channel** — exactly the one that most needs 90 seconds of
+   evidence. Smoke it every time; it costs 90 s and it is the only real-venue
+   check that exists before the call.
+
+   Run the exact leg-1 command against the live m3u8 for ~90 s, stdout to
    `/dev/null`, stderr to a scratch file. Require **`prefetch_n > 0`**,
-   **`seg LOST = 0`**, **`short = 0`** in the `SUMMARY` line. Any failure ⇒ drop
-   to the next row of the table. This is a one-line revert, and it is the reason
-   arming a path never validated on *this* channel is defensible.
+   **`seg LOST = 0`**, **`short = 0`** in the `SUMMARY` line.
+
+   ⚠ **`short > 0` is the specific tell that this venue does not want
+   `--stream-body`** — that is precisely how the flag failed on DW/Akamai
+   (3/32/62 short reads vs 0/0/0 buffered), and §V8's pass was `short=0` across
+   every SUMMARY line for 90 minutes on the demo channel. Any failure ⇒ **drop to
+   the next row of the table** (one-line edit), then re-smoke. Dropping a row is
+   cheap; arming a leg that sheds audio is a recall bug that looks like a
+   detection failure.
 
 **T−10 min — launch**
 5. ```
