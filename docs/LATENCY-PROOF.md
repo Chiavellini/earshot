@@ -504,11 +504,35 @@ variance — the *direction reversal* is the finding, the magnitude is not.
 `num_threads` stays at 1 in every armed config until an interleaved A/B says
 otherwise; the point is that the door D1i closed is open again.
 
-**Loose end, not chased:** each `num_threads=1` process was observed at
-**185–203 % CPU**, so `with_intra_threads(1)` is not bounding the process to one
-vCPU (ORT spin-wait or non-ORT threads). That is why C is 1.50× and not 1.0×
-despite two free physical cores. If a cheap knob (`ORT` spin control / thread
-affinity) closes that, per-leg drain falls further.
+### Why C is 1.50× and not 1.0× — chased, and it is NOT a lever
+
+Each `num_threads=1` process runs at **185–203 % CPU**, which looked like ORT
+ignoring `with_intra_threads(1)`. It is not. `top -H` on a live bench process:
+
+```
+4282 earshot  R  99.9%      <- main: ReplaySource WAV read + send_blocking
+4285 detect   R  99.9%      <- inference
+4284 chunker  S  10.0%
+4283 preproc  R   0.0%
+```
+
+**One leg is ~2 vCPU by design** — `spawn_stages` runs preproc → chunker →
+detect as three threads (`src/pipeline/mod.rs:93-118`) plus the source on main.
+Two legs therefore want all 4 vCPU = both physical cores, and SMT delivers ~1.5×
+not 2×. The 1.50× is explained, and there is no free vCPU to reclaim.
+
+Two things this rules out, so nobody re-chases them:
+- **ORT threading is not the dial.** `num_threads` moves one of four threads.
+- **`spin_hot_rings` is not a latency lever here.** It replaces a park/unpark
+  (~µs) with a busy-spin (~100 ns) per chunk. Against a **249 ms** drain that is
+  noise, and it is refused in fanout mode by config validation anyway.
+
+⚠ **Caveat on the contention factor itself.** In an unpaced bench the source
+thread reads the WAV as fast as backpressure allows; on the armed path it is
+bounded by network and decoder even during an 84.6× burst. So the bench's source
+thread works *harder* than production's — **1.50× is a conservative (pessimistic)
+bound on real contention**, which is the right direction for a safety number but
+means it should not be quoted as the production figure.
 
 ## Session 2026-07-26 (D1i) — the box has ONE physical core. D1e's drain was understated by 2.3×, and threading makes it worse.
 
