@@ -70,7 +70,7 @@ Usage: hls-edge-fetch.py <media-or-master-url> [poll_ms] [max_backlog]
                          [--prefetch-report] [--prefetch]
 Writes raw segment bytes to stdout; diagnostics to stderr.
 """
-import argparse, re, sys, time, urllib.error, urllib.request, urllib.parse
+import argparse, hashlib, re, sys, time, urllib.error, urllib.request, urllib.parse
 
 UA = {"User-Agent": "earshot-edge-fetch/1"}
 
@@ -109,11 +109,14 @@ def stream_to(url, out, timeout=4, chunk=32768):
     except ValueError:
         expect = 0
     written = 0
+    t_first = None
     try:
         while True:
             buf = r.read(chunk)
             if not buf:
                 break
+            if t_first is None:
+                t_first = time.time()   # audio starts flowing HERE, not at t_done
             out.write(buf)
             out.flush()      # hand each chunk to ffmpeg immediately — the point
             written += len(buf)
@@ -127,13 +130,13 @@ def stream_to(url, out, timeout=4, chunk=32768):
         raise
     except Exception as e:
         sys.stderr.write(f"mid-body read failed after {written}B: {e}\n"); sys.stderr.flush()
-        return written, True
+        return written, True, t_first
     finally:
         try:
             r.close()
         except Exception:
             pass
-    return written, bool(expect and written < expect)
+    return written, bool(expect and written < expect), t_first
 
 
 def fetch_segment(url, out, timeout, stream_body):
@@ -150,7 +153,35 @@ def fetch_segment(url, out, timeout, stream_body):
     data = get(url, timeout=timeout)
     out.write(data)
     out.flush()
-    return len(data), False
+    # Buffered: nothing reaches the decoder until the whole body is in, so the
+    # audio-available instant IS t_done. None signals "use t_done".
+    return len(data), False, None
+
+
+def arrival(log, url, t_req, t_done, t_first, mode):
+    """Record when a segment's bytes finished arriving, keyed by the URL itself.
+
+    This is the honest leg-vs-leg latency instrument, and it needs no PDT and no
+    clock alignment: both legs fetch the SAME segment URLs (proven byte-identical
+    in the V2 gate — segs 2673 vs prefetch_fetched 2672), they run on the same
+    box, so joining two runs on the URL hash and differencing t_done measures
+    exactly "how much earlier did this leg have this audio".
+
+    Deriving a PDT for a prefetch URL (PDT_last + EXTINF) was the obvious
+    alternative and is worse: an off-by-one in the prefetch->segment mapping
+    shifts it by a whole segment (~2 s), which is larger than the ~0.9 s effect
+    being measured — a confident wrong answer.
+    """
+    if log is None:
+        return
+    # t_first is when AUDIO STARTS FLOWING. For a buffered fetch nothing reaches
+    # the decoder until the body is complete, so it equals t_done. For a streamed
+    # fetch it can be ~1.4 s earlier — and a log that recorded only t_done would
+    # be structurally blind to exactly the effect --stream-body exists for.
+    h = hashlib.md5(url.encode()).hexdigest()[:12]
+    tf = t_done if t_first is None else t_first
+    log.write(f"{h} {t_done:.3f} {t_done - t_req:.3f} {mode} {tf:.3f}\n")
+    log.flush()
 
 
 def _pf_summary(pf_lead):
@@ -252,6 +283,10 @@ def main():
                     help="wait this fraction of a segment duration before probing (politeness)")
     ap.add_argument("--spec-poll-ms", type=float, default=200)
     ap.add_argument("--spec-max-probes", type=int, default=15)
+    ap.add_argument("--arrival-log", type=str, default=None,
+                    help="append '<url-hash> <t_done> <fetch_secs> <mode>' per segment. "
+                         "Join two legs' logs on the hash and difference t_done to get "
+                         "the real arrival lead — no PDT, no clock alignment needed.")
     ap.add_argument("--prefetch", action="store_true",
                     help="FETCH #EXT-X-PREFETCH URLs (buffered, serial) instead of waiting "
                          "for the manifest to announce them. Banks a flat ~0.92 s per segment "
@@ -301,6 +336,7 @@ def main():
     # --prefetch-report accounting (observe-only; no HTTP)
     pf_first_seen: dict[str, float] = {}
     pf_lead: dict[str, float] = {}
+    arr_log = open(a.arrival_log, "a", buffering=1) if a.arrival_log else None
     pf_on = a.prefetch          # flips off permanently on 429/403
     n_prefetch_hits = 0
     retry_n: dict[str, int] = {}
@@ -406,7 +442,9 @@ def main():
 
         for u, p in new:
             try:
-                _, short = fetch_segment(urllib.parse.urljoin(base, u), out, poll + 3, a.stream_body)
+                _t0 = time.time()
+                _, short, _tfb = fetch_segment(urllib.parse.urljoin(base, u), out, poll + 3, a.stream_body)
+                arrival(arr_log, u, _t0, time.time(), _tfb, "manifest")
                 retry_n.pop(u, None)
                 n_segs += 1
                 last_seg_at = time.time()
@@ -465,8 +503,10 @@ def main():
             if target is not None:
                 seen.add(target); seen_order.append(target)
                 try:
-                    _, short = fetch_segment(urllib.parse.urljoin(base, target), out,
+                    _t0 = time.time()
+                    _, short, _tfb = fetch_segment(urllib.parse.urljoin(base, target), out,
                                              poll + 6, a.stream_body)
+                    arrival(arr_log, target, _t0, time.time(), _tfb, "prefetch")
                     n_prefetch_hits += 1
                     n_segs += 1
                     last_seg_at = time.time()
@@ -514,7 +554,7 @@ def main():
             # that segment forever.
             seen.add(probing); seen_order.append(probing)
             try:
-                _, short = fetch_segment(urllib.parse.urljoin(base, probing), out, poll + 3, a.stream_body)
+                _, short, _ = fetch_segment(urllib.parse.urljoin(base, probing), out, poll + 3, a.stream_body)
                 n_spec_hits += 1
                 n_segs += 1
                 last_seg_at = time.time()
