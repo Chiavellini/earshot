@@ -57,6 +57,20 @@ risk gate).
   cite the rules (see VERIFICATIONS Q4 for what counts as a mention).
 - Keyword order is load-bearing: `KeywordId(i)` = index in `[[keywords]]`.
 - Risk values only tighten: `RiskConfig::clamped()` runs in `RiskGate::new`.
+- **A non-empty `[risk].allowlist_tickers` must COVER every keyword's
+  `market_ticker`** — `config::allowlist_covers_keywords`, called from
+  `main.rs::arm` right after `load`. It is deliberately NOT part of `validate`:
+  bench and replay configs legitimately carry keywords with no risk section.
+  An EMPTY allowlist stays legal (honestly "no orders"), and `arm` warns loudly
+  about one in dry-run, because a clean dry-run on an empty allowlist proves the
+  audio path and never the fire path. Guarded by
+  `no_checked_in_config_has_a_partial_allowlist` (scans every `configs/*.toml`)
+  and `a_partial_allowlist_is_rejected_but_an_empty_one_is_not`.
+  ⚠ The shape this exists to kill: `prepare`'s placeholder allowlist entry
+  survives while `[[keywords]]` are filled in real. Non-empty, so
+  `--i-am-live`'s emptiness check passes, the arm comes up clean, and then
+  **every** order is refused `NotAllowlisted` at fire time. All three configs
+  staged for 2026-07-28/29 shipped in exactly that state.
 - Secrets NEVER appear here — the config carries only *paths* to key material
   (`[kalshi].private_key_path`, `[twilio].auth_token_path`, resolved relative
   to the config) or, when those are absent, credentials come from env

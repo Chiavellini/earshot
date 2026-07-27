@@ -741,6 +741,14 @@ async fn arm(
         return Err("--fillable requires --i-am-live (dry-run never sends, fillable is meaningless)".into());
     }
     let cfg = config::load(&config_path)?;
+    config::allowlist_covers_keywords(&cfg).map_err(|e| -> AnyErr { e.into() })?;
+    if !i_am_live && cfg.risk.allowlist_tickers.is_empty() {
+        tracing::warn!(
+            "dry-run with an EMPTY [risk].allowlist_tickers — every order would be \
+             refused NotAllowlisted if this config were armed live. A clean dry-run \
+             here proves the audio path, NOT the fire path."
+        );
+    }
     let state_dir = state_dir.as_path();
     let (signer, rest) = connect_live_for(&cfg, &config_path).await?;
 

@@ -461,6 +461,44 @@ pub fn load(path: &Path) -> Result<EventConfig, ConfigError> {
     Ok(cfg)
 }
 
+/// A PARTIAL allowlist is the dangerous shape. `--i-am-live` only checks that
+/// `allowlist_tickers` is non-empty, so a config that kept `prepare`'s
+/// placeholder entry while its `[[keywords]]` were filled in real passes every
+/// gate, arms cleanly, and then refuses **every** order at fire time with
+/// `Refusal::NotAllowlisted`. All three configs staged for 2026-07-28/29 were in
+/// exactly that state: 1 placeholder ticker against 16/15/43 keyword tickers.
+///
+/// Rule: an allowlist that exists must COVER the keywords. An empty allowlist is
+/// still permitted (bench/replay configs, and it is honestly "no orders"); `arm`
+/// warns loudly about an empty one, because a clean dry-run on an empty
+/// allowlist proves the audio path and never the fire path.
+///
+/// Not folded into [`validate`] because bench and replay configs legitimately
+/// carry keywords with no risk section at all; this is an *arm-path* obligation.
+pub fn allowlist_covers_keywords(cfg: &EventConfig) -> Result<(), ConfigError> {
+    if cfg.risk.allowlist_tickers.is_empty() {
+        return Ok(());
+    }
+    let missing: Vec<&str> = cfg
+        .keywords
+        .iter()
+        .map(|k| k.market_ticker.as_str())
+        .filter(|t| !cfg.risk.allowlist_tickers.iter().any(|a| a == t))
+        .collect();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    Err(ConfigError::Invalid(format!(
+        "[risk].allowlist_tickers is non-empty but does not cover {} of {} keyword \
+         market_tickers — every order for these would be refused NotAllowlisted at \
+         fire time. Missing: {:?}{}. Paste the [risk] block from `earshot prepare`.",
+        missing.len(),
+        cfg.keywords.len(),
+        &missing[..missing.len().min(5)],
+        if missing.len() > 5 { " …" } else { "" }
+    )))
+}
+
 fn validate(cfg: &EventConfig) -> Result<(), ConfigError> {
     let fail = |msg: String| Err(ConfigError::Invalid(msg));
 
@@ -733,6 +771,48 @@ mod tests {
 
     fn example_path() -> std::path::PathBuf {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("configs/example-event.toml")
+    }
+
+    #[test]
+    /// The staging defect that would have silently voided the 07-28 PayPal
+    /// arm — the ONLY scheduled live Δrace measurement — by refusing all 16
+    /// orders. Scans every checked-in config so the next one cannot ship it.
+    fn no_checked_in_config_has_a_partial_allowlist() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("configs");
+        let mut checked = 0;
+        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+            let path = entry.path();
+            if path.extension().map(|e| e != "toml").unwrap_or(true) {
+                continue;
+            }
+            let Ok(cfg) = load(&path) else { continue };
+            checked += 1;
+            assert!(
+                allowlist_covers_keywords(&cfg).is_ok(),
+                "{}: {}",
+                path.display(),
+                allowlist_covers_keywords(&cfg).unwrap_err()
+            );
+        }
+        assert!(checked > 5, "expected to scan several configs, scanned {checked}");
+    }
+
+    #[test]
+    fn a_partial_allowlist_is_rejected_but_an_empty_one_is_not() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("configs/webcast-pypl-26jul28-arm.toml");
+        let mut cfg = load(&path).unwrap();
+        assert!(allowlist_covers_keywords(&cfg).is_ok());
+
+        // The exact shape that shipped: prepare's placeholder survives, the
+        // keywords are real. Non-empty, so every live gate passes.
+        cfg.risk.allowlist_tickers = vec!["KXEARNINGSMENTIONPYPL-26JUL28-CAPT".into()];
+        let err = allowlist_covers_keywords(&cfg).unwrap_err().to_string();
+        assert!(err.contains("does not cover"), "{err}");
+
+        // Empty stays legal: bench/replay configs, and it is honestly "no orders".
+        cfg.risk.allowlist_tickers.clear();
+        assert!(allowlist_covers_keywords(&cfg).is_ok());
     }
 
     #[test]
