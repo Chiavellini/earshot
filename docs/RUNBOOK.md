@@ -365,6 +365,20 @@ series — query `?series_ticker=KXEARNINGSMENTION<TICKER>` directly. And it
    **the demo channel instead of PayPal while looking entirely normal**. Then get
    the m3u8 from the IR player and write it fresh:
    `echo "<m3u8>" > $HOME/pypl-stream.url`
+
+   > ⚠ **WRITE THE MASTER, NOT A VARIANT (new 2026-07-27).** The network tab
+   > shows both; take the **channel/master** playlist. A media/variant playlist
+   > URL can DIE mid-call while the channel stays live — measured this day, a leg
+   > took 10,860 consecutive poll 404s over 45 minutes after its resolved media
+   > URL expired (LATENCY-PROOF §V6). `hls-edge-fetch.py` now re-resolves and
+   > recovers in ~3 s — **but only if it was given a master.** Handed a variant it
+   > prints `⚠ CANNOT RE-RESOLVE` and stays deaf until restarted, and the leg
+   > then dies on the 30 s `idle_timeout`, forfeiting every race for the rest of
+   > the call. On IVS the master looks like
+   > `…playback.live-video.net/api/video/v1/…m3u8`; a variant looks like
+   > `…playlist.live-video.net/v1/playlist/<long-token>.m3u8`.
+   > Confirm at launch: the leg's stderr must NOT contain `CANNOT RE-RESOLVE`.
+
    Then write the **same** m3u8 to the control-legs file:
    `echo "<m3u8>" > $HOME/pypl-pcmab.url`  (deliberately a separate file — the
    runsheet's URL file and the instrument's must never alias each other)
@@ -474,6 +488,11 @@ series — query `?series_ticker=KXEARNINGSMENTION<TICKER>` directly. And it
 **After**
 8. `grep SUMMARY $HOME/spec_edge.err` → **`seg LOST` must be 0.** A non-zero
    value is silently lost audio, which is a recall bug (this cost 86 s once).
+   **Also (new 2026-07-27) `deaf_s` must be 0 and `poll_err` small.** A clean
+   `seg LOST` is NOT sufficient: a leg whose playlist URL died reports
+   `dropped=0 short=0 seg_err=0` forever while delivering nothing. If `deaf_s>0`,
+   read `reresolve=` — non-zero means the leg self-healed and the run is still
+   good; a `DEAF-NOW` marker on the last line means it never came back.
    Also read `prefetch_n / lead_med / lead_min / lead_max` from the same line —
    **that is `L_prefetch` on a REAL Q4 Inc channel, the first venue confirmation
    that is not the AWS demo.** Demo-channel reference: `lead_med=4.00s`,

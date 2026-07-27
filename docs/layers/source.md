@@ -75,6 +75,18 @@ protocol behavior — live-edge join point, probe buffering, reconnect — so
 the acquisition latency is set by the command's own flags in the config,
 not by code here (see the tuned-leg flag rationale in
 `configs/webcast-dpz-capture.toml`).
+⚠ **Because the subprocess owns reconnect, a subprocess that cannot reconnect is
+a leg-level outage this layer can only detect, never repair.** Measured
+2026-07-27 (`docs/LATENCY-PROOF.md` §V6): `scripts/hls-edge-fetch.py` resolved
+master→media once and, when that URL died mid-run while the channel stayed live,
+polled it 10,860 times over 45 min emitting nothing. The **30 s `idle_timeout`
+below is what contains this** — the leg errors and `SourceArbiter` carries on
+with the survivor — but the leg is gone for the rest of the event and is not
+restarted, so the race is forfeit from that point. The repair belongs in the
+subprocess and now lives there (re-resolve after 12 failed polls; `poll_err=` /
+`deaf_s=` / `reresolve=` in its `SUMMARY`; regression test
+`scripts/test-deaf-leg.py`). **Day-of consequence: put the MASTER m3u8 in the
+`.url` file — handed a variant, the fetcher has no recovery path.**
 Obligations kept here: dense `seq`; ring drop policy (send + warn);
 dead-stream guard (`idle_timeout` 30 s, no bytes → `SourceError::Protocol`
 with the decoder's stderr tail — "wall time ≠ audio"); child killed on every

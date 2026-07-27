@@ -342,7 +342,8 @@ def main():
     retry_n: dict[str, int] = {}
     next_summary = time.time() + 60.0
 
-    # resolve master→media once, but tolerate startup failure with retries
+    # resolve master→media, tolerating startup failure with retries. NOT "once":
+    # see the DEAF-LEG guard in the poll loop below.
     media = None
     for _ in range(20):
         try:
@@ -354,6 +355,37 @@ def main():
         sys.stderr.write("FATAL: could not resolve media playlist after retries\n")
         return 1
     base = media.rsplit("/", 1)[0] + "/"
+    src_is_master = (media != src)
+    if not src_is_master:
+        sys.stderr.write(
+            "⚠ the URL given IS a media playlist, not a master — if it dies "
+            "mid-run this leg CANNOT self-heal. Prefer the master/channel URL.\n")
+        sys.stderr.flush()
+
+    # ── DEAF-LEG GUARD (2026-07-27) ────────────────────────────────────────
+    # A media playlist URL can die MID-RUN while the channel stays live: IVS
+    # signs them, and a channel-side session change invalidates them. Measured
+    # this day on the AWS IVS demo channel — a 90-min gate run delivered 1554
+    # clean segments and then took 10,860 CONSECUTIVE poll 404s over 45 minutes.
+    #
+    # Why that was so dangerous: the leg was TOTALLY DEAF, yet every counter it
+    # reports stayed clean — dropped=0 short=0 seg_err=0, no `seg LOST` — so the
+    # runbook's own post-run health check would have passed a leg that captured
+    # 52 minutes of a 70-minute call. It is the S7 silent-audio-loss failure
+    # class with a new mechanism, and a worse shape: S7 lost ~86 s in scattered
+    # gaps, this loses EVERYTHING after the failure point.
+    #
+    # It is also a politeness bug: 4 requests/second at a dead URL for 45
+    # minutes, per leg. Against a real issuer's CDN that is what earns the
+    # rate-limit every other budget in this script exists to avoid.
+    RERESOLVE_EVERY = 12        # consecutive failed polls (~3 s at 250 ms)
+    DEAF_BACKOFF_AFTER = 40     # ~10 s ⇒ stop flooding, poll slowly
+    DEAF_POLL_S = 1.0
+    poll_fail = 0               # CONSECUTIVE failed polls
+    n_poll_err = 0              # total, for SUMMARY
+    n_reresolve = 0             # successful media-URL changes
+    deaf_since = None
+    deaf_secs = 0.0
 
     out = sys.stdout.buffer
     seen = set()
@@ -365,11 +397,70 @@ def main():
 
     while True:
         t0 = time.time()
+
+        # ⚠ EMITTED AT THE TOP OF THE LOOP, DELIBERATELY. This used to sit after
+        # the poll, so a leg that could not poll never wrote a SUMMARY at all —
+        # during the 45-minute deaf window measured 2026-07-27 the last line in
+        # the log was a perfectly clean `segs=1554 dropped=0 seg_err=0`. A health
+        # line that goes silent exactly when the leg breaks is worse than none.
+        if t0 >= next_summary:
+            next_summary = t0 + 60.0
+            deaf_now = deaf_secs + ((t0 - deaf_since) if deaf_since is not None else 0.0)
+            sys.stderr.write(
+                f"SUMMARY segs={n_segs} dropped={n_skip} short={n_short} "
+                f"seg_err={n_seg_err} spec_hits={n_spec_hits} spec_404={n_spec_404} "
+                f"spec={'on' if spec_on else 'OFF'}"
+                f"  poll_err={n_poll_err} deaf_s={deaf_now:.0f} "
+                f"reresolve={n_reresolve}{' DEAF-NOW' if deaf_since is not None else ''}"
+                + (_pf_summary(pf_lead) if a.prefetch_report else "")
+                + (f"  prefetch_fetched={n_prefetch_hits} pf={'on' if pf_on else 'OFF'}"
+                   if a.prefetch else "") + "\n")
+            sys.stderr.flush()
+
         try:
             body = get(media, timeout=poll + 2).decode("utf-8", "replace")
         except Exception as e:
-            sys.stderr.write(f"poll err: {e}\n"); sys.stderr.flush()
-            time.sleep(poll); continue
+            n_poll_err += 1
+            poll_fail += 1
+            if deaf_since is None:
+                deaf_since = t0
+            # Loud on the first failure and then every 40th, so a real outage is
+            # visible without writing 10,860 identical lines into the log.
+            if poll_fail == 1 or poll_fail % DEAF_BACKOFF_AFTER == 0:
+                sys.stderr.write(
+                    f"poll err ({poll_fail} consecutive, deaf {t0 - deaf_since:.0f}s): {e}\n")
+                sys.stderr.flush()
+            # The playlist URL may simply have died. Re-derive it from the URL we
+            # were originally given; if that was a master this recovers the leg.
+            if poll_fail % RERESOLVE_EVERY == 0:
+                if src_is_master:
+                    try:
+                        new_media = resolve_media(src, timeout=poll + 2)
+                        if new_media != media:
+                            media = new_media
+                            base = media.rsplit("/", 1)[0] + "/"
+                            n_reresolve += 1
+                            sys.stderr.write(
+                                f"RE-RESOLVED media playlist after {poll_fail} failed "
+                                f"polls (recovery #{n_reresolve}): {media}\n")
+                            sys.stderr.flush()
+                    except Exception as e2:
+                        sys.stderr.write(f"re-resolve failed: {e2}\n"); sys.stderr.flush()
+                elif poll_fail == RERESOLVE_EVERY:
+                    sys.stderr.write(
+                        "⚠ CANNOT RE-RESOLVE — this leg was given a media playlist, "
+                        "not a master. It stays deaf until restarted.\n")
+                    sys.stderr.flush()
+            time.sleep(poll if poll_fail < DEAF_BACKOFF_AFTER else DEAF_POLL_S)
+            continue
+        if poll_fail:
+            deaf_secs += t0 - deaf_since
+            sys.stderr.write(
+                f"RECOVERED after {poll_fail} failed polls / {t0 - deaf_since:.1f}s deaf "
+                f"(total deaf {deaf_secs:.1f}s)\n")
+            sys.stderr.flush()
+            poll_fail = 0
+            deaf_since = None
 
         # pair each segment URI with the PDT that precedes it (diagnostics)
         pdt = None; pairs = []; prefetch_lines = []
@@ -604,17 +695,6 @@ def main():
             sys.stderr.write(
                 f"speculative: DISABLED — runaway guard ({n_spec_404} 404s for "
                 f"{n_segs} segments); falling back to manifest-driven\n")
-            sys.stderr.flush()
-
-        if time.time() >= next_summary:
-            next_summary = time.time() + 60.0
-            sys.stderr.write(
-                f"SUMMARY segs={n_segs} dropped={n_skip} short={n_short} "
-                f"seg_err={n_seg_err} spec_hits={n_spec_hits} spec_404={n_spec_404} "
-                f"spec={'on' if spec_on else 'OFF'}"
-                + (_pf_summary(pf_lead) if a.prefetch_report else "")
-                + (f"  prefetch_fetched={n_prefetch_hits} pf={'on' if pf_on else 'OFF'}"
-                   if a.prefetch else "") + "\n")
             sys.stderr.flush()
 
         dt = time.time() - t0

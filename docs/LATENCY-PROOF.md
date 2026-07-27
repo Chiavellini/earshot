@@ -520,6 +520,212 @@ against a live IVS stream:
    looked entirely normal doing it. Removed; the runsheet writes it fresh on the
    morning, and it should not exist before then.
 
+## Session 2026-07-27 (V7) — ⚠ THE HEADLINE IS AN *ARRIVAL* NUMBER: `--stream-body` hands back ~516 ms of it at the decision point
+
+**This is the most important correction of the campaign and it cuts the headline
+gain roughly in half at p50.** Every prefetch number to date — V1, V3, V5 — is
+**when audio ARRIVES**. The race is decided by **when the detector can FIRE**,
+and those differ by the lookahead term E0 measured. Nobody had priced the
+interaction, and it is large.
+
+Measured with `scripts/arrival-profile.py` on the **banked V5 legs** — one
+`capture-bakeoff` run, both legs interleaved on the same machine, so the standing
+"never across runs" rule is satisfied. No new capture, no network, no spend.
+
+| | `plain` (buffered) | `pfstream` (`--prefetch --stream-body`) |
+|---|---|---|
+| bursts over 900 s | 449 | **5741** |
+| burst period / payload | 2002 ms / 2000 ms | **154 ms / 160 ms** |
+| delivered-over | 16 ms (126.9× real time) | 1 ms |
+| **A=200 ms, p50 wall cost** | **1.6 ms** | **200.6 ms** |
+| **A=400 ms, p50** | **3.3 ms** | **400.4 ms** |
+| **A=530 ms, p50** | **4.3 ms** | **520.1 ms** |
+| A=530 ms, p90 | 1991.2 ms | **670.6 ms** |
+| A=530 ms, p95 | 1994.8 ms | **716.8 ms** |
+| A=530 ms, max | 2247.0 ms | 2174.9 ms |
+| spills past its own burst | 26.0 % | 99.7 % |
+
+### The mechanism, and why it was invisible
+
+`--stream-body` does exactly what it advertises: it stops delivering audio in
+2-second lumps and delivers it **near real time**. E0's central finding — that
+four-fifths of the time the trailing audio the engine needs is ALREADY IN HAND,
+so lookahead is free — **is a property of buffered arrival, not of the system.**
+Under streamed arrival that property is gone: the detector's ~530 ms lookahead
+costs its full face value, essentially always.
+
+**The conversion factor between an offline latency win and a real one:**
+
+| arrival mode | p50 wall cost per ms of lookahead |
+|---|---|
+| buffered (today's production leg) | **≈ 0.008 ms/ms** — cutting `A` buys ~nothing at p50 |
+| streamed | **≈ 1.00 ms/ms** — cutting `A` buys its full face value |
+
+The streamed column is 200.6/200, 400.4/400, 520.1/530 — the identity line, to
+within 2 %.
+
+### What this does to the race table
+
+| state | arrival gain | **est. p50 FIRE-time gain** |
+|---|---|---|
+| `--prefetch` buffered | +0.168 s | **+0.168 s** (arrival profile unchanged) |
+| `+ --stream-body` | +1.121 s avg | **≈ +0.605 s** (1.121 − 0.516) |
+
+⇒ the projected `Δrace` for the streamed tier is **≈ 0.9 s behind at p50**, not
+the **+0.409 s** the arrival-domain table claims. **Streamed is still the best
+option on the board** (0.9 < 1.36 < 1.53) and its *tail* is dramatically better
+(p90 671 ms vs 1991 ms) — but the size was overstated, and the overstatement came
+from measuring arrival when the race is settled at fire time.
+
+### It also RE-VALUES the two levers this campaign closed
+
+Both were closed on **precision**, neither on latency:
+
+- **D2 prefix-firing** measured **+320 ms** median `emit_lag` gain — a pure
+  `A`-reduction, benched offline where segment boundaries do not exist. Under
+  today's buffered arrival that converts to ≈ **3 ms** of real p50 gain, which is
+  why it has always looked worthless in production. **Under streamed prefetch it
+  converts to ≈ 320 ms.** Parked at 1.19 FA/h against a ≤0.5 bar.
+- **The `streaming_ctc` swap** costs **≈ +300 ms** under armed fanout (+50 ms
+  `consumed_lag` p50 plus +249 ms burst drain, D1c as revised by D1i-b), bought
+  for −69 % false alarms. Reverting is a one-line edit to `engine =`.
+
+And E0's own conclusion — *"the lever is `A` itself, and it is linear"* — was
+**right about the mechanism and wrong about the coefficient under the arrival
+profile we actually ran**. It also retrospectively explains D1: chunk-8's −80 ms
+of quantum reduction produced no visible win because at p50 the term was already
+free. (D1 stays rejected on its other costs: +263 ms drain and −3 of 57
+detections.)
+
+### Caveats, stated rather than buried
+
+- The `pfstream` leg carried **both** `--prefetch` and `--stream-body`, so
+  attributing the 154 ms burst structure to `--stream-body` is **by mechanism,
+  not by a third arm**. A 3-leg capture (plain / `--prefetch` / `--prefetch
+  --stream-body`) would settle it and has not been run.
+- One 900 s run per leg, AWS IVS demo channel, not Q4 Inc's.
+- `A = 530 ms` is E0b's measured `sherpa_kws` lookahead; D1c put `streaming_ctc`
+  `consumed_lag` p50 at the same 540 ms, so it is a fair proxy for both.
+- **`1.121 − 0.516` is an ESTIMATE, not a measurement.** It treats arrival gain
+  and lookahead cost as additive at the same percentile when the two are
+  correlated through segment phase. The two distributions above are the honest
+  result; the single number is a projection and is labelled as one. Measuring the
+  fire-time gain directly needs a detector on both legs against keyworded audio —
+  which is what Tuesday's control legs plus the armed run can finally provide.
+
+## Session 2026-07-27 (V6) — the gate did NOT complete: a leg can go TOTALLY DEAF with every counter clean
+
+**Verdict: the streamed-tier gate ran 51.7 of its 90 pre-registered minutes and
+is NOT a pass.** What killed it is a defect worth more than the gate.
+
+### What happened
+
+`prefetch-gate.sh` started 14:20:40 UTC. At **15:12** — 3105 s in — both WAVs
+froze at 99,352,576 B (3104.8 s of audio) and never grew again. The processes
+stayed alive for another 46 minutes.
+
+| leg | segments delivered | then | other error kinds |
+|---|---|---|---|
+| `plain` | 1554 | **10,860 consecutive poll 404s** | **none** |
+| `prefetch` | 1555 | 10,939 consecutive poll 404s | none |
+
+The channel was **still live** — its master playlist returned HTTP 200 throughout
+(verified from the laptop at 15:58). What had died was each leg's **resolved
+media playlist URL**.
+
+`scripts/hls-edge-fetch.py` resolved master→media **once at startup** and never
+again, so both legs polled a dead URL at 4 requests/second for 45 minutes.
+
+### Why this is worse than the gate it broke
+
+**Every health signal the FETCHER emits stayed clean.** The last SUMMARY before
+the flood reads `segs=1554 dropped=0 short=0 seg_err=0`, there is no `seg LOST`,
+and — the sharpest part — **the SUMMARY line was emitted only after a successful
+poll, so once the leg went deaf it stopped reporting entirely.** The final state
+of the log is a perfect health line followed by silence. `docs/RUNBOOK.md`'s own
+post-run check ("`seg LOST` must be 0") **passes** on that log.
+
+### ⚠ Severity is NOT the same under the arm — checked rather than assumed
+
+My first write-up of this said the armed run would have lost 18 minutes silently.
+**That is wrong and is corrected here.** `PipeSource` carries a **30 s
+dead-stream guard** (`src/source/pipe.rs:59`, `idle_timeout`): no bytes for 30 s
+⇒ `SourceError::Protocol` with the decoder's stderr tail. So:
+
+| context | what a deaf fetcher does |
+|---|---|
+| bare shell pipeline (`prefetch-gate.sh`, `fetcher \| ffmpeg > wav`) | **totally silent** — observed here, 45 min |
+| **armed run / `capture-bakeoff`** (through `PipeSource`) | leg **errors loudly after 30 s**, `SourceArbiter` keeps the surviving leg ("one dead leg must not tear down") |
+
+So Tuesday would not have lost audio silently — it would have **lost the racing
+leg permanently**, 30 s after the failure, with `pipe_tuned` (12–19 s absolute
+lag) carrying detection alone for the remainder. Every race after that point is
+forfeit, but the detections survive and the failure is visible.
+
+**That is the honest value of the fix: not "prevents silent loss" under the arm,
+but "3 s of recovery instead of losing the racing leg for the rest of the
+call".** It *does* prevent silent loss in the bare-pipeline instruments, which is
+what broke this gate and what every future long capture depends on.
+
+Related to the S7 silent-audio-loss class but distinct in shape: S7 lost ~86 s in
+scattered gaps within a live leg; this ends the leg outright — and on an earnings
+call the tail is the Q&A, where keyword density is highest.
+
+It is also a **politeness** failure: ~21,800 requests across the two legs at a
+dead URL. Against a real issuer's CDN that is precisely what earns the rate-limit
+every other budget in that script exists to prevent.
+
+### Frequency — it is intermittent, which is worse than deterministic
+
+Three 90-minute runs against the same channel this day:
+
+| run | window | outcome |
+|---|---|---|
+| V2 (buffered) | 08:33 → 10:03 | completed, 5399.4 s |
+| V4 (streamed) | 11:59 → 13:29 | completed, 5396.9 / 5399.1 s |
+| this one | 14:20 → died 15:12 | **deaf at 51.7 min** |
+
+So it is not a fixed TTL — **1 in 3 today**. A rate that high cannot be accepted
+on a leg that has to survive a 70-minute call.
+
+⚠ It also offers a *candidate* mechanism for V4's "unexplained" 2.16 s duration
+shortfall (5396.92 vs 5399.08). **Candidate, not conclusion** — a brief poll-404
+window would produce exactly that shape, but it was not observed and is not being
+claimed.
+
+### The fix, and it is TESTED rather than asserted
+
+`scripts/hls-edge-fetch.py`:
+- on every **12 consecutive** failed polls, **re-resolve the original URL**; if it
+  was a master this recovers the leg. Recoveries are counted and logged loudly.
+- if the leg was handed a **media** playlist rather than a master it **cannot**
+  self-heal — it now says so once, at startup and again on failure. ⇒ **day-of
+  rule: write the MASTER/channel m3u8 into the `.url` file, not a variant.**
+  (`~/axp-stream.url` from 07-24 holds a `/v1/playlist/<token>.m3u8` variant, so
+  the AXP arm had no recovery path either.)
+- back off to 1 s polling after ~10 s deaf, killing the request flood.
+- `SUMMARY` now carries **`poll_err=`, `deaf_s=`, `reresolve=`** and a
+  **`DEAF-NOW`** marker, and is **emitted at the TOP of the loop** so a leg that
+  cannot poll still reports. A health line that goes silent exactly when the leg
+  breaks is worse than no health line.
+
+`scripts/test-deaf-leg.py` (new) reproduces the failure against a local origin
+that rotates its session mid-run, and is a real A/B:
+
+| fetcher | segments before switch | segments after | re-resolved | duplicates |
+|---|---|---|---|---|
+| pre-fix (`HEAD`) | 19 | **0** — deaf forever | no | 0 |
+| fixed | 19 | **25** | yes, in **3.1 s** | 0 |
+
+The control matters: the same test **fails** on the unpatched fetcher, so it is
+measuring the fix and not the weather.
+
+**Gate re-launched 16:07 UTC with the fixed fetcher, ending ~17:37 UTC.** The
+51.7 min of data collected before the failure showed deltas of only `0` or
+`+262144` (one 256 KB block, prefetch AHEAD) and never a deficit — **but 52
+minutes is not 90, and the bar is not being re-negotiated after the fact.**
+Evidence preserved in `~/pfgate3-evidence/` before the re-run wiped the directory.
+
 ## Session 2026-07-27 (V5) — the prefetch lead SURVIVES ffmpeg, and the "not steady" spread IS the segment-phase distribution
 
 The biggest open unknown: every prefetch number was ARRIVAL at the fetcher's
