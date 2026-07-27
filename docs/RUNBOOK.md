@@ -616,6 +616,32 @@ series — query `?series_ticker=KXEARNINGSMENTION<TICKER>` directly. And it
     distribution**, not noise and not a number to quote. Report the median with
     n and spread, plus min/max as the tail/head of the distribution.
 
+### ▣ PRE-REGISTERED PREDICTIONS FOR TUESDAY — written 2026-07-27 20:15 UTC, BEFORE the event
+
+All four are checkable from `$HOME/pypl-arrival.log` alone (no alignment, no
+tape). Demo-channel references in brackets. **Do not adjust these after seeing
+the numbers.**
+
+| # | prediction | pass band | demo ref |
+|---|---|---|---|
+| 1 | first-byte lag behind PDT, p50 | **0.30 – 0.70 s** | 0.484 s |
+| 2 | complete lag behind PDT, p50 | **seg_dur + 0.2 … +0.7 s** | 2.393 s @ 2 s seg |
+| 3 | span (complete − first byte), p50 | **seg_dur − 0.3 … seg_dur** | 1.909 s @ 2 s seg |
+| 4 | `mode=prefetch` share of segments | **> 90 %** | 29/30 |
+
+**FALSIFIER, and it is the one that matters:** if **span ≈ 0** then the bodies
+are NOT arriving chunked and the streamed tier bought nothing at this venue —
+read the run as the buffered tier, and do not credit `--stream-body`. (The plain
+leg measured span **exactly 0.000 s**, so this is a sharp discriminator, not a
+judgement call.)
+
+**Δrace prediction (model-dependent, stated separately because it is weaker):**
+the streamed tier is worth **≈1.117 s** of fire-time gain (§A2, mean over word
+position; 2.03 s at a segment head, 0.12 s at a tail). Against the four banked
+races that would move us from **1 of 4** races won to **2 of 4**. PayPal will
+yield few races, so treat any single Δrace as one draw from a ±2 s distribution,
+**not** as a verdict on the tier.
+
 **⚠ State this expectation NOW, so it cannot be rounded toward afterwards.**
 PayPal will produce only a handful of price-moving sweeps, and `OURS` is a
 segment-phase lottery with ~±2 s spread (E0). **A handful of Δrace draws cannot

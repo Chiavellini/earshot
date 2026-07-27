@@ -651,6 +651,92 @@ live in the armed path and clean.
 absence verified.** Confirmed again here: that file must be written FRESH on
 Tuesday, and RUNBOOK step 3 deletes it first regardless.
 
+## Session 2026-07-27 (A2) — ⚠ §V7 OVER-CORRECTED AND I RETRACT IT: the gain is 1.117 s, not 0.605 s
+
+This morning I "corrected" the campaign's headline downward, claiming the
+arrival-domain +1.121 s handed back ~516 ms before reaching the decision point.
+**That was wrong. Measured properly, the fire-time gain is 1.117 s** — within
+**4 ms** of the original arrival figure. The correction was the error.
+
+### Both legs now measured the same way, on the same channel
+
+`--arrival-log` on each leg against the IVS demo channel, 60 s each:
+
+| leg | first-byte lag behind PDT | complete lag | span | n |
+|---|---|---|---|---|
+| plain (manifest-driven) | **2.516 s** | **2.516 s** | **0.000 s** | 35 |
+| `--prefetch --stream-body` | **0.484 s** | 2.393 s | 1.909 s | 29 |
+
+The plain leg's span of **exactly zero** is the buffered path proving itself:
+nothing is emitted until the body is complete.
+
+### Fire lag — when audio through `word_end + A` actually arrives
+
+`A = 0.530 s` (E0b measured). Plain includes the segment-**spill** discontinuity
+that E0 identified; streamed does not spill because it tracks the encoder.
+
+| word position `f` | plain | streamed | streamed wins by |
+|---|---|---|---|
+| 0.00 head | 2.516 s | 0.990 s | 1.526 s |
+| 0.25 | 2.016 s | 0.967 s | 1.049 s |
+| 0.50 | 1.516 s | 0.944 s | 0.572 s |
+| **0.75** | **3.016 s** ← spill | 1.013 s | **2.003 s** |
+| 1.00 tail | 2.516 s | 0.990 s | 1.526 s |
+| **mean** | **2.087 s** | **0.970 s** | **1.117 s** |
+
+**Streamed fire lag is 0.944–1.013 s — a 69 ms spread — against plain's
+1.516–3.016 s.** The variance collapse is the bigger result: streaming's largest
+win (2.003 s) lands exactly on the segment-spill case E0 identified as where we
+bleed.
+
+### Why V7 was wrong, stated so it is not repeated
+
+The gain is a **difference between two legs over the same audio**:
+
+    gain(f) = lag_plain(f) − lag_streamed(f)
+            = (arr_plain − t) − (arr_stream − t) = arr_plain − arr_stream
+
+**The speech time cancels exactly.** So the arrival-domain gain *is* the
+fire-time gain, identically — and subtracting a lookahead penalty from it
+**double-counts**, because the arrival measurement already prices when audio for
+a given moment shows up. The lookahead term is a property of the detector and
+applies to **both** legs (and to the competitor).
+
+⚠ **§V7's own caveat named this exact failure** — *"treats arrival gain and
+lookahead cost as additive at the same percentile when the two are correlated
+through segment phase"* — and I wrote the number anyway. Flagging a risk is not
+the same as heeding it.
+
+**What §V7 got RIGHT and is NOT retracted:** the burst-structure change (449
+bursts of 2000 ms → 5741 of 160 ms) and the per-leg lookahead cost profile
+(4.3 ms → 520 ms p50) are real, measured, and reproduced here. What is retracted
+is using them to discount the gain.
+
+### Consequences — the original race table stands, and §P1's EV table was wrong
+
+`Δrace` for the AXP NFL reference case returns to ≈ **+0.413 s behind**, not the
+0.925 s I wrote this morning. And §P1's lever arithmetic, which used V7's
+0.605 s, must be redone:
+
+| race | today | **+FEED (1.117)** | +FEED+prefix |
+|---|---|---|---|
+| LMT GOLD | +0.507 | +1.624 | +1.944 |
+| **LMT MORF** | −1.028 | **+0.089 — FLIPS** | +0.409 |
+| AXP NFL | −1.530 | −0.413 | **−0.093** |
+| LMT EURO | −2.024 | −0.907 | −0.587 |
+| **races won** | **1 of 4** | **2 of 4** | **2 of 4** |
+
+**The streamed tier alone flips MORF and takes NFL to within 93 ms with
+prefix-firing.** §P1's "0 of 4 flipped" was an artifact of the wrong FEED figure;
+its *sequencing* conclusion survives and is now sharper — prefix-firing becomes
+decisive exactly when FEED has pulled races into its band, and NFL at −93 ms is
+the first race that would sit there.
+
+⚠ Demo channel, 60 s per leg, n=29/35, and `A` and the phase model are inputs.
+Four instruments now agree on the phase-dependent gain (§V3 byte-join n=600,
+§V5 cross-correlation, §A1 armed arrival log, §A2 both-leg arrival logs):
+head ≈ 2.03–2.07 s, tail ≈ 0.12–0.17 s, mean ≈ 1.12 s.
+
 ## Session 2026-07-27 (A1) — PDT banking armed, and it immediately gives the first ABSOLUTE lag from the armed path
 
 §R1 flagged that its strongest available test — *could ANY consumer of the
@@ -757,10 +843,13 @@ currently zero.** Against every race we have actually measured:
 | AXP NFL | −1.530 | −1.210 | −0.605 |
 | LMT EURO | −2.024 | −1.704 | −1.099 |
 
-**Races flipped by prefix-firing: 0 of 4. Races flipped by FEED + prefix
-together: 0 of 4.** No measured race sits inside the ±320 ms band where a
-320 ms lever decides the outcome — the nearest is GOLD, which we already win by
-0.507 s.
+**⚠ THIS TABLE USED §V7's 0.605 s FEED FIGURE, WHICH IS RETRACTED (§A2).**
+Redone with the measured **1.117 s**: FEED alone takes MORF to **+0.089 (a win)**
+and, with prefix-firing, NFL to **−0.093** — races won go **1 of 4 → 2 of 4**.
+So prefix-firing does not flip a race *on its own*, but it is no longer firing
+into empty space: after FEED lands, NFL sits 93 ms outside the band, which is
+exactly where a 320 ms lever decides. **The sequencing conclusion below survives
+and is sharpened; the "0 of 4" figure does not.**
 
 ⇒ **A false-alarm bar is the wrong question while the lever converts no races.**
 The FA cost is real (up to `MENTION_FILL_CAP_CENTS` 50¢ on a market that settles
@@ -1099,8 +1188,14 @@ within 2 %.
 | `--prefetch` buffered | +0.168 s | **+0.168 s** (arrival profile unchanged) |
 | `+ --stream-body` | +1.121 s avg | **≈ +0.605 s** (1.121 − 0.516) |
 
-⇒ the projected `Δrace` for the streamed tier is **≈ 0.9 s behind at p50**, not
-the **+0.409 s** the arrival-domain table claims. **Streamed is still the best
+⚠⚠ **THIS PROJECTION IS RETRACTED — see §A2.** It read: *"the projected Δrace
+for the streamed tier is ≈ 0.9 s behind at p50, not the +0.409 s the
+arrival-domain table claims."* **Measured with both legs' arrival logs, the
+fire-time gain is 1.117 s — within 4 ms of the arrival figure — so +0.409 s was
+right and this correction was the error.** The gain is a DIFFERENCE between two
+legs over the same audio, so the speech time cancels and subtracting a lookahead
+penalty double-counts. The burst-structure and lookahead-profile measurements
+below STAND; only this subtraction is withdrawn. **Streamed is still the best
 option on the board** (0.9 < 1.36 < 1.53) and its *tail* is dramatically better
 (p90 671 ms vs 1991 ms) — but the size was overstated, and the overstatement came
 from measuring arrival when the race is settled at fire time.
