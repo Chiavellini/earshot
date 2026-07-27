@@ -470,7 +470,53 @@ Trap 25: **"needs a GPU" is a diagnosis, and this one was never made** — a
 `ModuleNotFoundError` on a native extension was converted straight into a
 hardware requirement, and it parked the only lever on `OURS` for three days.
 
+## Session 2026-07-27 (D1i-b) — re-measured on 2 physical cores: contention 2.34× → 1.50×, and the threading refutation did NOT survive
+
+D1i's whole table was taken on `t3a.large` — **1 physical core**. The box was
+resized to `t3a.xlarge` (4 vCPU / **2 physical cores**, `AMD EPYC 7571`,
+`Thread(s) per core: 2`, `Core(s) per socket: 2`) and the identical script re-run
+on the identical call (INTC, 0.98 h):
+
+| run | old box (1 phys core) | **new box (2 phys cores)** | |
+|---|---|---|---|
+| A — 1 proc, `num_threads=1` | 538 s | **394 s** | −27 % |
+| B — 1 proc, `num_threads=2` | 762 s (**+42 % slower**) | **363 s** (**−8 % vs A**) | direction REVERSED |
+| C — 2 procs concurrent | 1259 s (**2.34×**) | **592 s** (**1.50×**) | contention nearly halved |
+
+**Contention factor is 1.50×, not 2.34×.** Corrected burst drain (2 s burst,
+2 legs):
+
+| engine | solo drain | 2 legs @ **1.50×** | (D1i said, @2.34×) |
+|---|---|---|---|
+| `sherpa_kws` | 138 ms | **207 ms** | 323 ms |
+| `streaming_ctc` | 304 ms | **456 ms** | 711 ms |
+| **CTC penalty** | | **+249 ms** | +388 ms |
+
+So the engine trade is **−69 % false alarms for +249 ms**, not +388 ms. The
+operator has now been given three numbers for this term (+166 → +388 → +249);
+the first was arithmetic, the second was measured on hardware we no longer run,
+this one is measured on the hardware that will run the events.
+
+**`num_threads=2` is no longer refuted.** It was 42 % slower on one physical
+core because both threads landed on the same core; on two it is ~8 % faster.
+⚠ That 8 % is **one sequential run each** and this box shows large run-to-run
+variance — the *direction reversal* is the finding, the magnitude is not.
+`num_threads` stays at 1 in every armed config until an interleaved A/B says
+otherwise; the point is that the door D1i closed is open again.
+
+**Loose end, not chased:** each `num_threads=1` process was observed at
+**185–203 % CPU**, so `with_intra_threads(1)` is not bounding the process to one
+vCPU (ORT spin-wait or non-ORT threads). That is why C is 1.50× and not 1.0×
+despite two free physical cores. If a cheap knob (`ORT` spin control / thread
+affinity) closes that, per-leg drain falls further.
+
 ## Session 2026-07-26 (D1i) — the box has ONE physical core. D1e's drain was understated by 2.3×, and threading makes it worse.
+
+> ⚠ **SUPERSEDED for the hardware in use** — every number in this section was
+> measured on `t3a.large` (1 physical core). The box is `t3a.xlarge` since
+> 2026-07-27; see D1i-b directly above for the re-measured contention factor
+> (1.50×) and the reversal of the threading refutation. The *reasoning* here
+> stands; the constants do not.
 
 D1e computed "+166 ms burst drain at 2 legs" from single-leg RTF and division by
 2 cores. **Never measured.** Measured now — three runs, one call (INTC, 0.98 h):
@@ -883,6 +929,13 @@ The `2.2× RTF` is unchanged and real, and via D1e it converts to burst drain:
 |---|---|---|---|
 | 1 | 138 ms | 304 ms | **+166 ms** |
 | 3 (armed fanout) | 207 ms | 455 ms | **+249 ms** |
+
+> ⚠ The multi-leg row here was **assumed** parallelism, not measured. D1i
+> measured it (2.34× on 1 physical core) and **D1i-b re-measured it on the
+> hardware now in use** (`t3a.xlarge`, 2 physical cores): contention **1.50×**,
+> 2-leg drain **207 / 456 ms**, penalty **+249 ms**. The current number is
+> D1i-b's; that this row lands on the same +249 ms is a coincidence of a
+> different leg count and a different contention factor, not a confirmation.
 
 **That is now the whole cost of the swap** — and it is partly a *configuration*
 choice, not a fixed property: the fanout ORs at decision, so leg count is a dial.
