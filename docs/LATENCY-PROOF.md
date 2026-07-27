@@ -349,8 +349,16 @@ I stated "5.15 h" in `64aa07c` and in several loop prompts. That counted the
 
 | domain | calls | occurrences | ≈ hours |
 |---|---|---|---|
-| wideband | AXP(0), INTC(44), LMT(11), VZ(0) | 55 | **5.15** |
+| wideband | AXP(0), INTC(44), **LMT(11 ⚠)**, VZ(0) | 55 ⚠ | **5.15** |
 | **telephony** | **AAPL(14), MSFT(8), QCOM(13)** | **35** | **2.81** |
+
+⚠ **OPTIMISTIC-DENOMINATOR (marked 2026-07-27).** The `LMT(11)` cell — and hence
+the wideband total of 55 — is the **pre-correction** count. The manifests were
+regenerated 2026-07-24 05:21:50 and **LMT is 31 occurrences**, so wideband is 75
+and the dev total is 110, not 90. The hours are unaffected. This table is left as
+written because the section it sits in is itself an evidence trail; the counts are
+marked rather than silently updated. Any *recall* computed from the old
+denominators is optimistic — see `docs/BAKEOFF.md` §Corpus.
 
 Two consequences, pulling in opposite directions:
 
@@ -409,6 +417,16 @@ have reproduced none of the numbers. That is now repaired (`4dd121a`).
 scored against a denominator that was ~3× too small — they flattered the detector
 by not counting mentions it missed. Any LMT recall number predating 2026-07-24
 05:21 should be treated as optimistic, not as evidence.
+
+**Acted on 2026-07-27** (operator ruling: annotate, do not delete — the ledger
+keeps evidence trails). The rule is now stated in full at `docs/BAKEOFF.md`
+§Corpus, individual instances carry the tag **`⚠ OPTIMISTIC-DENOMINATOR`**, and
+the G4 promotion gate's *relative* dev-recall bar carries an explicit warning
+that its untuned baseline must be recomputed on the corrected manifests before
+the gate is scored. Scope of the damage, stated precisely: **only quantities of
+the form `TP / occurrences` are affected.** False-alarm counts, FA/h, latency
+percentiles and raw TP counts have no denominator and stand as measured.
+Everything benched 2026-07-25 or later already used the corrected manifests.
 
 ⚠ `ultra` is worth a note: on AAL it is a genuine mention (*"ultra premium"*),
 while on LMT the collision screen classed `ultra` fires as SUBSTRING hits on

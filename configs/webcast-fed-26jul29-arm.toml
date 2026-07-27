@@ -25,11 +25,52 @@
 # ⚠⚠ THE FASTEST-RESOLVING MARKETS ON THIS BOARD ARE GREETINGS.
 # `good afternoon` (KXFEDMENTION-26JUL-GOOD) and `good day` are near-certain in
 # the FIRST SECONDS of the presser. They are decided PURELY by the race — not by
-# detection quality, not by keyword risk. That is precisely what the speculative
-# posture buys, and this config deliberately does not use it. **Operator call:
-# the standing non-speculative decision was made on rate-limit risk, before
-# anyone noticed the board contains an opening-greeting market.** Worth
-# re-weighing before Wednesday; recorded here rather than decided unilaterally.
+# detection quality, not by keyword risk.
+#
+# ── OPERATOR RULING 2026-07-27: NON-SPECULATIVE HOLDS, WITH ONE PRE-REGISTERED
+#    DAY-OF OVERRIDE. ────────────────────────────────────────────────────────
+#
+# First, a correction to how this question was being framed. Campaign 2's whole
+# measured FEED gain is `#EXT-X-PREFETCH`, which is an **Amazon IVS / Twitch**
+# tag. **This venue is Brightcove/boltdns/Fastly, and the archived June presser
+# carries no EXT-X-PART and no SERVER-CONTROL.** So prefetch is almost certainly
+# NOT AVAILABLE here and is not the lever under discussion. The only lever this
+# decision is about is `--speculative`, whose risk (spending 404s ⇒ rate-limit
+# ⇒ every leg on the box dies) is what the standing decision was based on. That
+# risk is unchanged by the discovery of a greeting market.
+#
+# The override condition is written BEFORE the probe runs, so it cannot be
+# reverse-engineered from the number. **Arm `--speculative` on Wednesday ONLY IF
+# ALL FOUR hold** in `scripts/manifest-probe.sh` output on the LIVE tokenized
+# master:
+#
+#   1. `== speculative posture ==` reports **GO** — segment URLs numerically
+#      predictable. (`pattern_is_predictable` needs 3 consecutive real segments;
+#      if each segment carries its own token, this is a NO-GO by construction.)
+#   2. Measured **`L` ≥ 1.00 s**. That is the LOWEST L ever measured at any
+#      venue (+1.07 s Akamai/6 s; +1.40–1.51 s Unified/1.92 s) — i.e. "this
+#      origin is at least as good as the worst one we know". Below that the
+#      gain does not pay for the rate-limit exposure on the quarter's marquee
+#      event.
+#   3. Live segment cadence **≤ 10 s** (the VOD's `/10s/`). Longer and one
+#      segment is far too long to be wrong about.
+#   4. Launch is at least **60 s before the presser's first word**, so the
+#      pattern check completes and speculation is actually ACTIVE for the
+#      greeting. At 10 s segments the verification alone costs ~30 s. Joining
+#      late means paying the risk and getting none of the benefit.
+#
+# ANY of the four failing ⇒ the legs below are used unchanged. Do not
+# re-negotiate these after seeing the probe output.
+#
+# ── WHY NO `--prefetch-report` HERE, THOUGH IT IS FREE ELSEWHERE ────────────
+# Both legs below are `streamlink` and direct `ffmpeg`; **neither runs
+# `hls-edge-fetch.py`, so there is nowhere to put the flag.** Adding a fetcher
+# leg to get recon would mean changing the proven stack on the crown target,
+# which is not worth it. The same recon comes free from
+# `scripts/manifest-probe.sh`, whose `== EXT-X-PREFETCH ==` section answers
+# "does Brightcove ship any LHLS tag" at zero extra HTTP. **Run it day-of and
+# pin the answer either way** — it is the first LHLS reading on a third venue
+# class, and it informs every future FOMC-class event.
 #
 # ⚠ SHORT KEYWORDS — highest false-alarm risk in this set:
 #   egg, oil, gas, tax, adp  (3 chars each, at the MIN_VARIANT_CHARS floor)

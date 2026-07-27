@@ -43,6 +43,31 @@ corpus/
   semantics, then human spot-check of a ~20 % random sample to measure
   aligner error (`scripts/corpus-verify.py`).
 
+> ### ⚠ GROUND-TRUTH CORRECTION 2026-07-24 05:21 — READ BEFORE QUOTING ANY LMT NUMBER
+>
+> The wideband manifests were regenerated at **2026-07-24 05:21:50** (one scripted
+> pass) after the aligner caught mentions its first pass had missed. **LMT went
+> from 11 to 31 occurrences** — `government` ×13, `sikorsky` ×2, `dividend`,
+> `nasa` and others, every one verified against `corpus/transcripts/lmt-q2-2026.words.json`
+> by `scripts/verify-occurrences.py` (LATENCY-PROOF §manifest-divergence). This
+> was **ground truth getting more correct**, not tuning on the answer.
+>
+> **Consequence, stated in the direction that hurts:** every LMT — and therefore
+> every pooled INTC+LMT *dev-split* — **recall** figure computed before that
+> timestamp was scored against a denominator roughly **3× too small**. Those
+> numbers **flattered the detector by not counting mentions it missed**. Treat
+> them as optimistic, not as evidence, and do not compare them against anything
+> measured after the correction.
+>
+> **Unaffected:** false-alarm counts and FA/h (no denominator), `emit_lag`/latency
+> percentiles, and TP counts read as raw counts rather than as a fraction.
+> **Affected:** anything of the form *TP / occurrences*.
+>
+> Figures measured **2026-07-25 or later** (D1b/D1c/D1d, D2/D2b, D1, D3/D3b) used
+> the corrected manifests and need no adjustment.
+>
+> Individually marked instances carry the tag **`⚠ OPTIMISTIC-DENOMINATOR`**.
+
 ### Manifest format
 
 ```toml
@@ -614,9 +639,24 @@ nothing about next week.
 |---|---|
 | Dev: FA on the named 07-23 false-fire contexts (PERU, IRAN, APPL, TRUM, ULTR†) | 0 |
 | Dev: FA rate overall | ≤ 0.5 / h |
-| Dev: recall on the settlement-YES caught set (GOLD, MORF, EURO, NASA, CLI, FOUN, PANT, SECU) | ≥ untuned baseline (no trade of recall for precision on words we already catch) |
+| Dev: recall on the settlement-YES caught set (GOLD, MORF, EURO, NASA, CLI, FOUN, PANT, SECU) | ≥ untuned baseline (no trade of recall for precision on words we already catch) — **⚠ OPTIMISTIC-DENOMINATOR, see below** |
 | Holdout (AAL): recall on the settlement-YES spoken words (ATH, BASI, CHIC, RECO, WEAT) | ≥ 4/5 |
 | Holdout (AAL): FA rate | ≤ 1 / h |
+
+⚠ **OPTIMISTIC-DENOMINATOR HAZARD ON THE DEV RECALL BAR (flagged 2026-07-27).**
+This bar is *relative* — "≥ untuned baseline" — and these bars were pre-registered
+**2026-07-23**, the day **before** the 2026-07-24 05:21 ground-truth correction
+took LMT from 11 to 31 occurrences (§Corpus). A relative bar is only meaningful if
+both sides are scored against the same denominator, so **any untuned-baseline
+number recorded before that timestamp must NOT be used as this gate's reference** —
+comparing a post-correction treatment against a pre-correction baseline silently
+moves the bar. Three of the eight named dev keywords are LMT's (GOLD, MORF, EURO,
+NASA), and `government`/GOVE — listed above as a *miss* — is exactly where the
+correction added 13 occurrences.
+**Required before this gate is scored: recompute the untuned baseline on the
+corrected manifests, in the same run as the treatment.** The bar itself is
+unchanged and is NOT being renegotiated — only the reference it is measured
+against.
 
 † ULTR pending classification: if the INTC transcript shows "ultra" was spoken,
 it is a keyword→market semantics mismatch (phrase-design fix, excluded from the

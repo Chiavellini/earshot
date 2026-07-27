@@ -272,7 +272,10 @@ less for a v0 whose goal is cadence + corpus.
 
 ## ▶ TUESDAY 2026-07-28 · PayPal · DAY-OF CHECKLIST (execute top to bottom)
 
-Everything below is pre-validated. Nothing here needs a decision except step 3.
+Everything below is pre-validated. **Two steps need a live decision: step 3
+(surface the right stream) and step 4b (the prefetch decision table).** Step 4b
+is new for 2026-07-28 — the campaign found the only `FEED` lever that works at
+this venue, and which tier is safe to arm depends on what the probe reports.
 
 **Call: 8:00 AM ET (12:00 UTC).** Config `configs/webcast-pypl-26jul28-arm.toml`
 — speculative CTC fanout, 16 markets, observe posture, every cap 1¢, no fill
@@ -302,14 +305,36 @@ July press conference"* — **found 2026-07-26; it had never been pinned.**
 43 markets (≈3× Tuesday's), 83 variants, CTC encode **0 gaps**, observe posture.
 Runs the **NON-speculative** legs by standing decision.
 
-**⚠⚠ THE BOARD CONTAINS AN OPENING-GREETING MARKET, AND THAT CHANGES THE CALCULUS.**
-`good afternoon` (`-GOOD`) and `good day` are near-certain in the **first seconds**
-of the presser. They resolve **purely on the race** — detection quality and
-keyword risk are irrelevant to them. That is exactly what the speculative posture
-buys, and this config deliberately does not use it. **The standing
-non-speculative decision was taken on rate-limit risk, before anyone noticed the
-board had a greeting market. Worth re-weighing before Wednesday — flagged, not
-decided.**
+**⚠⚠ THE BOARD CONTAINS AN OPENING-GREETING MARKET.** `good afternoon` (`-GOOD`)
+and `good day` are near-certain in the **first seconds** of the presser and
+resolve **purely on the race**.
+
+**RULED 2026-07-27 — non-speculative HOLDS, with one pre-registered day-of
+override.** Two corrections to how this was framed:
+
+1. **Prefetch is not the lever here.** Campaign 2's entire measured `FEED` gain is
+   `#EXT-X-PREFETCH`, an **Amazon IVS / Twitch** tag. FOMC is
+   **Brightcove/boltdns/Fastly**, and the archived June presser has no
+   `EXT-X-PART` and no `SERVER-CONTROL`. This decision is about `--speculative`
+   only — whose rate-limit risk, the basis of the standing decision, is entirely
+   unchanged by the existence of a greeting market.
+2. **Speculation is not instant.** `pattern_is_predictable` needs 3 consecutive
+   real segments before speculation activates. At 10 s segments that is ~30 s of
+   stream. Join late and you pay the risk and get none of the benefit.
+
+**Override condition, written before the probe runs — arm `--speculative` only if
+ALL FOUR hold:** (a) `== speculative posture ==` reports **GO**; (b) measured
+**`L` ≥ 1.00 s** (the lowest L ever measured at any venue); (c) live cadence
+**≤ 10 s**; (d) launch **≥ 60 s** before the first word. Any one failing ⇒ the
+staged legs run unchanged. **Do not re-negotiate after seeing the output.**
+Full text in `configs/webcast-fed-26jul29-arm.toml`.
+
+**Recon that is free and should happen regardless:** run
+`scripts/manifest-probe.sh` on the live tokenized master and pin the
+`== EXT-X-PREFETCH ==` result. It costs zero extra HTTP and is the first LHLS
+reading on a third venue class. (It cannot be armed as a leg flag here — both
+FOMC legs are `streamlink`/`ffmpeg`, not `hls-edge-fetch.py`, so there is nowhere
+to put `--prefetch-report` without changing the proven stack.)
 
 **Highest false-alarm risk in this set (2-token targets):** `egg`, `gas`, `oil`,
 and `good day`. `trump` also carries a HIGH-RISK collision flag (fires on
@@ -340,19 +365,72 @@ series — query `?series_ticker=KXEARNINGSMENTION<TICKER>` directly. And it
    **the demo channel instead of PayPal while looking entirely normal**. Then get
    the m3u8 from the IR player and write it fresh:
    `echo "<m3u8>" > $HOME/pypl-stream.url`
+   Then write the **same** m3u8 to the control-legs file:
+   `echo "<m3u8>" > $HOME/pypl-pcmab.url`  (deliberately a separate file — the
+   runsheet's URL file and the instrument's must never alias each other)
    ⚠ **Never start `arm` by hand without `ORT_DYLIB_PATH`.** A missing dylib makes
    the arm **hang silently** at `book snapshots live for all armed markets` — no
    error, no pipeline threads, no leg processes, and it looks healthy.
    `scripts/launch-webcast.sh` sets it and guards it; use the launcher.
 4. `scripts/manifest-probe.sh "$(cat $HOME/pypl-stream.url)"`
-   Read three things:
-   - `== speculative posture ==` → **GO / NO-GO** and the venue's **`L`**
+
+   > ### ⚠ READ THIS BEFORE THE PROBE OUTPUT SCARES YOU
+   >
+   > **`SPECULATIVE: NO-GO` is the EXPECTED reading at this venue and requires NO
+   > ACTION.** PayPal is Q4 Inc ⇒ Amazon IVS, whose segment URLs are opaque signed
+   > tokens, so numeric URL prediction cannot work and `hls-edge-fetch.py`
+   > **self-disables internally** and falls back to manifest-driven fetching. That
+   > is a designed fallback, not a fault — confirmed in every IVS `SUMMARY` line
+   > we have (`spec=OFF spec_hits=0 spec_404=0`, `dropped=0`).
+   >
+   > **A previous revision of this step said "NO-GO ⇒ swap to
+   > `configs/webcast-fanout-arm.toml`". DO NOT. That is the bare template — it
+   > carries NO PayPal keywords and NO allowlist, so arming it would refuse every
+   > order at fire time and void the event.** Leaving the config alone is correct.
+   >
+   > The section that actually decides the posture at an IVS venue is
+   > **`== EXT-X-PREFETCH ==`** (`scripts/manifest-probe.sh:70`). See the table
+   > below.
+
+   Read four things:
+   - **`== EXT-X-PREFETCH ==`** → PRESENT or ABSENT. **This is the decision input.**
+   - `== speculative posture ==` → expect NO-GO on IVS (see above). On a
+     non-IVS venue a GO plus a measured `L` still means something.
    - `== all renditions ==` → is there an **audio-only** rendition? (worth ~10 ms,
      F1c — take it if free, do **not** delay the launch for it)
    - segment duration → expect ~2 s; if it is 6–10 s the exposure maths change
-   **NO-GO ⇒ swap to `configs/webcast-fanout-arm.toml` (non-speculative).** The
-   speculative leg spends 404s to buy latency; a rate-limit would take out
-   EVERY leg on the box.
+
+   **4b. THE PREFETCH DECISION TABLE — pick leg 1's flags from the probe.**
+
+   `#EXT-X-PREFETCH` is the IVS low-latency path and the only `FEED` lever that
+   works at this venue (LATENCY-PROOF §V1–V5): buffered `+0.168 s`, streamed
+   `+1.121 s` average — a **segment-phase distribution** (`+0.168 s` at the tail,
+   `+2.073 s` at the head), never a single number.
+
+   | probe says | leg-1 flags | why |
+   |---|---|---|
+   | PRESENT **and** prefetch bodies **chunked / no `Content-Length`** | `--speculative --prefetch --stream-body --prefetch-report` | the V1–V5 posture; the full ~+1.12 s |
+   | PRESENT but bodies carry `Content-Length` | `--speculative --prefetch --prefetch-report` | buffered tier only (+0.168 s, V2-gated) |
+   | **ABSENT** | `--speculative --prefetch-report` — **as staged, no edit** | nothing to prefetch |
+
+   ⚠ **`--stream-body` is NOT prefetch-scoped.** It is passed to `fetch_segment`
+   at all three call sites (`scripts/hls-edge-fetch.py:455,518,568`) — normal,
+   prefetch and speculative. On DW/Akamai, whose bodies arrive whole, it was
+   **REFUTED** (median −0.197 s against a ≥0.3 s bar) *and* cost **3/32/62 short
+   reads per run vs 0/0/0 buffered**, with jitter p99 12–18 ms vs ~1 ms
+   (LATENCY-PROOF 2026-07-24 part 4). On a venue that does not serve chunked
+   bodies it degrades **every** fetch on the leg. Hence rows 2 and 3 — the check
+   is mandatory, not advisory.
+
+   Check chunking directly if the probe does not print it:
+   `curl -sI "<a prefetch URL>" | grep -iE 'transfer-encoding|content-length'`
+
+**T−15 min — smoke the armed leg-1 command (only if you changed it in 4b)**
+4c. Run the exact leg-1 command against the live m3u8 for ~90 s, stdout to
+   `/dev/null`, stderr to a scratch file. Require **`prefetch_n > 0`**,
+   **`seg LOST = 0`**, **`short = 0`** in the `SUMMARY` line. Any failure ⇒ drop
+   to the next row of the table. This is a one-line revert, and it is the reason
+   arming a path never validated on *this* channel is defensible.
 
 **T−10 min — launch**
 5. ```
@@ -368,6 +446,26 @@ series — query `?series_ticker=KXEARNINGSMENTION<TICKER>` directly. And it
    - `fanout: per-leg detect chains, OR at decision legs=2`
    - `pipe source: spawning decoder` **×2**
 
+**T−5 min — start the CONTROL legs (this is what makes Tuesday's number mean anything)**
+6b. ```
+   cd $HOME/ear && ./target/release/earshot capture-bakeoff \
+     --config configs/pcm-lead-pypl.toml --secs 5400 --record-dir $HOME/pcmab-pypl
+   ```
+   Two **passive** legs — `plain` vs `--prefetch --stream-body` — differing in
+   those flags only. `capture-bakeoff` "does NOT route through the detector
+   pipeline" (`src/capture_bakeoff/mod.rs:12`), so this is fetch+ffmpeg only:
+   ~1–2 % CPU each, measured, and it cannot contend with the armed CTC legs.
+
+   **Why it is not optional.** The standing rule is *interleaved A/B within one
+   run, never across runs* (the laptop shows 3.5× run variance). Without a
+   same-run baseline, whatever Δrace PayPal produces is one number with nothing
+   to attribute it to. These legs are that baseline, and they yield the
+   real-venue lead at high n where Δrace yields a handful of draws.
+
+   Total consumers on Q4's origin: 4 (2 armed + 2 passive). Negligible for IVS —
+   but **drop the passive pair immediately** if anything rate-limit-shaped
+   appears (429/403), because a block hits every leg on the box.
+
 **During**
 7. Leave it alone. Detections log as `decision intent … ticker=… tier=Confirmed`.
    Repeats inside the refractory window log as `detection ignored (keyword state
@@ -376,10 +474,28 @@ series — query `?series_ticker=KXEARNINGSMENTION<TICKER>` directly. And it
 **After**
 8. `grep SUMMARY $HOME/spec_edge.err` → **`seg LOST` must be 0.** A non-zero
    value is silently lost audio, which is a recall bug (this cost 86 s once).
+   Also read `prefetch_n / lead_med / lead_min / lead_max` from the same line —
+   **that is `L_prefetch` on a REAL Q4 Inc channel, the first venue confirmation
+   that is not the AWS demo.** Demo-channel reference: `lead_med=4.00s`,
+   `lead_min=0.75s`, `lead_max=4.25s`. ⚠ Announcement lead is **not** achieved
+   audio lead — on the demo channel a 4.00 s announcement lead converted to
+   +0.168 s buffered / +1.121 s streamed. Do not quote one as the other.
 9. `state/KXEARNINGSMENTIONPYPL-26JUL28/report.json` → `ledger_spent_cents`
    must be **0** in observe posture.
 10. Score Δrace against the µs tape on the **price-moving** sweep, never a flat
     print — that scoring error inverted three figures once already.
+11. **Score the control legs:** `scripts/leg-lag.py $HOME/pcmab-pypl plain pfstream`.
+    Honour its NOT-STEADY guard — a wide spread is **the segment-phase
+    distribution**, not noise and not a number to quote. Report the median with
+    n and spread, plus min/max as the tail/head of the distribution.
+
+**⚠ State this expectation NOW, so it cannot be rounded toward afterwards.**
+PayPal will produce only a handful of price-moving sweeps, and `OURS` is a
+segment-phase lottery with ~±2 s spread (E0). **A handful of Δrace draws cannot
+resolve a 1.12 s improvement** — anyone claiming Tuesday "proved" the streamed
+tier from the Δrace column is over-reading it. The high-n results Tuesday can
+legitimately deliver are (a) the PCM-domain lead from step 11 and (b) the
+`prefetch lead=` distribution from step 8.
 
 **Known risks, decided in advance:**
 - `stash` → `▁STA SH`, 2 tokens, the shortest target of the 37. Watch it; if it

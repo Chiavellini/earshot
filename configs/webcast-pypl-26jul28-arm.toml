@@ -6,9 +6,35 @@
 # Q1 2026 SEC-filed earnings release, whose "Conference Call & Webcast"
 # section offers a webcast and nothing else. Platform is Q4 Inc — the SAME
 # platform that fronted AXP on 07-24, which resolved to Amazon IVS with 2 s
-# segments. That is the venue class where L was measured three times
-# (1.40 / 1.50 / 1.51 s), so the m3u8 probe on the day should CONFIRM the
-# speculative posture rather than discover it.
+# segments.
+#
+# ⚠ RETRACTED 2026-07-27. This block used to add: "That is the venue class where
+# L was measured three times (1.40 / 1.50 / 1.51 s), so the m3u8 probe on the day
+# should CONFIRM the speculative posture rather than discover it." **BOTH clauses
+# are false.** Those three L readings were taken on `demo.unified-streaming.com`
+# — similar segment duration, DIFFERENT ORIGIN. L has never been measured on
+# IVS, and it cannot be: IVS segment URLs are opaque signed tokens, so numeric
+# prediction is impossible and `hls-edge-fetch.py` SELF-DISABLES speculation
+# here. The `--speculative` flag below therefore buys ZERO at this venue.
+# It is kept because the self-disable is free (`spec=OFF spec_hits=0
+# spec_404=0`, dropped=0 in every IVS SUMMARY we have) and it preserves correct
+# behaviour if the venue turns out not to be what we expect.
+#
+# WHAT IVS SHIPS INSTEAD IS `#EXT-X-PREFETCH` — the manifest NAMES segments
+# before they exist. This is the ONLY FEED lever that works here, and the whole
+# of Campaign 2's measured gain (LATENCY-PROOF §V1–V5, two independently built
+# instruments agreeing to 2 ms at the tail):
+#
+#   buffered  --prefetch                 +0.168 s   [IQR +0.114, +0.220]  n=600
+#   streamed  --prefetch --stream-body   +1.121 s average                 n=600
+#
+# The streamed figure is a SEGMENT-PHASE DISTRIBUTION, not a constant: +0.168 s
+# for a word at the tail of a segment, +2.073 s at the head. Never quote one
+# number. Confirmed to survive ffmpeg into the PCM domain (§V5).
+#
+# ⚠ ALL OF IT WAS MEASURED ON THE AWS IVS **DEMO** CHANNEL, NOT Q4 INC'S.
+# This event is the first real-venue test. Leg 1's flags are chosen DAY-OF from
+# the probe — see the decision table in docs/RUNBOOK.md step 4b.
 #
 # KEYWORD SET: 16 markets, generated live from Kalshi. ZERO high-risk
 # collisions flagged and ZERO variants dropped — a materially cleaner set
@@ -27,8 +53,14 @@
 #
 # ⚠ BEFORE ARMING: set the m3u8 into $HOME/pypl-stream.url, then run
 #   scripts/manifest-probe.sh "$(cat $HOME/pypl-stream.url)"
-# for the SPECULATIVE GO/NO-GO and the venue's L. NO-GO ⇒ swap leg 1 back to
-# the non-speculative template.
+# and read the `== EXT-X-PREFETCH ==` section — that is the decision input here.
+# `SPECULATIVE: NO-GO` is the EXPECTED reading on IVS and needs NO ACTION.
+#
+# ⚠ A previous revision of this line said "NO-GO ⇒ swap leg 1 back to the
+# non-speculative template." DO NOT swap this config out. The bare template
+# (configs/webcast-fanout-arm.toml) carries NO PayPal keywords and NO allowlist;
+# arming it would refuse every order at fire time and void the event. Leaving
+# this config alone on a NO-GO is correct.
 #
 # WEBCAST FANOUT ARM — SPECULATIVE POSTURE + streaming_ctc DETECTOR.
 #
