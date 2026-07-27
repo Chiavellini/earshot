@@ -502,6 +502,61 @@ against a live IVS stream:
    looked entirely normal doing it. Removed; the runsheet writes it fresh on the
    morning, and it should not exist before then.
 
+## Session 2026-07-27 (V4) — the streamed-tier gate is INCONCLUSIVE, and I am not calling it a pass
+
+`--prefetch --stream-body`, 90 minutes against the AWS IVS demo channel, same
+pre-registered bar as V2: **zero audio deficit vs the plain leg.**
+
+**The verdict script said FAIL.** It should not be believed, and neither should a
+pass be claimed from it.
+
+### Why the FAIL is not real
+
+`min = −5399.04 s` in a 5400 s run is physically impossible, and the candidate
+leg's own counters contradict it: `segs=2672 dropped=0 short=0 seg_err=0`,
+0 mid-body failures, 2671 of 2672 segments via prefetch, `duration=5396.9 s`.
+Finding the row rather than arguing with the aggregate:
+
+```
+11:59:19 prefetch=0 plain=172769140 delta=-172769140     <- sample 1 of 180
+11:59:49 prefetch=786432  plain=786432  delta=0
+```
+
+`plain=172769140` is **the previous gate run's finished file**, 5399 s of audio,
+read 2 seconds into a live capture before ffmpeg truncated it — against a
+`prefetch.wav` that did not exist yet. The gate script never wiped its output
+directory. Of the other 179 samples: **162 exactly 0, 17 at +262144** (one
+256 KB write block, i.e. the prefetch leg AHEAD). Never behind.
+
+### Why I am still not calling it a PASS
+
+A second discrepancy is **unexplained**: final durations are prefetch 5396.92 s
+vs plain 5399.08 s, and the candidate had ~2 s MORE wall time (it launches
+first). So it produced ~4 s less audio than its window allowed while plain
+produced essentially all of its. That is 0.075 % over 90 minutes and plausibly a
+startup effect — the candidate blocks ~2 s on its first prefetch fetch before any
+byte flows — but "plausibly" is not a measurement, and the byte sampler stopped
+when the *first* leg exited, so it cannot see the shutdown window either.
+
+One poisoned input plus one unexplained gap is not a basis for changing the audio
+path. **Verdict: INCONCLUSIVE. Re-run on the fixed instrument.** Excluding the
+invalid datum is legitimate — it is provably not a measurement of this run — but
+I only examined it because I disliked the answer, and that is exactly when to
+demand a clean re-run instead of a rescued one.
+
+### Instrument fixes (both codified, not applied by hand)
+
+- `prefetch-gate.sh` now `rm -rf`s its output directory, skips samples until
+  **both** WAVs exist and carry audio, and samples until **both** legs exit
+  (`||` not `&&`) so the shutdown window is covered.
+- `prefetch-verdict.py` drops degenerate rows where either leg reads <1000 bytes
+  and **prints how many it dropped** — a verdict that silently discards rows
+  which would flip it is worse than one that fails.
+
+Trap 28: **`rm -rf` the output directory, or a previous run's artifacts become
+this run's data.** The stale file was the right size to look like a catastrophic
+deficit rather than obvious garbage.
+
 ## Session 2026-07-27 (RACE ARITHMETIC — now MEASURED) — prefetch is worth ~1.12 s, not the 1.6 s I modelled, and it is still not parity
 
 Superseding the model-based table. Measured by `scripts/arrival-ab.sh` +

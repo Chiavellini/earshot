@@ -21,6 +21,12 @@ DUR=${1:-5400}
 CAND_FLAGS=${2:---prefetch --prefetch-report}
 MASTER="https://fcc3ddae59ed.us-west-2.playback.live-video.net/api/video/v1/us-west-2.893648527354.channel.DmumNckWFTqz.m3u8"
 OUT=$HOME/pfgate
+# ⚠ WIPE FIRST. On 2026-07-27 the streamed-tier gate reported FAIL on the
+# strength of ONE sample of 180: the sampler's first read caught the PREVIOUS
+# run's plain.wav (172,769,140 B — a full 5399 s file) before ffmpeg truncated
+# it, against a prefetch.wav that did not exist yet. delta = -5399 s in a 5400 s
+# run, which is physically impossible and poisoned the verdict.
+rm -rf "$OUT"
 mkdir -p "$OUT"
 cd "$HOME/ear" || exit 1
 
@@ -47,10 +53,15 @@ echo "pids: prefetch=$P plain=$Q"
 
 # WALL-ANCHORED sampler — the verdict depends on it. See prefetch-verdict.py for
 # why final WAV durations cannot decide this gate.
-( while kill -0 "$P" 2>/dev/null && kill -0 "$Q" 2>/dev/null; do
+( while kill -0 "$P" 2>/dev/null || kill -0 "$Q" 2>/dev/null; do
     a=$(stat -c %s "$OUT/prefetch.wav" 2>/dev/null || echo 0)
     b=$(stat -c %s "$OUT/plain.wav" 2>/dev/null || echo 0)
-    echo "$(date -u +%H:%M:%S) prefetch=$a plain=$b delta=$((a-b))" >> "$OUT/samples.log"
+    # Skip until BOTH files exist and carry audio: a leg whose ffmpeg has not
+    # created its file yet is not "behind", and comparing against a not-yet-
+    # created file is not a measurement.
+    if [ "$a" -gt 1000 ] && [ "$b" -gt 1000 ]; then
+      echo "$(date -u +%H:%M:%S) prefetch=$a plain=$b delta=$((a-b))" >> "$OUT/samples.log"
+    fi
     sleep 30
   done ) >/dev/null 2>&1 &
 S=$!

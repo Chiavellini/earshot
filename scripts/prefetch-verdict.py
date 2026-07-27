@@ -21,6 +21,7 @@ runs ~1 segment ahead, plus the launch stagger.
 
 Usage: prefetch-verdict.py <samples.log>
 """
+import re
 import sys
 
 BPS = 32000.0          # 16 kHz mono s16le
@@ -29,13 +30,25 @@ SURPLUS_S = 20.0       # beyond a plausible lead+stagger ⇒ duplication
 MIN_SAMPLES = 10
 
 path = sys.argv[1] if len(sys.argv) > 1 else "samples.log"
-deltas = []
+deltas, skipped = [], 0
 for line in open(path):
-    if "delta=" in line:
-        try:
-            deltas.append(int(line.rsplit("delta=", 1)[1].split()[0]))
-        except ValueError:
-            pass
+    if "delta=" not in line:
+        continue
+    try:
+        d = int(line.rsplit("delta=", 1)[1].split()[0])
+    except ValueError:
+        continue
+    # Defence in depth against the 2026-07-27 artifact: a sample where either
+    # leg reads ~0 bytes is not a measurement of this run (stale file, or a
+    # file ffmpeg has not created yet). Count and report them — never silently
+    # drop rows that would change a verdict.
+    m = re.search(r"prefetch=(\d+) plain=(\d+)", line)
+    if m and (int(m.group(1)) < 1000 or int(m.group(2)) < 1000):
+        skipped += 1
+        continue
+    deltas.append(d)
+if skipped:
+    print(f"⚠ skipped {skipped} degenerate sample(s) where a leg read ~0 bytes")
 
 if len(deltas) < MIN_SAMPLES:
     print(f"GATE: INCONCLUSIVE — only {len(deltas)} samples (need {MIN_SAMPLES})")
