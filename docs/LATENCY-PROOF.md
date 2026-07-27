@@ -416,6 +416,68 @@ while on LMT the collision screen classed `ultra` fires as SUBSTRING hits on
 unwinnable collision on another** — which is exactly why keyword risk is
 per-event, not global.
 
+## Session 2026-07-27 (V2) — `--prefetch` PASSES the 90-min drop-safety gate
+
+Pre-registered bar (`scripts/prefetch-gate.sh`, same bar the speculative posture
+had to pass after silently losing ~86 s in S7): **zero audio deficit vs the plain
+manifest-driven leg.** Two legs against the AWS IVS demo channel, 90 minutes,
+each → ffmpeg → 16 kHz WAV.
+
+### Result — PASS
+
+| | prefetch leg | plain leg |
+|---|---|---|
+| segments | **2673** | 2669 |
+| `dropped` / `short` / `seg_err` | **0 / 0 / 0** | **0 / 0 / 0** |
+| segments obtained via prefetch | **2672 of 2673 (99.96 %)** | — |
+| `lead_med` | **4.00 s** (min 0.25, max 6.04) | — |
+| error lines of ANY kind | **none** | **none** |
+
+Wall-anchored deltas, 75 samples over the final 37 min:
+**min +0.00 s** (never behind), max +8.19 s, final +0.37 s, second-half drift
++0.37 s. The +8.19 s excursions are exactly one 256 KB ffmpeg write block —
+quantization, not lead.
+
+**This also settles the URL-identity question.** If prefetch URLs were not
+byte-identical to the URLs later announced, each such segment would be fetched
+twice and `segs` would run far above `prefetch_fetched`. Measured: **2673 vs
+2672.** The earlier probe's "75 of 77 matched" was a boundary artifact of a short
+run, not a 2.6 % mismatch rate.
+
+⚠ **Coverage, stated honestly:** the counters cover all 90 minutes; the
+wall-anchored samples cover **09:26 → 10:03 only** (the sampler was added
+mid-run, after I noticed the original verdict logic was unsound), plus one
+exact-equality spot check at 09:26. The first 53 minutes rest on counters alone.
+
+### Armed-path validation, same session
+
+Dry-run arm of `configs/webcast-pypl-26jul28-arm.toml` on the rebuilt binary,
+against a live IVS stream:
+
+- `all keyword markets active … markets=16` ⇒ **the populated allowlist passes
+  `allowlist_covers_keywords`**, which is what this run existed to check.
+- `fanout: per-leg detect chains, OR at decision legs=2`, 2 leg processes.
+- **`--prefetch-report` works end-to-end through the arm**: `prefetch lead=4.002s
+  / 4.252s` in `$HOME/spec_edge.err`, matching the standalone probe.
+- `order query returned 100 order(s), NONE match` — the hardened
+  `order_by_client_id` correctly refusing to adopt any of the ~100 resting orders
+  this account carries from other systems. The kill-switch scope fix, live.
+
+### Two traps paid for, neither a product defect
+
+1. **A missing `ORT_DYLIB_PATH` makes `arm` HANG SILENTLY**, not fail. My first
+   dry-run sat for 5 minutes at `book snapshots live for all armed markets` with
+   no pipeline threads, no leg processes, and **no error line** — main thread in
+   `futex_do_wait`, Kalshi API responsive in 0.2 s, sockets idle. Setting
+   `ORT_DYLIB_PATH` fixed it immediately. `scripts/launch-webcast.sh` sets it and
+   carries a guard, so the launcher path is safe — but an arm started by hand
+   looks perfectly healthy while never listening.
+2. **`$HOME/<ev>-stream.url` is a loaded gun between runs.** I pointed
+   `~/pypl-stream.url` at the AWS IVS demo channel for this test. Left in place,
+   Tuesday's arm would have captured **the demo channel instead of PayPal** and
+   looked entirely normal doing it. Removed; the runsheet writes it fresh on the
+   morning, and it should not exist before then.
+
 ## Session 2026-07-27 (RACE ARITHMETIC) — where the campaign actually stands against "Δrace = 0"
 
 The standing terminal condition is Δrace **provably 0 s on a live event**. With

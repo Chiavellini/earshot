@@ -334,8 +334,16 @@ series — query `?series_ticker=KXEARNINGSMENTION<TICKER>` directly. And it
 2. Box up, `df -h /` (it hit 100 % on 07-14), `ps -eo cmd --no-headers | grep -c "[h]ls-edge-fetch"` must be **0**.
 
 **T−20 min — surface the stream**
-3. Get the m3u8 from the IR player and write it:
+3. **First: `rm -f $HOME/pypl-stream.url` and confirm it is gone.** This file is a
+   loaded gun between runs — on 2026-07-27 it was left pointing at an AWS IVS
+   *demo channel* after a dry-run, and an arm started with it would have captured
+   **the demo channel instead of PayPal while looking entirely normal**. Then get
+   the m3u8 from the IR player and write it fresh:
    `echo "<m3u8>" > $HOME/pypl-stream.url`
+   ⚠ **Never start `arm` by hand without `ORT_DYLIB_PATH`.** A missing dylib makes
+   the arm **hang silently** at `book snapshots live for all armed markets` — no
+   error, no pipeline threads, no leg processes, and it looks healthy.
+   `scripts/launch-webcast.sh` sets it and guards it; use the launcher.
 4. `scripts/manifest-probe.sh "$(cat $HOME/pypl-stream.url)"`
    Read three things:
    - `== speculative posture ==` → **GO / NO-GO** and the venue's **`L`**
