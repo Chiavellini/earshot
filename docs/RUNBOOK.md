@@ -751,8 +751,20 @@ the `&&` that gates the run on it.
      primary + tuned-ffmpeg backstop) staged via `scripts/stage-webcast-arm.sh`.
      Tests: `tests/e2e_fanout.rs`.
 
-**Monitor staging (all validated 2026-07-20 evening, box `44.197.147.18`,
-instance i-04c50d76572aa092e, UP through Thu by operator decision):**
+> ⚠ **BOX ADDRESS — re-read this before every event.** Instance
+> `i-04c50d76572aa092e` has **NO Elastic IP** (verified 2026-07-27 via
+> `NetworkInterfaces[0].Association.IpOwnerId == "amazon"`, i.e. an
+> auto-assigned public IP). **The address changes on every stop/start.** It
+> went `44.197.147.18` → `3.239.237.41` on the 07-27 resize, and every doc
+> line below that names the old address was stale within minutes. Resolve it
+> live, never from a doc:
+> `aws ec2 describe-instances --instance-ids i-04c50d76572aa092e --query 'Reservations[].Instances[].PublicIpAddress' --output text`
+> Instance type is **t3a.xlarge** since 2026-07-27 (4 vCPU / **2 physical
+> cores**; it was t3a.large = 2 vCPU / 1 physical core before).
+
+**Monitor staging (all validated 2026-07-20 evening, box `44.197.147.18`
+— address now stale, see the box-address note above; instance
+i-04c50d76572aa092e, UP through Thu by operator decision):**
 - Box binary REBUILT from the current webcast-lane tree (the 07-17 binary
   rejected the `label` field — the Sunday-rebuild trap fired exactly as the
   DPZ prep note predicted). streamlink 8.4.0 installed (pipx) + symlinked.
@@ -832,16 +844,21 @@ instance i-04c50d76572aa092e, UP through Thu by operator decision):**
   `~/friday-stage/`); arm runs ON THE BOX via `launch-webcast.sh
   --wait-live` (probe posture; refuses fill flags by design), account
   `~/.kalshi/earshot_env`.
-- **💰 AWS COST CAP (standing user directive, pinned 2026-07-23): $30/month
-  GROSS usage until the system is profitable.** Measured via Cost Explorer
-  07-23: July 1–23 gross $5.07, promo credits −$5.07, net charged $0.00.
-  Box = t3a.large ($0.0752/h ≈ $1.80/day + EBS ~$3/mo) ⇒ 24/7 running
-  breaches the cap (~$55–60/mo gross) — the **stop-when-idle policy is
-  mandatory**: stop after each event's post-mortem, start T−1 evening
-  (night-before preflight cadence), Elastic IP keeps the address stable
-  (~$3.6/mo while stopped; EBS + WAVs persist across stops). Budget
-  tripwire `earshot-monthly-cap-30usd` (acct 986420598115) emails
-  bdelrio333@gmail.com at 50/80/100 % actual. GPU bursts (P2/G2b,
+- **💰 AWS COST CAP (standing user directive, raised 2026-07-25): $60/month
+  GROSS usage** (was $30, pinned 2026-07-23) until the system is profitable.
+  Measured via Cost Explorer 07-23: July 1–23 gross $5.07, promo credits
+  −$5.07, net charged $0.00. Box = **t3a.xlarge since 07-27** ($0.1504/h ≈
+  $3.61/day + EBS ~$3/mo) ⇒ 24/7 running breaches even the raised cap
+  (~$110/mo gross) — the **stop-when-idle policy is mandatory** and is now
+  twice as load-bearing as it was on t3a.large: stop after each event's
+  post-mortem, start T−1 evening (night-before preflight cadence).
+  EBS + WAVs persist across stops. ⚠ There is **no Elastic IP** — an earlier
+  version of this line claimed one keeps the address stable and that was
+  never true; see the box-address note above. Budget tripwire
+  `earshot-monthly-cap-30usd` (acct 986420598115) emails
+  bdelrio333@gmail.com at 50/80/100 % actual — **still armed at the OLD $30
+  threshold; it will now fire early rather than late** (acceptable, but
+  re-point it if the noise gets in the way). GPU bursts (P2/G2b,
   g5.xlarge ≈ $1.01/h) must be provision→run→terminate, hours not days.
   ⚠ NETWORK INCIDENT 07-23 evening: the CDMX ISP
   began dropping ~all traffic into AWS IP space (box SSH, Kalshi API, EC2
@@ -885,7 +902,9 @@ the codified home of that fix is `scripts/launch-webcast.sh --wait-live`
 **Morning runsheet per event (attended; ~15 min before the call):**
 1. Open the issuer IR player in a US-VPN browser; surface the `.m3u8` from
    network requests.
-2. `ssh ubuntu@44.197.147.18`, then:
+2. `ssh ubuntu@$(aws ec2 describe-instances --instance-ids i-04c50d76572aa092e --query 'Reservations[].Instances[].PublicIpAddress' --output text)`
+   — **resolve the address, never paste it from here** (no Elastic IP; it
+   changes on every stop/start). Then:
    `echo "<m3u8>" > ~/<ev>-stream.url`,
    `sed -i "s|__<EV>_URL__|<m3u8>|" ~/ear/configs/webcast-<ev>-capture.toml`,
    `~/ear/scripts/manifest-probe.sh "<m3u8>" | tee ~/<ev>-capture/manifest-probe.txt`
