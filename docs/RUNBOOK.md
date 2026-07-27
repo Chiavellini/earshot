@@ -356,7 +356,29 @@ series — query `?series_ticker=KXEARNINGSMENTION<TICKER>` directly. And it
 **T−1 evening**
 1. `scripts/preflight-event.sh` — pins the binary, live-probes creds, mailer,
    disk, scheduled wake. **Event runs REQUIRE this** (CLAUDE.md).
+
+   ✅ **RUN 2026-07-27 on the box for BOTH Tuesday events.** Binary pinned for
+   each (`sha256=17b3af8d02…`, same build), allowlists verified **16/16 (PYPL)**
+   and **15/15 (F)**, keywords BPE-encodable on the **armed** (`streaming_ctc`)
+   vocab, Kalshi API 200, disk 9 GiB. Ford additionally reports **no 1–2 token
+   keyword targets** — PayPal does not, because of `stash`, which is the FA risk
+   to watch on that board.
+
+   ⚠ **Both events end on `PREFLIGHT: 1 FAILURE — mail env missing:
+   ~/.kalshi/mail_env`, and that is NOT waved away — it is scoped.** Verified by
+   grep, not assumed: `mail_env` is read only by `scripts/preflight-event.sh`
+   (checking it) and `scripts/event-autorun.sh` (the **unattended** path).
+   `launch-webcast.sh` — tomorrow's **attended** path — never references it. So
+   it does not block Tuesday, and it **does** block anything scheduled
+   unattended. Fix before any autorun event.
+
+   ⚠ The pin records `commit=UNKNOWN-NOT-A-GIT-CHECKOUT` because the box is
+   rsync-deployed. Provenance is therefore the **laptop tree** — confirm it is
+   committed and clean before trusting the pin.
 2. Box up, `df -h /` (it hit 100 % on 07-14), `ps -eo cmd --no-headers | grep -c "[h]ls-edge-fetch"` must be **0**.
+   ✅ Verified 2026-07-27: box `running` (t3a.xlarge), **0** orphaned fetchers,
+   9 GiB free, load 0.00. ⚠ Re-resolve the public IP on the day — there is no
+   Elastic IP and it changed on the 07-27 resize.
 
 **T−20 min — surface the stream**
 3. **First: `rm -f $HOME/pypl-stream.url` and confirm it is gone.** This file is a

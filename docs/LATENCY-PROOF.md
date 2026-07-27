@@ -358,7 +358,9 @@ regenerated 2026-07-24 05:21:50 and **LMT is 31 occurrences**, so wideband is 75
 and the dev total is 110, not 90. The hours are unaffected. This table is left as
 written because the section it sits in is itself an evidence trail; the counts are
 marked rather than silently updated. Any *recall* computed from the old
-denominators is optimistic — see `docs/BAKEOFF.md` §Corpus.
+denominators is **not comparable** with a post-correction one — and per §L1 the
+measured direction for LMT is **pessimistic** (old 0.727 → corrected 0.903), the
+opposite of what this tag originally said. See `docs/BAKEOFF.md` §Corpus.
 
 Two consequences, pulling in opposite directions:
 
@@ -414,9 +416,17 @@ have reproduced none of the numbers. That is now repaired (`4dd121a`).
 
 **And the direction of the correction matters for reading old numbers.** LMT went
 11 → 31 occurrences, so recall figures computed against the *old* manifest were
-scored against a denominator that was ~3× too small — they flattered the detector
-by not counting mentions it missed. Any LMT recall number predating 2026-07-24
-05:21 should be treated as optimistic, not as evidence.
+scored against a denominator that was ~3× too small. Any LMT recall number
+predating 2026-07-24 05:21 is therefore **not comparable** with one measured
+after it.
+
+> ⚠⚠ **DIRECTION RETRACTED 2026-07-27 — see §L1.** This paragraph originally
+> continued: *"they flattered the detector by not counting mentions it missed …
+> should be treated as optimistic."* **Measured, that is backwards.** Re-scored
+> on the armed model with both denominators from one run: **old 11-occ ⇒ 0.727,
+> corrected 31-occ ⇒ 0.903.** All 20 added occurrences are caught; all 3 misses
+> were already in the old manifest. **Pre-correction LMT recall is PESSIMISTIC.**
+> The non-comparability stands; the direction was asserted, not measured.
 
 **Acted on 2026-07-27** (operator ruling: annotate, do not delete — the ledger
 keeps evidence trails). The rule is now stated in full at `docs/BAKEOFF.md`
@@ -640,6 +650,83 @@ live in the armed path and clean.
 — the "loaded gun" the runbook warns about. It was deleted immediately after and
 absence verified.** Confirmed again here: that file must be written FRESH on
 Tuesday, and RUNBOOK step 3 deletes it first regardless.
+
+## Session 2026-07-27 (L1) — ⚠ I GOT THE DIRECTION BACKWARDS THIS MORNING: the LMT correction RAISED recall, 0.727 → 0.903
+
+Operator ruling was *annotate **and** re-score*. The annotation went in this
+morning; here is the re-score, and **it refutes the inference the annotation
+carried.**
+
+### The claim I made, and it was wrong
+
+`docs/BAKEOFF.md` §Corpus and this ledger both say the pre-correction LMT recall
+figures were **optimistic** — that the too-small denominator *"flattered the
+detector by not counting mentions it missed."* That is an assumption about
+**which** occurrences the aligner had missed. **Measured, it is false.**
+
+### The exact comparison — old manifest recovered from git, not reconstructed
+
+`git show 5ecd5a0:corpus/manifests/lmt-q2-2026.toml` is the pre-correction
+ground truth, so the diff is exact:
+
+| phrase | old | corrected | added |
+|---|---|---|---|
+| `government` | 0 | 13 | **+13** |
+| `record` | 0 | 3 | +3 |
+| `security` | 0 | 3 | +3 |
+| `dividend` | 0 | 1 | +1 |
+| `europe` / `golden dome` / `morfius` / `nasa` / `sikorsky` | 3/2/3/1/2 | same | 0 |
+| **total** | **11** | **31** | **+20** |
+
+Re-scored on the **ARMED** model (`sherpa-onnx-streaming-zipformer-ctc-small-2024-03-18`,
+`streaming_ctc`, chunk 160, LMT only, 1.548 h), one run, both denominators
+scored from **that same run** so only the ground truth varies:
+
+| ground truth | TP | miss | occ | **recall** |
+|---|---|---|---|---|
+| old (11-occ) | 8 | 3 | 11 | **0.727** |
+| **corrected (31-occ)** | **28** | **3** | **31** | **0.903** |
+
+**All 20 added occurrences are CAUGHT** (`government` 13/13, `record` 3/3,
+`security` 3/3, `dividend` 1/1). **All 3 misses are `morfius`, and they were in
+the OLD manifest already.** So the mentions the first aligner pass missed were
+mentions we *detect* — the small denominator made recall look **worse**, not
+better.
+
+⇒ **Pre-correction LMT recall figures are PESSIMISTIC, not optimistic.** The
+`⚠ OPTIMISTIC-DENOMINATOR` tags placed this morning are corrected in the same
+change; the tag name is kept but its text now states the measured direction.
+
+**What survives unchanged:** you still cannot compare a number scored against
+the 11-occurrence manifest with one scored against the 31-occurrence manifest.
+The reproducibility break was real. Only the *direction* of the bias was
+asserted without measurement, and it was asserted by me.
+
+*(Scope: this isolates the DENOMINATOR effect, holding the detector fixed. It is
+not a claim about what any historical run reported — those used whatever engine
+and thresholds were current at the time.)*
+
+### Incidental, and it confirms a live hazard
+
+Run #1 of this used `configs/bakeoff-webcast-ctc16.toml`, which points at
+`models/streaming-ctc-en-20260723-chunk16` — the **D3 control export, not the
+model we arm.** My error, caught before publishing. Re-run on the armed model:
+
+| | `panther lake` FA | total FA | FA/h |
+|---|---|---|---|
+| chunk-16 **control** export | **527** | 553 | **357.31** |
+| **armed** model | **0** | 25 | **16.15** |
+
+**527 false alarms from one keyword, on a Lockheed call that cannot contain an
+Intel product name** — and zero from the shipped model on identical audio. This
+replicates §D3b's fragile-keyword finding call-by-call: `panther lake` is a
+0.3 %-weight-difference tripwire, and it is why that keyword must never be armed
+without a per-model FA check. It is in `webcast-intc-arm{,-fill}.toml` and in no
+staged 07-28/29 config.
+
+Armed-model FA/h of **16.15** on LMT is well above the 5.30 the AAL holdout gave
+(D1b). Drivers are the newly-added common words themselves — `government` 11 FA,
+`record` 6 FA. One call; not a bar verdict.
 
 ## Session 2026-07-27 (B1) — our four legs receive audio IDENTICALLY; two of my own instrument constants were lying
 

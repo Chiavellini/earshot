@@ -52,16 +52,28 @@ corpus/
 > by `scripts/verify-occurrences.py` (LATENCY-PROOF §manifest-divergence). This
 > was **ground truth getting more correct**, not tuning on the answer.
 >
-> **Consequence, stated in the direction that hurts:** every LMT — and therefore
-> every pooled INTC+LMT *dev-split* — **recall** figure computed before that
-> timestamp was scored against a denominator roughly **3× too small**. Those
-> numbers **flattered the detector by not counting mentions it missed**. Treat
-> them as optimistic, not as evidence, and do not compare them against anything
+> **Consequence:** every LMT — and therefore every pooled INTC+LMT *dev-split* —
+> **recall** figure computed before that timestamp was scored against a
+> denominator roughly **3× too small**, so it is not comparable with anything
 > measured after the correction.
+>
+> ⚠⚠ **DIRECTION CORRECTED 2026-07-27 (§L1), and it is the OPPOSITE of what this
+> block said this morning.** The original text asserted those numbers *"flattered
+> the detector by not counting mentions it missed"* — i.e. optimistic. **That was
+> an assumption about WHICH occurrences the aligner missed, and it is measured
+> FALSE.** Re-scored on the armed model with both denominators taken from one
+> run: **old 11-occ ⇒ recall 0.727; corrected 31-occ ⇒ recall 0.903.** All 20
+> added occurrences are **caught** (`government` 13/13, `record` 3/3, `security`
+> 3/3, `dividend` 1/1) and all 3 misses (`morfius`) were in the old manifest
+> already. **Pre-correction LMT recall is PESSIMISTIC, not optimistic.**
+>
+> The non-comparability stands; only the direction was wrong, and it was
+> asserted rather than measured.
 >
 > **Unaffected:** false-alarm counts and FA/h (no denominator), `emit_lag`/latency
 > percentiles, and TP counts read as raw counts rather than as a fraction.
-> **Affected:** anything of the form *TP / occurrences*.
+> **Affected:** anything of the form *TP / occurrences* — and per §L1 the effect
+> on LMT is to make the OLD number too LOW.
 >
 > Figures measured **2026-07-25 or later** (D1b/D1c/D1d, D2/D2b, D1, D3/D3b) used
 > the corrected manifests and need no adjustment.
