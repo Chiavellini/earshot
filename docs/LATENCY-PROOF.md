@@ -449,6 +449,30 @@ wall-anchored samples cover **09:26 → 10:03 only** (the sampler was added
 mid-run, after I noticed the original verdict logic was unsound), plus one
 exact-equality spot check at 09:26. The first 53 minutes rest on counters alone.
 
+### ⚠ This gate proves SAFETY. It does NOT measure the LEAD.
+
+The byte-delta sampler resolves one ffmpeg write block — **262144 bytes = 8.19 s**
+of 16 kHz mono. It cannot see a 0.92 s difference at all; the observed 0 ↔ 8.19 s
+oscillation is that quantum toggling, and the +0.37 s "final" is a fraction of one
+block, i.e. noise. It was the right instrument for the question it was built for
+(does the prefetch leg silently lose audio? no) and it is the **wrong** instrument
+for the question the race arithmetic needs.
+
+So **the ~0.92 s buffered gain remains MODELLED, not measured.** It is derived
+from the §V1 probe timings (headers held ~1.9 s, body ~1.4 s, announcement at
+4.18 s), not from audio observed arriving earlier at our decoder. Nothing in this
+session moved it from model to measurement, and the race-arithmetic table is
+model-based to exactly that extent.
+
+What a real measurement needs is a **PDT-anchored** comparison: the plain leg
+already prints `seg age=` per segment (wall clock minus that segment's
+`EXT-X-PROGRAM-DATE-TIME`), but the prefetch path does not, because a prefetch
+URL arrives without a PDT — the manifest has not announced it yet. Its PDT is
+derivable (prefetch[0] is the segment after the newest announced one, so
+`PDT_last + EXTINF`), and adding that is the next piece of work. Until then the
+honest statement is: **prefetch is proven safe and proven to obtain segments
+4.00 s before announcement; the audio-arrival gain at our decoder is inferred.**
+
 ### Armed-path validation, same session
 
 Dry-run arm of `configs/webcast-pypl-26jul28-arm.toml` on the rebuilt binary,
@@ -496,7 +520,13 @@ needs concurrency plus ordered emission and is not built. That is the honest
 answer to "are we there yet": no, and the remaining work is a specific, named
 piece of engineering rather than a search.
 
-⚠ Three things this arithmetic assumes, none of them established:
+⚠ **The +0.92 s and +1.6 s inputs are MODELLED, not measured** — derived from
+the §V1 probe timings, not from audio observed arriving earlier at our decoder.
+The V2 gate proved prefetch is *safe* and that it obtains segments 4.00 s before
+announcement; its byte-delta sampler resolves 8.19 s and cannot see a 0.92 s
+difference. So every row below the first is a projection.
+
+⚠ Three further things this arithmetic assumes, none of them established:
 1. **Prefetch works on Q4 Inc's channel.** Measured only on the AWS IVS demo
    channel. IVS has standard and low-latency channel types. Tuesday's
    `--prefetch-report` on the real PayPal stream is the first test.
