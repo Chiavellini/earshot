@@ -416,6 +416,107 @@ while on LMT the collision screen classed `ultra` fires as SUBSTRING hits on
 unwinnable collision on another** — which is exactly why keyword risk is
 per-event, not global.
 
+## Session 2026-07-27 (V1) — IVS hands us the future. Our speculative fetcher buys ZERO there, and `#EXT-X-PREFETCH` buys ~2.3 s.
+
+**The premise under Tuesday's whole plan was wrong.** `docs/RUNBOOK.md` said PayPal
+is "the venue class where `L` was measured three times (1.40/1.50/1.51 s)". It is
+not. Those three readings were all taken on **Unified Streaming's demo server**
+(`demo.unified-streaming.com`, 1.92 s segments, standard HLS — see the S3/S6
+entries below). That is a different origin that happens to have similar segment
+duration. **Segment duration is not venue class**, and nothing about `L` had ever
+been measured on Amazon IVS.
+
+### Why our speculative leg buys nothing on IVS
+
+`hls-edge-fetch.py --speculative` earns its lead by NUMERICALLY predicting
+segment N+1 (`pattern_is_predictable`). IVS segment URLs are opaque signed
+tokens:
+
+```
+/v1/segment/CucCQjX4C-Pa2l0Xm8nl4YThczGSYTr8vaWr4t9XDaQHuwrrCik4Scz4oBy3TqN9…
+```
+
+so the fetcher hits its own `speculative: DISABLED — segment URLs are not
+predictable` guard and the `spec_edge` leg silently degrades to a plain edge
+fetcher. **Two independent sources**, per the never-close-a-venue-question-on-one
+rule: the live AWS IVS demo channel, and **the real AXP production stream
+captured 07-24** (`1fe4bb1f4543.use21.playlist.live-video.net/v1/playlist/…`,
+Q4 Inc — the same platform PayPal uses). Same URL shape on both.
+
+### What IVS ships instead — and the instrument that could not see it
+
+IVS publishes **`#EXT-X-PREFETCH`** (Twitch LHLS): the manifest *names the URLs
+of segments that do not exist yet*. No prediction, no 404 probing, no CDN
+politeness exposure — the venue volunteers them.
+
+`scripts/manifest-probe.sh` greps only for RFC 8216bis tags
+(`EXT-X-PART|PART-INF|SERVER-CONTROL|PRELOAD-HINT`). On 07-24 it therefore
+reported **"LL-HLS capability: (none — standard-latency HLS)"** for AXP. That was
+a **false negative for the mechanism that venue actually ships.** Patched: the
+probe now reports `EXT-X-PREFETCH` separately.
+
+### Measured — `scripts/ivs-prefetch-probe.py`, 286 polls / 150 s, AWS IVS demo channel
+
+**Q1 — how far ahead of announcement is a prefetch URL?**
+
+| | |
+|---|---|
+| prefetch URLs matched to a later normal announcement | **75 of 77** |
+| `L_prefetch` median | **4.181 s** |
+| range | 0.521 – 4.260 s (tight cluster 3.65–4.26) |
+
+At 2.002 s segments that is ~2 segments of lead, consistent with the 2 prefetch
+URLs the manifest carries.
+
+**Q2 — is the body complete on publish, or produced live?**
+
+```
+200  hdr=1943ms  body=1139ms  bytes=60536  reads=4  clen=None  tenc=chunked
+200  hdr=1842ms  body=1375ms  bytes=54520  reads=4  clen=None  tenc=chunked
+200  hdr=2145ms  body=1446ms  bytes=60160  reads=4  clen=None  tenc=chunked
+```
+
+`Transfer-Encoding: chunked`, **no `Content-Length`**, headers held ~1.9 s, body
+dribbling over a further ~1.4 s in 4 reads. Control: the one already-complete URL
+in the set returned `hdr=41ms body=104ms` — the same 60 KB in one RTT. **The
+origin serves the segment WHILE IT IS BEING WRITTEN.**
+
+**F2's "segments are COMPLETE ON PUBLISH" does not hold here.** F2 scoped itself
+to DW/Akamai and said to re-ask per venue; re-asked, and IVS answers the other
+way. Progressive consumption — refuted on DW — is real on IVS.
+
+### What it is actually worth, stated conservatively
+
+The 4.18 s is the announcement lead, **not** the wall-clock gain. Netting the
+~1.9 s header block:
+
+| | when audio is in hand |
+|---|---|
+| manifest-driven client | segment announced at `T+4.18 s`, fetched in ~1 RTT ⇒ **~4.22 s** |
+| prefetch, last byte | **~3.3 s** ⇒ complete **~0.9 s earlier** |
+| prefetch, FIRST bytes | **~1.9 s** ⇒ start-of-segment audio **~2.3 s earlier** |
+
+Against a **1.241 s** `FEED` deficit, the first-byte path is more than enough to
+close it — and unlike numeric speculation it costs no 404 traffic.
+
+### ⚠ What this does NOT establish
+
+1. **Measured on the AWS IVS demo channel, not Q4 Inc's PayPal channel.** IVS has
+   standard and low-latency channel types and prefetch may not be enabled on
+   theirs. AXP's production stream is the same IVS product at 2 s segments with
+   ~4 s edge lag — consistent with a low-latency channel — but **no raw AXP
+   manifest was saved**, so I cannot confirm prefetch was present on it. The
+   patched `manifest-probe.sh` settles it day-of, before arming.
+2. **We do not implement prefetch.** This is a source-layer code change, not a
+   config flip. Nothing ships from this session.
+3. A prefetch fetch **occupies a connection for ~3.3 s**, and two are in flight
+   at once. Whether that disturbs the normal path is unmeasured.
+4. It measures ARRIVAL only. The decode and detector terms are untouched.
+
+Trap 26: **a capability probe that greps for one standard reports "(none)" for a
+venue that implements a different one** — and the miss is invisible, because a
+false negative on a capability looks exactly like the capability being absent.
+
 ## Session 2026-07-27 (D3) — "chunk-8 needs a GPU box" was WRONG. It needed five pip packages.
 
 `A` (detector lookahead, 520 ms) is the only identified lever on the `OURS` term,

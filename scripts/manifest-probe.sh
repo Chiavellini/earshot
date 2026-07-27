@@ -58,6 +58,27 @@ else
 fi
 echo
 
+# ⚠ The block above tests ONLY RFC 8216bis LL-HLS. Amazon IVS ships a different
+# low-latency mechanism — Twitch's `#EXT-X-PREFETCH`, which names the URLs of
+# segments that DO NOT EXIST YET. On 2026-07-24 this probe told us AXP (Q4 Inc →
+# IVS) had "LL-HLS capability: (none)" and that was a FALSE NEGATIVE for the
+# mechanism that venue actually ships. It matters more than RFC LL-HLS here: our
+# speculative fetcher wins its lead by NUMERICALLY predicting segment N+1, and
+# IVS segment URLs are opaque signed tokens (/v1/segment/<base64>), so
+# `hls-edge-fetch.py` self-disables and buys ZERO. EXT-X-PREFETCH hands us the
+# same lead with no prediction and no 404 probing.
+echo "== EXT-X-PREFETCH (Twitch/IVS LHLS — the IVS low-latency path) =="
+pf="$(grep -E '^#EXT-X-PREFETCH' <<<"$media" || true)"
+if [ -n "$pf" ]; then
+  echo "PRESENT — $(wc -l <<<"$pf" | tr -d ' ') prefetch URL(s) ahead of the live edge:"
+  sed 's/^/  /' <<<"$pf" | cut -c1-110
+  echo "  ⇒ speculation is available here WITHOUT URL prediction. Measure the lead"
+  echo "     with ivs-prefetch-probe.py before assuming a number."
+else
+  echo "(none)"
+fi
+echo
+
 echo "== absolute edge lag (PDT) =="
 pdt="$(grep '^#EXT-X-PROGRAM-DATE-TIME' <<<"$media" | tail -1 | cut -d: -f2- || true)"
 if [ -n "$pdt" ]; then

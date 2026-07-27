@@ -429,7 +429,7 @@ Verified in-browser, post-registration, not inferred:
 
 | Event | Call ET | Access | Platform | Notes |
 |---|---|---|---|---|
-| **PayPal** | **Tue 8:00 AM** | **WEBCAST ONLY — SEC-CONFIRMED** | **Q4 Inc** (`investor.pypl.com`, footer "Powered By Q4 Inc.") | **Same platform that fronted AXP 07-24** → AXP resolved to **Amazon IVS, 2 s segments**, the venue class where `L` was measured three times (1.40/1.50/1.51 s). Expect the same. |
+| **PayPal** | **Tue 8:00 AM** | **WEBCAST ONLY — SEC-CONFIRMED** | **Q4 Inc** (`investor.pypl.com`, footer "Powered By Q4 Inc.") | **Same platform that fronted AXP 07-24** → AXP resolved to **Amazon IVS, 2 s segments**. ⚠ **CORRECTED 07-27:** this cell used to add "the venue class where `L` was measured three times (1.40/1.50/1.51 s)". **It is not.** Those three readings were on `demo.unified-streaming.com` — similar segment duration, different origin. `L` had never been measured on IVS, and **our numeric-prediction speculative fetcher buys ZERO there** (IVS segment URLs are opaque signed tokens, so `hls-edge-fetch.py` self-disables). What IVS *does* ship is `#EXT-X-PREFETCH`, measured at **4.18 s of announcement lead / ~2.3 s of first-byte gain** on the AWS demo channel — unimplemented by us, and **unconfirmed on Q4's channel**. Day-of: run the patched `manifest-probe.sh` and read the new `== EXT-X-PREFETCH ==` section BEFORE trusting any speculation estimate. See LATENCY-PROOF §V1. |
 | **Ford** | **Tue 5:00 PM** | **WEBCAST ONLY** | OpenExchange | Registered; post-login the ONLY access is a "WEBCAST" link. **AND the IR "Advisory" PDF was read** (`s205.q4cdn.com/882619693/files/doc_events/2026/Jul/28/Ford-Q2-2026-Earnings-Advisory.pdf`) — it lists only the webcast + replay. **No bridge, no passcode.** |
 | Meta | Wed 4:30 PM | webcast-only (high conf) | — | release names webcast only |
 | Amazon | Thu 5:00 PM | webcast-only (high conf) | — | release names webcast only |
@@ -522,7 +522,10 @@ resolve early — a market where the RACE, not detection, decides it.
 
 **Before arming:** put the m3u8 in `$HOME/pypl-stream.url`, run
 `scripts/manifest-probe.sh` for the speculative GO/NO-GO and the venue's `L`.
-Q4 Inc = AXP's platform → expect Amazon IVS, 2 s segments, `L` ≈ 1.4–1.5 s.
+Q4 Inc = AXP's platform → expect Amazon IVS, 2 s segments. ⚠ **NOT** `L` ≈ 1.4–1.5 s
+(corrected 07-27 — that `L` is `demo.unified-streaming.com`, a different origin;
+numeric speculation buys **zero** on IVS). Expect `#EXT-X-PREFETCH` instead and
+confirm it with `manifest-probe.sh` day-of. LATENCY-PROOF §V1.
 
 **⚠ FORD HAS AN OPEN REGISTRATION PORTAL — VERIFIED 2026-07-25 (browser).**
 `https://ford-motor-company-q2-2026-earnings-call.open-exchange.net/registration`
