@@ -651,6 +651,93 @@ live in the armed path and clean.
 absence verified.** Confirmed again here: that file must be written FRESH on
 Tuesday, and RUNBOOK step 3 deletes it first regardless.
 
+## Session 2026-07-27 (P1) — prefix-firing RE-OPENED as instructed, and the re-opening says it is not the binding constraint yet
+
+Operator ruling 2026-07-27: **re-open prefix-firing generally**, on the strength
+of §V7 (its latency value converts at ~1.00 ms/ms under streamed arrival vs
+~0.008 buffered) and §R1 (~half the competitor's lead may be earlier *firing*).
+Re-opened. Three things were asked for. Two are answerable now; one is not, and
+the reason it is not is itself the finding.
+
+### (c) RE-MEASURING THE GAIN IS IMPOSSIBLE ON THE BANKED CORPUS
+
+`n=3` was the objection. It cannot be improved, and this is structural, not a
+matter of running more:
+
+| prefixed phrase | true occurrences, **entire** banked corpus |
+|---|---|
+| `panther lake` | 20 (INTC) — **excluded by D2b's own a-priori rule**, `panther` is a standalone word |
+| `basic economy` | 3 — and they are in **AAL, the HOLDOUT split** |
+| `golden dome` | 2 (LMT) |
+| `client computing` | 1 (INTC) |
+| `venture fund` / `venus aerospace` / `world cup` | **0 anywhere** |
+
+**Dev, after the a-priori rule: 3 occurrences across 2 phrases** — exactly the
+n=3 that made D2 too weak. **3 of the 7 prefixed phrases have no true occurrence
+anywhere in the corpus at all.** A bench re-run would spend 20 minutes
+reproducing n=3. Not run, deliberately.
+
+This is D2's own conclusion — *"the binding constraint is the corpus, not the
+technique"* — now quantified exactly.
+
+### (b) THE A-PRIORI RULE WOULD PASS THE BAR, AND THAT PASS WOULD NOT MEAN ANYTHING
+
+D2b's rule (*a `fast_prefix` must not be a complete standalone word*) drops
+`panther`, removing **2 of the 4** Fast false alarms ⇒ 2 FA / 5.15 h =
+**0.388/h, under the ≤0.5 bar.**
+
+**I am not calling that a pass.** Two reasons, and the first is D2's own:
+1. The rule was proposed *after* seeing that `panther` caused those 2 FAs.
+   Principled in form, post-hoc in origin — and validating it on the data that
+   motivated it is circular. D2 rejected exactly this move for the collision
+   variant and that rejection applies to me here.
+2. The surviving evidence is **2 false alarms and ~3 true positives.** A bar
+   cleared on that is cleared by having almost no data, not by being safe.
+
+### (a) THE EXPECTED-VALUE RE-DERIVATION — AND IT CHANGES THE REASON FOR PARKING
+
+Asked for: express the bar as expected value rather than a bare FA/h number.
+Doing that makes the FA side almost irrelevant, because **the gain side is
+currently zero.** Against every race we have actually measured:
+
+| race | today | +prefix (320 ms) | +FEED+prefix (925 ms) |
+|---|---|---|---|
+| LMT GOLD | **+0.507** | +0.827 | +1.432 |
+| LMT MORF | −1.028 | −0.708 | −0.103 |
+| AXP NFL | −1.530 | −1.210 | −0.605 |
+| LMT EURO | −2.024 | −1.704 | −1.099 |
+
+**Races flipped by prefix-firing: 0 of 4. Races flipped by FEED + prefix
+together: 0 of 4.** No measured race sits inside the ±320 ms band where a
+320 ms lever decides the outcome — the nearest is GOLD, which we already win by
+0.507 s.
+
+⇒ **A false-alarm bar is the wrong question while the lever converts no races.**
+The FA cost is real (up to `MENTION_FILL_CAP_CENTS` 50¢ on a market that settles
+NO); the benefit at today's Δrace distribution is **nil**.
+
+### VERDICT — parked, on a NEW and better-founded reason
+
+Prefix-firing stays parked. **Not** on the 0.78 FA/h bar this time, but because
+**it is not the binding constraint at the current Δrace distribution.** It
+becomes decision-relevant only once races sit within ~320 ms of parity, which
+requires the `FEED` lever to land first. That is a *sequencing* result, and it
+inverts this morning's read that prefix-firing was the priority lever.
+
+⚠ n=4 races. The 4 are draws from a distribution with ~±2 s of segment-phase
+spread (§E0), so "0 of 4 flipped" is a statement about the draws we hold, not a
+probability. What it does establish is that **no race we have measured is close
+enough for this lever to matter.**
+
+### What would make it answerable — and it is already scheduled
+
+Tuesday's PayPal board carries **five multi-word phrases** (`agentic commerce`,
+`european payments council`, `cash back`, `e commerce`, `ads id`) — precisely
+the class D2 measured a ~+0.6 s gain on, and the class the banked corpus lacks.
+**Capturing Tuesday supplies the corpus this question needs**, at no extra cost,
+and the same tape answers §R1's word-duration slope test. No new work is
+required to unblock it; it is a by-product of an event already armed.
+
 ## Session 2026-07-27 (L1) — ⚠ I GOT THE DIRECTION BACKWARDS THIS MORNING: the LMT correction RAISED recall, 0.727 → 0.903
 
 Operator ruling was *annotate **and** re-score*. The annotation went in this
