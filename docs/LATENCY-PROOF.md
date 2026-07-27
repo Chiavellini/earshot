@@ -651,6 +651,98 @@ live in the armed path and clean.
 absence verified.** Confirmed again here: that file must be written FRESH on
 Tuesday, and RUNBOOK step 3 deletes it first regardless.
 
+## Session 2026-07-27 (A3) — the join lottery does NOT exist at IVS, and the A4 bound is now computable
+
+Two results from **banked data only** — the 90-minute §V8 gate logs, re-read. No new
+capture, no network, no spend.
+
+### A3a — absolute lag at IVS: 2.62 s, and it does not wander
+
+`~/pfgate4-evidence/plain.err`, `seg age` = PDT → fetch-complete, **n = 2697**
+(every segment of the 90-minute run):
+
+| | value |
+|---|---|
+| p50 | **2.62 s** |
+| p10 – p90 | 2.52 – 2.72 s |
+| min / max | 2.45 / 3.80 s |
+| samples > 3.0 s | **1 of 2697** |
+| drift, first-200 vs last-200 mean | 2.63 → 2.61 s — **none** |
+
+**This retires a standing worry for the venue class we actually trade.** §S6
+characterised a **7.22 s** join lottery on `prod_tuned` (n=21, DW) and warned that "a
+bad draw currently costs up to 6.5 s **for the entire event**". At IVS the whole
+distribution is **0.20 s wide at p10–p90 with zero drift over 90 minutes.**
+
+The mechanism is not luck: a 2 s cadence against ~16 ms fetches never lets a backlog
+form, so there is nothing for a lottery to draw from. **Scope: this is a property of
+short-segment venues, not a refutation of S6** — S6's 6 s-segment reference streams
+still behave as measured there. It means the lottery is not a lever *here*, and the
+`prod_tuned` fallback leg's lottery costs redundancy rather than races.
+
+Cross-check: §A1's armed-leg smoke put the *complete* lag at **2.393 s p50** (n=29,
+60 s). Two different instruments, different runs, different n — **agreeing to 227 ms**
+on an absolute quantity that had never been measured at this venue at all.
+
+### A3b — what the 2.62 s is made of, and why prefetch is the only lever that touches it
+
+```
+2.62 s  =  2.00 s   the segment itself — cannot be complete before it exists
+        +  0.60 s   origin write-completion + CDN propagation
+        +  0.016 s  our own fetch  (V3 measured)
+```
+
+Only the 0.62 s tail is reachable by any client-side change, and **streamed prefetch
+attacks both terms** by consuming the segment while the origin is still writing it.
+That is why its lead is phase-dependent (**+2.073 s** at the head, **+0.168 s** at the
+tail): it converts a phase-dependent 0.62–2.62 s lag into a near-constant one.
+§A2's fire-lag table shows the same thing from the other side — streamed spans
+**0.944–1.013 s (69 ms)** against plain's **1.516–3.016 s**.
+
+⚠ The 0.60 s term is **inferred by subtraction**, not measured directly, and §V1's
+chunked-response profile that motivates it is **n=3 on the demo channel**. Treat it as
+the loosest number here — which is exactly why the A4 instrument below evaluates every
+verdict at both ends of it.
+
+### A3c — `scripts/physical-bound.py`: the first ABSOLUTE race instrument
+
+Every other race instrument in this campaign is comparative, and this ledger already
+names why that class is blind: *"Any buffering shared by both legs cancels exactly and
+is invisible to that instrument."* This one's reference is the encoder's own PDT.
+
+    earliest_possible(word_end) = PDT + u + origin_flush
+
+where `u` is the word-end's offset inside its segment. If the competitor's sweep
+precedes that instant they did not get the word from this feed — they fired on a
+prefix, or they are on a channel we have not found. **Either way no fetch or transport
+work can ever beat that race.** A race is reported DECIDED only when the verdict holds
+at *both* `origin_flush = 0` and `= 0.60 s`.
+
+**⚠ A first draft of this script was wrong and the planted control caught it** — it
+derived `u` from when the audio reached us. Under a buffered fetch the whole segment
+lands at once, so arrival is `PDT + our_lag` for **every** word in the segment and
+carries no information about `u` at all. `u` comes only from forced alignment joined to
+the segment boundaries. That is the fourth self-consistent-but-wrong instrument this
+campaign has produced (after S4's keep-alive −250 ms, E0c, and D1c's 350 ms artifact),
+and the first caught before it printed a number anyone believed.
+
+Threshold mode, run on AXP NFL as measured (no PDT banked for that race):
+
+```
+we were 1.241 s behind the sweep
+IMPOSSIBLE iff u > u*,  u* = 0.779 .. 1.379 s   (flush 0.60 .. 0)
+a uniformly-placed word exceeds u* about 31% of the time
+⇒ Not settled. Do not quote a direction from this run.
+```
+
+So **roughly a third of races would be provably unreachable on-feed even on the most
+generous flush assumption** — and the instrument correctly refuses to call this one,
+because `u` was not banked when AXP ran. §A1 has since switched `--arrival-log` on for
+the armed leg, so the next event converts this from a threshold into a per-race binary.
+
+`--selfcheck` plants three races with known verdicts (IMPOSSIBLE / POSSIBLE /
+UNDECIDED) and reproduces `u* = 1.379 s` for AXP NFL.
+
 ## Session 2026-07-27 (A2) — ⚠ §V7 OVER-CORRECTED AND I RETRACT IT: the gain is 1.117 s, not 0.605 s
 
 This morning I "corrected" the campaign's headline downward, claiming the

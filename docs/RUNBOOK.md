@@ -380,6 +380,30 @@ series — query `?series_ticker=KXEARNINGSMENTION<TICKER>` directly. And it
    9 GiB free, load 0.00. ⚠ Re-resolve the public IP on the day — there is no
    Elastic IP and it changed on the 07-27 resize.
 
+> ### ▣ THE WEBCAST URL IS ALREADY KNOWN — surfaced 2026-07-27 evening
+>
+> ## `https://events.q4inc.com/attendee/222501806`
+>
+> PayPal Q2 2026, from the IR event-details page. **Verified reachable from the
+> box: HTTP 200.** You do NOT have to navigate `investor.pypl.com` at 05:40 local
+> to find it — that site 403s both the box and plain `curl` from the laptop
+> (bot-wall, ~0.1 s edge reject, not geo-blocking).
+>
+> ⚠ **You still need a REAL BROWSER for the last step.** The Q4 attendee page is
+> a **React SPA** — a 3.7 KB shell with the stream URL nowhere in the HTML — so
+> `curl` cannot extract the m3u8 and neither can the box. Open the URL above in
+> Chrome with the network tab and copy the `.m3u8`. What is removed is the
+> *hunting*; what remains is one copy-paste.
+>
+> ⚠ **THE IR PAGE SAYS "08:00 AM EST" AND THAT IS WRONG.** July is **EDT**
+> (UTC−4), so the call is **12:00 UTC**, which is what `starts_at` holds. Taken
+> literally, "EST" would mean 13:00 UTC and **you would join an hour late, after
+> the prepared remarks.** Do not "correct" the config to match the page.
+>
+> **Standing dependency, stated because it is the single point of failure:**
+> 12:00 UTC = **06:00 CDMX local**, so a human must be at a browser by ~11:40 UTC
+> (05:40 local). Nothing armed today runs without that one paste.
+
 **T−20 min — surface the stream**
 3. **First: `rm -f $HOME/pypl-stream.url` and confirm it is gone.** This file is a
    loaded gun between runs — on 2026-07-27 it was left pointing at an AWS IVS
@@ -604,6 +628,29 @@ series — query `?series_ticker=KXEARNINGSMENTION<TICKER>` directly. And it
     *contested* ones score, and at n=4 the readout is only ~81 % reliable. If
     fewer than ~5 markets are contested, report it as **NOT RESOLVED** and pool
     with Ford/FOMC rather than calling it on one thin event.
+
+10c. **Run the A4 physical bound — the only ABSOLUTE race test we have.**
+
+    ```
+    scripts/physical-bound.py --races ~/pypl-races.json \
+      --pdt-log $HOME/pypl-arrival.log
+    ```
+
+    Asks whether the competitor's sweep preceded the instant *any* public-feed
+    consumer could have held that audio. **A race that comes back IMPOSSIBLE can
+    never be won by fetch or transport work of any kind** — it is prefix-firing
+    or a channel we have not found (→ W4). One race settles it; unlike R1's
+    slope test this is a per-race binary, not a regression.
+
+    Needs `u`, the word-end's offset inside its segment — which comes from
+    forced alignment joined to the PDT log, **never** from when the audio reached
+    us (under a buffered fetch the whole segment lands at once, so arrival is
+    identical for every word in it and carries no information about `u`). Without
+    a banked PDT the script reports the threshold `u*` instead of guessing.
+
+    ⚠ Read the verdict, not the margin: a race counts only when it holds at
+    **both** ends of the origin-flush range (0 .. 0.60 s). `--selfcheck` plants
+    three known verdicts and reproduces `u* = 1.379 s` for AXP NFL.
 11. **KEEP `$HOME/pypl-arrival.log`** — one line per segment,
     `{pdt} {t_done} {fetch_secs} {mode} {t_first}`. This is what makes the race
     **boundable** rather than merely comparable (LATENCY-PROOF §R1/§A1): with the
@@ -1326,7 +1373,7 @@ the exact production mechanism*):
 | RKLB bridge evidence | PAPER (weak) | search summary only — re-derive before acting |
 | **Detection-triggered mention FILL** | **ASSERTED** | **has NEVER happened.** One real fill ever = M2 plumbing 07-10 (non-mention 1¢). DPZ is this test |
 | **DPZ dial-in number** | **ASSERTED** | TBD — event is NO-GO without it (Track A above; deadline 07-19) |
-| Competitive fill at tight caps | **ASSERTED (evidence against)** | Q-MSPM: best competitor's whole loop beat our *audio arrival* by ~400 ms on MS-RECE. Until audio transport + detector chunking shrink, expect to lose sub-50¢ races on contested words |
+| Competitive fill at tight caps | **ASSERTED (evidence against)** | Q-MSPM: best competitor's whole loop beat our *audio arrival* by ~400 ms on MS-RECE. Until audio transport + detector chunking shrink, expect to lose sub-50¢ races on contested words. ⚠ 2026-07-27: **RECE settled NO** — the latency deficit is real but that race had **negative EV** (−26¢ at our cap), so this row evidences *lateness*, not *forgone profit* |
 | Mid-call stream recovery | ASSERTED | follow-up 1 open: a 30 s stall ends the run; recovery = full redial re-paying ~30 s warmup |
 | Post-STOP arm SIGTERM immunity | KNOWN BUG (covered) | follow-up 5: TERM→KILL escalation covers it, fired for real 07-15 |
 | Book freshness at decision | INSTRUMENTED, UNPROVEN | `book_age` added 07-16 after the MS RECE 20¢-vs-98¢ discrepancy; first data next live run |

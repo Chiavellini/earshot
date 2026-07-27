@@ -22,17 +22,60 @@ wall-time − per-detection `capture→decision` − sherpa's pinned post-word-e
 
 ## The three true-positive races (markets settled ~99¢ = real mentions)
 
+> ## ⚠ CORRECTION 2026-07-27 — **RECE settled NO. It was not a true positive, and it was not a winnable race.**
+>
+> The header above is wrong for one of its three rows. `state/KXEARNINGSMENTIONMS-26JUL15/strike-close.json`
+> records `KXEARNINGSMENTIONMS-26JUL15-RECE: {"status":"finalized","result":"no"}`.
+> **Of 14 MS markets, exactly two settled YES: INVE and TAIL.**
+>
+> This matters more than a row in a table, because **RECE is the program's canonical
+> reference race** — cited in `VERIFICATIONS.md` Q-MSPM, `docs/RUNBOOK.md` and
+> `docs/RACE-STRATEGY.md` as the proof that audio-arrival latency is the binding term.
+>
+> **What changes:**
+>
+> 1. **The consistency claim below is materially weaker.** "±25 ms across three words
+>    **45 minutes** apart" rests on RECE for its whole time span: INVE (12:42:28) and
+>    TAIL (12:43:27) are **59 seconds** apart. Two words one minute apart could be one
+>    burst of activity; three words across 45 minutes is a stable machine
+>    characteristic. **Only the weaker statement is now supported.**
+> 2. **MS precision drops to 2/5**, not the "2 likely FAs of 7" recorded later in this
+>    doc — RECE is a third false fire.
+> 3. **Winning this race would have LOST money.** At our 26¢ cap, a fill on RECE returns
+>    −26¢. The one race most often cited as the thing to beat had negative EV.
+> 4. **The competitor was wrong too.** Their 11-fill, 27→95¢ single-millisecond ladder
+>    was a **wrong-way bet**. This is the same pattern found a week later at AAL
+>    (WORL/CENT/IRAN) and INTC (ARIZ/DESK/GOVE/MOBI) — see the settlement-grade
+>    corrections in the per-tape sections. **They are not infallible, and their sweeps
+>    are not ground truth**, which is exactly the standing rule this doc later adopts:
+>    *sweeps ≠ mentions*.
+>
+> **What does NOT change.** The Δ figures are timing facts and stand as measured. RECE's
+> **+2 ms** alignment with our word-end is *too tight to be a pre-planned basket bet*, so
+> it remains evidence that their loop is **audio-triggered and fast** — it is simply no
+> longer evidence that their loop is *right*. The wave-2/wave-3 structure and the
+> 300–800 ms loop decomposition survive on all three rows; only the "true positive" and
+> "winnable" claims are withdrawn.
+>
+> Found while auditing loss-attribution 2026-07-27. Annotated, not deleted, per the
+> standing rule.
+
 Competitor wave-1 fill vs word-end-in-our-stream (Δ):
 
 | Word | Our decision (Z) | Word-end in our stream | Wave-1 fill | **Δ** | Wave-1 shape |
 |---|---|---|---|---|---|
 | INVE | 12:42:28.795 | 12:42:28.210–.310 | 12:42:28.287 | **−23 ms** | 10 fills same ms, 68→95¢ ladder |
 | TAIL | 12:43:27.034 | 12:43:26.446–.546 | 12:43:26.504 | **−42 ms** | 2 fills, then wave-2 at +124 ms sweeping 84→98¢ |
-| RECE | 13:27:10.763 | 13:27:10.172–.272 | 13:27:10.273 | **+2 ms** | 11 fills same ms, 27→95¢ ladder |
+| ~~RECE~~ | 13:27:10.763 | 13:27:10.172–.272 | 13:27:10.273 | **+2 ms** | 11 fills same ms, 27→95¢ ladder — ⚠ **SETTLED NO**, see box above |
 
 **Headline: the fast player's entire hear→decide→fill loop completes at the instant the word
 finishes arriving in OUR stream — consistently, ±25 ms across three words 45 minutes apart.**
-That consistency is machine timing, not a human. (Our own decision follows ~0.5 s later —
+That consistency is machine timing, not a human.
+
+> ⚠ **Read "45 minutes apart" as "59 seconds apart" (2026-07-27).** RECE settled NO and
+> supplies the entire time span of this claim; INVE and TAIL are one minute apart. The
+> ±25 ms is still measured, on three words — but its *stability over time* is not
+> established by this tape. See the correction box at the top of this section. (Our own decision follows ~0.5 s later —
 sherpa's decode lag — and our ack another ~0.1 s after that, in the old CDMX numbers.)
 
 ## Decomposition — what their Δ≈0 implies

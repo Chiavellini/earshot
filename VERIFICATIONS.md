@@ -605,6 +605,27 @@ failed handshakes and keeps waiting until `accept_timeout`
 
 ## Q-MSPM — MS 2026-07-15 RECE race: the loss was upstream of the order path
 
+> ⚠ **AMENDED 2026-07-27 — RECE SETTLED NO. The latency finding stands; the framing
+> "the single genuine race" does not, and the race had negative EV.**
+>
+> `state/KXEARNINGSMENTIONMS-26JUL15/strike-close.json` →
+> `KXEARNINGSMENTIONMS-26JUL15-RECE: {"status":"finalized","result":"no"}`. Of 14 MS
+> markets only **INVE and TAIL** settled YES.
+>
+> **Unaffected — everything this pin actually measures.** The tape timestamps, the
+> ~400 ms audio-arrival deficit, `capture→decision` 91.3 ms, the warm-socket
+> decomposition and the "lever is upstream" implication are all timing facts and are
+> unchanged. This pin's technical content survives intact.
+>
+> **Affected — how it is quoted.** RECE was **not a winnable race**: at our 26¢ cap a
+> fill returns **−26¢**. So this pin must no longer be cited as evidence that *winning
+> races requires closing audio latency* — it shows only that we were **late**, not that
+> being early would have paid. The competitor's 27¢→95¢ sweep was itself a **wrong-way
+> bet**, the same pattern later found at AAL (WORL/CENT/IRAN) and INTC
+> (ARIZ/DESK/GOVE/MOBI). Standing rule: **sweeps ≠ mentions.**
+>
+> See `docs/COMPETITOR-ANATOMY.md` §"The three true-positive races" correction box.
+
 **Claim:** the single genuine race of the MS run (RECE, cap 26¢, IOC canceled
 unfilled) was lost on **audio-arrival latency**, not order-path latency: the
 first competitor fills printed on the public tape ~400 ms BEFORE the audio
