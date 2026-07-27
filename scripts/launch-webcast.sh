@@ -6,9 +6,23 @@
 #   scripts/launch-webcast.sh --config configs/<event>.toml --account <env> \
 #       [--bin <pinned>] [--wait-live <url-or-url-file> --wait-kind youtube|hls]
 #
-# POSTURE: capture/observe only — this script deliberately accepts no
-# --fillable/--i-am-live. Lift only per the fill-posture gates in
-# docs/RACE-STRATEGY.md.
+# POSTURE. Default is DRY RUN (no orders reach Kalshi). `--i-am-live` opts into a
+# real arm; `--fillable` is still refused here and stays gated on the Phase-4
+# precision verdict (docs/BAKEOFF.md G4) — see W7 in docs/RACE-CHECKLIST.md.
+#
+# W7 LIFTED 2026-07-27 (operator ruling, for PayPal 07-28). The prior text read
+# "this script deliberately accepts no --fillable/--i-am-live", which meant the
+# RUNBOOK's own step-5 command produced a DRY RUN — so the 07-26 fix that makes
+# `arm` refuse a partial allowlist (config::allowlist_covers_keywords) could never
+# fire on the path the runbook told you to use, because dry-runs do not reach the
+# risk gate. An event billed as "the live Δrace measurement" was going to place no
+# orders at all.
+#
+# Live safety is enforced in `arm`, NOT duplicated here — one place, per CLAUDE.md:
+#   - --i-am-live with an empty [risk].allowlist_tickers is REFUSED (main.rs)
+#   - a non-empty allowlist that misses a keyword is REFUSED (allowlist_covers_keywords)
+#   - --allow-mention alone is the mention-PROBE posture: cap must be ≤ 1¢ and
+#     orders are non-crossing, so a live arm here still CANNOT fill.
 #
 # LIVE GATE (07-22 ops post-mortems #1/#2, docs/RUNBOOK.md): the wait for the
 # stream to go live happens HERE, before arm ever starts:
@@ -25,7 +39,7 @@
 # report), or `touch state/<event>/STOP`.
 set -euo pipefail
 
-CONFIG="" ACCOUNT="" BIN="${EARSHOT_BIN:-}" WAIT_LIVE="" WAIT_KIND=""
+CONFIG="" ACCOUNT="" BIN="${EARSHOT_BIN:-}" WAIT_LIVE="" WAIT_KIND="" LIVE=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --config)    CONFIG="$2"; shift 2 ;;
@@ -33,11 +47,19 @@ while [[ $# -gt 0 ]]; do
     --bin)       BIN="$2"; shift 2 ;;
     --wait-live) WAIT_LIVE="$2"; shift 2 ;;
     --wait-kind) WAIT_KIND="$2"; shift 2 ;;
-    *) echo "unknown arg: $1 (this launcher takes no live/fillable flags by design)" >&2; exit 2 ;;
+    --i-am-live) LIVE=1; shift ;;
+    # Refused HERE rather than passed through, so the message names the gate
+    # instead of surfacing as a generic arm error 8 minutes before a call.
+    --fillable|--fill-all)
+      echo "REFUSING $1: the webcast fill posture is gated on the Phase-4 precision" >&2
+      echo "verdict (docs/BAKEOFF.md, G4 fill-tier gate — NOT yet scored). W7 lifted" >&2
+      echo "--i-am-live only. To arm fillable you must do it deliberately by hand." >&2
+      exit 2 ;;
+    *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
 [[ -n "$CONFIG" && -n "$ACCOUNT" ]] || {
-  echo "usage: $0 --config <cfg.toml> --account <env-file> [--bin <pinned>] [--wait-live <url-or-url-file> --wait-kind youtube|hls]" >&2; exit 2
+  echo "usage: $0 --config <cfg.toml> --account <env-file> [--bin <pinned>] [--i-am-live] [--wait-live <url-or-url-file> --wait-kind youtube|hls]" >&2; exit 2
 }
 [[ -f "$CONFIG" ]] || { echo "config not found: $CONFIG" >&2; exit 2; }
 [[ -f "$ACCOUNT" ]] || { echo "account env not found: $ACCOUNT" >&2; exit 2; }
@@ -149,10 +171,22 @@ fi
 # shellcheck disable=SC1090
 source "$ACCOUNT"
 
-echo "webcast lane: event=${EVENT_ID}  config=${CONFIG}  state=${STATE_DIR}  (observe posture)"
+# The posture line must state what this run ACTUALLY is. It previously printed
+# "(observe posture)" unconditionally, which was true only because the flag could
+# not be passed — the same class of defect as V6's health line that went silent
+# exactly when the leg broke (docs/LATENCY-PROOF.md §V6).
+LIVE_ARGS=()
+if (( LIVE )); then
+  LIVE_ARGS+=(--i-am-live)
+  POSTURE="LIVE mention-probe (orders WILL be sent; cap ≤ 1¢, non-crossing, allowlist enforced by arm)"
+else
+  POSTURE="DRY RUN (no orders are sent; the risk gate is NOT exercised)"
+fi
+echo "webcast lane: event=${EVENT_ID}  config=${CONFIG}  state=${STATE_DIR}"
+echo "posture: ${POSTURE}"
 if [[ -n "$BIN" ]]; then
   [[ -x "$BIN" ]] || { echo "pinned binary not executable: ${BIN}" >&2; exit 2; }
-  exec "$BIN" arm --config "$CONFIG" --state-dir "$STATE_DIR" --report "$REPORT" --allow-mention
+  exec "$BIN" arm --config "$CONFIG" --state-dir "$STATE_DIR" --report "$REPORT" --allow-mention ${LIVE_ARGS[@]+"${LIVE_ARGS[@]}"}
 else
-  exec cargo run --release -- arm --config "$CONFIG" --state-dir "$STATE_DIR" --report "$REPORT" --allow-mention
+  exec cargo run --release -- arm --config "$CONFIG" --state-dir "$STATE_DIR" --report "$REPORT" --allow-mention ${LIVE_ARGS[@]+"${LIVE_ARGS[@]}"}
 fi

@@ -251,10 +251,25 @@ one falsifiable outcome with one evidence destination.
       measured stall profile; YouTube path decision recorded.
       Evidence →: RUNBOOK.md §Same-floor.
 
-- [ ] **W7.** Fillable webcast posture unlock (lift `launch-webcast.sh`
+- [~] **W7.** Fillable webcast posture unlock (lift `launch-webcast.sh`
       observe-only enforcement) for same-floor event classes.
       Gate: measurement:X2 + W1 — requires measured lag numbers AND a
       discriminator verdict of H1/H3/uncontested for the class.
       Done when: posture change + its evidence trail recorded; risk caps
       unchanged (config only tightens).
       Evidence →: RUNBOOK.md + docs/layers/source.md posture note.
+
+      **PARTIAL 2026-07-27 (operator ruling, for PayPal 07-28).** Only the
+      **live mention-PROBE** half is lifted: `launch-webcast.sh` now accepts
+      `--i-am-live`, default stays dry run. **The FILLABLE half — the actual
+      subject of this item — remains BLOCKED** and the launcher still refuses
+      `--fillable`/`--fill-all`, because its gate is unchanged and unmet: the
+      **G4 fill-tier gate has never been scored** (docs/BAKEOFF.md), and it is
+      itself blocked on recomputing the untuned dev-recall baseline against the
+      manifests corrected 2026-07-24 05:21.
+      Why the probe half moved anyway: the launcher's refusal meant the RUNBOOK's
+      own step-5 command produced a **dry run**, so the 07-26 partial-allowlist
+      refusal (`config::allowlist_covers_keywords`) could never fire on the
+      documented path — dry runs do not reach the risk gate. Risk caps unchanged;
+      mention-probe still enforces ≤ 1¢ non-crossing in `arm`, so **no fill is
+      possible under what was lifted.**

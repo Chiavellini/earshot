@@ -421,9 +421,19 @@ series — query `?series_ticker=KXEARNINGSMENTION<TICKER>` directly. And it
    `+1.121 s` average — a **segment-phase distribution** (`+0.168 s` at the tail,
    `+2.073 s` at the head), never a single number.
 
+   ⚠ **Those are ARRIVAL numbers. At FIRE time the streamed tier is worth
+   ~`+0.605 s` at p50, not `+1.121 s`** (§V7) — roughly 516 ms of the arrival lead
+   never reaches the decision point. Quote the fire-time figure when reasoning about
+   Δrace; quote the arrival figure only when reasoning about the fetcher.
+
+   ⚠ **Both tiers are now drop-safety gated** — buffered in §V2, streamed in §V8
+   (90 min, 179 samples, never behind, `short=0`, `dropped=0`). **All of it was
+   measured on the AWS IVS *demo* channel, not Q4 Inc's**, so the chunked-body check
+   below is still mandatory and this event is still the first real-venue test.
+
    | probe says | leg-1 flags | why |
    |---|---|---|
-   | PRESENT **and** prefetch bodies **chunked / no `Content-Length`** | `--speculative --prefetch --stream-body --prefetch-report` | the V1–V5 posture; the full ~+1.12 s |
+   | PRESENT **and** prefetch bodies **chunked / no `Content-Length`** | `--speculative --prefetch --stream-body --prefetch-report` | streamed tier, **V8-gated** (90 min, `short=0`, never behind); **~+0.605 s at FIRE time**, not the +1.121 s arrival figure — §V7 |
    | PRESENT but bodies carry `Content-Length` | `--speculative --prefetch --prefetch-report` | buffered tier only (+0.168 s, V2-gated) |
    | **ABSENT** | `--speculative --prefetch-report` — **as staged, no edit** | nothing to prefetch |
 
@@ -450,8 +460,22 @@ series — query `?series_ticker=KXEARNINGSMENTION<TICKER>` directly. And it
 5. ```
    bash scripts/launch-webcast.sh \
      --config configs/webcast-pypl-26jul28-arm.toml \
-     --account $HOME/.kalshi/earshot_env
+     --account $HOME/.kalshi/earshot_env \
+     --i-am-live
    ```
+
+   ⚠ **`--i-am-live` IS REQUIRED FOR THIS TO PLACE ORDERS.** Without it the
+   launcher arms a **dry run** and the risk gate is never exercised — which is what
+   the staged command did before W7 was lifted 2026-07-27, on an event billed as
+   the campaign's live Δrace measurement. The flag is safe here because the posture
+   is enforced in `arm`, not in the launcher: `--allow-mention` alone is the
+   mention-**PROBE** gate, so `max_price_cents` must be ≤ 1¢ and orders are
+   non-crossing — **a live arm on this config still cannot fill.** `--fillable`
+   remains refused by the launcher (gated on the G4 fill-tier verdict).
+
+   Run it and **read the `posture:` line back** before the call starts. It now
+   states what the run actually is; if it says `DRY RUN` you forgot the flag.
+
 6. **Confirm all four lines appear before the call starts** — each one is a
    thing that has broken before:
    - `streaming_ctc: ORT_DYLIB_PATH=…` — without it the CTC detector cannot
@@ -459,6 +483,10 @@ series — query `?series_ticker=KXEARNINGSMENTION<TICKER>` directly. And it
    - `book snapshots live for all armed markets` — Kalshi validated all 16
    - `fanout: per-leg detect chains, OR at decision legs=2`
    - `pipe source: spawning decoder` **×2**
+
+   Live-only, and it is the point of arming live: `ARMED for live orders —
+   MENTION-PROBE posture (allowlist, Mentions permitted, cap ≤ 1¢, $1 ledger)`.
+   Its absence means the arm is in dry run.
 
 **T−5 min — start the CONTROL legs (this is what makes Tuesday's number mean anything)**
 6b. ```

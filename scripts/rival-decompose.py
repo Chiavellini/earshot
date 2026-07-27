@@ -25,13 +25,68 @@ several times. That choice is made here by a cross-validated clock mapping, not
 by inspection of the answer, and the mapping residuals are printed so the choice
 is auditable.
 
-Usage: rival-decompose.py
+THE DISCRIMINATING TEST (`--per-market`, added 2026-07-27 for PayPal 07-28).
+The subtraction above BOUNDS the answer but cannot CHOOSE between the two models,
+because at n=3 every route to a verdict is underpowered. One event with a spread
+of word lengths does choose, because the models make OPPOSITE predictions about
+how the gap VARIES with word duration:
+
+    word-START firing:  gap = earlier_audio + duration   ⇒  slope on duration = +1.0
+    word-END   firing:  gap = earlier_audio              ⇒  slope on duration =  0.0
+
+So the estimator is a REGRESSION SLOPE, not a correlation. This matters twice:
+
+1. A slope has the two competing models as literal point predictions (+1 and 0),
+   so the result is "excludes one / excludes the other / excludes neither" rather
+   than a correlation that has to be argued about. This is the same shape as the
+   batching-covariance test that established the competitor is on our feed
+   (measured slope -0.084 against +1.00 predicted for a continuous feed).
+2. **The slope is invariant to an additive constant.** `Δrace = FEED + OURS`, and
+   `OURS` does not depend on word duration — so regressing Δrace on duration gives
+   the SAME slope as regressing the FEED gap on duration. That is what makes this
+   runnable on a tape we were already pulling: it does NOT require the per-segment
+   audio-arrival instrumentation that the level-based decomposition needs, and
+   which is not banked (LATENCY-PROOF §R1, "two instrumentation gaps exposed").
+   The INTERCEPT is not interpretable without that instrumentation; the slope is.
+
+PayPal's board spans `stash` to `european payments council`, which is the spread
+this needs. Pre-registration and the honest power statement print with the result.
+
+Usage:
+  rival-decompose.py                       # the pinned R1 decomposition (default)
+  rival-decompose.py --per-market <rows.json> [--label "PYPL 07-28"]
+
+`rows.json` is a list of objects, one per contested market:
+  [{"market": "STAS", "phrase": "stash",
+    "gap_s": 1.31,            # Δrace or FEED gap, SIGN: positive = we are behind
+    "word_dur_s": 0.28}, ...]
+Optionally omit `word_dur_s` and pass `--manifest corpus/manifests/<call>.toml`
+to read durations from the forced alignment by `phrase`.
 """
+import argparse
 import json
 import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+
+# Two-sided t critical values at alpha=0.05, indexed by degrees of freedom.
+# Hardcoded so this script keeps its zero-dependency property (no scipy on the
+# box). df = n - 2 for a simple regression.
+T_CRIT_95 = {
+    1: 12.706, 2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571, 6: 2.447, 7: 2.365,
+    8: 2.306, 9: 2.262, 10: 2.228, 11: 2.201, 12: 2.179, 13: 2.160, 14: 2.145,
+    15: 2.131, 16: 2.120, 17: 2.110, 18: 2.101, 19: 2.093, 20: 2.086,
+    25: 2.060, 30: 2.042, 40: 2.021, 60: 2.000,
+}
+
+
+def t_crit(df):
+    """Nearest tabulated t at or below df — CONSERVATIVE (wider interval)."""
+    if df < 1:
+        return float("nan")
+    ks = [k for k in sorted(T_CRIT_95) if k <= df]
+    return T_CRIT_95[ks[-1]] if ks else float("nan")
 
 # FEED gaps exactly as pinned in LATENCY-PROOF §"Result — the feed term
 # dominates and is venue-invariant" (price-moving sweep scoring).
@@ -153,5 +208,127 @@ def main():
             print("    venue-invariance question CANNOT be asked of the residual.")
 
 
+def per_market(rows_path, manifest_path=None, label="event"):
+    """Regress the gap on word duration for ONE event. Slope +1 ⇒ word-start
+    firing, slope 0 ⇒ word-end firing. See the module docstring."""
+    rows = json.load(open(rows_path))
+
+    if manifest_path:
+        man = tomllib.load(open(manifest_path, "rb"))
+        durs = {}
+        for o in man["occurrences"]:
+            durs.setdefault(o["phrase"], []).append((o["end_ms"] - o["onset_ms"]) / 1000)
+        for r in rows:
+            if "word_dur_s" not in r and r.get("phrase") in durs:
+                d = durs[r["phrase"]]
+                # A phrase spoken more than once has no single duration. Refuse
+                # rather than average: averaging would silently invent the very
+                # quantity the test regresses on.
+                if len(d) == 1:
+                    r["word_dur_s"] = d[0]
+                else:
+                    r["_skip"] = f"{len(d)} utterances of {r['phrase']!r} — ambiguous duration"
+
+    usable, skipped = [], []
+    for r in rows:
+        if r.get("_skip"):
+            skipped.append((r.get("market", "?"), r["_skip"]))
+        elif "word_dur_s" not in r or "gap_s" not in r:
+            skipped.append((r.get("market", "?"), "missing gap_s or word_dur_s"))
+        else:
+            usable.append(r)
+
+    print("=" * 78)
+    print(f"PER-MARKET SLOPE TEST — {label}")
+    print("word-START firing ⇒ slope = +1.0    word-END firing ⇒ slope = 0.0")
+    print("=" * 78)
+    print(f"{'market':<10}{'phrase':<28}{'word dur':>10}{'gap (behind)':>15}")
+    print("-" * 78)
+    for r in sorted(usable, key=lambda x: x["word_dur_s"]):
+        print(f"{r.get('market','?'):<10}{r.get('phrase',''):<28}"
+              f"{r['word_dur_s']:>9.3f}s{r['gap_s']:>14.3f}s")
+    print("-" * 78)
+
+    if skipped:
+        # NEVER silently drop a row — a scorer that discards what would move the
+        # answer is worse than one that fails (LATENCY-PROOF §V4).
+        print(f"\n⚠ EXCLUDED {len(skipped)} of {len(rows)} rows, named:")
+        for m, why in skipped:
+            print(f"    {m}: {why}")
+
+    n = len(usable)
+    if n < 3:
+        print(f"\n⇒ VERDICT: NOT COMPUTABLE — {n} usable rows, a slope needs ≥3.")
+        return
+
+    xs = [r["word_dur_s"] for r in usable]
+    ys = [r["gap_s"] for r in usable]
+    mx, my = sum(xs) / n, sum(ys) / n
+    sxx = sum((a - mx) ** 2 for a in xs)
+    sxy = sum((a - mx) * (b - my) for a, b in zip(xs, ys))
+    syy = sum((b - my) ** 2 for b in ys)
+
+    if sxx == 0:
+        print("\n⇒ VERDICT: NOT COMPUTABLE — every word has the same duration, so "
+              "there is no spread to regress on. This test needs a mixed board.")
+        return
+
+    slope = sxy / sxx
+    icept = my - slope * mx
+    resid_ss = sum((b - (icept + slope * a)) ** 2 for a, b in zip(xs, ys))
+    df = n - 2
+    se = ((resid_ss / df) / sxx) ** 0.5 if df > 0 and resid_ss > 0 else 0.0
+    tc = t_crit(df)
+    lo, hi = slope - tc * se, slope + tc * se
+    rho = sxy / (sxx * syy) ** 0.5 if syy else float("nan")
+
+    print(f"\n  n = {n}   duration spread {min(xs):.3f}–{max(xs):.3f} s")
+    print(f"  slope  = {slope:+.3f} s per s of word duration")
+    print(f"  95% CI = [{lo:+.3f}, {hi:+.3f}]   (SE {se:.3f}, df {df})")
+    print(f"  intercept = {icept:+.3f} s   ⚠ NOT interpretable as 'earlier audio' "
+          "unless gap_s is a FEED gap, not Δrace")
+    print(f"  corr = {rho:+.3f}")
+
+    start_in = lo <= 1.0 <= hi
+    end_in = lo <= 0.0 <= hi
+    print()
+    if start_in and not end_in:
+        print("⇒ VERDICT: consistent with WORD-START firing, EXCLUDES word-end.")
+        print("   Their true feed advantage is smaller than the pinned gap, and the")
+        print("   remainder is a DETECTOR difference — i.e. partly ours to close.")
+    elif end_in and not start_in:
+        print("⇒ VERDICT: consistent with WORD-END firing, EXCLUDES word-start.")
+        print("   The pinned FEED gap stands at full size; R1's re-attribution is")
+        print("   REFUTED and the campaign's feed spending is correctly aimed.")
+    elif start_in and end_in:
+        print("⇒ VERDICT: NOT RESOLVED — the interval admits BOTH models.")
+        print("   This is a real outcome, not a failed run. Report it as a null and")
+        print("   do not pick the model that suits the plan.")
+    else:
+        print("⇒ VERDICT: EXCLUDES BOTH point models — something in the framing is")
+        print("   wrong (mis-paired utterances, mixed venues, or a sign error).")
+        print("   Do NOT interpret the slope until that is explained.")
+
+    print(f"\n  Power, stated whichever way it lands: separating +1.0 from 0.0 needs")
+    print(f"  the CI half-width below 0.5; it is {tc*se:.3f}. ", end="")
+    print("SUFFICIENT." if tc * se < 0.5 else "INSUFFICIENT — widen the board or pool events.")
+    print("  Pre-registered before the data existed: a null is a publishable result,")
+    print("  the estimator is the SLOPE (not corr), and rows are never dropped silently.")
+    print("\n  ⚠ Counter-evidence on the record, unchanged by this run: the MS phone-lane")
+    print("    analysis concluded they land at/after word-end, never before. A single")
+    print("    event at a single venue class does not overturn that on its own.")
+
+
 if __name__ == "__main__":
-    main()
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--per-market", metavar="ROWS.json",
+                    help="per-market slope test for one event (see docstring)")
+    ap.add_argument("--manifest", metavar="CALL.toml",
+                    help="fill word_dur_s from a forced-alignment manifest")
+    ap.add_argument("--label", default="event", help="label for the report header")
+    a = ap.parse_args()
+    if a.per_market:
+        per_market(a.per_market, a.manifest, a.label)
+    else:
+        main()

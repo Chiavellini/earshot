@@ -520,6 +520,75 @@ against a live IVS stream:
    looked entirely normal doing it. Removed; the runsheet writes it fresh on the
    morning, and it should not exist before then.
 
+## Session 2026-07-27 (V8) — the streamed tier PASSES its 90-minute gate, on the third attempt
+
+`--prefetch --stream-body`, 90 minutes against the AWS IVS demo channel, on the
+deaf-leg-fixed fetcher (§V6). **Pre-registered bar, unchanged since S7: zero
+audio deficit vs the plain leg.**
+
+```
+=== 16:07:03 UTC GATE START   === 17:37:04 UTC capture done
+prefetch duration=5399.079625s   0 lost, 0 short, 0 catchup
+plain    duration=5399.033188s   0 lost, 0 short, 0 catchup
+both legs: dropped=0 short=0 seg_err=0   poll_err=0 deaf_s=0 reresolve=0
+samples=179  min=+0.00s  max=+8.19s  final=+8.19s  second-half drift=+0.00s
+GATE: PASS — no audio deficit and no duplication
+```
+
+**2671 of 2672 segments obtained via prefetch**, `lead_med=4.00 s`.
+
+### Why this is a pass, stated with its limits
+
+Two *independent* checks, and only the second is precise:
+
+1. **Byte-delta sampler: never behind, no drift.** ⚠ **It quantizes to 8.192 s**
+   — one 256 KB ffmpeg write block at 16 kHz mono s16 (262144/32000). So
+   `min=+0.00 s` means *"never behind by as much as one block"*, and the
+   `max=+8.19 s` is **one write block ahead, not 8 s of real lead**. This
+   instrument could not have seen a deficit smaller than 8.19 s at any single
+   sample. What it *can* see is accumulation, and `second-half drift = +0.00 s`
+   says there was none. (Note for S7's failure mode — ~86 s lost as ~6 s gaps —
+   individual 6 s gaps are **below** this resolution; only the cumulative drift
+   would have caught it. That is worth knowing about this gate generally.)
+2. **Final durations, ffprobe-measured and NOT quantized: 5399.080 s vs
+   5399.033 s — 46 ms apart, prefetch ahead.** This is the tight check.
+
+Together with `dropped=0 short=0 seg_err=0` on both legs, the pass is sound.
+
+### V4's "unexplained ~4 s gap" did not reproduce
+
+V4 was called INCONCLUSIVE partly on a 2.16 s shortfall (prefetch 5396.92 vs
+plain 5399.08). Here the same comparison is **+0.046 s, prefetch AHEAD.** I am
+**not** claiming the instrument fixes caused that — the gate script's `rm -rf`,
+the both-legs-exit sampling and the deaf-leg fix all changed between runs, and a
+startup effect remains an equally good explanation. **It did not reproduce; that
+is all that is claimed.**
+
+### Third attempt — the two that failed were both instrument, not prefetch
+
+| run | window | outcome |
+|---|---|---|
+| V4 | 11:59 → 13:29 | INCONCLUSIVE — stale-file poisoning + unexplained gap |
+| V6 | 14:20 → died 15:12 | **deaf at 51.7 min** — media playlist URL died, fetcher never re-resolved |
+| **V8** | **16:07 → 17:37** | **PASS** |
+
+Neither failure was a property of `--prefetch --stream-body`. Both were the
+harness measuring itself.
+
+### Consequence
+
+Per the operator decision taken this session (arm the streamed tier, strictly
+conditional on this gate): **`--prefetch --stream-body` goes on armed leg 1 of
+`configs/webcast-pypl-26jul28-arm.toml`.**
+
+⚠ Read this pass for what it is: **a SAFETY clearance, not a latency result.**
+It says the streamed tier does not lose audio over 90 minutes. What it is worth
+is §V3/§V5 (arrival) as corrected by **§V7** — p50 *fire-time* gain ≈ 0.6 s, not
+the 1.121 s arrival figure. And it is still **one venue, one channel, the AWS
+demo** — Tuesday is the first real-venue test. The day-of decision table in
+`docs/RUNBOOK.md` step 4b remains the final authority and can still downgrade
+the tier if the probe shows PayPal's channel behaves differently.
+
 ## Session 2026-07-27 (B1) — our four legs receive audio IDENTICALLY; two of my own instrument constants were lying
 
 Operator asked whether the competition is on a *cleaner* feed. First half of the
@@ -796,10 +865,81 @@ detections.)
   fire-time gain directly needs a detector on both legs against keyworded audio —
   which is what Tuesday's control legs plus the armed run can finally provide.
 
+## Session 2026-07-27 (V8) — the streamed tier PASSES the 90-min drop-safety gate on the fixed fetcher
+
+**Verdict: PASS.** This is the clean re-run that V4 (poisoned sample) and V6
+(died at 51.7/90 min) both owed. `--prefetch --stream-body` now clears the same
+pre-registered bar the buffered tier cleared in §V2 — **zero audio deficit vs the
+plain leg over 90 minutes** — and the bar was not renegotiated to get there.
+
+Run: `scripts/prefetch-gate.sh 5400 "--prefetch --stream-body --prefetch-report"`,
+**16:07:03 → 17:37 UTC**, AWS IVS demo master, `~/pfgate4.log`.
+
+### Counters — both legs, whole run
+
+| | candidate (`--prefetch --stream-body`) | plain |
+|---|---|---|
+| segments | **2672** | 2669 |
+| `dropped` / `short` / `seg_err` | **0 / 0 / 0** | **0 / 0 / 0** |
+| `poll_err` / `deaf_s` / `reresolve` | **0 / 0 / 0** | **0 / 0 / 0** |
+| obtained via prefetch | **2671 of 2672** | — |
+| `lead_med` | **4.00 s** (min 0.76, max 5.99) | — |
+
+`short=0` is the number that mattered and it is the one that killed `--stream-body`
+on DW/Akamai, where the same flag cost **3 / 32 / 62 short reads per run**. Over 90
+minutes on IVS: **zero**, and `sort -u` over every `SUMMARY` line in the run returns
+only `short=0` and `dropped=0` — not just the final line.
+
+### Wall-anchored verdict
+
+```
+samples=179  min=+0.00s  max=+8.19s  final=+8.19s  second-half drift=+0.00s
+GATE: PASS — no audio deficit and no duplication
+```
+
+The distribution is two-valued: **107 samples at `delta=0`, 72 at `delta=+262144`**
+(exactly one 256 KB ffmpeg write block, candidate AHEAD). **Never negative, not
+once.** Final files: prefetch `172,770,626` B vs plain `172,769,140` B — the
+candidate is **1,486 bytes larger**, so neither failure mode fires: no deficit, and
+`second-half drift = +0.00 s` rules out the diverging surplus that would indicate
+duplicated segments.
+
+### What this does and does not settle
+
+**Settles:** the streamed tier has a completed 90-minute pass on the fixed fetcher.
+Row 1 of the prefetch decision table (`docs/RUNBOOK.md` step 4b) is now a gated
+option rather than an ungated one.
+
+**Does NOT settle, and none of these are renegotiated by a pass:**
+
+- **Still the AWS IVS *demo* channel, not Q4 Inc's.** Every prefetch number in this
+  campaign carries this caveat and this one does too. Tuesday remains the first
+  real-venue test, and the day-of chunked-body check (`Transfer-Encoding: chunked` /
+  no `Content-Length`) is still **mandatory** — `--stream-body` reaches
+  `fetch_segment` at all three call sites, so on a non-chunked origin it degrades
+  every fetch on the leg.
+- **The V6 deaf-leg fix was NOT exercised.** `reresolve=0` and `deaf_s=0` mean no
+  media playlist rotated during this run, so the re-resolve path never ran. Its only
+  evidence remains `scripts/test-deaf-leg.py` against a **local synthetic origin**.
+  A pass here is not a test of that fix.
+- **V4's second anomaly did not recur, which is not the same as being explained.**
+  There the candidate produced ~4 s *less* audio than its window allowed; here it
+  produced marginally more. One non-recurrence on one run does not convert an
+  unexplained gap into an understood one.
+- This is a **drop-safety** gate. It says the streamed leg loses no audio. It says
+  nothing about the lead — §V3/§V5 measure that, and §V7 is what discounts it from
+  an arrival number to a fire-time one (~+0.605 s p50, not +1.121 s).
+
 ## Session 2026-07-27 (V6) — the gate did NOT complete: a leg can go TOTALLY DEAF with every counter clean
 
 **Verdict: the streamed-tier gate ran 51.7 of its 90 pre-registered minutes and
 is NOT a pass.** What killed it is a defect worth more than the gate.
+
+> ⚠ **SUPERSEDED ON THE GATE QUESTION 2026-07-27 by §V8** — the 16:07 re-run on the
+> fixed fetcher completed all 90 minutes and **PASSED** (179 samples, never behind,
+> `short=0`). This section stands unchanged as the record of the *defect*, which is
+> the part worth keeping: the deaf-leg failure and its fix are not retracted, and
+> **§V8 did not exercise them** (`reresolve=0`, nothing rotated that run).
 
 ### What happened
 
