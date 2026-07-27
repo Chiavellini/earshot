@@ -403,6 +403,20 @@ series — query `?series_ticker=KXEARNINGSMENTION<TICKER>` directly. And it
 > **Standing dependency, stated because it is the single point of failure:**
 > 12:00 UTC = **06:00 CDMX local**, so a human must be at a browser by ~11:40 UTC
 > (05:40 local). Nothing armed today runs without that one paste.
+>
+> **Q4 = Amazon IVS, confirmed from the platform's own API schema (2026-07-27).**
+> The attendee SPA's bundle carries the field triple `ingestEndpoint` /
+> `streamKey` / `playbackUrl` — the IVS shape — plus
+> `query getPublicEventDetails($meetingId: Int)`. Until now "Q4 ⇒ IVS" rested on
+> AXP's URL host alone; this is independent, and it supports the prefetch posture.
+>
+> ⛔ **Do NOT chase the playbackUrl through Q4's API on an event eve.**
+> `attendees.events.q4inc.com/graphql` rejects `getPublicEventDetails` (it lives
+> on another host), so finding it means guessing at an unfamiliar API surface
+> **from the box that must consume Q4's stream hours later**. This project's own
+> rule is that a rate-limit or block hits EVERY leg on the box — risking that to
+> save one copy-paste is a bad trade. Worth doing **after** an event, from the
+> laptop, if automating the surfacing step is ever wanted.
 
 **T−20 min — surface the stream**
 3. **First: `rm -f $HOME/pypl-stream.url` and confirm it is gone.** This file is a
