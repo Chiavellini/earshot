@@ -37,9 +37,21 @@ hits every leg on the box, not just this one:
   * the URL pattern is VERIFIED against consecutive real segments before
     speculation is enabled at all; an unpredictable pattern disables it
 
+PREFETCH (`--prefetch-report`, OBSERVE-ONLY, added 2026-07-27):
+Speculation above assumes numerically predictable URLs. **Amazon IVS — Q4 Inc's
+platform, i.e. AXP and PayPal — uses opaque signed segment tokens**, so the
+pattern check disables speculation and it buys ZERO there. What IVS ships
+instead is `#EXT-X-PREFETCH`: the manifest NAMES segments that do not exist yet.
+Measured on the AWS IVS demo channel (LATENCY-PROOF §V1): 4.18 s of announcement
+lead, bodies chunked with no Content-Length. Never measured on a real issuer
+channel. `--prefetch-report` times the two sightings of each prefetch URL and
+reports the lead. It issues **zero extra HTTP requests** and does not touch the
+audio path, so it is safe to arm on a live event.
+
 Usage: hls-edge-fetch.py <media-or-master-url> [poll_ms] [max_backlog]
                          [--speculative] [--spec-start-frac 0.8]
                          [--spec-poll-ms 200] [--spec-max-probes 15]
+                         [--prefetch-report]
 Writes raw segment bytes to stdout; diagnostics to stderr.
 """
 import argparse, re, sys, time, urllib.error, urllib.request, urllib.parse
@@ -125,6 +137,15 @@ def fetch_segment(url, out, timeout, stream_body):
     return len(data), False
 
 
+def _pf_summary(pf_lead):
+    """One-line prefetch verdict for the periodic SUMMARY. Median, not mean —
+    the lead distribution is bimodal on poll phase."""
+    if not pf_lead:
+        return "  prefetch=NONE-SEEN"
+    v = sorted(pf_lead.values())
+    return f"  prefetch_n={len(v)} lead_med={v[len(v)//2]:.2f}s lead_min={v[0]:.2f}s lead_max={v[-1]:.2f}s"
+
+
 def unclaim(seen, seen_order, uri):
     """Undo a pre-emptive `seen` claim so the manifest path can still fetch it."""
     seen.discard(uri)
@@ -189,6 +210,12 @@ def selftest():
     assert pattern_is_predictable(["s_1.ts", "s_2.ts", "s_3.ts"])
     assert not pattern_is_predictable(["s_1.ts", "s_2.ts", "s_9.ts"]), "gap must reject"
     assert not pattern_is_predictable(["s_1.ts", "s_2.ts"]), "too few to judge"
+    # IVS shape: opaque signed tokens => speculation must refuse to engage.
+    assert not pattern_is_predictable([
+        "/v1/segment/CucCQjX4C-Pa2l0Xm8nl4YThczGSYTr8", "/v1/segment/CucCvif_NIU3UgQQ9i-QoJu2xeaw",
+        "/v1/segment/CuECm7lTF_wRR1PfDZ4pamRtN0usQEZ"]), "IVS tokens are not predictable"
+    assert _pf_summary({}) == "  prefetch=NONE-SEEN"
+    assert "lead_med=4.18s" in _pf_summary({"a": 3.6, "b": 4.18, "c": 4.2})
     s, order = {"a", "b"}, ["a", "b"]
     unclaim(s, order, "b")
     assert s == {"a"} and order == ["a"], "unclaim removes the pre-emptive claim"
@@ -209,6 +236,15 @@ def main():
                     help="wait this fraction of a segment duration before probing (politeness)")
     ap.add_argument("--spec-poll-ms", type=float, default=200)
     ap.add_argument("--spec-max-probes", type=int, default=15)
+    ap.add_argument("--prefetch-report", action="store_true",
+                    help="OBSERVE-ONLY. Record what #EXT-X-PREFETCH would have bought, "
+                         "without fetching anything and without touching the audio path. "
+                         "Amazon IVS (Q4 Inc's platform) names segments that do not exist "
+                         "yet; our numeric speculation buys ZERO there because IVS segment "
+                         "URLs are opaque signed tokens. Measured 4.18 s of announcement "
+                         "lead on the AWS IVS demo channel (LATENCY-PROOF §V1) but never on "
+                         "a real issuer channel. This flag adds ZERO HTTP requests — it only "
+                         "times manifest lines we already parse — so it is safe to arm.")
     ap.add_argument("--stream-body", action="store_true",
                     help="EXPERIMENTAL, REFUTED on DW 2026-07-24: emit segment bytes "
                          "progressively instead of reading the body whole. Measured "
@@ -240,6 +276,9 @@ def main():
     # and we emit a periodic summary — silent audio loss would otherwise be an
     # invisible recall bug.
     n_segs = n_short = n_seg_err = n_spec_404 = 0
+    # --prefetch-report accounting (observe-only; no HTTP)
+    pf_first_seen: dict[str, float] = {}
+    pf_lead: dict[str, float] = {}
     retry_n: dict[str, int] = {}
     next_summary = time.time() + 60.0
 
@@ -273,7 +312,7 @@ def main():
             time.sleep(poll); continue
 
         # pair each segment URI with the PDT that precedes it (diagnostics)
-        pdt = None; pairs = []
+        pdt = None; pairs = []; prefetch_lines = []
         for l in body.splitlines():
             l = l.strip()
             if l.startswith("#EXT-X-PROGRAM-DATE-TIME:"):
@@ -283,8 +322,30 @@ def main():
                     seg_dur = float(l.split(":", 1)[1].rstrip(","))
                 except Exception:
                     pass
+            elif l.startswith("#EXT-X-PREFETCH:"):
+                prefetch_lines.append(l.split(":", 1)[1].strip())
             elif l and not l.startswith("#"):
                 pairs.append((l, pdt)); pdt = None
+
+        # OBSERVE-ONLY prefetch accounting. Zero HTTP requests: a prefetch URL is
+        # string-identical to the URL later announced as a normal segment (75 of
+        # 77 matched on the IVS demo channel), so timing the two sightings gives
+        # the lead this venue WOULD offer. This is how a live event measures the
+        # lever without any risk to the audio path.
+        if a.prefetch_report:
+            for pu in prefetch_lines:
+                if pu not in pf_first_seen:
+                    pf_first_seen[pu] = t0
+                    if len(pf_first_seen) == 1:
+                        sys.stderr.write(
+                            f"prefetch: venue publishes #EXT-X-PREFETCH "
+                            f"({len(prefetch_lines)} ahead of the live edge)\n")
+                        sys.stderr.flush()
+            for u, _ in pairs:
+                if u in pf_first_seen and u not in pf_lead:
+                    pf_lead[u] = t0 - pf_first_seen[u]
+                    sys.stderr.write(f"prefetch lead={pf_lead[u]:.3f}s\n")
+                    sys.stderr.flush()
 
         # Verify the URL pattern once, against real consecutive segments.
         if spec_on and not spec_verified and len(pairs) >= 3:
@@ -419,7 +480,8 @@ def main():
             sys.stderr.write(
                 f"SUMMARY segs={n_segs} dropped={n_skip} short={n_short} "
                 f"seg_err={n_seg_err} spec_hits={n_spec_hits} spec_404={n_spec_404} "
-                f"spec={'on' if spec_on else 'OFF'}\n")
+                f"spec={'on' if spec_on else 'OFF'}"
+                + (_pf_summary(pf_lead) if a.prefetch_report else "") + "\n")
             sys.stderr.flush()
 
         dt = time.time() - t0

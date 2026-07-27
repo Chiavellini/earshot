@@ -539,8 +539,43 @@ The 4.18 s is the announcement lead, **not** the wall-clock gain. Netting the
 | prefetch, last byte | **~3.3 s** ⇒ complete **~0.9 s earlier** |
 | prefetch, FIRST bytes | **~1.9 s** ⇒ start-of-segment audio **~2.3 s earlier** |
 
-Against a **1.241 s** `FEED` deficit, the first-byte path is more than enough to
-close it — and unlike numeric speculation it costs no 404 traffic.
+⚠ **Sharpened 07-27, because the first phrasing here ("more than enough to
+close it") was too strong.** The gain is *phase-dependent within the segment*,
+and the two modes are not interchangeable:
+
+- **Buffered** (read the prefetch body to completion, then emit): a flat
+  **~0.92 s**, every word. That does **NOT** close a 1.241 s deficit on its own.
+- **Streamed** (emit bytes as they arrive): a word at the *start* of a segment
+  gains ~2.3 s; a word at the *end* gains the same ~0.9 s, because the last byte
+  lands at the same moment either way. Averaged over uniform word position,
+  **~1.6 s** — which does close 1.241 s on average, but not on every word.
+
+**And it is not sustainable serially.** A prefetch fetch takes ~3.3 s from the
+moment its URL appears, while new prefetch URLs appear every ~2 s. Fetching them
+one at a time falls behind ~1.3 s per segment and compounds. A correct
+implementation needs **~2 concurrent in-flight fetches with strictly ordered
+emission** — which is exactly the number of prefetch URLs the manifest carries,
+so the venue is sized for it. That concurrency is the real work here; it is not a
+flag flip.
+
+Unlike numeric speculation it costs **no 404 traffic** — the URLs are given.
+
+**The progressive machinery already exists.** `--stream-body` was built and
+REFUTED on DW (−0.197 s against a ≥0.3 s bar, plus 3/32/62 short reads). That
+refutation was venue-scoped for the same reason F2 was: on DW the body arrives in
+one RTT, so there was nothing to stream. On IVS the body genuinely dribbles over
+~1.4 s. **The null does not transfer** — but neither does the validation, so
+`--stream-body` on IVS is untested and its short-read behaviour there is unknown.
+
+### Shipped from this session — observe-only, safe to arm
+
+`hls-edge-fetch.py --prefetch-report`: times the two sightings of each prefetch
+URL (as `#EXT-X-PREFETCH`, then as a normal segment) and reports
+`prefetch_n / lead_med / lead_min / lead_max` in the periodic SUMMARY. It issues
+**zero extra HTTP requests** — it only times manifest lines the fetcher already
+parses — and does not touch the audio path. **This is how Tuesday measures the
+lever on the real Q4 Inc channel without risking the run.** Selftest covers the
+IVS token shape refusing the predictability check.
 
 ### ⚠ What this does NOT establish
 
