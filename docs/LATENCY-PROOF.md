@@ -416,6 +416,49 @@ while on LMT the collision screen classed `ultra` fires as SUBSTRING hits on
 unwinnable collision on another** — which is exactly why keyword risk is
 per-event, not global.
 
+## Session 2026-07-27 (D3b) — the control FAILED, and it caught something bigger: every CTC number we have is an **int8** number
+
+The pre-registration said: export chunk-16 too, and if it does not reproduce the
+shipped model, chunk-8's number means nothing. It did not reproduce, and stopping
+to ask why was the whole value of running it.
+
+| tier | model | TP | miss | FA | recall | FA/h |
+|---|---|---|---|---|---|---|
+| Confirmed | SHIPPED | 50 | 27 | 77 | 0.649 | **14.96** |
+| Confirmed | ours, chunk-16 | 62 | 15 | **2425** | 0.805 | **471.19** |
+
+`emit_lag` medians were identical (**+0 ms**, n=11), so the geometry was right —
+the model was simply firing at a wildly different rate.
+
+**Cause: we were comparing int8 against fp32.** `find_encoder_onnx`
+(`src/detector/streaming_ctc.rs:236`) sorts `int8` first — *"Prefer an int8
+export (smaller/faster) when several exist"* — and the shipped directory carries
+**both** `…-left-128.int8.onnx` and `…-left-128.onnx`. My collect step filtered
+int8 out, so the export dirs held fp32 only. The "control" was int8 vs fp32:
+trap 8 again, an instrument comparing two different quantities.
+
+### The consequence is not about the export
+
+**Every `streaming_ctc` figure in this campaign is an int8 figure** — including
+the adoption decision (−69 % FA/h at identical recall) and every threshold in the
+armed configs. `default_threshold = 0.15` is calibrated against int8's compressed
+score distribution. The same checkpoint in fp32, at that same threshold, produces
+**31× the false alarms**.
+
+It is also not a uniform shift: **74 of 82 rows are identical in TP and FA**. The
+2425 false alarms are concentrated in 8 phrases — a few keywords whose fp32
+scores sit above 0.15 where their int8 scores sat below it.
+
+⚠ So int8 is not an implementation detail chosen for size. It is **part of the
+detector's operating point.** Anyone who later swaps in the fp32 export "for
+accuracy" inherits a 31× false-alarm explosion at the current thresholds. Pinned
+here rather than in a code comment because the code comment already exists and
+reads like a performance note.
+
+**Re-run:** both export dirs now carry int8 + fp32, matching the shipped dir, and
+`~/bench-look2.sh` re-runs OURS16 and OURS8. The SHIPPED result stands unchanged
+— it was int8 throughout.
+
 ## Session 2026-07-27 (V1) — IVS hands us the future. Our speculative fetcher buys ZERO there, and `#EXT-X-PREFETCH` buys ~2.3 s.
 
 **The premise under Tuesday's whole plan was wrong.** `docs/RUNBOOK.md` said PayPal
