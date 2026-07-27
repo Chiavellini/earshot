@@ -346,7 +346,24 @@ Warsh will utter — harmless, but it occupies a slot.
 | day | events |
 |---|---|
 | Tue 07-28 | **PYPL** (8:00 AM), **F** (5:00 PM) — both staged |
-| Wed 07-29 | **KXFEDMENTION-26JUL** (2:30 PM, staged), META, CVNA, WING |
+| Wed 07-29 | **KXFEDMENTION-26JUL** (2:30 PM, staged), **META (4:30 PM ET — see below)**, CVNA, WING |
+
+> **▣ META IS THE BEST MEASUREMENT TARGET OF THE WEEK — venue recon 2026-07-27.**
+> `https://events.q4inc.com/attendee/922331606`, **Wed 20:30 UTC** (1:30 PM PT).
+> **Q4 Inc ⇒ Amazon IVS — the SAME venue class as PayPal**, so the streamed
+> prefetch lever applies and Tuesday's result can be **replicated on a second
+> real venue**, which is precisely what §V8/§A2 lack (both are one channel).
+>
+> ⚠ **The crown TRADING target and the best MEASUREMENT target are different
+> events this week.** FOMC is the marquee board (43 markets) but runs on
+> **Brightcove**, where none of Campaign 2's levers apply — no known LHLS path.
+> They do not conflict: **FOMC 18:30 UTC, META 20:30 UTC**, ~2 h apart.
+>
+> AMZN (Thu) venue is **UNRESOLVED**: `ir.aboutamazon.com` renders its events
+> list client-side, so WebFetch returns an empty shell. Needs a browser.
+>
+> Recon was done from the laptop via WebFetch, **not from the box** — deliberately,
+> so nothing touches the box's IP before Tuesday's stream.
 | Thu 07-30 | AMZN, RDDT, YUM, RACE (Ferrari) |
 
 ⚠ The unfiltered `/events?status=open` endpoint paginates past the mention
