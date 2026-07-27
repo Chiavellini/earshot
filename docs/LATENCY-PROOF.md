@@ -520,6 +520,75 @@ against a live IVS stream:
    looked entirely normal doing it. Removed; the runsheet writes it fresh on the
    morning, and it should not exist before then.
 
+## Session 2026-07-27 (B1) — our four legs receive audio IDENTICALLY; two of my own instrument constants were lying
+
+Operator asked whether the competition is on a *cleaner* feed. First half of the
+answer, on the acquisition side: **our own legs are not meaningfully different
+from each other**, and the two apparent differences I found first were both
+artifacts of `arrival-profile.py`'s constants.
+
+12 legs, 4 events, 2 venue classes, from banked captures — no new capture, no
+spend. **AXP and VZ were captured CONCURRENTLY on one host** (12:17:21 and
+12:19:52 on 07-24), and LMT/AAL likewise (both 12:02:54 on 07-23), so venue is
+isolated from host and network by construction.
+
+| event | venue | leg | p50 cost of A=530 ms | **spill past burst** | stalls |
+|---|---|---|---|---|---|
+| AXP | IVS 2.054 s | `hls` / `pipe` / `pipe_tuned` | 7.0 / 7.3 / 7.0 ms | 25.0 % | 17 / 20 / 19 |
+| AXP | " | `streamlink` | 5.7 ms | 26.0 % | 2 |
+| VZ | Notified 4.02 s | `pipe_tuned` / `streamlink` | 6.2 / 5.0 ms | 12.6 / 12.9 % | 6 / 1 |
+| LMT | Notified 4.02 s | `pipe` / `pipe_tuned` / `streamlink` | 3.6 / 3.6 / 3.9 ms | 12.7 / 12.7 / 12.9 % | 2 / 2 / 1 |
+| AAL | Notified 4.02 s | `pipe` / `pipe_tuned` / `streamlink` | 3.9 / 3.9 / 3.3 ms | 12.7 / 12.7 / 12.9 % | 2 / 2 / 1 |
+
+### What this confirms
+
+**E0's `A/S` exposure law, on 12 independent legs at two venues simultaneously:**
+
+| venue | predicted `A/S` (530 ms) | **measured** |
+|---|---|---|
+| IVS, S=2054 ms | 25.8 % | **25.0–26.0 %** |
+| Notified, S=4020 ms | 13.2 % | **12.6–12.9 %** |
+
+**And §V7's buffered baseline is NOT a demo-channel artifact.** The claim that
+under buffered arrival detector lookahead is nearly free at p50 was measured on
+the AWS IVS demo loop (4.3 ms). At four *real* venues it is **3.3–7.3 ms**. The
+V7 comparison's baseline holds on real audio.
+
+⇒ **No leg has an acquisition advantage worth having.** Whatever the competitor
+is doing, it is not "picked a better one of the clients we already run".
+
+### ⚠ Two instrument constants that produced impressive nonsense
+
+Both were mine, both are fixed in `scripts/arrival-profile.py`, and both are the
+same failure: **a constant that silently interacts with segment duration.**
+
+1. **`STALL_NS = 3 s` flat.** At any venue whose segments are ≥3 s, *every
+   segment boundary* reads as a stall. Raw output: **1090–1384 "stalls" per run**
+   at the Notified venues against 17–20 at IVS — an apparent **60× venue
+   difference** that is entirely the constant. With the threshold derived from
+   the measured burst period (`max(3 s, 1.5 × period)`) the same runs report
+   **1–6**. I nearly published the 60×.
+2. **`max_gap_s` included teardown.** The 26.4–26.7 s "worst-case delivery gap"
+   at every Notified venue occurs at **99–100 % of the run** — it is the capture
+   shutting down. Excluding the final gap: 8.1–14.0 s. **During the calls, every
+   leg at every event had ZERO gaps > 10 s.**
+
+### What did NOT replicate — and I am reporting it as such
+
+My first read of AXP alone was *"streamlink is 10× more stable (2 stalls vs
+17–20) — and it is the leg we dropped"*. Tested on the other three events, the
+**direction** holds (streamlink is lowest in 4 of 4) but the **magnitude does
+not**: 1 vs 2–6 at the Notified venues. At counts of 1–19 with n=4 this is
+**NOT RESOLVABLE**, and it is not a basis for changing a leg. The AXP-only
+reading would have been a one-event finding dressed as a law.
+
+### Still open on the quality axis
+
+This settles *arrival*. It does not touch whether the **decoded audio** differs
+per leg or whether **detection** differs per leg — the 07-22 TARI observation
+that different legs catch different words. That needs the detector over the
+banked leg WAVs and is queued behind the running gate.
+
 ## Session 2026-07-27 (R1) — ⚠ ROUGHLY HALF OF THE COMPETITOR'S "FEED ADVANTAGE" MAY NOT BE FEED AT ALL
 
 **Question asked by the operator: what are they doing that we aren't, and are

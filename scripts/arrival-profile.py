@@ -59,22 +59,44 @@ def load(path):
 
 
 def burst_structure(cap, audio_ms):
-    """Segment the arrival stream into bursts and describe them."""
+    """Segment the arrival stream into bursts and describe them.
+
+    ⚠ THE STALL THRESHOLD MUST SCALE WITH SEGMENT DURATION (fixed 2026-07-27).
+    A fixed 3 s threshold reports EVERY SEGMENT BOUNDARY as a stall at any venue
+    whose segments are ≥3 s. That is not a subtle bias: on the banked 4 s
+    Notified captures it produced 1090–1384 "stalls" per run against 17–20 on a
+    2 s IVS capture taken CONCURRENTLY ON THE SAME HOST — an apparent 60×
+    venue difference that is entirely an artifact of the constant. The threshold
+    is now derived from the measured burst period.
+
+    ⚠ `max_gap_s` INCLUDES TEARDOWN. The largest gap in every banked capture
+    lands at 99–100 % of the run — it is the capture being shut down, not a
+    delivery failure. Excluding the final gap is reported separately below;
+    quoting the raw max as a "worst-case delivery gap" is wrong and was.
+    """
     gaps = [cap[i + 1] - cap[i] for i in range(len(cap) - 1)]
     bounds = [i for i, g in enumerate(gaps) if g >= GAP_BURST_NS]
-    stalls = [g for g in gaps if g >= STALL_NS]
-    periods, payloads, spans = [], [], []
+    periods = []
+    payloads, spans = [], []
     for a, b in zip(bounds, bounds[1:]):
         periods.append((cap[b] - cap[a]) / 1e6)              # burst-to-burst, ms
         payloads.append(audio_ms[b] - audio_ms[a])           # audio delivered, ms
         spans.append((cap[b] - cap[a + 1]) / 1e6)            # time spent delivering
+    period_ms = statistics.median(periods) if periods else None
+    # A stall is a gap materially longer than this venue's own burst cadence.
+    stall_ns = max(STALL_NS, 1.5 * period_ms * 1e6) if period_ms else STALL_NS
+    stalls = [g for g in gaps if g >= stall_ns]
+    # teardown-excluded view: drop the final inter-frame gap
+    body = gaps[:-1] if len(gaps) > 1 else gaps
     return {
         "bursts": len(bounds),
-        "period_ms": statistics.median(periods) if periods else None,
+        "period_ms": period_ms,
         "payload_ms": statistics.median(payloads) if payloads else None,
         "span_ms": statistics.median(spans) if spans else None,
         "stalls": len(stalls),
+        "stall_thresh_s": stall_ns / 1e9,
         "max_gap_s": max(gaps) / 1e9 if gaps else 0.0,
+        "max_gap_excl_teardown_s": max(body) / 1e9 if body else 0.0,
     }
 
 
@@ -112,7 +134,9 @@ def main():
               f"=> {r:.1f}x real time inside a burst")
     else:
         print("bursts          NONE DETECTED — arrivals are smooth at this gap threshold")
-    print(f"stalls(>3s)     {b['stalls']}   max gap {b['max_gap_s']:.2f} s")
+    print(f"stalls(>{b['stall_thresh_s']:.1f}s)   {b['stalls']}   "
+          f"max gap {b['max_gap_s']:.2f} s "
+          f"(excl. teardown {b['max_gap_excl_teardown_s']:.2f} s)")
     if b["stalls"]:
         print("  ⚠ stalls inflate the tail below; they are real capture events, not model noise")
 
