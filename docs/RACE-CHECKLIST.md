@@ -196,7 +196,16 @@ one falsifiable outcome with one evidence destination.
       COMPRESSES at short-window venues and the leg order REVERSES**;
       (e) Δrace GOLD −0.6 s / MORF −1.0 s / EURO −2.8 s (mean −1.5 s vs
       −8.7 s baseline: ~7 s recovered, sign NOT yet flipped; residual is
-      decode+vantage-sized). LMT settlements: NASA YES (our true flag beat
+      decode+vantage-sized).
+      **⚠ (e) IS SUPERSEDED — corrected 2026-07-24 night, box added 2026-07-27.**
+      GOLD and EURO were scored against flat-price prints, not the price-moving
+      sweep: **GOLD is +0.507 s AHEAD** (not −0.6 s), EURO −2.024 s, MORF
+      −1.028 s unchanged. Current ledger is n=4 with AXP NFL −1.530 s:
+      **median −1.28 s, mean −1.02 s, range +0.5 … −2.0 s — the sign IS flipped
+      on one race and the race is a distribution, not a scalar.** The −8.7 s TSLA
+      baseline it is compared against was itself scored the OLD way and was never
+      re-scored, so "~7 s recovered" is directionally right but not like-for-like.
+      Authoritative: `LATENCY-PROOF.md` + `COMPETITOR-ANATOMY.md` correction box. LMT settlements: NASA YES (our true flag beat
       the market by 52 min — market-missed-word channel VALIDATED), PERU +
       IRAN NO (our false fires; precision 4/6). **INTC same-day: FIRST LIVE
       FILL (Q-FILL) from the us-east box arm** — APPL 1×26¢ filled in 9.9 ms

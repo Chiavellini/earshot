@@ -55,8 +55,18 @@ fi
 STATE_DIR="state/${EVENT_ID:-preflight-unknown}"
 mkdir -p "$STATE_DIR"
 
+# ⚠ PORTABILITY (fixed 2026-07-27). This script was written for the CDMX macOS
+# laptop. Run unchanged on the us-east Linux box it produced FIVE failures, of
+# which FOUR were false — ngrok (not used on Linux, as this script itself says
+# 130 lines below), `df -g` (a macOS flag), `cargo` (not on a non-interactive
+# PATH), and Twilio creds (irrelevant to a webcast-only event). A gate that
+# cries wolf four times out of five trains the operator to ignore the fifth.
+
 # ── Tools the launch chain shells out to ───────────────────────────────────
-for tool in ngrok curl nc lsof python3 git shasum; do
+TOOLS=(curl nc lsof python3 git shasum)
+# ngrok is the CDMX tunnel path only; on Linux the WS endpoint is direct.
+[[ "$(uname -s)" == "Darwin" ]] && TOOLS+=(ngrok)
+for tool in "${TOOLS[@]}"; do
   if command -v "$tool" >/dev/null 2>&1; then
     check PASS "tool: $tool ($(command -v "$tool"))"
   else
@@ -65,7 +75,8 @@ for tool in ngrok curl nc lsof python3 git shasum; do
 done
 
 # ── Disk ───────────────────────────────────────────────────────────────────
-avail_gb=$(df -g / | awk 'NR==2 {print $4}')
+# `df -g` is macOS. `df -k` is POSIX and works on both.
+avail_gb=$(df -k / | awk 'NR==2 {printf "%d", $4/1048576}')
 if [[ "${avail_gb:-0}" -ge 5 ]]; then
   check PASS "disk: ${avail_gb} GiB free (>= 5)"
 else
@@ -73,13 +84,32 @@ else
 fi
 
 # ── Build + pin ────────────────────────────────────────────────────────────
-dirty=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
-[[ "$dirty" == 0 ]] && check PASS "git tree clean at $(git rev-parse --short HEAD)" \
-                    || check WARN "git tree has $dirty dirty paths — the pin records what is BUILT, review before trusting"
+# The box is rsync-deployed, so it is NOT a git checkout. That must be a loud
+# failure, not a silent pass: the whole point of the pin is "this binary is
+# THAT commit", and the previous code printed `git tree clean at ` with an
+# EMPTY commit and scored it PASS — a check passing vacuously, the same defect
+# class as the placeholder allowlist caught earlier today.
+if git rev-parse --git-dir >/dev/null 2>&1; then
+  HEAD_SHA=$(git rev-parse HEAD)
+  dirty=$(git status --porcelain | wc -l | tr -d ' ')
+  [[ "$dirty" == 0 ]] && check PASS "git tree clean at $(git rev-parse --short HEAD)" \
+                      || check WARN "git tree has $dirty dirty paths — the pin records what is BUILT, review before trusting"
+else
+  HEAD_SHA="UNKNOWN-NOT-A-GIT-CHECKOUT"
+  dirty="n/a"
+  check WARN "NOT a git checkout (rsync-deployed host) — the pin CANNOT record a commit. Provenance is the rsync source, so verify the laptop tree is committed and clean before trusting this pin."
+fi
+# cargo lives in ~/.cargo/bin, which a NON-INTERACTIVE shell does not get: the
+# profile that adds it is skipped. This is the same minimal-env class as the
+# ORT_DYLIB_PATH trap, and it made the build look broken when it was fine.
+[[ -d "$HOME/.cargo/bin" ]] && export PATH="$HOME/.cargo/bin:$PATH"
+if ! command -v cargo >/dev/null 2>&1; then
+  check FAIL "cargo not on PATH (looked in ~/.cargo/bin) — cannot build or pin"
+fi
 if cargo build --release 2>&1 | tail -1 | grep -q "Finished"; then
   cp target/release/earshot "$STATE_DIR/earshot-pinned"
   {
-    echo "commit=$(git rev-parse HEAD 2>/dev/null)"
+    echo "commit=$HEAD_SHA"
     echo "dirty_paths=$dirty"
     echo "sha256=$(shasum -a 256 "$STATE_DIR/earshot-pinned" | awk '{print $1}')"
     echo "built=$(date "+%Y-%m-%d %H:%M:%S %z")"
@@ -164,14 +194,21 @@ if [[ -f "$ACCOUNT" ]]; then
   check PASS "account env exists: $ACCOUNT ($perms perms)"
   # shellcheck disable=SC1090
   source "$ACCOUNT"
-  if [[ -n "${TWILIO_ACCOUNT_SID:-}" && -n "${TWILIO_AUTH_TOKEN:-}" ]]; then
-    code=$(curl -s -o /dev/null -w '%{http_code}' \
-      "https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}.json" \
-      -u "${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}")
-    [[ "$code" == 200 ]] && check PASS "Twilio auth probe: 200" \
-                         || check FAIL "Twilio auth probe: HTTP $code"
+  # Twilio is the PHONE lane. A webcast-only event has no phone leg, so absent
+  # Twilio creds are correct there, not a failure — demand them only when the
+  # config actually declares a twilio source.
+  if grep -qE '^[[:space:]]*kind[[:space:]]*=[[:space:]]*"twilio' "$CONFIG" 2>/dev/null; then
+    if [[ -n "${TWILIO_ACCOUNT_SID:-}" && -n "${TWILIO_AUTH_TOKEN:-}" ]]; then
+      code=$(curl -s -o /dev/null -w '%{http_code}' \
+        "https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}.json" \
+        -u "${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}")
+      [[ "$code" == 200 ]] && check PASS "Twilio auth probe: 200" \
+                           || check FAIL "Twilio auth probe: HTTP $code"
+    else
+      check FAIL "config declares a twilio source but the account env lacks TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN"
+    fi
   else
-    check FAIL "account env lacks TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN"
+    check PASS "webcast-only config (no twilio source) — Twilio creds not required"
   fi
 else
   check FAIL "account env missing: $ACCOUNT"

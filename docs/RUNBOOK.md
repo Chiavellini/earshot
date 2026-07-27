@@ -528,9 +528,37 @@ series — query `?series_ticker=KXEARNINGSMENTION<TICKER>` directly. And it
    audio lead — on the demo channel a 4.00 s announcement lead converted to
    +0.168 s buffered / +1.121 s streamed. Do not quote one as the other.
 9. `state/KXEARNINGSMENTIONPYPL-26JUL28/report.json` → `ledger_spent_cents`
-   must be **0** in observe posture.
+   must be **0** in observe posture. ⚠ **Live 1¢ arm (W7 partial lift):** orders
+   now really are sent, so expect the arm to log `ARMED for live orders —
+   MENTION-PROBE posture`. Spend still lands at 0 because the orders are 1¢
+   non-crossing; a **non-zero** `ledger_spent_cents` means something filled that
+   should not have been able to, and is a stop-and-investigate.
 10. Score Δrace against the µs tape on the **price-moving** sweep, never a flat
     print — that scoring error inverted three figures once already.
+10b. **Settle R1 — word-START vs word-END firing.** This is the cheapest
+    high-value result of the day and it needs no extra capture:
+
+    ```
+    scripts/rival-decompose.py --per-market ~/pypl-races.json \
+      --manifest corpus/manifests/pypl-q2-2026.toml --label "PYPL 07-28"
+    ```
+
+    One row per contested market: `{"market","phrase","gap_s","word_dur_s"}`,
+    `gap_s` **positive = we are behind**. The two models are point predictions on
+    the slope of gap vs word duration (**word-start ⇒ +1.0, word-end ⇒ 0.0**), and
+    the slope is invariant to an additive `OURS`, so **Δrace works — a true FEED
+    gap is better but is not required.**
+
+    ⚠ **Do not read the OLS row.** The estimator is Theil-Sen, because `OURS` is a
+    segment-phase *lottery* (~25.8 % of words pay ~2.05 s at IVS) and that is
+    bimodal contamination: simulated on E0's own numbers, Theil-Sen picks the
+    right model 93–99 % of runs at n=5–8 while OLS resolves ~25 %. Run
+    `scripts/rival-decompose.py --selfcheck` to reproduce that.
+
+    ⚠ **PayPal alone may not settle it.** The board has 16 markets but only the
+    *contested* ones score, and at n=4 the readout is only ~81 % reliable. If
+    fewer than ~5 markets are contested, report it as **NOT RESOLVED** and pool
+    with Ford/FOMC rather than calling it on one thin event.
 11. **Score the control legs:** `scripts/leg-lag.py $HOME/pcmab-pypl plain pfstream`.
     Honour its NOT-STEADY guard — a wide spread is **the segment-phase
     distribution**, not noise and not a number to quote. Report the median with

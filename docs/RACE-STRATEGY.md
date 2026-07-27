@@ -199,6 +199,31 @@ fanout keeps N), `configs/webcast-fanout-arm.toml` (streamlink edge-join +
 tuned ffmpeg), `launch-webcast.sh --wait-live` (live gate outside the arm).
 Live verdicts pending per RACE-CHECKLIST W1 gates (G3 Thu/Fri mixed-leg,
 G4 FOMC 07-29 vs the −8.7 s baseline).
+> ⚠ **THE THREE Δrace FIGURES BELOW ARE SUPERSEDED (corrected 2026-07-24 night,
+> correction box added here 2026-07-27).** GOLD and EURO were scored against
+> **flat-price prints instead of the price-moving sweep**. Corrected:
+>
+> | word | as written below | corrected |
+> |---|---|---|
+> | GOLD | −0.6 s | **+0.507 s — we are AHEAD** |
+> | EURO | −2.8 s | −2.024 s |
+> | MORF | −1.0 s | −1.028 s (unchanged) |
+>
+> **GOLD flips sign.** The current authoritative ledger is n=4 across LMT 07-23 +
+> AXP 07-24 — GOLD +0.507, MORF −1.028, **AXP NFL −1.530**, EURO −2.024 —
+> **median −1.28 s, mean −1.02 s**. The "mean −1.5 s" below does not survive.
+> Do not quote −1.530 s as "the gap" either: it is one race, adopted as the
+> reference only because it is the only one with a full FEED/OURS decomposition.
+> **The race is a distribution spanning +0.5 to −2.0 s, and we already win some.**
+> Authoritative: `LATENCY-PROOF.md` §"⚠ EVERY ROW BELOW IS THE AXP NFL RACE",
+> `COMPETITOR-ANATOMY.md` §CORRECTION 2026-07-24. Text below kept per the
+> annotate-never-delete rule.
+>
+> ⚠ **SIGN CONVENTIONS DIFFER BETWEEN DOCS.** Here and in `COMPETITOR-ANATOMY`,
+> Δrace = sweep − our flag, so **negative = we are behind**. The `LATENCY-PROOF`
+> V-series race-arithmetic tables use the opposite sign ("+1.530 s behind").
+> Check which you are reading before comparing numbers.
+
 **G3 MEASURED (LMT 07-23, first fanout race, autonomous):** Δrace GOLD −0.6 s /
 MORF −1.0 s / EURO −2.8 s (mean −1.5 s) — ~7 s recovered vs the −8.7 s baseline,
 sign not yet flipped. Root cause named: **short-manifest-window venues (Notified/
