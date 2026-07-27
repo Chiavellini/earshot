@@ -37,21 +37,37 @@ hits every leg on the box, not just this one:
   * the URL pattern is VERIFIED against consecutive real segments before
     speculation is enabled at all; an unpredictable pattern disables it
 
-PREFETCH (`--prefetch-report`, OBSERVE-ONLY, added 2026-07-27):
+PREFETCH (added 2026-07-27):
 Speculation above assumes numerically predictable URLs. **Amazon IVS — Q4 Inc's
 platform, i.e. AXP and PayPal — uses opaque signed segment tokens**, so the
 pattern check disables speculation and it buys ZERO there. What IVS ships
 instead is `#EXT-X-PREFETCH`: the manifest NAMES segments that do not exist yet.
 Measured on the AWS IVS demo channel (LATENCY-PROOF §V1): 4.18 s of announcement
 lead, bodies chunked with no Content-Length. Never measured on a real issuer
-channel. `--prefetch-report` times the two sightings of each prefetch URL and
-reports the lead. It issues **zero extra HTTP requests** and does not touch the
-audio path, so it is safe to arm on a live event.
+channel. Two flags, deliberately separate:
+
+  `--prefetch-report`  OBSERVE-ONLY. Times the two sightings of each prefetch
+      URL and reports the lead. **Zero extra HTTP requests**, no audio-path
+      change — safe to arm on a live event, and armed on the 07-28 legs.
+
+  `--prefetch`         FETCHES prefetch URLs, buffered and serial, instead of
+      waiting for announcement. Banks a flat **~0.92 s** per segment.
+      UNVALIDATED — needs the 90-min drop-safety gate the speculative posture
+      had to pass (LATENCY-PROOF S7) before any armed config uses it.
+
+Why serial suffices for the buffered tier: a prefetch fetch occupies ~3.3 s from
+when its URL appears (origin holds headers ~1.9 s while the segment is still
+being written, then dribbles ~1.4 s) against a ~2 s URL cadence, which looks like
+it needs ~1.65 concurrent connections. It does not — the segment COMPLETES ~3.3 s
+after the URL appears regardless of when we ask, so asking early and blocking
+costs nothing and the loop re-synchronises at one fetch per ~2 s. The remaining
+~1.4 s (first byte at 1.9 s rather than complete at 3.3 s) DOES need concurrency
+plus ordered emission, and is not attempted here.
 
 Usage: hls-edge-fetch.py <media-or-master-url> [poll_ms] [max_backlog]
                          [--speculative] [--spec-start-frac 0.8]
                          [--spec-poll-ms 200] [--spec-max-probes 15]
-                         [--prefetch-report]
+                         [--prefetch-report] [--prefetch]
 Writes raw segment bytes to stdout; diagnostics to stderr.
 """
 import argparse, re, sys, time, urllib.error, urllib.request, urllib.parse
@@ -236,6 +252,12 @@ def main():
                     help="wait this fraction of a segment duration before probing (politeness)")
     ap.add_argument("--spec-poll-ms", type=float, default=200)
     ap.add_argument("--spec-max-probes", type=int, default=15)
+    ap.add_argument("--prefetch", action="store_true",
+                    help="FETCH #EXT-X-PREFETCH URLs (buffered, serial) instead of waiting "
+                         "for the manifest to announce them. Banks a flat ~0.92 s per segment "
+                         "on Amazon IVS. UNVALIDATED: needs the 90-min drop-safety gate that "
+                         "the speculative posture had to pass (LATENCY-PROOF S7) before any "
+                         "armed config may use it. Default OFF.")
     ap.add_argument("--prefetch-report", action="store_true",
                     help="OBSERVE-ONLY. Record what #EXT-X-PREFETCH would have bought, "
                          "without fetching anything and without touching the audio path. "
@@ -279,6 +301,8 @@ def main():
     # --prefetch-report accounting (observe-only; no HTTP)
     pf_first_seen: dict[str, float] = {}
     pf_lead: dict[str, float] = {}
+    pf_on = a.prefetch          # flips off permanently on 429/403
+    n_prefetch_hits = 0
     retry_n: dict[str, int] = {}
     next_summary = time.time() + 60.0
 
@@ -414,6 +438,62 @@ def main():
                     sys.stderr.write(f"seg LOST after {tries} tries {u}: {e}\n")
                 sys.stderr.flush()
 
+        # PREFETCH FETCH (`--prefetch`). Take the FIRST prefetch URL we do not
+        # already hold and fetch it buffered, exactly like a normal segment.
+        #
+        # Why serial is enough for THIS tier. A prefetch fetch occupies ~3.3 s
+        # from the moment its URL appears (the origin holds headers ~1.9 s while
+        # the segment is still being written, then dribbles the body ~1.4 s), and
+        # new prefetch URLs appear every ~2 s, so it looks like it needs ~1.65
+        # concurrent connections. It does not — the segment COMPLETES when the
+        # origin finishes producing it, ~3.3 s after the URL appears, no matter
+        # when we ask. Asking early and blocking costs nothing extra, and the
+        # loop naturally re-synchronises: one fetch per ~2 s of wall clock.
+        # Buffered therefore banks a flat ~0.92 s vs the manifest path, serially.
+        #
+        # The remaining ~1.4 s (first-byte-at-1.9 s instead of complete-at-3.3 s)
+        # DOES need concurrency plus ordered emission, and is deliberately NOT
+        # attempted here. See LATENCY-PROOF §V1b.
+        #
+        # Ordering: prefetch[0] is the segment immediately after the newest
+        # announced one, and we take only ONE per poll, so emission order is
+        # preserved without a reorder buffer. The `seen` claim makes the later
+        # normal announcement of the same URL a no-op (they are byte-identical
+        # strings — 75 of 77 matched when measured).
+        if pf_on and prefetch_lines:
+            target = next((p for p in prefetch_lines if p not in seen), None)
+            if target is not None:
+                seen.add(target); seen_order.append(target)
+                try:
+                    _, short = fetch_segment(urllib.parse.urljoin(base, target), out,
+                                             poll + 6, a.stream_body)
+                    n_prefetch_hits += 1
+                    n_segs += 1
+                    last_seg_at = time.time()
+                    if short:
+                        n_short += 1
+                        sys.stderr.write(f"short read on prefetch {target[:60]}\n")
+                    if n_prefetch_hits == 1:
+                        sys.stderr.write("prefetch: FETCHING ahead of announcement\n")
+                    sys.stderr.flush()
+                except urllib.error.HTTPError as e:
+                    unclaim(seen, seen_order, target)
+                    if e.code in (403, 429):
+                        pf_on = False
+                        sys.stderr.write(
+                            f"prefetch: DISABLED — HTTP {e.code} (rate-limited/forbidden); "
+                            f"manifest-driven for the rest of the run\n")
+                    else:
+                        # Not yet publishable. Unlike speculation this is NOT a
+                        # guess, so a 404 here is a venue quirk worth seeing.
+                        sys.stderr.write(f"prefetch {e.code} on {target[:60]}\n")
+                    sys.stderr.flush()
+                except BrokenPipeError:
+                    raise
+                except Exception as e:
+                    unclaim(seen, seen_order, target)
+                    sys.stderr.write(f"prefetch err: {e}\n"); sys.stderr.flush()
+
         # Re-aim speculation at the segment AFTER the newest one we already hold.
         if spec_on and spec_verified and seen_order:
             t = bump_uri(seen_order[-1])
@@ -481,7 +561,9 @@ def main():
                 f"SUMMARY segs={n_segs} dropped={n_skip} short={n_short} "
                 f"seg_err={n_seg_err} spec_hits={n_spec_hits} spec_404={n_spec_404} "
                 f"spec={'on' if spec_on else 'OFF'}"
-                + (_pf_summary(pf_lead) if a.prefetch_report else "") + "\n")
+                + (_pf_summary(pf_lead) if a.prefetch_report else "")
+                + (f"  prefetch_fetched={n_prefetch_hits} pf={'on' if pf_on else 'OFF'}"
+                   if a.prefetch else "") + "\n")
             sys.stderr.flush()
 
         dt = time.time() - t0

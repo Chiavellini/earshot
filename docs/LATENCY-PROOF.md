@@ -606,6 +606,25 @@ one RTT, so there was nothing to stream. On IVS the body genuinely dribbles over
 ~1.4 s. **The null does not transfer** — but neither does the validation, so
 `--stream-body` on IVS is untested and its short-read behaviour there is unknown.
 
+### ⚠ Correction to the "needs concurrency" claim above
+
+The claim that prefetch needs ~2 concurrent in-flight fetches is right for the
+*streaming* tier and **wrong for the buffered one**. The reasoning was: a fetch
+occupies ~3.3 s while URLs appear every ~2 s, so 3.3/2 ≈ 1.65 connections. That
+treats the 3.3 s as work. It is not — **~1.9 s of it is the origin holding the
+connection while the segment is still being written.** The segment completes when
+the origin finishes producing it, ~3.3 s after its URL appears, *no matter when
+we ask*. So asking early and blocking costs nothing, and the loop
+re-synchronises at one fetch per ~2 s of wall clock.
+
+| tier | concurrency | gain |
+|---|---|---|
+| **buffered, serial** | **none needed** | flat **~0.92 s** every word |
+| streamed, ordered | ~2 in flight | ~2.3 s (start of segment) … ~0.9 s (end), ~1.6 s avg |
+
+That splits the lever into a small change worth 74 % of the `FEED` deficit and a
+larger change worth the rest.
+
 ### Shipped from this session — observe-only, safe to arm
 
 `hls-edge-fetch.py --prefetch-report`: times the two sightings of each prefetch
