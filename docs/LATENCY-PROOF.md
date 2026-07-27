@@ -502,41 +502,66 @@ against a live IVS stream:
    looked entirely normal doing it. Removed; the runsheet writes it fresh on the
    morning, and it should not exist before then.
 
-## Session 2026-07-27 (RACE ARITHMETIC) — where the campaign actually stands against "Δrace = 0"
+## Session 2026-07-27 (RACE ARITHMETIC — now MEASURED) — prefetch is worth ~1.12 s, not the 1.6 s I modelled, and it is still not parity
 
-The standing terminal condition is Δrace **provably 0 s on a live event**. With
-D1 closed and the prefetch tiers measured, the ledger is arithmetic now, not
-speculation. Starting gap **1.530 s = FEED 1.241 + OURS 0.289**:
+Superseding the model-based table. Measured by `scripts/arrival-ab.sh` +
+`arrival-lead.py` on a live IVS channel, **20 minutes, n=600 paired segments per
+leg, 0 lost / 0 short on all three legs**:
+
+| leg | LEAD (complete) | LEAD (first byte) |
+|---|---|---|
+| `--prefetch` (buffered) | **+0.168 s** IQR [+0.114, +0.220] | +0.168 s (identical by construction) |
+| `--prefetch --stream-body` | +0.168 s | **+2.073 s** IQR [+2.014, +2.129] |
+
+Internal consistency check that the instrument is sound: both legs show the
+**same** complete-lead, which is exactly right — streaming cannot change when the
+origin finishes writing the segment. And 600 segments in 1200 s is precisely the
+2 s cadence with zero backlog, so the serial prefetch loop keeps up.
+
+### Two of my own numbers were wrong
+
+1. **The buffered tier is worth +0.168 s, not the ~0.92 s I modelled** — off by
+   5.5×. I had already written down why ("the segment completes when the origin
+   finishes producing it, no matter when we ask") and then credited 0.92 s
+   anyway. A 250 ms phase-locked poller sees the announcement almost instantly
+   and fetches in **16 ms**, so almost nothing remains to win on completion. The
+   4.18 s announcement lead does **not** convert into audio-arrival lead.
+2. **The streamed tier needs NO concurrency.** `--prefetch --stream-body` earns
+   its ~2 s serially: the fetch blocks ~1.98 s while the origin writes, at a 2 s
+   cadence, which is exactly one in flight. My "~2 concurrent fetches with
+   ordered emission" was wrong; it is a **flag**, not a threading rewrite.
+
+### The race table, measured
+
+The streamed gain is phase-dependent between two measured endpoints —
+`lead(f) = 2.073 − f × 1.905` for a word at fraction `f` of a segment — so it
+averages **+1.121 s** over uniform word position.
 
 | state | FEED | OURS | **Δrace** |
 |---|---|---|---|
-| today (speculation buys 0 on IVS) | 1.241 | 0.289 | **+1.530 s behind** |
-| `--prefetch` buffered (**+0.92 s**) | 0.321 | 0.289 | **+0.610 s behind** |
-| prefetch streamed (**~1.6 s avg**) | −0.36 | 0.289 | **≈ −0.07 s ⇒ parity** |
+| today | 1.241 | 0.289 | **+1.530 s behind** |
+| `--prefetch` buffered (**measured +0.168**) | 1.073 | 0.289 | **+1.362 s behind** |
+| `+ --stream-body` (**measured, +1.121 avg**) | 0.120 | 0.289 | **+0.409 s behind** |
+| …best case, word at a segment's head (+2.073) | −0.832 | 0.289 | −0.543 s (ahead) |
+| …worst case, word at a segment's tail (+0.168) | 1.073 | 0.289 | +1.362 s behind |
 
-**The buffered tier does not reach 0.** It closes ~60 % of the gap and leaves us
-~0.61 s behind. **Only the streamed tier reaches parity**, and it is the one that
-needs concurrency plus ordered emission and is not built. That is the honest
-answer to "are we there yet": no, and the remaining work is a specific, named
-piece of engineering rather than a search.
+**This is still not parity.** The best available configuration leaves us ~0.41 s
+behind on average, and where a word falls inside its segment swings the outcome
+by ±0.95 s. Nothing here reaches the terminal condition, and the remaining 0.41 s
+has no identified lever — `OURS` was closed by D1 and `FEED` is now down to what
+the origin's own write speed allows.
 
-⚠ **The +0.92 s and +1.6 s inputs are MODELLED, not measured** — derived from
-the §V1 probe timings, not from audio observed arriving earlier at our decoder.
-The V2 gate proved prefetch is *safe* and that it obtains segments 4.00 s before
-announcement; its byte-delta sampler resolves 8.19 s and cannot see a 0.92 s
-difference. So every row below the first is a projection.
+### ⚠ What these numbers still are not
 
-⚠ Three further things this arithmetic assumes, none of them established:
-1. **Prefetch works on Q4 Inc's channel.** Measured only on the AWS IVS demo
-   channel. IVS has standard and low-latency channel types. Tuesday's
-   `--prefetch-report` on the real PayPal stream is the first test.
-2. **The competitor does not also improve.** Δrace is a difference. If they are
-   already on prefetch, this buys parity rather than a lead — which is still
-   exactly the stated goal.
-3. **`OURS` stays at 0.289 s.** It has no identified lever left (D1), so it is a
-   floor unless a new instrument finds one. Notably `bench-detector` is
-   structurally blind to the segment-phase exposure term, so the one place a
-   further `OURS` gain could hide is not currently measurable at all.
+- **Arrival, not detection.** Measured at the fetcher's stdout with output to
+  `/dev/null`. Whether ffmpeg converts earlier BYTES into earlier PCM — and
+  whether the pipe's backpressure changes the picture — is **not measured**. That
+  instrument does not exist yet and is the next thing to build.
+- **One venue, one channel.** The AWS IVS demo channel, not Q4 Inc's.
+- `--stream-body` has **not** passed a drop-safety gate on IVS. Its DW refutation
+  (−0.197 s, 3/32/62 short reads) was venue-scoped, and the runs above show 0
+  short reads over 600 segments — but that is 20 minutes, and S7 is the reason
+  the bar is 90.
 
 ## Session 2026-07-27 (D1 — CLOSED) — chunk-8 REJECTED: −80 ms bought for +263 ms, and it loses 3 of 57 detections
 

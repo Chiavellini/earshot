@@ -15,6 +15,10 @@
 # otherwise kill the comparison.
 set -u
 DUR=${1:-5400}
+# Extra flags for the candidate leg. Default is the buffered tier; pass
+# "--prefetch --stream-body" to gate the streamed one (measured +2.073 s
+# first-byte lead, n=600 — but a 20-min run is not the 90-min bar).
+CAND_FLAGS=${2:---prefetch --prefetch-report}
 MASTER="https://fcc3ddae59ed.us-west-2.playback.live-video.net/api/video/v1/us-west-2.893648527354.channel.DmumNckWFTqz.m3u8"
 OUT=$HOME/pfgate
 mkdir -p "$OUT"
@@ -27,8 +31,8 @@ cd "$HOME/ear" || exit 1
 # the first attempt. Both legs are launched inline, stdout to /dev/null.
 FF="-loglevel warning -fflags +discardcorrupt+nobuffer -flags low_delay -probesize 200000 -analyzeduration 3000000"
 
-echo "=== $(date -u) GATE START  dur=${DUR}s  master=IVS demo"
-( python3 -u scripts/hls-edge-fetch.py "$MASTER" 250 2 --prefetch --prefetch-report \
+echo "=== $(date -u) GATE START  dur=${DUR}s  cand_flags=[$CAND_FLAGS]  master=IVS demo"
+( python3 -u scripts/hls-edge-fetch.py "$MASTER" 250 2 $CAND_FLAGS \
     2>"$OUT/prefetch.err" \
   | ffmpeg $FF -i - -vn -ac 1 -ar 16000 -t "$DUR" -y "$OUT/prefetch.wav" \
     2>"$OUT/prefetch.ffmpeg.err" ) >/dev/null 2>&1 &
