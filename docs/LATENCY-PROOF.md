@@ -992,7 +992,19 @@ The streamed gain is phase-dependent between two measured endpoints —
 `lead(f) = 2.073 − f × 1.905` for a word at fraction `f` of a segment — so it
 averages **+1.121 s** over uniform word position.
 
-| state | FEED | OURS | **Δrace** |
+> ⚠ **EVERY ROW BELOW IS THE AXP NFL RACE, NOT "THE GAP"** (corrected
+> 2026-07-27 on an operator challenge). NFL is the reference case because it is
+> the only race with a full FEED/OURS decomposition on one box — **not** because
+> it is typical. The four corrected Δrace figures we hold, scored on the
+> price-moving sweep, are **LMT GOLD +0.507 s (AHEAD)**, LMT MORF −1.028 s,
+> **AXP NFL −1.530 s**, LMT EURO −2.024 s: median **−1.28 s**, mean **−1.02 s**,
+> range **+0.5 … −2.0 s**. **We already win some races**, and the race is a
+> distribution — the same conclusion E0 reached about `OURS` and §V7 reached
+> about the streamed tier. Do not quote 1.530 s as the system's deficit.
+> (Sign warning: `COMPETITOR-ANATOMY` uses negative = behind; this table uses
+> positive = behind.)
+
+| state | FEED | OURS | **Δrace (AXP NFL reference case)** |
 |---|---|---|---|
 | today | 1.241 | 0.289 | **+1.530 s behind** |
 | `--prefetch` buffered (**measured +0.168**) | 1.073 | 0.289 | **+1.362 s behind** |
