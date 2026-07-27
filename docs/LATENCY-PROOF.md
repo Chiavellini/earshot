@@ -502,6 +502,68 @@ against a live IVS stream:
    looked entirely normal doing it. Removed; the runsheet writes it fresh on the
    morning, and it should not exist before then.
 
+## Session 2026-07-27 (V5) — the prefetch lead SURVIVES ffmpeg, and the "not steady" spread IS the segment-phase distribution
+
+The biggest open unknown: every prefetch number was ARRIVAL at the fetcher's
+stdout. Measured now at the **PIPE SOURCE — after ffmpeg** — via
+`configs/pcm-lead-bakeoff.toml` (two legs differing in one flag) +
+`scripts/leg-lag.py`, which aligns on audio CONTENT and compares `capture_ns`.
+
+```
+plain -> pfstream   (+ = pfstream LATER;  negative = pfstream AHEAD)
+   win@s   delta_ms
+   450.0    -1476.3      704.9    -1030.6
+   513.7    -1664.5      768.6    -1309.6
+   577.5     -241.4      832.3    -1687.5
+   641.2     -493.6      896.0     -170.3
+n=8  median=-1170.1 ms  spread=1517.1 ms
+VERDICT: NOT STEADY — do not quote a single number.
+```
+
+**The guard is right, and the reason it fired is the finding.** This quantity is
+not a constant — it is the segment-phase distribution. A word at the head of a
+segment gains the full streamed lead; a word at the tail gains only what the
+buffered tier gives, because the last byte lands at the same instant either way.
+So windows sampling different phases MUST scatter, and a single number would
+misrepresent it.
+
+### The two instruments agree, and they were built independently
+
+| | arrival domain (§V3, n=600, PDT-keyed) | PCM domain (this run, n=8, content-keyed) |
+|---|---|---|
+| tail of segment | **+0.168 s** | **+0.170 s** (min observed) |
+| average | **+1.121 s** | **+1.170 s** (median) |
+| head of segment | +2.073 s | +1.688 s (max observed) |
+
+The tail figures agree to **2 ms** and the averages to **49 ms**, from a
+byte-timestamp join on one side and a cross-correlation on the other. Every
+observed window falls inside the arrival-domain range [0.168, 2.073]. The head
+figure is under-sampled — 8 windows of 4 s did not happen to land at a segment
+boundary — which is exactly the direction a small n biases.
+
+**Conclusion: the streamed prefetch lead reaches the decoder essentially intact.
+ffmpeg and the pipe do not eat it.** The race table's `+1.121 s` row is no longer
+arrival-only.
+
+### Instrument change — the loop guard is now a condition, not a blanket refusal
+
+`leg-lag.py` refused outright on detecting ANY repetition, because a 40 s loop
+once produced −21/−38/−59 s of fiction at peak 1.00. That is right when the
+repeat is REACHABLE: 40 s of loop against a ±30 s search leaves the repeat inside
+the ±60 s ambiguity band. It is wrong for the AWS IVS demo channel, which loops
+every **180.2 s** — six times the search range away.
+
+The honest test is not "does it loop" but **"is the alignment ambiguous where we
+look"**. Verified on this data before relying on it: main peak **0.956 at
+0.00 s**, highest rival inside ±30 s **0.226** — a ratio of **0.24**. The guard
+now refuses when `period ≤ 2 × search_secs` (which still catches the 40 s case)
+or when an in-window sidelobe exceeds 0.5 of the main peak, and prints both
+numbers when it proceeds.
+
+⚠ Still one venue, one channel — the AWS IVS demo, not Q4 Inc's. And n=8 windows
+is small; the agreement with an independently-built instrument is what carries
+this, not the sample size.
+
 ## Session 2026-07-27 (V4) — the streamed-tier gate is INCONCLUSIVE, and I am not calling it a pass
 
 `--prefetch --stream-body`, 90 minutes against the AWS IVS demo channel, same

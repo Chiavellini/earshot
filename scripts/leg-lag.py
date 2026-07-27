@@ -30,6 +30,40 @@ import wave
 import numpy as np
 
 
+def sidelobe_ratio(pcm: np.ndarray, sr: int, search_secs: float) -> float | None:
+    """Highest correlation sidelobe INSIDE the search window, over the main peak.
+
+    Answers the question the loop test cannot: given that we only ever search
+    ±search_secs, is there a competing alignment in that range? Measured 0.236 on
+    the AWS IVS demo channel at ±30 s (main 0.956 at 0.00 s, best rival 0.226) —
+    unambiguous despite the material looping every ~180 s.
+    """
+    mid = len(pcm) // 2
+    probe = pcm[mid : mid + 4 * sr].astype(np.float64)
+    if len(probe) < sr:
+        return None
+    probe = probe - probe.mean()
+    lo = max(0, mid - int((search_secs + 10) * sr))
+    hi = min(len(pcm), mid + int((search_secs + 10) * sr))
+    seg = pcm[lo:hi].astype(np.float64)
+    if len(seg) <= len(probe):
+        return None
+    n = 1 << int(np.ceil(np.log2(len(seg) + len(probe))))
+    cc = np.fft.irfft(
+        np.fft.rfft(seg - seg.mean(), n) * np.conj(np.fft.rfft(probe, n)), n
+    )[: len(seg) - len(probe) + 1]
+    denom = np.linalg.norm(probe) * np.std(seg) * np.sqrt(len(probe))
+    if denom <= 0:
+        return None
+    cc = cc / denom
+    lags = (np.arange(len(cc)) - (mid - lo)) / sr
+    main = cc.max()
+    mask = (np.abs(lags) <= search_secs) & (np.abs(lags) > 1.0)
+    if main <= 0 or not mask.any():
+        return None
+    return float(cc[mask].max() / main)
+
+
 def load_leg(d: str, leg: str):
     with wave.open(f"{d}/{leg}.wav", "rb") as w:
         sr = w.getframerate()
@@ -121,14 +155,36 @@ def main() -> None:
         sys.exit(f"sample-rate mismatch {sr} vs {srb}")
     spf = 320 if sr == 16000 else sr // 50
 
+    # Looping content is only fatal when the repeat is REACHABLE inside the
+    # search window. A blanket refusal was the first version of this guard, and
+    # it is right for the case that motivated it (a 40 s loop searched at ±30 s:
+    # the repeat at 40 s sits inside ±60 s of ambiguity). It is wrong for a
+    # 180 s loop searched at ±30 s, where the nearest repeat is six times the
+    # search range away and exactly one alignment exists.
+    #
+    # The honest test is not "does it loop" but "is the alignment ambiguous
+    # WHERE WE LOOK": refuse when the repeat is within 2×search_secs, or when a
+    # sidelobe inside the window rivals the main peak.
     period = repetition_period(pa, sr)
     if period is not None:
         print(f"{a.legA} -> {a.legB}")
-        print(f"\nVERDICT: NOT MEASURABLE — reference audio repeats every ~{period:.1f} s.")
-        print("Cross-correlation cannot align looping content: many offsets match equally")
-        print("well, so any lag reported here would be fiction. Use a stream with real,")
-        print("non-repetitive audio (news/speech), not a demo loop.")
-        return
+        print(f"\nnote: reference audio repeats every ~{period:.1f} s")
+        if period <= 2 * a.search_secs:
+            print(f"\nVERDICT: NOT MEASURABLE — the repeat ({period:.1f} s) is REACHABLE inside")
+            print(f"the ±{a.search_secs:.0f} s search window, so many offsets match equally well and")
+            print("any lag reported here would be fiction. Use non-repetitive audio, or")
+            print("shrink --search-secs below half the repetition period.")
+            return
+        ratio = sidelobe_ratio(pa, sr, a.search_secs)
+        if ratio is None:
+            print("\nVERDICT: NOT MEASURABLE — could not evaluate in-window ambiguity.")
+            return
+        if ratio > 0.5:
+            print(f"\nVERDICT: NOT MEASURABLE — a sidelobe inside ±{a.search_secs:.0f} s reaches")
+            print(f"{ratio:.2f} of the main peak; the alignment is ambiguous where we look.")
+            return
+        print(f"      in-window ambiguity OK: highest sidelobe is {ratio:.2f} of the main peak")
+        print(f"      (repeat is {period / a.search_secs:.1f}× the search range away)")
 
     # Coarse global alignment on 100 Hz decimated envelopes. Probe with a MIDDLE
     # slice of A, not its head: legs join a live stream at different points, so
