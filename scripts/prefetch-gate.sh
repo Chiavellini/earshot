@@ -40,7 +40,19 @@ sleep 2
     2>"$OUT/plain.ffmpeg.err" ) >/dev/null 2>&1 &
 Q=$!
 echo "pids: prefetch=$P plain=$Q"
+
+# WALL-ANCHORED sampler — the verdict depends on it. See prefetch-verdict.py for
+# why final WAV durations cannot decide this gate.
+( while kill -0 "$P" 2>/dev/null && kill -0 "$Q" 2>/dev/null; do
+    a=$(stat -c %s "$OUT/prefetch.wav" 2>/dev/null || echo 0)
+    b=$(stat -c %s "$OUT/plain.wav" 2>/dev/null || echo 0)
+    echo "$(date -u +%H:%M:%S) prefetch=$a plain=$b delta=$((a-b))" >> "$OUT/samples.log"
+    sleep 30
+  done ) >/dev/null 2>&1 &
+S=$!
+
 wait $P $Q
+kill "$S" 2>/dev/null
 echo "=== $(date -u) capture done"
 
 for l in prefetch plain; do
@@ -49,24 +61,6 @@ for l in prefetch plain; do
   tail -1 "$OUT/$l.err" | grep SUMMARY || grep SUMMARY "$OUT/$l.err" | tail -1
 done
 
-python3 - "$OUT" <<'PY'
-import subprocess, sys, os
-o = sys.argv[1]
-def dur(p):
-    try:
-        return float(subprocess.check_output(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-             "-of", "csv=p=0", p]).decode().strip())
-    except Exception as e:
-        return None
-a, b = dur(f"{o}/prefetch.wav"), dur(f"{o}/plain.wav")
-print(f"\nprefetch={a}  plain={b}")
-if a is None or b is None:
-    print("GATE: INCONCLUSIVE — a leg produced no readable WAV")
-else:
-    d = a - b
-    print(f"deficit vs plain = {d:+.2f} s")
-    print("GATE: PASS — zero audio deficit" if d >= -0.5 else
-          f"GATE: FAIL — prefetch leg is {-d:.2f} s SHORT (pre-registered bar: zero deficit)")
-PY
+python3 "$HOME/ear/scripts/prefetch-verdict.py" "$OUT/samples.log"
+
 echo "=== $(date -u) PREFETCH-GATE-DONE"
