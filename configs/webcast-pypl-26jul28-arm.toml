@@ -173,7 +173,7 @@ label = "spec_edge"
 sample_rate_hz = 16000
 cmd = [
   "/bin/sh", "-c",
-  "python3 $HOME/ear/scripts/hls-edge-fetch.py \"$(cat $HOME/pypl-stream.url)\" 250 2 --speculative 2>>$HOME/spec_edge.err | ffmpeg -loglevel warning -fflags +discardcorrupt+nobuffer -flags low_delay -probesize 200000 -analyzeduration 3000000 -i - -vn -f s16le -ac 1 -ar 16000 -",
+  "python3 $HOME/ear/scripts/hls-edge-fetch.py \"$(cat $HOME/pypl-stream.url)\" 250 2 --speculative --prefetch-report 2>>$HOME/spec_edge.err | ffmpeg -loglevel warning -fflags +discardcorrupt+nobuffer -flags low_delay -probesize 200000 -analyzeduration 3000000 -i - -vn -f s16le -ac 1 -ar 16000 -",
 ]
 
 [[sources]]

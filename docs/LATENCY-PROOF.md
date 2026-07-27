@@ -416,7 +416,7 @@ while on LMT the collision screen classed `ultra` fires as SUBSTRING hits on
 unwinnable collision on another** — which is exactly why keyword risk is
 per-event, not global.
 
-## Session 2026-07-27 (D3b) — the control FAILED, and it caught something bigger: every CTC number we have is an **int8** number
+## Session 2026-07-27 (D3b) — the control's 31× gap was ONE keyword, not quantization (and my first explanation was wrong)
 
 The pre-registration said: export chunk-16 too, and if it does not reproduce the
 shipped model, chunk-8's number means nothing. It did not reproduce, and stopping
@@ -437,27 +437,66 @@ export (smaller/faster) when several exist"* — and the shipped directory carri
 int8 out, so the export dirs held fp32 only. The "control" was int8 vs fp32:
 trap 8 again, an instrument comparing two different quantities.
 
-### The consequence is not about the export
+### ⚠ CORRECTION — the int8 explanation above was WRONG
 
-**Every `streaming_ctc` figure in this campaign is an int8 figure** — including
-the adoption decision (−69 % FA/h at identical recall) and every threshold in the
-armed configs. `default_threshold = 0.15` is calibrated against int8's compressed
-score distribution. The same checkpoint in fp32, at that same threshold, produces
-**31× the false alarms**.
+I re-ran with int8 present in both directories, and the gap barely moved:
+**FA 2425 (fp32) → 2431 (int8)**. Quantization explains **nothing** here. The
+"fp32 gives 31× the false alarms" claim is retracted.
 
-It is also not a uniform shift: **74 of 82 rows are identical in TP and FA**. The
-2425 false alarms are concentrated in 8 phrases — a few keywords whose fp32
-scores sit above 0.15 where their int8 scores sat below it.
+What survives: `find_encoder_onnx` does prefer int8 and the shipped directory
+does carry both, so every `streaming_ctc` figure in this campaign **is** an int8
+figure. That part stands. It simply is not the cause of the control failure.
 
-⚠ So int8 is not an implementation detail chosen for size. It is **part of the
-detector's operating point.** Anyone who later swaps in the fp32 export "for
-accuracy" inherits a 31× false-alarm explosion at the current thresholds. Pinned
-here rather than in a code comment because the code comment already exists and
-reads like a performance note.
+### The real cause: ONE phrase, and the control otherwise passes EXACTLY
 
-**Re-run:** both export dirs now carry int8 + fp32, matching the shipped dir, and
-`~/bench-look2.sh` re-runs OURS16 and OURS8. The SHIPPED result stands unchanged
-— it was int8 throughout.
+| | SHIPPED | ours, chunk-16 |
+|---|---|---|
+| all rows | TP 50 · miss 27 · FA 77 (**14.96/h**) | TP 63 · miss 14 · FA 2431 (**472.35/h**) |
+| **excluding `panther lake`** | TP 48 · miss 9 · **FA 77 (14.96/h)** | TP 48 · miss 9 · **FA 77 (14.96/h)** |
+
+**79 of 82 rows are byte-identical in TP and FA**, and the three that move are
+`panther lake` (FA 0 → 2354, TP 2 → 15), `ultra` (1 → 2) and `atc` (3 → 2). One
+phrase carries **2354 of the 2354** extra false alarms — 457/h on its own, a fire
+roughly every 8 seconds — and the entire apparent recall "gain" (0.649 → 0.818)
+is that same phrase.
+
+**So the export IS faithful.** The control passes everywhere it can be read.
+
+### What actually differs between the two models
+
+Checked rather than assumed, cheapest question first:
+
+| check | result |
+|---|---|
+| `tokens.txt`, `bpe.model` md5 | **identical** — not a vocabulary mismatch |
+| initializer count / total parameters | **641 / 22,457,594 — identical** |
+| graph nodes | 7353 vs 7167 — different tracing, same math |
+| weight values (595 tensors, size+mean+std) | **0 identical**; differences in the 3rd–4th significant figure |
+
+Same architecture, same parameter count, **weights ~0.3 % apart** — the signature
+of a different checkpoint averaging (`--use-averaged-model` / `--avg` semantics),
+not of a broken export.
+
+### The finding worth keeping
+
+**A 0.3 % weight perturbation moved one keyword from silent to firing every 8
+seconds, and left 79 others bit-identical.** That is not model fragility in
+general — it is a *fragile keyword*. `panther lake` sits in a regime where this
+model family is unstable in both directions at once: the shipped model catches
+2 of 17 occurrences, ours catches 15 but fires 2354 times.
+
+⚠ **`panther lake` is carried by `configs/webcast-intc-arm.toml` and
+`webcast-intc-arm-fill.toml`** at `confirmed_only`. It is **not** in any of the
+three staged 07-28/29 configs (PayPal, Ford, FOMC — checked), so it is not a risk
+this week. It is a live false-alarm hazard for any future INTC arm, and the
+shipped model being on the quiet side of that instability is luck, not margin.
+
+Trap 27: **when a pooled metric moves 31×, find the row before naming the
+cause.** I had a plausible mechanism (int8 vs fp32), it fit the aggregate, and it
+was wrong. One `GROUP BY` would have pointed at `panther lake` immediately.
+
+**Consequence for D1:** chunk-8 IS interpretable, with `panther lake` reported
+separately — declared here BEFORE the treatment run finishes, not after.
 
 ## Session 2026-07-27 (V1) — IVS hands us the future. Our speculative fetcher buys ZERO there, and `#EXT-X-PREFETCH` buys ~2.3 s.
 
