@@ -158,29 +158,26 @@ def fetch_segment(url, out, timeout, stream_body):
     return len(data), False, None
 
 
-def arrival(log, url, t_req, t_done, t_first, mode):
-    """Record when a segment's bytes finished arriving, keyed by the URL itself.
+def arrival(log, pdt, t_done, t_first, fetch_secs, mode):
+    """Record when a segment's audio became available, keyed by its PDT.
 
-    This is the honest leg-vs-leg latency instrument, and it needs no PDT and no
-    clock alignment: both legs fetch the SAME segment URLs (proven byte-identical
-    in the V2 gate — segs 2673 vs prefetch_fetched 2672), they run on the same
-    box, so joining two runs on the URL hash and differencing t_done measures
-    exactly "how much earlier did this leg have this audio".
+    ⚠ The obvious key — the segment URL — DOES NOT WORK ACROSS LEGS on IVS, and
+    a run keyed that way produced 0 paired segments. Each client session resolves
+    its OWN signed media playlist (…use12… vs …use15…) with per-session segment
+    URLs. The V2 gate proved prefetch-URL == announced-URL *within* one leg; that
+    is a different claim from *across* legs, and conflating them cost a run.
 
-    Deriving a PDT for a prefetch URL (PDT_last + EXTINF) was the obvious
-    alternative and is worse: an off-by-one in the prefetch->segment mapping
-    shifts it by a whole segment (~2 s), which is larger than the ~0.9 s effect
-    being measured — a confident wrong answer.
+    `EXT-X-PROGRAM-DATE-TIME` is the encoder's timestamp for the media itself, so
+    it IS stable across sessions — verified before rebuilding on it: two
+    independent sessions shared **14 of 14 PDTs to the millisecond** while
+    sharing **0 segment URLs**.
+
+    t_first is when audio STARTS flowing (== t_done for a buffered fetch, which
+    emits nothing until the body is complete).
     """
     if log is None:
         return
-    # t_first is when AUDIO STARTS FLOWING. For a buffered fetch nothing reaches
-    # the decoder until the body is complete, so it equals t_done. For a streamed
-    # fetch it can be ~1.4 s earlier — and a log that recorded only t_done would
-    # be structurally blind to exactly the effect --stream-body exists for.
-    h = hashlib.md5(url.encode()).hexdigest()[:12]
-    tf = t_done if t_first is None else t_first
-    log.write(f"{h} {t_done:.3f} {t_done - t_req:.3f} {mode} {tf:.3f}\n")
+    log.write(f"{pdt:.3f} {t_done:.3f} {fetch_secs:.3f} {mode} {t_first:.3f}\n")
     log.flush()
 
 
@@ -337,6 +334,9 @@ def main():
     pf_first_seen: dict[str, float] = {}
     pf_lead: dict[str, float] = {}
     arr_log = open(a.arrival_log, "a", buffering=1) if a.arrival_log else None
+    # url -> (t_done, t_first, fetch_secs, mode), flushed to the log the moment
+    # the manifest announces that url WITH its PDT (a prefetch fetch has none yet).
+    arr_pending: dict[str, tuple] = {}
     pf_on = a.prefetch          # flips off permanently on 429/403
     n_prefetch_hits = 0
     retry_n: dict[str, int] = {}
@@ -417,6 +417,15 @@ def main():
                 sys.stderr.write("speculative: DISABLED — segment URLs are not predictable\n")
             sys.stderr.flush()
 
+        # Emit any parked arrival record now that this poll carries its PDT.
+        if arr_log is not None and arr_pending:
+            for _u, _p in pairs:
+                rec = arr_pending.pop(_u, None)
+                if rec is not None and _p is not None:
+                    arrival(arr_log, _p, rec[0], rec[1], rec[2], rec[3])
+            if len(arr_pending) > 200:      # never grow without bound
+                arr_pending.clear()
+
         new = [(u, p) for (u, p) in pairs if u not in seen]
         for u, _ in new:
             seen.add(u); seen_order.append(u)
@@ -444,7 +453,8 @@ def main():
             try:
                 _t0 = time.time()
                 _, short, _tfb = fetch_segment(urllib.parse.urljoin(base, u), out, poll + 3, a.stream_body)
-                arrival(arr_log, u, _t0, time.time(), _tfb, "manifest")
+                _td = time.time()
+                arr_pending[u] = (_td, _tfb if _tfb is not None else _td, _td - _t0, "manifest")
                 retry_n.pop(u, None)
                 n_segs += 1
                 last_seg_at = time.time()
@@ -506,7 +516,8 @@ def main():
                     _t0 = time.time()
                     _, short, _tfb = fetch_segment(urllib.parse.urljoin(base, target), out,
                                              poll + 6, a.stream_body)
-                    arrival(arr_log, target, _t0, time.time(), _tfb, "prefetch")
+                    _td = time.time()
+                    arr_pending[target] = (_td, _tfb if _tfb is not None else _td, _td - _t0, "prefetch")
                     n_prefetch_hits += 1
                     n_segs += 1
                     last_seg_at = time.time()
