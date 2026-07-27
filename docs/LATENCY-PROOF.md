@@ -416,6 +416,36 @@ while on LMT the collision screen classed `ultra` fires as SUBSTRING hits on
 unwinnable collision on another** — which is exactly why keyword risk is
 per-event, not global.
 
+## Session 2026-07-27 (RACE ARITHMETIC) — where the campaign actually stands against "Δrace = 0"
+
+The standing terminal condition is Δrace **provably 0 s on a live event**. With
+D1 closed and the prefetch tiers measured, the ledger is arithmetic now, not
+speculation. Starting gap **1.530 s = FEED 1.241 + OURS 0.289**:
+
+| state | FEED | OURS | **Δrace** |
+|---|---|---|---|
+| today (speculation buys 0 on IVS) | 1.241 | 0.289 | **+1.530 s behind** |
+| `--prefetch` buffered (**+0.92 s**) | 0.321 | 0.289 | **+0.610 s behind** |
+| prefetch streamed (**~1.6 s avg**) | −0.36 | 0.289 | **≈ −0.07 s ⇒ parity** |
+
+**The buffered tier does not reach 0.** It closes ~60 % of the gap and leaves us
+~0.61 s behind. **Only the streamed tier reaches parity**, and it is the one that
+needs concurrency plus ordered emission and is not built. That is the honest
+answer to "are we there yet": no, and the remaining work is a specific, named
+piece of engineering rather than a search.
+
+⚠ Three things this arithmetic assumes, none of them established:
+1. **Prefetch works on Q4 Inc's channel.** Measured only on the AWS IVS demo
+   channel. IVS has standard and low-latency channel types. Tuesday's
+   `--prefetch-report` on the real PayPal stream is the first test.
+2. **The competitor does not also improve.** Δrace is a difference. If they are
+   already on prefetch, this buys parity rather than a lead — which is still
+   exactly the stated goal.
+3. **`OURS` stays at 0.289 s.** It has no identified lever left (D1), so it is a
+   floor unless a new instrument finds one. Notably `bench-detector` is
+   structurally blind to the segment-phase exposure term, so the one place a
+   further `OURS` gain could hide is not currently measurable at all.
+
 ## Session 2026-07-27 (D1 — CLOSED) — chunk-8 REJECTED: −80 ms bought for +263 ms, and it loses 3 of 57 detections
 
 D1 proper, finally run against a validated control. Pre-registered as a possible
