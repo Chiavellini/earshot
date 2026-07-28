@@ -64,8 +64,10 @@ policy           = "confirmed_only"
 # AMD / Advanced Micro Devices (KXEARNINGSMENTIONMSFT-26JUL29-AMD) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONMSFT-26JUL29-AMD"
+# HAND-FIXED 2026-07-28: "AMD" is spoken as letters — added spaced spoken-form
+# variant (NII→"net interest income" precedent, RUNBOOK 07-24).
 phrase           = "amd"
-variants         = ["amd", "amds", "advanced micro devices"]
+variants         = ["amd", "amds", "advanced micro devices", "a m d"]
 max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"
@@ -163,8 +165,11 @@ policy           = "confirmed_only"
 # OpenAI (KXEARNINGSMENTIONMSFT-26JUL29-OPEN) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONMSFT-26JUL29-OPEN"
+# HAND-FIXED 2026-07-28: transducers emit "OPEN AI" as two words — added the
+# spaced spoken form (the kws_compile module doc's "artificial intel" lesson:
+# written-joined and spoken-split encode differently).
 phrase           = "openai"
-variants         = ["openai", "openais"]
+variants         = ["openai", "openais", "open ai"]
 max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"

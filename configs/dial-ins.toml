@@ -116,8 +116,8 @@ evidence      = "IR earnings page publishes a toll-free + international dial-in,
 evidence_src  = "https://www.microsoft.com/en-us/investor/earnings/fy-2026-q3/press-release-webcast"
 number_src    = "https://www.microsoft.com/en-us/investor/earnings"
 confidence    = "high"
-last_verified = "2026-07-16"
-notes         = "Corroborated independently by our own ASR corpus: corpus/transcripts/msft-q3-2026.txt."
+last_verified = "2026-07-28"
+notes         = "Corroborated independently by our own ASR corpus: corpus/transcripts/msft-q3-2026.txt. RE-VERIFIED 2026-07-28 for OPEN EVENT KXEARNINGSMENTIONMSFT-26JUL29: numbers (877) 407-0666 / +1 (201) 689-8023 'no password required' in BOTH FY26 Q2 and Q3 releases (NEW since Jan 2026 — FY25 Q4/FY26 Q1 had none; confirm in tomorrow's release ~4:05 PM ET). Call 2:30 PM PT = 21:30 UTC, pinned by Microsoft's OWN IR events JSON (DateTime.UTC='2026-07-29T21:30:00', TimeZone='PT', DST-correct). Webcast SELF-HOSTED on microsoft.com IR — PUBLIC, no registration/login: easiest capture on the slate. Day-of page pattern: microsoft.com/en-us/Investor/earnings/FY-2026-Q4/press-release-webcast (Q1–Q3 all follow it; 403 until published)."
 
 [AAPL]
 tier          = "published"
@@ -244,6 +244,50 @@ number_src    = "https://shareholder.ford.com"
 confidence    = "high"
 last_verified = "2026-07-28"
 notes         = "OPEN EVENT KXEARNINGSMENTIONF-26JUL28, results 16:05 ET, call Tue 17:00 ET (21:00 UTC). ⚠ THIS IS A DROP, NOT A STANDING POLICY: Ford published a participant number (1-844-282-4573) in earlier quarters and moved to OpenExchange — the exact 'tiers decay' case docs/DIAL-INS.md warns about, and the reason last_verified must be re-checked against the CURRENT quarter's PR. Venue = ford-motor-company-q2-2026-earnings-call.open-exchange.net, login-gated, and the player is EMPTY until 17:00 ET so the m3u8 cannot be probed in advance — plan for a tokenized manifest surfaced on the logged-in laptop and handed to the box. Registration accepts 'Individual investor', so it is not analyst-gated."
+
+[CMG]
+tier          = "published"
+qa_mechanism  = "unknown"
+listen_access = "yes"
+evidence      = "Company newsroom PR (2026-06-02): 'Participants can join the conference call by dialing 1-888-317-6003 ... code 3937444. International callers can dial 1-412-317-6061 ... code 3937444.' Call Wed 2026-07-29 4:30 p.m. ET (20:30 UTC); results release ~4:10 p.m. ET (20:10 UTC). Source says 'ET' (no EST misprint)."
+evidence_src  = "https://newsroom.chipotle.com/2026-06-02-CHIPOTLE-MEXICAN-GRILL-TO-ANNOUNCE-SECOND-QUARTER-2026-RESULTS-ON-JULY-29,-2026"
+number_src    = "https://newsroom.chipotle.com/2026-06-02-CHIPOTLE-MEXICAN-GRILL-TO-ANNOUNCE-SECOND-QUARTER-2026-RESULTS-ON-JULY-29,-2026"
+confidence    = "high"
+last_verified = "2026-07-28"
+notes         = "OPEN EVENT KXEARNINGSMENTIONCMG-26JUL29. Webcast = app.webinar.net/1xylDGAwMKP (webinar.net / Notified — NOT Q4, NOT OpenExchange; new venue class for us). Registration wording implies a name/email form, no account login. ir.chipotle.com 403s non-browser fetchers; the newsroom PR is the curl-able source."
+
+[SBUX]
+tier          = "none"
+qa_mechanism  = "unknown"
+listen_access = "no"
+evidence      = "Full Businesswire release 2026-07-15 (verbatim via financialcontent mirror, Contacts section included): call 'at 1:15 p.m. Pacific Time' Wed 2026-07-29 (= 4:15 PM ET = 20:15 UTC, PDT), webcast accessed at investor.starbucks.com, closed captioning, replay to Sep 11 — and ZERO phone numbers anywhere in the release. Webcast-only for the public."
+evidence_src  = "https://markets.financialcontent.com/stocks/article/bizwire-2026-7-15-starbucks-announces-q3-fiscal-year-2026-results-conference-call"
+number_src    = "https://investor.starbucks.com/events-presentations/"
+confidence    = "high"
+last_verified = "2026-07-28"
+notes         = "OPEN EVENT KXEARNINGSMENTIONSBUX-26JUL29. ⚠ Call at 20:15 UTC is only ~15 min after the release — unusually tight gap. IR site is Q4 Inc (Cloudflare bot-wall from this box; use a browser) but the STREAM is Chorus Call (event.choruscall.com/mediaframe/webcast.html?webcastid=<id>, unauthenticated once the id is known — Q1 FY26 precedent id Im3S8SaF via Wayback). Grab the Q3 webcastid from a browser day-of; per phone-first memory an unpublished bridge may exist (analyst Q&A runs), nothing published."
+
+[CVNA]
+tier          = "published"
+qa_mechanism  = "unknown"
+listen_access = "yes"
+evidence      = "Q2'26 PR (Businesswire 2026-07-01, verified via StockTitan mirror): 'Live Call: (800) 715-9871 or (646) 307-1963, Conference ID 3609424.' Call Wed 2026-07-29 5:30 p.m. ET — the PR quotes '5:30 p.m. ET (2:30 p.m. PT)', the dual zone proving EDT ⇒ 21:30 UTC. Results 'after the market closes'."
+evidence_src  = "https://www.stocktitan.net/news/CVNA/carvana-to-report-second-quarter-2026-results-and-host-quarterly-5vi7vu9ceotk.html"
+number_src    = "https://investors.carvana.com/events-and-presentations"
+confidence    = "high"
+last_verified = "2026-07-28"
+notes         = "OPEN EVENT KXEARNINGSMENTIONCVNA-26JUL29. ⚠ TIMEZONE MISPRINT LIVE ON THE IR WIDGET: investors.carvana.com events widget shows '05:30 PM EST on July 29' — EST-for-EDT, the PYPL/META trap, third sighting in one week. Read literally it is 22:30 UTC and an hour LATE. The PR's ET/PT dual quote is authoritative: 21:30 UTC. Webcast = app.webinar.net/VB5J89y8N0k (webinar.net / Notified, same vendor as CMG)."
+
+[WING]
+tier          = "published"
+qa_mechanism  = "unknown"
+listen_access = "yes"
+evidence      = "IR PR: call Wed 2026-07-29 10:00 a.m. ET — MORNING call, results released before market open. 'dialing 1-877-259-5243 or 1-412-317-5176 (international)' (no live participant code quoted; replay 1-855-669-9658 / 1-412-317-0088 code 4572027). Chorus Call webcast page itself renders 'Wed Jul 29 10:00:00 EDT 2026' — explicit EDT ⇒ 14:00 UTC."
+evidence_src  = "https://ir.wingstop.com/wingstop-inc-to-announce-fiscal-second-quarter-2026-financial-results-on-july-29-2026/"
+number_src    = "https://ir.wingstop.com/wingstop-inc-to-announce-fiscal-second-quarter-2026-financial-results-on-july-29-2026/"
+confidence    = "high"
+last_verified = "2026-07-28"
+notes         = "OPEN EVENT KXEARNINGSMENTIONWING-26JUL29, 14:00 UTC = 08:00 CDMX — a MORNING event in the PYPL/BA failure window; the launch MUST be scheduled/Claude-driven, not operator-attended. Webcast = event.choruscall.com/mediaframe/webcast.html?webcastid=Cv4NzoL0 (Chorus Call; VERIFIED email-registration form: first/last/email/company, access via confirmation email — register the night before)."
 
 [AAL]
 tier          = "bridge_unpublished"
