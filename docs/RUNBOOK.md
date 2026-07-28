@@ -371,6 +371,21 @@ stream-url path and config name.
 > `EXT-X-PREFETCH` is absent, `--stream-body` actively degrades every fetch
 > (REFUTED on DW/Akamai: 3/32/62 short reads per run vs 0/0/0 buffered).
 >
+> ▣ **FORD IS A NEW VENUE CLASS, AND THAT IS ITS REAL VALUE.** We have measured
+> absolute lag on IVS, Notified/CloudFront, Akamai and Brightcove — **never
+> OpenExchange**. Ford's `--arrival-log` gives per-segment `PDT → first-byte /
+> complete` on a fifth class, which is exactly the cross-venue replication
+> §A2 and §V8 lack. **Keep `$HOME/ford-arrival.log` even if the race is
+> unscoreable.** Reference (IVS, armed leg, §A1): first byte **0.484 s** behind
+> PDT, complete **2.393 s**.
+>
+> ⚠ **No `pcm-lead-ford.toml` control config exists, deliberately.** The control
+> legs A/B `plain` against `--prefetch --stream-body`; with no prefetch at this
+> venue both legs are identical and the comparison measures nothing. If the
+> day-of probe DOES show `EXT-X-PREFETCH` present and chunked, copy
+> `configs/pcm-lead-pypl.toml`, point it at a dedicated `$HOME/ford-pcmab.url`,
+> and run it — the instrument is ready, only the venue is unproven.
+>
 > ⚠ Ford writes `$HOME/ford_spec_edge.err` and `$HOME/ford-arrival.log`.
 > **It used to write `spec_edge.err` — the SAME file PayPal uses** — which would
 > have appended Ford's diagnostics to PayPal's and made step 8's
