@@ -53,7 +53,27 @@ So: a transcript can establish **only** `qa_mechanism`. `listen_access` is estab
 **only** by an IR page / press release / 8-K. A `curated` or `unknown` verdict is a
 prompt to read the IR page — **never a no-go**.
 
-## Two traps that will bite the next reader
+## Three traps that will bite the next reader
+
+**0. The rendering trap — `curl` cannot read an IR page. Browser or it didn't happen.**
+Added 2026-07-27 after it produced a right answer by an invalid method on **BA**.
+Most IR sites are Q4 Inc / Notified / similar single-page apps: the event body,
+including any dial-in paragraph, is **client-fetched and absent from the markup**.
+`investors.boeing.com` returns 77 KB of HTML carrying **3,227 visible characters —
+all navigation chrome**. A regex over that finds no phone number because there is
+no page there to search, and the check *passes vacuously*.
+
+**The tell is a negative that is too clean:** the sweep found **zero** phone-number
+patterns — not even the IR staff contact number that every IR page carries. If a
+page yields no numbers *at all*, you are reading the shell, not the page.
+
+⇒ **`listen_access` may NEVER be established by `curl`/regex on an IR page.**
+Open it in Chrome and read it, or fetch the underlying press release / 8-K
+(which *are* static documents and *are* curl-safe). Prior instances of the same
+failure mode, all already in-repo: the Q4 attendee SPA (`docs/RUNBOOK.md`
+§webcast URL — 3.7 KB shell, m3u8 nowhere in the HTML), Say Technologies
+(`docs/SAY-QA-PRIOR.md:18-21` — empty `__N_SSG` pageProps), and LMT
+(`configs/dial-ins.toml` LMT notes — Akamai hangs bare curl, loads in Chrome).
 
 **1. The UAL trap — 8-K silence is not evidence of absence.**
 UAL's Q2 8-K says "A live, **listen-only webcast** … will be available at ir.united.com."
@@ -76,9 +96,18 @@ preserve verbatim operator language. Any NO-GO derived from a Fool transcript is
 Evidence order, strongest first:
 
 1. **IR events page / earnings PR** — the only thing that establishes `listen_access`.
+   **Read the PR, not just the events page**: the PR is a static document (curl-safe),
+   the events page usually is not (trap 0). For BA the advisory PR settled it and the
+   event page could not have.
 2. **8-K exhibit** — good for a *positive* number; worthless as a negative (see UAL).
 3. **Official transcript operator preamble** — establishes `qa_mechanism`, and proves a
    bridge *exists* even when unpublished.
+
+**Check the PRIOR quarter's PR too, not only the current one.** One quarter tells you
+the state; two tell you whether it is a *drop* (Ford: published 1-844-282-4573 in
+earlier quarters, webcast-only now) or a standing policy (BA: Q1'26 and Q2'26 advisories
+structurally identical). That distinction is what makes `tier` predictive rather than a
+snapshot, and it costs one extra fetch.
 
 ```
 scripts/mine-dial-in.py --check --require-opening corpus/transcripts/*.txt

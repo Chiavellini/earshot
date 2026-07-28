@@ -815,12 +815,57 @@ published a participant number in earlier quarters (1-844-282-4573), so this loo
 like an issuer that **dropped** its dial-in for OpenExchange — evidence the
 webcast-only trend is visible inside a single issuer's own document set.
 
-**Boeing is the counter-example and it does not help us.** BA publishes toll-free
-numbers + passcode openly on `investors.boeing.com` with no gate — but **Kalshi has
-no BA mention event next week** (`KXEARNINGSMENTIONBA-26JUL21` is misdated and
-already past; the Jul 25–31 API sweep returned only F, PYPL, Carvana, Meta,
-Wingstop, Amazon, Ferrari, Reddit, Yum). Easiest bridge on the street, nothing to
-trade on it. **Access class and tradability are independent — check both.**
+**⛔⛔ RETRACTED IN FULL 2026-07-27 — BOTH HALVES OF THIS PARAGRAPH WERE FALSE.**
+It read: *"Boeing is the counter-example and it does not help us. BA publishes
+toll-free numbers + passcode openly on `investors.boeing.com` with no gate — but
+Kalshi has no BA mention event next week (`KXEARNINGSMENTIONBA-26JUL21` is
+misdated and already past…). Easiest bridge on the street, nothing to trade on
+it."* Written unsourced (commit `e312e19`, an aside inside a **Ford** commit —
+no URL, no artifact, no `last_verified`) and never entered into
+`configs/dial-ins.toml`. It nearly cost us a live event.
+
+**FALSE HALF 1 — the event EXISTS and is tradable.** `KXEARNINGSMENTIONBA-26JUL21`
+is **open**, `sub_title` "On Jul 28, 2026", 14 markets. The TICKER is misdated;
+the EVENT is not. It is now staged: `configs/webcast-ba-26jul28-arm.toml`.
+
+> ⚠ **TICKER DATE ≠ CALL DATE, and a general sweep MISSES THIS EVENT.** BA is
+> absent from a full 8,000-event paginated `GET /events?status=open` sweep, yet a
+> direct `?series_ticker=KXEARNINGSMENTIONBA&status=open` returns it open. The
+> Jul 25–31 sweep that produced the "only F and PYPL" slate filtered on the
+> ticker suffix and therefore *could not* have found it.
+> **Filter on `sub_title` / market close times, and query per-series for
+> anything you expect to exist.**
+
+**FALSE HALF 2 — Boeing publishes NO dial-in.** Verified 2026-07-27 in a
+**rendered browser**, three ways:
+1. Q2 event-detail page — "July 28, 2026 10:30 AM ET", "View Live Webcast",
+   "View Press Release". No number, no passcode.
+2. **The July 1 earnings advisory press release** ("Boeing to Release Second
+   Quarter Results on July 28") — the same document class that resolved Ford —
+   names only *"The event webcast … can be accessed on the Events and
+   Presentations section of www.boeing.com/investors."* Contacts are email only.
+   **Q1 2026's advisory (March 31) is structurally identical**, so Boeing did not
+   *drop* a dial-in this quarter — it has been webcast-only for ≥2 quarters.
+3. EDGAR — no 8-K announcing the call; the Q1 EX-99.1 has no call-access section.
+
+Boeing runs a live analyst Q&A, so a bridge almost certainly exists unpublished.
+Correct class is `bridge_unpublished` / `listen_access = "unknown"` — **never
+`none`**. Recorded in `configs/dial-ins.toml`.
+
+> ⚠⚠ **METHOD RULE, and it is the real lesson: `listen_access` may NEVER be
+> established by `curl`/regex on an IR page. Browser or it didn't happen.**
+> An earlier revision of the Boeing config claimed "webcast only — zero
+> phone-number strings in the raw HTML (checked by regex, not by eye)". That
+> reached the right answer by an invalid method: `investors.boeing.com` is
+> **Q4 Inc and client-rendered** — 77 KB of HTML carrying **3,227 visible chars,
+> all navigation chrome**. The page body was never in the markup. The tell was
+> that the regex found *zero* phone numbers — not even IR staff contacts, which
+> every IR page has. Same failure mode as the Q4 attendee SPA (§ webcast URL),
+> `docs/SAY-QA-PRIOR.md:18-21`, and LMT's Akamai hang (`dial-ins.toml` LMT notes).
+
+**The surviving lesson is still true and now doubly earned: access class and
+tradability are independent — check both, from the authoritative source, in a
+browser, every quarter.**
 
 **PAYPAL — rule 3 applied, closed on the AUTHORITATIVE source (2026-07-25).**
 Checked three ways, not one:

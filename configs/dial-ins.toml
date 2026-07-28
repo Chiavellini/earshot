@@ -211,6 +211,17 @@ confidence    = "high"
 last_verified = "2026-07-23"
 notes         = "OPEN EVENT KXEARNINGSMENTIONLMT-26JUL23. ⚠ CALL TIME MOVED: 8:30 AM ET since Q4'25 (Jan 2026) — the historical 11:00 AM prior is STALE. VERDICT: webcast-only. Q2'26 player = edge.media-server.com/mmc/p/k8rv9ajf (Notified MMC), soft self-serve registration form (name/email/company, no approval). investors.lockheedmartin.com hangs for bare curl (Akamai) but loads in Chrome. Replay is web-only through 08-06."
 
+[BA]
+tier          = "bridge_unpublished"
+qa_mechanism  = "unknown"
+listen_access = "no"
+evidence      = "Q2'26 advisory press release (2026-07-01) names ONLY the webcast — 'The event webcast, news release and presentation materials … can be accessed on the Events and Presentations section of www.boeing.com/investors'; contacts are email-only (IR + media), no dial-in paragraph. Q1'26 advisory (2026-03-31) is structurally IDENTICAL, so this is not a this-quarter drop. IR event-detail page offers 'View Live Webcast' + 'View Press Release' and nothing else. EDGAR: no 8-K announces the call, and the Q1 8-K EX-99.1 earnings release has no conference-call access section at all. Boeing runs a live analyst Q&A, so a bridge exists — but no number is published anywhere, so qa_mechanism is NOT established (no operator preamble read)."
+evidence_src  = "https://investors.boeing.com/investors/news/press-release-details/2026/Boeing-to-Release-Second-Quarter-Results-on-July-28/default.aspx"
+number_src    = "https://investors.boeing.com/investors/events-presentations/default.aspx"
+confidence    = "high"
+last_verified = "2026-07-27"
+notes         = "OPEN EVENT KXEARNINGSMENTIONBA-26JUL21 (⚠ ticker says JUL21; the CALL is Tue 2026-07-28 10:30 AM ET — ticker date ≠ call date, and BA is MISSING from a full paginated /events?status=open sweep while a per-series query returns it open). ⛔ SUPERSEDES the unsourced docs/RUNBOOK.md claim that 'BA publishes toll-free numbers + passcode openly with no gate' — that was written as an aside inside a Ford commit (e312e19, 07-25) with no artifact and never entered here; it is FALSE for Q1'26 and Q2'26. listen_access='no' is set on the ISSUER-PUBLISHED path only, per the UAL trap: it means 'nothing is published to dial', NOT 'no phone leg exists'; tier stays bridge_unpublished. ⚠ METHOD: this row is browser-verified. investors.boeing.com is Q4 Inc and CLIENT-RENDERED — 77 KB of HTML carrying 3,227 visible chars, all nav chrome — so a curl/regex check reads nothing and its 'zero phone strings' finding is vacuous. Webcast venue = events.q4inc.com/attendee/304389448 (Q4 Inc → Amazon IVS, same platform as PYPL/AXP) and it gates behind a registration form ('Continue without a Q4 account')."
+
 [AAL]
 tier          = "bridge_unpublished"
 qa_mechanism  = "dtmf_star"
