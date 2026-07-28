@@ -20,7 +20,16 @@ corpus/
   telephony/         # processed 8 kHz mono s16 WAV (phone channel) — GITIGNORED
   wideband/          # processed 16 kHz mono s16 WAV (webcast channel) — GITIGNORED
   manifests/*.toml   # ground truth — COMMITTED
+  manifests/*.toml.pending  # skeleton whose audio is NOT yet banked — see below
 ```
+
+**`*.toml.pending` convention (2026-07-28):** `bench::manifest::load_dir`
+loads every `manifests/*.toml` and hard-fails validation on unopenable
+audio (`src/bench/manifest.rs:81`, `:96-102`) — so a pre-staged skeleton
+pointing at an un-banked WAV kills every bench/screen run on that machine.
+A manifest whose audio is not yet banked is named `*.toml.pending` (the
+loader's extension filter skips it); renaming to `.toml` is step 0 of the
+post-event fill. First instance: `f-q2-2026.toml.pending`.
 
 - Sourced from **public earnings-call replays across the Kalshi
   earnings-mention universe** — mix of mega-cap and smaller issuers so
@@ -876,14 +885,19 @@ Of the 14 the screen could explain (10 skipped — no AXP/VZ transcripts):
 ⇒ **Exactly ONE genuine collision (`apple`) among 14 explainable fires.**
 
 ### ⚠ TOOL LIMITATION FOUND: `collision-screen.py` reads PHRASES, not VARIANTS
+### → FIXED 2026-07-28 (same day): `--config` makes it variant-aware
 
 `autonomy` carries `variants = ["autonomy", "autonomys", "autonomous"]`. Its six
 "PHONETIC" verdicts are the detector **correctly matching a configured variant**
-on calls where "autonomous" is genuinely spoken. The screen looks the *phrase*
-up in the transcript, so a correct variant match is reported as a phonetic false
-alarm. **Read every `PHONETIC` verdict against the keyword's `variants` list
-before believing it.** This inflates Ford's headline more than PayPal's, because
-Ford's set is variant-heavy.
+on calls where "autonomous" is genuinely spoken. The screen looked the *phrase*
+up in the transcript, so a correct variant match was reported as a phonetic
+false alarm. The reading rule ("read every `PHONETIC` verdict against the
+keyword's `variants` list") is now a code fix: `collision-screen.py --config
+<cfg>` classifies against variants and reports the new verdict class
+**VARIANT-CORRECT** (self-test: `--check`). Re-run on this exact screen JSON:
+autonomy's 7 fires → 6 VARIANT-CORRECT + 1 GROUND-TRUTH; `apple` remains the
+sole genuine PHONETIC — matching the hand analysis above. Without `--config`
+the old phrase-only behavior (and the reading rule) still applies.
 
 ### ⚠ THE REAL FORD RISK IS `recall`, AND NO COLLISION SCREEN CAN FLAG IT
 

@@ -808,3 +808,37 @@ probe under the $1 ledger → FIX-vs-REST send→ack A/B from the same box.
   same evening: LMT PERU/IRAN **NO** (false fires), **NASA YES** (true flag
   the market ignored 52 min — market-missed-word channel settlement-confirmed)
   in `state/KXEARNINGSMENTIONLMT-26JUL23/settlements-2026-07-23.json`.
+
+## Q-OX — OpenExchange / KnowledgeVision venue class (2026-07-28, Ford Q2, live)
+
+- **Venue anatomy (live-verified):** the OpenExchange event page
+  (`*.open-exchange.net/webcast`, login-gated registration) embeds a
+  **KnowledgeVision** player iframe. The top frame requests only
+  `passport-api.open-exchange.net/event/<slug>` (event state) and a
+  `view.knowledgevision.com/presentation/redirect/<id>?...` URL carrying the
+  registrant identity in query params. **The m3u8 never appears in the top
+  frame's network log** — open the KV redirect URL directly and the player
+  requests it in-frame.
+- **Stream shape:** master = `.../live/stream/PRODUCTION_<id>_0/index.m3u8`
+  (`#EXT-X-STREAM-INF`, 3 renditions `index_1/2/3.m3u8`), HLS v3,
+  `#EXT-X-TARGETDURATION:6`, `#EXT-X-PLAYLIST-TYPE:EVENT` (grows from seq 1 —
+  a catch-up fetcher will replay the pre-live standby), `#EXT-X-PROGRAM-DATE-TIME`
+  present (arrival log works). **No EXT-X-PREFETCH, no LL-HLS** — floor ≈ 1–1.5
+  segment durations; measured edge lag ~9 s behind PDT.
+  ⚠ **EVENT playlists break any bounded URI-set dedup** (live-measured, Ford
+  07-28, RUNBOOK bug 4): the manifest held 497 segments at fetcher start and
+  grew past 1,150, so a fixed 500-key `seen` cap evicted still-listed URIs
+  every poll and the leg sawtoothed to ~the whole manifest behind the edge
+  (arrival p50 98 s, 1 segment in 146–657 delivered). hls-edge-fetch.py now
+  scales the cache with the manifest; the first-variant rule also cost here —
+  the master lists 5.86 Mbps 1080p FIRST and 638 kbps 640x360 later, and the
+  fetcher now picks the cheapest rendition.
+- **Auth split (evidence: live curl from the us-east box, 2026-07-28
+  ~20:52 UTC):** `index.m3u8` + variants are **UNSIGNED and public** (200 from
+  the box with no cookies ⇒ Path A) while `broadcasting.txt`/`player_config.txt`
+  on `content.knowledgevision.com` are CloudFront-signed. `playlist.m3u8` /
+  `master.m3u8` are 403 (S3 AccessDenied) — `index.m3u8` is the master's name.
+- **Speculative probing: NO-GO** — unannounced-segment probes 403
+  (`SPECULATIVE: NO-GO` from manifest-probe; fetcher self-disabled correctly).
+- Full run evidence: `state/KXEARNINGSMENTIONF-26JUL28/postrun/` (arrival log
+  n≈large, spec_edge SUMMARY, probe output) + RUNBOOK Ford 07-28 entry.

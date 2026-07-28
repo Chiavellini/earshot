@@ -297,6 +297,108 @@ binary** `sha256 17b3af8d021b2287…`:
 
 None of the three conflict; each gets its own process and state dir.
 
+> ### ⚠ POST-MORTEM 2026-07-28 (written ~14:00 ET): PYPL and BA NEVER RAN
+>
+> Evidence pulled from the box at 18:48 UTC, all read-only:
+> - Box **up continuously since Jul 27 05:01 UTC** — box-off (the DPZ class)
+>   is REFUTED this time.
+> - **No `~/pypl-stream.url`, no `~/ba-stream.url`, no `pypl-arm-*` /
+>   `ba-arm-*` logs** — the URL was never pasted and `run-arm.sh` was never
+>   typed, for either event. No laptop-side (Path B) artifacts exist either.
+> - PYPL `report.json` untouched since the Jul 26 drill.
+> - Last human activity on the box: **06:29 UTC = 12:29 AM CDMX** —
+>   night-before screens + dry-runs (`pypl-dryrun4.log`, `ford-dryrun.log`,
+>   `f/pypl/meta-screen.json`). Prep was COMPLETE and correct.
+>
+> **Classification: HUMAN-ABSENT AT FIRE TIME.** The operator worked until
+> ~00:30 local and the 06:00/08:30 local launches required a human who was
+> asleep. Everything pre-validated; nothing fired, and **nothing alerted** —
+> the failure was silent until the user noticed hours later.
+> Requirements this feeds into the autonomy build (see plans of 2026-07-28):
+> escalating launchd-fired wake prompts before each event; the launcher — not
+> the human — owns the timeline; a "T−5 and no URL file" alert; a
+> "call started and no arm running" alert. A same-day recurrence for Ford
+> (17:00 ET, attended) is prevented only by the operator being awake — which
+> is exactly the single point of failure being engineered away.
+
+> ### FORD 07-28 RAN — Claude-driven end-to-end; three NEW bugs found live
+>
+> Outcome: armed 16:55:30 ET (before the call), **9 min of detection coverage
+> lost 17:00–17:09** to bug (1); 6 Confirmed detections (OAKV APPL IRAN MARK
+> TARI RECA — RECA on filler as predicted); `spent_cents=0`; arrival log =
+> first OpenExchange venue-class dataset (banked in state/…/postrun/).
+> The m3u8 was captured autonomously from the logged-in Chrome session:
+> OpenExchange embeds a **KnowledgeVision iframe** (view.knowledgevision.com);
+> the top frame never requests the m3u8 — open the KV redirect URL directly
+> and the playlist appears in its network log. Master = `index.m3u8`
+> (unsigned, box-fetchable ⇒ Path A); `index_N.m3u8` are variants.
+>
+> 1. **ORT dylib platform bug (FIXED in run-arm.sh guard 5):** `find | head -1`
+>    picked the rsync'd macOS dylib on the Linux box; dlopen of a Mach-O hangs
+>    the arm at 'book snapshots live' silently, in live AND dry postures —
+>    identical signature to a missing lib. Guard is now uname-gated; the osx
+>    dir is quarantined out of the box's vendor/ (~/ort-osx-quarantine).
+>    07-28 evening hardening: path checks can't prove a runtime works, so
+>    run-arm.sh guard 6 + preflight now run `detector-smoke` — build the
+>    config's engine under the exact env and decode 3 s of audio, under
+>    `timeout` so a dlopen hang exits 124 loudly. (Same class struck a THIRD
+>    time the same night: the wed-staging bench batch hung 66 min with
+>    ORT_DYLIB_PATH unset in its nohup env — killed and relaunched with the
+>    env exported.) Guard 7 warns on launch-after-starts_at; arms are
+>    scheduled T-20 min.
+> 2. **STOP does not stop a webcast arm whose stream has ENDED:** pipe sources
+>    respawn decoders against the dead stream; the pipeline never drains; no
+>    report.json is written. OPEN — needs a respawn cap or STOP-aware source
+>    shutdown (this binary's kill drills were phone-lane/mid-stream only).
+> 3. **SIGTERM last-words did not fire after a prior STOP:** killed with
+>    SIGTERM after (2), the process neither exited (SIGKILL needed) nor wrote
+>    the last-words report. OPEN — SIGTERM path after STOP-consumed watcher
+>    was never drilled. Ledger + detections were recoverable from
+>    probe_ledger.json and the arm log; nothing lost but the summary file.
+>
+> Post-mortem 07-28 evening (tape + arrival-log + arm-log decomposition)
+> found two MORE bugs the live narrative missed — and they, not the detector,
+> owned the speed/recall collapse:
+>
+> 4. **`seen`-cache thrash on `#EXT-X-PLAYLIST-TYPE:EVENT` manifests (FIXED
+>    in hls-edge-fetch.py):** the fetcher's fixed 500-key `seen` cap assumed a
+>    sliding-window playlist; KV's EVENT manifest grows from seq 1 (497→3000
+>    entries) and never rolls off, so every poll evicted still-listed URIs,
+>    they re-entered `new` as "fresh", and SKIP-TO-NEWEST then fetched the
+>    newest of the RESURRECTED block ≈ the whole manifest behind the edge.
+>    Sawtooth verbatim in ford_spec_edge.err: seg age 11 s → 3011 s → … →
+>    12 s → 2508 s; **1 segment in 146–657 delivered (8,256,477 skipped),
+>    arrival p50 98 s / p90 901 s** vs the 2.6 s IVS baseline. The GEEL/TAIL
+>    recall misses were audio that was NEVER FETCHED, not detector misses.
+>    Fix: the cache bound now scales with the live manifest
+>    (`max(500, 2×len)`); regression covered by an EVENT-playlist replay test
+>    (old code: 28 catch-up storms in 8 s; fixed: zero). Side-fix: the
+>    per-frame `ring full` WARN (69 % of 1.09 M frames dropped → 99.7 % of a
+>    111 MB log, which truncated the detection record) is now throttled to
+>    1/s with a count (src/source/pipe.rs).
+> 5. **Fanout ran single-legged from t+7 s, silently:** `pipe_tuned` died
+>    0.68 s after spawn (`frames=0 exit status: 234`) and nothing alerted —
+>    every decision came from the degraded spec_edge leg. run-arm.sh now
+>    launches a deaf-watchdog that pages (notify.sh) if the pipeline never
+>    starts, if any leg exits within 150 s, or if the arrival log stalls
+>    >90 s mid-call. Root cause of exit 234 on this venue: diagnose during
+>    the 07-29 rehearsal.
+>
+> **Scoreboard correction (the "worse than before" feeling, decomposed):**
+> precision was **6/6** — all six fires were on markets that priced 0.99, and
+> zero fires on the five 0.01 markets (the pre-run "Ford FA-heavy" headline
+> was largely the collision-screen phrase-vs-variant artifact, since fixed).
+> Recall was the real loss: 6/10 spoken words (GEEL TAIL = bug 4; HEAD EV =
+> priced from the press release pre-call). 0 fills was BY DESIGN (1¢
+> non-crossing observe — not comparable to INTC's fillable run). On the one
+> broken leg, IRAN fired +3 s and APPL +19 s vs the market's first 0.90
+> print: the pipeline is competitive whenever it is actually fed audio.
+> **Text-lane reality:** HEAD 0.91 / TARI 0.96 / IRAN 0.84 were priced
+> BEFORE 21:00Z from the release text, plus a 20:56–21:00 conviction cluster
+> across most markets — for release-covered words the race is over before
+> the webcast starts. Pre-mark likely release-covered keywords per event and
+> judge audio-lane performance only on release-absent words (APPL-class).
+
 ### ⚡ Launch each one with `scripts/run-arm.sh` — do NOT hand-assemble
 
 ```
@@ -313,6 +415,31 @@ has actually bitten: a stale URL file (the 07-27 IVS *demo channel* incident), a
 and a missing `libonnxruntime` (the silent hang at "book snapshots live"). It
 defaults to **LIVE** — `--dry` is the explicit opt-out — so a forgotten flag
 cannot silently produce a no-order run. Read the `posture:` line back.
+
+2026-07-28 hardening (Ford post-mortem): a generic slug path (any
+`configs/webcast-<slug>-*-arm.toml` + `$HOME/<slug>-stream.url`), **guard 6
+`detector-smoke`** (builds the config's engine under the exact env and decodes
+3 s of audio, under timeout — path checks cannot prove a runtime works),
+**guard 7** starts_at check (WARN + notify on a late launch), and a detached
+**deaf-watchdog** that pages via notify.sh when the pipeline never starts,
+a leg dies within 150 s, or the arrival log stalls >90 s mid-call.
+
+### ⚡ Wednesday 2026-07-29 runsheet — ARM AT T-20, one command each
+
+| T-20 (UTC) | call (UTC) | command | notes |
+|---|---|---|---|
+| 13:40 | 14:00 | `scripts/run-arm.sh wing` | ⚠ morning; Chorus Call reg is MANDATORY the night before |
+| 18:10 | 18:30 | `scripts/run-arm.sh fed`  | non-speculative by standing decision |
+| 19:55 | 20:15 | `scripts/run-arm.sh sbux` | needs day-of webcastid from browser |
+| 20:10 | 20:30 | `scripts/run-arm.sh cmg`  | app.webinar.net venue |
+| 20:10 | 20:30 | `scripts/run-arm.sh meta` | prefetch tier already in config |
+| 21:10 | 21:30 | `scripts/run-arm.sh msft` | self-hosted/public — easiest m3u8 |
+| 21:10 | 21:30 | `scripts/run-arm.sh cvna` | app.webinar.net venue |
+
+Box resize to 16 vCPU ~19:00Z (approved; revert ~23:30Z) before the 5-way
+cluster. Surface each `$HOME/<slug>-stream.url` before its T-20; guard 2
+refuses a URL file older than the config. Shutdown stays ATTENDED (real
+SIGTERM) until RUNBOOK bugs 2–3 are fixed.
 
 ### Boeing — what differs from PayPal (same platform, 2.5 h later)
 
@@ -379,20 +506,20 @@ stream-url path and config name.
 > unscoreable.** Reference (IVS, armed leg, §A1): first byte **0.484 s** behind
 > PDT, complete **2.393 s**.
 >
-> ⚠ **No `pcm-lead-ford.toml` control config exists, deliberately.** The control
-> legs A/B `plain` against `--prefetch --stream-body`; with no prefetch at this
-> venue both legs are identical and the comparison measures nothing. If the
-> day-of probe DOES show `EXT-X-PREFETCH` present and chunked, copy
-> `configs/pcm-lead-pypl.toml`, point it at a dedicated `$HOME/ford-pcmab.url`,
-> and run it — the instrument is ready, only the venue is unproven.
+> ⚠ **`configs/pcm-lead-ford.toml` is STAGED but CONDITIONAL** (2026-07-28).
+> The control legs A/B `plain` against `--prefetch --stream-body`; with no
+> prefetch at this venue both legs are identical and the comparison measures
+> nothing. Run it ONLY if the day-of probe shows `EXT-X-PREFETCH` present AND
+> chunked bodies; it reads a dedicated `$HOME/ford-pcmab.url` (never alias
+> `ford-stream.url`).
 >
 > ⚠ Ford writes `$HOME/ford_spec_edge.err` and `$HOME/ford-arrival.log`.
 > **It used to write `spec_edge.err` — the SAME file PayPal uses** — which would
 > have appended Ford's diagnostics to PayPal's and made step 8's
-> `grep SUMMARY` read two events at once. Fixed 2026-07-28. Root cause is the
-> templates (`webcast-fanout-arm-{ctc,spec}.toml`) hardcoding `spec_edge.err`,
-> so **every future event staged from them collides again** — check it when
-> staging.
+> `grep SUMMARY` read two events at once. Fixed 2026-07-28, **including the root
+> cause**: the templates (`webcast-fanout-arm-{ctc,spec}.toml`) now emit
+> `$HOME/<lc>_spec_edge.err` and `--arrival-log $HOME/<lc>-arrival.log` via the
+> `__LC__` substitution, so events staged from them no longer collide.
 
 **WEDNESDAY 2026-07-29 · FOMC / Warsh — STAGED (`configs/webcast-fed-26jul29-arm.toml`).**
 Event ticker **`KXFEDMENTION-26JUL`** — *"What will Kevin Warsh say during his
@@ -1375,17 +1502,32 @@ i-04c50d76572aa092e, UP through Thu by operator decision):**
   added) and re-validated with compile-keywords. Until the generator is
   fixed, EVERY prepare-generated config gets a variant audit before arming.
 
-**Scheduled routines (armed 2026-07-20 evening):** 15 one-shot local cron
-jobs in the 07-20 Claude session — per-event prep reminders (~40 min
-pre-call) + post-event tape pulls/analysis (~2.5 h after call start), plus a
-Tue-evening staging check for Wednesday. ⚠ SESSION-BOUND: they die if that
-Claude session closes. If it does, re-arm by asking a new session to
-"recreate the week's webcast monitor cron jobs from RUNBOOK §Week of 07-20"
-— every prompt is reconstructible from this section (prep = runsheet
-reminder + box check; post = `scripts/fetch-tape.sh <EVENT>` + box
-report.json collection + tape/Δw analysis per COMPETITOR-ANATOMY §Webcast
-hypotheses). Cloud routines were considered and rejected: the branch is
-unpushed, no GitHub App on the repo, and the box SSH key is laptop-local.
+**Scheduled routines — RETIRED PATTERN (2026-07-28).** The week-of-07-20
+approach (one-shot cron jobs living inside a Claude session) is dead: it
+already failed once (HANDOFF §9 "if the 5:43 cron died, stage per §6") and
+its recovery was a prompt, not a mechanism. The 2026-07-28 PYPL/BA miss
+(see the post-mortem in the Tuesday section) closed the argument. Replaced
+by real launchd units, installed from committed plists:
+
+- **`com.earshot.slate-daily`** (`configs/launchd/com.earshot.slate-daily.plist`,
+  20:00 local) → `scripts/slate-daily.sh`: `discover-events.py --self-test`
+  (frozen BA fixture — the durable form of `--assert-ba`, which died when
+  BA's event closed post-call) + dual live sweep → committed
+  `slate/latest.json` + `slate/changes/`, then
+  `scripts/recon-worklist.py` → `slate/worklist.md` (NO-ENTRY / STALE /
+  UNKNOWN registry flags, 10-day horizon). Alerts through
+  `scripts/notify.sh` (mail if `~/.kalshi/mail_env` exists + macOS
+  notification + `say`) on: slate changes, Boeing-class sweep delta,
+  events ≤7 d unstaged, NO-ENTRY recon ≤4 d, and EVERY failure path —
+  a silent dead job is the failure mode this replaces. Logs:
+  `~/Library/Logs/earshot/slate-daily.log`. Auto-commits scoped to
+  `slate/` with a `slate:` prefix (approved 2026-07-28).
+- Per-event unattended launch (webcast lane) is the next unit — see the
+  autonomy plan of 2026-07-28 (`webcast-autorun.sh` + macOS installer,
+  box auto-start approved).
+
+Post-event tape pulls/analysis are still manual — fold them into the
+per-event unit when it lands.
 
 **⚠ Capture health-check rule (learned GOOGL 2026-07-22, cost 8 min of tape):**
 `capture-bakeoff` holds all frames IN MEMORY and writes `<label>.wav` + `report.json`

@@ -1,0 +1,44 @@
+# SKELETON — pre-staged 2026-07-28 before the Ford Q2 call (17:00 ET).
+# OCCURRENCES PENDING: this file is a placeholder so post-event scoring
+# (rival-decompose.py --per-market --manifest, physical-bound.py) has a target
+# and the fill is one paste, not a re-derivation.
+#
+# ⚠ NAMED `.toml.pending` DELIBERATELY. bench::manifest::load_dir loads every
+# `manifests/*.toml` and validate() HARD-FAILS on unopenable audio
+# (src/bench/manifest.rs:81,:96-102) — as a `.toml` this skeleton kills every
+# bench/screen run until the WAV is banked. The `pending` extension escapes
+# the loader's filter. Convention: a manifest whose audio is not yet banked
+# is `*.toml.pending`; renaming to `.toml` is step 0 of the fill below.
+#
+# Post-event fill:
+#   0. git mv corpus/manifests/f-q2-2026.toml.pending corpus/manifests/f-q2-2026.toml
+#   1. Bank the leg audio → corpus/wideband/f-q2-2026.wav (gitignored).
+#   2. scripts/transcript-fetch.py <source> → corpus/transcripts/f-q2-2026.words.json
+#   3. scripts/manifest-from-words.py --id f-q2-2026 --split dev --force \
+#        --keywords '[
+#          {"phrase":"artificial intelligence","variants":["artificial intelligence"]},
+#          {"phrase":"apple","variants":["apple","apples"]},
+#          {"phrase":"autonomy","variants":["autonomy","autonomys","autonomous"]},
+#          {"phrase":"china","variants":["china","chinas"]},
+#          {"phrase":"electric vehicle","variants":["electric vehicle"]},
+#          {"phrase":"geely","variants":["geely","geelys"]},
+#          {"phrase":"headwind","variants":["headwind","headwinds"]},
+#          {"phrase":"iran","variants":["iran","irans","middle east"]},
+#          {"phrase":"market share","variants":["market share"]},
+#          {"phrase":"oakville","variants":["oakville","oakvilles"]},
+#          {"phrase":"recall","variants":["recall","recalls","recalled","recalleds"]},
+#          {"phrase":"skunk works","variants":["skunk works"]},
+#          {"phrase":"subsidy","variants":["subsidy","subsidys","subsidized","subsidizeds"]},
+#          {"phrase":"tailwind","variants":["tailwind","tailwinds"]},
+#          {"phrase":"tariff","variants":["tariff","tariffs"]}
+#        ]'
+#
+# The keyword JSON above is the EXACT armed set of
+# configs/webcast-f-26jul28-arm.toml (15 markets, 32 variants; the ultra-short
+# "ev"/"evs"/"ai"/"ais" variants were dropped at staging and are deliberately
+# absent here too — score what was armed, not what the market titles imply).
+
+[call]
+id    = "f-q2-2026"
+audio = "wideband/f-q2-2026.wav"
+split = "dev"

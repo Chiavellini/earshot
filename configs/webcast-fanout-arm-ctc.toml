@@ -84,7 +84,10 @@
 # The fetcher's stderr is redirected per-leg because the arm logs pipe stderr at
 # `debug` (src/source/pipe.rs) and would otherwise hide catch-up drops — the
 # fetcher DROPS AUDIO to catch up, and silent loss is a recall bug. Check
-# ~/spec_edge.err (SUMMARY lines) after every run.
+# ~/<lc>_spec_edge.err (SUMMARY lines) after every run. The stderr path is
+# per-event (2026-07-28): a shared ~/spec_edge.err interleaved two events'
+# diagnostics the day PYPL and F both ran. The arrival log is on by default —
+# it is the boundable-race artifact (first PDT→first-byte) and costs nothing.
 #
 # ⚠ probesize=200000 / analyzeduration=3000000 — robustness, keep it.
 # Some streams do not give ffmpeg enough to identify the AAC track inside
@@ -141,7 +144,7 @@ label = "spec_edge"
 sample_rate_hz = 16000
 cmd = [
   "/bin/sh", "-c",
-  "python3 $HOME/ear/scripts/hls-edge-fetch.py \"$(cat $HOME/__LC__-stream.url)\" 250 2 --speculative 2>>$HOME/spec_edge.err | ffmpeg -loglevel warning -fflags +discardcorrupt+nobuffer -flags low_delay -probesize 200000 -analyzeduration 3000000 -i - -vn -f s16le -ac 1 -ar 16000 -",
+  "python3 $HOME/ear/scripts/hls-edge-fetch.py \"$(cat $HOME/__LC__-stream.url)\" 250 2 --speculative --arrival-log $HOME/__LC__-arrival.log 2>>$HOME/__LC___spec_edge.err | ffmpeg -loglevel warning -fflags +discardcorrupt+nobuffer -flags low_delay -probesize 200000 -analyzeduration 3000000 -i - -vn -f s16le -ac 1 -ar 16000 -",
 ]
 
 [[sources]]
