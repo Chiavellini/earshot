@@ -222,14 +222,45 @@ def pattern_is_predictable(uris):
     return all(bump_uri(a) == b for a, b in zip(uris[-3:-1], uris[-2:]))
 
 
+def pick_variant(body):
+    """Choose the CHEAPEST variant from a master playlist body, or None.
+
+    We decode to 16 kHz mono — video bits are pure waste. Ford 2026-07-28: the
+    old first-variant rule pulled the 5.86 Mbps 1080p rendition onto a
+    1-physical-core box (two detect chains sharing it) while a 638 kbps 640x360
+    rendition sat unused. Preference order:
+      1. audio-only variants (no RESOLUTION attribute), lowest BANDWIDTH;
+      2. else lowest BANDWIDTH overall;
+      3. else (no parseable BANDWIDTH) the first variant, as before.
+    """
+    cands = []          # (has_video, bandwidth, order, uri)
+    attrs = None
+    order = 0
+    for line in body.splitlines():
+        line = line.strip()
+        if line.startswith("#EXT-X-STREAM-INF:"):
+            attrs = line.split(":", 1)[1]
+        elif line and not line.startswith("#") and attrs is not None:
+            m = re.search(r"(?:^|[,:])BANDWIDTH=(\d+)", attrs)
+            bw = int(m.group(1)) if m else None
+            has_video = "RESOLUTION=" in attrs
+            cands.append((has_video, bw, order, line))
+            attrs = None
+            order += 1
+    if not cands:
+        return None
+    if any(bw is None for _, bw, _, _ in cands):
+        return cands[0][3]                      # unparseable master: old rule
+    return min(cands, key=lambda c: (c[0], c[1], c[2]))[3]
+
+
 def resolve_media(url, timeout=4):
-    """Follow one level of master → first variant. Returns the media URL."""
+    """Follow one level of master → cheapest variant. Returns the media URL."""
     body = get(url, timeout).decode("utf-8", "replace")
     if "#EXT-X-STREAM-INF" in body:
-        for line in body.splitlines():
-            line = line.strip()
-            if line and not line.startswith("#"):
-                return urllib.parse.urljoin(url, line)
+        uri = pick_variant(body)
+        if uri is not None:
+            return urllib.parse.urljoin(url, uri)
     return url
 
 
@@ -265,6 +296,16 @@ def selftest():
     assert s == {"a"} and order == ["a"], "unclaim removes the pre-emptive claim"
     unclaim(s, order, "zzz")            # unknown uri must be a no-op
     assert s == {"a"} and order == ["a"]
+    # Rendition choice (Ford 2026-07-28): cheapest wins, audio-only beats video.
+    ford = ("#EXTM3U\n"
+            "#EXT-X-STREAM-INF:BANDWIDTH=5860800,RESOLUTION=1920x1080\nhi.m3u8\n"
+            "#EXT-X-STREAM-INF:BANDWIDTH=638528,RESOLUTION=640x360\nlo.m3u8\n")
+    assert pick_variant(ford) == "lo.m3u8", "lowest bandwidth, not first"
+    audio = ford + "#EXT-X-STREAM-INF:BANDWIDTH=96000,CODECS=\"mp4a.40.2\"\naud.m3u8\n"
+    assert pick_variant(audio) == "aud.m3u8", "audio-only preferred"
+    nobw = "#EXTM3U\n#EXT-X-STREAM-INF:PROGRAM-ID=1\nfirst.m3u8\n#EXT-X-STREAM-INF:PROGRAM-ID=1\nsecond.m3u8\n"
+    assert pick_variant(nobw) == "first.m3u8", "unparseable master falls back to first"
+    assert pick_variant("#EXTM3U\n#EXT-X-TARGETDURATION:6\nseg1.ts\n") is None, "media playlist: no variant"
     print("selftest OK")
 
 
@@ -390,6 +431,7 @@ def main():
     out = sys.stdout.buffer
     seen = set()
     seen_order = []
+    event_type_seen = False
     first = True
     n_skip = 0
     sys.stderr.write(f"edge-fetch: media={media} poll={poll*1000:.0f}ms max_backlog={max_backlog}\n")
@@ -466,7 +508,13 @@ def main():
         pdt = None; pairs = []; prefetch_lines = []
         for l in body.splitlines():
             l = l.strip()
-            if l.startswith("#EXT-X-PROGRAM-DATE-TIME:"):
+            if l.startswith("#EXT-X-PLAYLIST-TYPE:") and "EVENT" in l and not event_type_seen:
+                event_type_seen = True
+                sys.stderr.write(
+                    "playlist-type EVENT: manifest grows from seq 1 and never rolls off "
+                    "(Ford 2026-07-28 venue class) — seen-cache scales with it\n")
+                sys.stderr.flush()
+            elif l.startswith("#EXT-X-PROGRAM-DATE-TIME:"):
                 pdt = parse_pdt(l)
             elif l.startswith("#EXTINF:"):
                 try:
@@ -520,12 +568,21 @@ def main():
         new = [(u, p) for (u, p) in pairs if u not in seen]
         for u, _ in new:
             seen.add(u); seen_order.append(u)
-        # bound memory: keep last ~500 segment keys
-        if len(seen_order) > 600:
-            for u in seen_order[:-500]:
+        # Bound memory — but the bound MUST exceed the live manifest length.
+        # Ford 2026-07-28 (bug 4): a fixed 500-key cap against a
+        # #EXT-X-PLAYLIST-TYPE:EVENT manifest (grows from seq 1; 497→3000
+        # entries) evicted still-listed URIs every poll; they re-entered `new`
+        # as "fresh", SKIP-TO-NEWEST then fetched the newest of the RESURRECTED
+        # block ≈ the whole manifest behind the edge. Sawtooth: seg age 11 s →
+        # 3011 s → … → 12 s → 2508 s; 1 segment in 146 delivered, p50 arrival
+        # lag 98 s. The bound now scales with the manifest so a listed URI is
+        # never evicted; memory stays proportional to the playlist itself.
+        keep = max(500, 2 * len(pairs))
+        if len(seen_order) > keep + 100:
+            for u in seen_order[:-keep]:
                 seen.discard(u)
                 retry_n.pop(u, None)
-            seen_order = seen_order[-500:]
+            seen_order = seen_order[-keep:]
 
         if first:
             new = new[-1:]  # start at the live edge (newest only)

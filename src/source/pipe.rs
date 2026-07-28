@@ -141,7 +141,15 @@ impl AudioSource for PipeSource {
         let mut read_chunk = vec![0u8; frame_bytes];
         let mut seq = 0u64;
 
-        let emit = |buf: &mut Vec<u8>, seq: &mut u64, tx: &mut RingSender<AudioFrame>, n: usize| {
+        // Drop-WARN throttle state (Ford 2026-07-28): a stale-catch-up firehose
+        // pushed ~24× realtime through here; the per-frame WARN below became
+        // 99.7 % of a 111 MB log, competed for CPU mid-race, and truncated the
+        // copy that held the detection record. One line per second, with the
+        // count, says the same thing at 1/1000th the cost.
+        let mut dropped_since_warn = 0u64;
+        let mut last_drop_warn = std::time::Instant::now();
+
+        let mut emit = |buf: &mut Vec<u8>, seq: &mut u64, tx: &mut RingSender<AudioFrame>, n: usize| {
             let bytes: Vec<u8> = buf.drain(..n).collect();
             let pcm: Arc<[i16]> = bytes
                 .chunks_exact(2)
@@ -159,7 +167,16 @@ impl AudioSource for PipeSource {
             // Live semantics: ingress is THE legitimate drop point — never
             // block the capture path on a stalled consumer.
             if tx.send(frame).is_err() {
-                tracing::warn!(seq = *seq - 1, "ring full: pipe frame dropped");
+                dropped_since_warn += 1;
+                if last_drop_warn.elapsed() >= std::time::Duration::from_secs(1) {
+                    tracing::warn!(
+                        seq = *seq - 1,
+                        dropped = dropped_since_warn,
+                        "ring full: pipe frames dropped (throttled, count since last warn)"
+                    );
+                    dropped_since_warn = 0;
+                    last_drop_warn = std::time::Instant::now();
+                }
             }
         };
 
