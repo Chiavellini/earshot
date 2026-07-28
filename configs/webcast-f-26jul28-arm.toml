@@ -350,6 +350,21 @@ budget_contracts = 1
 policy           = "confirmed_only"
 
 # Tariff (KXEARNINGSMENTIONF-26JUL28-TARI) — corpus-tuned; cap: probe (non-crossing, no fill)
+#
+# ⚠ REMOVED 2026-07-27: `confirmed_threshold = 0.1` + `boost = 3.0`. Those are
+# `prepare::tuned_library` values (src/prepare.rs:93-101, emitted at :391-394)
+# and they are on the **sherpa_kws** scale — but this config runs
+# `engine = "streaming_ctc"` (line 157). Two separate faults:
+#   - `boost` is SILENTLY DISCARDED — streaming_ctc.rs:273 calls
+#     `compile(.., cfg.default_threshold, 1.0)`, so the 3.0 never applied.
+#   - `0.1` was reinterpreted as a CTC geometric-mean-posterior threshold,
+#     where this config's `default_threshold` is 0.15. So `tariff` was running
+#     ~33 % looser than every other word in the event, on a scale it was never
+#     calibrated for.
+# At 1¢ non-crossing this could not lose money, but it would have corrupted
+# tariff's row in the per-word evidence this run exists to produce.
+# `tariff` now runs on the config default like every other keyword.
+# Do not re-add: `prepare` will emit these lines again on any regeneration.
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONF-26JUL28-TARI"
 phrase           = "tariff"
@@ -357,7 +372,5 @@ variants         = ["tariff", "tariffs"]
 max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"
-confirmed_threshold = 0.1
-boost            = 3.0
 
 # --- prepare summary: 15 tradeable, 0 skipped (said-N-times), 0 skipped (unencodable), 0 variants dropped of 15 markets ---
