@@ -193,6 +193,19 @@ enum Command {
         #[arg(long)]
         model_dir: Option<PathBuf>,
     },
+    /// Arm-day detector liveness gate: build the config's detector exactly as
+    /// `arm` would (same engine, model, and ORT dylib env) and push a few
+    /// seconds of synthetic audio through it. A wrong-platform or missing
+    /// onnxruntime fails/hangs HERE, loudly and before the call window,
+    /// instead of silently after "book snapshots live" (Ford 2026-07-28,
+    /// RUNBOOK bug 1). Run under `timeout(1)`: a hang exits 124.
+    DetectorSmoke {
+        #[arg(long)]
+        config: PathBuf,
+        /// Seconds of synthetic 16 kHz audio to push through the detector.
+        #[arg(long, default_value_t = 3)]
+        secs: u32,
+    },
     /// Region/edge RTT probe (docs/INGRESS-BAKEOFF.md §2): TCP-handshake RTT +
     /// loss from this box to each target, to pick the compute region before a
     /// vendor is chosen. Targets are host or host:port (default :443).
@@ -399,6 +412,46 @@ fn run(command: Command) -> Result<(), AnyErr> {
                 }
                 println!();
             }
+            Ok(())
+        }
+        Command::DetectorSmoke { config, secs } => {
+            let cfg = config::load(&config)?;
+            let t0 = std::time::Instant::now();
+            let mut det = detector_factory::build_detector(&cfg)?;
+            let build_ms = t0.elapsed().as_millis();
+            let chunk_samples = 16_000 * cfg.pipeline.chunk_ms.max(10) as usize / 1000;
+            // A swept tone, not silence: exercises the acoustic frontend while
+            // guaranteeing no keyword can fire on it.
+            let pcm: Vec<i16> = (0..16_000 * secs as usize)
+                .map(|i| {
+                    let t = i as f32 / 16_000.0;
+                    ((2.0 * std::f32::consts::PI * (200.0 + 60.0 * t) * t).sin() * 8000.0) as i16
+                })
+                .collect();
+            let mut chunks = 0u64;
+            for (seq, window) in pcm.chunks(chunk_samples).enumerate() {
+                let now = MonotonicNs::now();
+                let chunk = earshot::types::AudioChunk {
+                    pcm: Arc::from(window),
+                    sample_rate_hz: 16_000,
+                    first_capture_ts: now,
+                    last_capture_ts: now,
+                    first_preproc_ts: now,
+                    chunk_ts: now,
+                    source: SourceId(0),
+                    seq: seq as u64,
+                };
+                let _ = det.process(&chunk);
+                chunks += 1;
+            }
+            if chunks == 0 {
+                return Err("detector-smoke: zero chunks processed".into());
+            }
+            println!(
+                "detector-smoke OK engine={:?} build_ms={build_ms} chunks={chunks} total_ms={}",
+                cfg.detector.engine,
+                t0.elapsed().as_millis()
+            );
             Ok(())
         }
         Command::Latprobe { targets, samples, timeout_ms, out } => {

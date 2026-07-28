@@ -33,6 +33,20 @@ done
 
 FAILS=0
 REPORT_LINES=()
+
+# GNU timeout exists on the box; the CDMX laptop has neither timeout nor
+# gtimeout — fall back to a background-killer that reports 124 like timeout.
+run_with_timeout() {  # <secs> <cmd…>
+  if command -v timeout >/dev/null 2>&1; then timeout "$@"; return $?; fi
+  if command -v gtimeout >/dev/null 2>&1; then gtimeout "$@"; return $?; fi
+  local secs="$1"; shift
+  "$@" & local pid=$!
+  ( sleep "$secs" && kill -9 "$pid" 2>/dev/null ) & local watcher=$!
+  local rc=0; wait "$pid" || rc=$?
+  kill "$watcher" 2>/dev/null || true
+  [[ $rc -ge 128 ]] && return 124
+  return $rc
+}
 check() {  # check <PASS|FAIL|WARN> <message>
   local verdict="$1" msg="$2"
   REPORT_LINES+=("[$verdict] $msg")
@@ -134,6 +148,27 @@ if cargo build --release 2>&1 | tail -1 | grep -q "Finished"; then
     check FAIL "could not resolve [detector].engine / its model_dir from $CONFIG — cannot validate the RIGHT vocab"
     CK_OUT=$("$STATE_DIR/earshot-pinned" compile-keywords --config "$CONFIG" 2>&1)
     CK_RC=$?
+  fi
+  # Detector HEARTBEAT with the pin (Ford 2026-07-28 bug 1): compile-keywords
+  # proves the vocab, not the runtime — a wrong-platform onnxruntime dylib
+  # still hangs at arm. detector-smoke builds the engine and decodes 3 s of
+  # audio under the SAME env the arm will use; run it the night before so a
+  # dead runtime is a tonight problem, not a T-20 problem.
+  if [[ "$ENGINE" == "streaming_ctc" && -z "${ORT_DYLIB_PATH:-}" ]]; then
+    case "$(uname -s)" in
+      Linux)  ORT_DYLIB_PATH="$(find vendor -name 'libonnxruntime*.so*' 2>/dev/null | head -1)" ;;
+      Darwin) ORT_DYLIB_PATH="$(find vendor -name 'libonnxruntime*.dylib' 2>/dev/null | head -1)" ;;
+    esac
+    export ORT_DYLIB_PATH
+  fi
+  SMOKE_OUT=$(run_with_timeout 90 "$STATE_DIR/earshot-pinned" detector-smoke --config "$CONFIG" 2>&1 | tail -1)
+  SMOKE_RC=$?
+  if [[ $SMOKE_RC -eq 0 && "$SMOKE_OUT" == *"detector-smoke OK"* ]]; then
+    check PASS "detector heartbeat: $SMOKE_OUT"
+  elif [[ $SMOKE_RC -eq 124 ]]; then
+    check FAIL "detector-smoke HUNG (>90 s) — dead/wrong-platform engine runtime (Ford deaf-gap class). ORT_DYLIB_PATH=${ORT_DYLIB_PATH:-unset}"
+  else
+    check FAIL "detector-smoke failed (exit $SMOKE_RC): $SMOKE_OUT"
   fi
   if [[ $CK_RC -eq 0 ]]; then
     check PASS "keywords compile (BPE-encodable) on the ARMED engine's vocab"
