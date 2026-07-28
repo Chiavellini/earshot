@@ -51,7 +51,11 @@ done
 case "$SLUG" in
   pypl) CONFIG=configs/webcast-pypl-26jul28-arm.toml; URLF=$HOME/pypl-stream.url; EVENT=KXEARNINGSMENTIONPYPL-26JUL28 ;;
   ba)   CONFIG=configs/webcast-ba-26jul28-arm.toml;   URLF=$HOME/ba-stream.url;   EVENT=KXEARNINGSMENTIONBA-26JUL21 ;;
-  f)    CONFIG=configs/webcast-f-26jul28-arm.toml;    URLF=$HOME/f-stream.url;    EVENT=KXEARNINGSMENTIONF-26JUL28 ;;
+  # ⚠ URLF is `ford-stream.url`, NOT `f-stream.url`. The SLUG is `f` but the
+  # config reads $HOME/ford-stream.url (and ford-arrival.log / ford_spec_edge.err),
+  # and docs/RUNBOOK.md says to substitute `ford`. Mismatched, guard 2 would
+  # validate a file the arm never reads — every check green, wrong stream.
+  f)    CONFIG=configs/webcast-f-26jul28-arm.toml;    URLF=$HOME/ford-stream.url; EVENT=KXEARNINGSMENTIONF-26JUL28 ;;
   *) echo "usage: $0 {pypl|ba|f} [--dry] [--url-ok]" >&2; exit 2 ;;
 esac
 
