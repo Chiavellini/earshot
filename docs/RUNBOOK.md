@@ -344,8 +344,13 @@ None of the three conflict; each gets its own process and state dir.
 >    `timeout` so a dlopen hang exits 124 loudly. (Same class struck a THIRD
 >    time the same night: the wed-staging bench batch hung 66 min with
 >    ORT_DYLIB_PATH unset in its nohup env — killed and relaunched with the
->    env exported.) Guard 7 warns on launch-after-starts_at; arms are
->    scheduled T-20 min.
+>    env exported. And a FOURTH: a hand-rolled `rsync --delete` deploy
+>    re-shipped the macOS dylib AND deleted the box's linux-x64 ORT — strace
+>    showed openat=ENOENT then an eternal futex wait, i.e. **missing and
+>    wrong-platform libs hang identically**. Deploys now go through
+>    `scripts/deploy-box.sh` only: vendor/ excluded, post-deploy invariant
+>    asserts a linux .so and no .dylib on the box.) Guard 7 warns on
+>    launch-after-starts_at; arms are scheduled T-20 min.
 > 2. **STOP does not stop a webcast arm whose stream has ENDED:** pipe sources
 >    respawn decoders against the dead stream; the pipeline never drains; no
 >    report.json is written. OPEN — needs a respawn cap or STOP-aware source
