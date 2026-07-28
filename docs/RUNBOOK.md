@@ -343,10 +343,41 @@ rare words vs Ford's short common earnings language). **If only one runs, run
 PayPal.** The steps below apply to both — substitute `ford` for `pypl` in the
 stream-url path and config name.
 
-**Ford's extra constraint:** its player is empty until 5:00 PM ET, so step 4's
-probe cannot be done in advance and the venue class is unknown going in. Surface
-the m3u8 on the **logged-in laptop** and hand the URL to the box — a
-laptop-minted `fastly_token` is box-consumable (F1c: HTTP 200 from us-east).
+> ### ⚠ FORD — THE LOGIN GATE IS THE REAL RISK. BOTH PATHS, DECIDED NOW.
+>
+> Ford's webcast is behind an **OpenExchange session** (`/webcast`, nav shows
+> Sign Out) and **the player is empty until 5:00 PM ET**, so the venue class
+> cannot be probed in advance and the manifest may be **session/token-bound**.
+> **Plan for tokenized.** Decide nothing at 5 PM — both paths are written here.
+>
+> **PATH A (try first) — surface on the laptop, run on the box.**
+> Surface the m3u8 in the logged-in browser at T−20 and write it to
+> `$HOME/ford-stream.url` on the box. Precedent: **F1c proved a laptop-minted
+> `fastly_token` IS box-consumable** (HTTP 200 from us-east). Immediately test
+> before launching:
+> `curl -sS -o /dev/null -w "%{http_code}\\n" "$(cat $HOME/ford-stream.url)"`
+> **200 ⇒ Path A. 401/403 ⇒ the token is session-bound ⇒ Path B.**
+>
+> **PATH B (fallback) — capture from the logged-in laptop.**
+> Run the capture where the session lives. ⚠ **Label the result:** the laptop is
+> **CDMX-vantage (~1 s worse feed position)** with **3.5× run-to-run variance**,
+> so **Ford's Δrace is NOT comparable with PayPal's** and must never be pooled
+> with it. It is still worth capturing — audio for the corpus, and a venue-class
+> datapoint on OpenExchange, which we have never measured.
+>
+> ⚠ **Ford is OpenExchange, NOT Q4 Inc/IVS.** Do not assume the prefetch lever
+> applies: `--prefetch --stream-body` is **deliberately absent** from Ford's
+> leg 1. Add it ONLY if step 4b's table says PRESENT **and** chunked. If
+> `EXT-X-PREFETCH` is absent, `--stream-body` actively degrades every fetch
+> (REFUTED on DW/Akamai: 3/32/62 short reads per run vs 0/0/0 buffered).
+>
+> ⚠ Ford writes `$HOME/ford_spec_edge.err` and `$HOME/ford-arrival.log`.
+> **It used to write `spec_edge.err` — the SAME file PayPal uses** — which would
+> have appended Ford's diagnostics to PayPal's and made step 8's
+> `grep SUMMARY` read two events at once. Fixed 2026-07-28. Root cause is the
+> templates (`webcast-fanout-arm-{ctc,spec}.toml`) hardcoding `spec_edge.err`,
+> so **every future event staged from them collides again** — check it when
+> staging.
 
 **WEDNESDAY 2026-07-29 · FOMC / Warsh — STAGED (`configs/webcast-fed-26jul29-arm.toml`).**
 Event ticker **`KXFEDMENTION-26JUL`** — *"What will Kevin Warsh say during his
