@@ -33,10 +33,19 @@ Read-only. Touches no credentials — the events/series endpoints are public.
 
 Usage:
   scripts/discover-events.py                      # human summary
-  scripts/discover-events.py --json state/slate.json
+  scripts/discover-events.py --json slate/latest.json
   scripts/discover-events.py --days 14            # horizon (default 21)
   scripts/discover-events.py --assert-ba          # regression: exit 1 if the
                                                   # per-series sweep loses BA
+  scripts/discover-events.py --self-test          # offline: frozen BA fixture
+
+⚠ --assert-ba was TIME-BOUND and is now permanently failing: BA's event
+closed after its 2026-07-28 call, so no live sweep can find it "open" again.
+The durable form of the same regression is `--self-test`, which freezes the
+BA case as an offline fixture (sub_title date parse + misleading-ticker
+detection) and is what slate-daily.sh runs before every sweep.
+(An earlier note here pointed at state/slate.json; the committed slate now
+lives at slate/latest.json — state/ is gitignored.)
 """
 import argparse
 import json
@@ -49,6 +58,22 @@ from datetime import datetime, timedelta, timezone
 API = "https://api.elections.kalshi.com/trade-api/v2"
 UA = "earshot-discover/1.0"
 PREFIX = "KXEARNINGSMENTION"
+# 2026-07-28: the sweep was earnings-only, which made KXFEDMENTION-26JUL —
+# the FOMC/Warsh crown event, itself found late (2026-07-26, "it had never
+# been pinned") — structurally invisible to the daily job. Same blindness
+# class as Boeing, different axis: right series category, wrong prefix
+# filter. Sweep every Mentions family we trade.
+PREFIXES = ("KXEARNINGSMENTION", "KXFEDMENTION")
+
+
+def issuer_of(series_ticker):
+    """Issuer label: suffix after the family prefix; family name if bare
+    (KXFEDMENTION has no suffix — its label is FED, never '')."""
+    for p in PREFIXES:
+        if series_ticker.startswith(p):
+            rest = series_ticker[len(p):]
+            return rest or p.removeprefix("KX").removesuffix("MENTION")
+    return series_ticker
 
 
 def get(path, tries=4, pace=0.35):
@@ -70,12 +95,12 @@ def get(path, tries=4, pace=0.35):
 
 
 def mention_series():
-    """Every KXEARNINGSMENTION* series ticker."""
+    """Every mention-family series ticker (earnings + fed)."""
     out, cursor = [], ""
     while True:
         d = get(f"series?category=Mentions&limit=200" + (f"&cursor={cursor}" if cursor else ""))
         batch = d.get("series", [])
-        out += [s["ticker"] for s in batch if s.get("ticker", "").startswith(PREFIX)]
+        out += [s["ticker"] for s in batch if s.get("ticker", "").startswith(PREFIXES)]
         cursor = d.get("cursor") or ""
         if not cursor or not batch:
             break
@@ -96,7 +121,7 @@ def paginated_open():
         cursor = d.get("cursor") or ""
         if not cursor or new == 0:
             break
-    return {k: v for k, v in seen.items() if v.get("series_ticker", "").startswith(PREFIX)}
+    return {k: v for k, v in seen.items() if v.get("series_ticker", "").startswith(PREFIXES)}
 
 
 def per_series_open(series):
@@ -140,13 +165,39 @@ def call_date(ev):
     return None
 
 
+def self_test():
+    """Offline regression: the exact BA case, frozen. No network."""
+    ba = {"sub_title": "On Jul 28, 2026"}
+    d = call_date(ba)
+    assert d is not None and d.strftime("%Y-%m-%d") == "2026-07-28", \
+        f"BA sub_title date parse broke: {d}"
+    assert ticker_misleads("KXEARNINGSMENTIONBA-26JUL21", d), \
+        "BA misleading-ticker detection broke (26JUL21 vs Jul 28 call)"
+    honest = call_date({"sub_title": "On Jul 28, 2026"})
+    assert not ticker_misleads("KXEARNINGSMENTIONF-26JUL28", honest), \
+        "false positive: honest ticker flagged (the 52/57 cry-wolf bug)"
+    assert call_date({"sub_title": "garbage"}) is None, \
+        "unparsable sub_title must return None, not raise"
+    assert issuer_of("KXFEDMENTION") == "FED", \
+        "bare KXFEDMENTION series must label as FED, not empty string"
+    assert issuer_of("KXEARNINGSMENTIONF") == "F", "earnings issuer broke"
+    print("self-test: OK (BA fixture — date-from-sub_title, misleading-ticker "
+          "detection, cry-wolf guard, FED issuer)")
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--json", help="write the slate here (e.g. state/slate.json)")
+    ap.add_argument("--json", help="write the slate here (e.g. slate/latest.json)")
     ap.add_argument("--days", type=int, default=21, help="horizon in days (default 21)")
+    ap.add_argument("--self-test", action="store_true",
+                    help="offline frozen-fixture regression; no network")
     ap.add_argument("--assert-ba", action="store_true",
                     help="regression: fail unless the per-series sweep finds BA")
     a = ap.parse_args()
+
+    if a.self_test:
+        self_test()
+        return 0
 
     print("enumerating mention series…", file=sys.stderr)
     series = mention_series()
@@ -173,7 +224,7 @@ def main():
         rows.append({
             "event_ticker": tk,
             "series_ticker": ev.get("series_ticker"),
-            "issuer": (ev.get("series_ticker") or "").replace(PREFIX, ""),
+            "issuer": issuer_of(ev.get("series_ticker") or ""),
             "sub_title": ev.get("sub_title"),
             "call_date": d.strftime("%Y-%m-%d") if d else None,
             "call_date_source": "sub_title" if d else "UNRESOLVED",

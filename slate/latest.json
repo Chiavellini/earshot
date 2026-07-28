@@ -1,11 +1,11 @@
 {
-  "generated_utc": "2026-07-28T19:04:38.782610+00:00",
+  "generated_utc": "2026-07-28T20:00:20.212600+00:00",
   "horizon_days": 21,
-  "series_count": 152,
+  "series_count": 154,
   "counts": {
-    "paginated": 55,
-    "per_series": 55,
-    "union": 55
+    "paginated": 56,
+    "per_series": 56,
+    "union": 56
   },
   "sweep_delta": {
     "per_series_only": [],
@@ -71,6 +71,16 @@
       "call_date_source": "sub_title",
       "found_by": "both",
       "ticker_date_misleading": false
+    },
+    {
+      "event_ticker": "KXFEDMENTION-26JUL",
+      "series_ticker": "KXFEDMENTION",
+      "issuer": "FED",
+      "sub_title": "On Jul 29, 2026",
+      "call_date": "2026-07-29",
+      "call_date_source": "sub_title",
+      "found_by": "both",
+      "ticker_date_misleading": true
     },
     {
       "event_ticker": "KXEARNINGSMENTIONMETA-26JUL29",

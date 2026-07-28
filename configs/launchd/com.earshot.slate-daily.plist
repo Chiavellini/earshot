@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Daily slate sweep (scripts/slate-daily.sh). 20:00 local, chosen so
+     tomorrow-morning events surface during the evening T-1 preflight window.
+     launchd runs a missed StartCalendarInterval firing on wake-from-sleep;
+     a powered-off laptop still skips it, which is why slate-daily alerts on
+     staleness rather than assuming it ran.
+     Install:
+       cp configs/launchd/com.earshot.slate-daily.plist ~/Library/LaunchAgents/
+       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.earshot.slate-daily.plist
+     Remove:
+       launchctl bootout gui/$(id -u)/com.earshot.slate-daily -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.earshot.slate-daily</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/bernardodelrio/Code/ear/scripts/slate-daily.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>20</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/Users/bernardodelrio/Library/Logs/earshot/slate-daily.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/bernardodelrio/Library/Logs/earshot/slate-daily.log</string>
+</dict>
+</plist>
