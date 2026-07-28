@@ -282,12 +282,61 @@ this venue, and which tier is safe to arm depends on what the probe reports.
 possible. Venue **webcast-only** (IR page + EDGAR + the Q1 2026 SEC-filed
 release), platform **Q4 Inc** = AXP's ⇒ expect **Amazon IVS, 2 s segments**.
 
-**BOTH Tuesday events are staged and keyword-validated on the CTC vocab:**
+**⚠ THERE ARE THREE TUESDAY EVENTS, NOT TWO — BOEING WAS ADDED 2026-07-27.**
+`KXEARNINGSMENTIONBA-26JUL21` (misdated ticker, call **Tue 07-28 10:30 AM ET**)
+is open and tradable; the 07-25 slate sweep missed it because it filtered on the
+ticker suffix. See the BA retraction later in this file. All three are staged,
+keyword-validated on the CTC vocab, and **pinned on the box with the identical
+binary** `sha256 17b3af8d021b2287…`:
 
-| | config | call ET | keywords | encode check |
-|---|---|---|---|---|
-| **PayPal** | `configs/webcast-pypl-26jul28-arm.toml` | **8:00 AM** | 16 (37 variants) | ✅ 0 gaps, shortest target **2 tokens** (`stash`) |
-| **Ford** | `configs/webcast-f-26jul28-arm.toml` | **5:00 PM** | 15 (32 variants) | ✅ 0 gaps, shortest target **3 tokens** |
+| | config | call ET | keywords | encode check | pin |
+|---|---|---|---|---|---|
+| **PayPal** | `configs/webcast-pypl-26jul28-arm.toml` | **8:00 AM** | 16 (37 variants) | ✅ 0 gaps, shortest target **2 tokens** (`stash`) | ✅ |
+| **Boeing** | `configs/webcast-ba-26jul28-arm.toml` | **10:30 AM** | 13 of 14 (F-47 skipped) | ✅ 0 gaps, shortest targets **2 tokens** (`moon`, `oil`) | ✅ |
+| **Ford** | `configs/webcast-f-26jul28-arm.toml` | **5:00 PM** | 15 (32 variants) | ✅ 0 gaps, shortest target **3 tokens** | ✅ |
+
+None of the three conflict; each gets its own process and state dir.
+
+### ⚡ Launch each one with `scripts/run-arm.sh` — do NOT hand-assemble
+
+```
+scripts/run-arm.sh pypl        # 08:00 ET   (06:00 CDMX)
+scripts/run-arm.sh ba          # 10:30 ET   (08:30 CDMX)
+scripts/run-arm.sh f           # 17:00 ET   (15:00 CDMX)
+```
+
+Added 2026-07-27 because **no arm helper existed** — every `~/run-*.sh` on the
+box is a `capture-bakeoff`, so all three arms would have been assembled by hand
+from this checklist under time pressure. It refuses, loudly, on each thing that
+has actually bitten: a stale URL file (the 07-27 IVS *demo channel* incident), a
+**variant** playlist instead of a master (§V6, 10,860 dead 404s), a missing pin,
+and a missing `libonnxruntime` (the silent hang at "book snapshots live"). It
+defaults to **LIVE** — `--dry` is the explicit opt-out — so a forgotten flag
+cannot silently produce a no-order run. Read the `posture:` line back.
+
+### Boeing — what differs from PayPal (same platform, 2.5 h later)
+
+Boeing is **Q4 Inc → Amazon IVS, exactly like PayPal**, so PayPal at 08:00 is a
+live dress rehearsal for Boeing at 10:30: carry over the `manifest-probe`
+reading and the `~/spec_edge.err` SUMMARY rather than re-deriving them.
+
+Two Boeing-only differences:
+1. ⚠ **Its webcast gates behind a registration form** (`events.q4inc.com/attendee/304389448`
+   → "Continue without a Q4 account"). PayPal's does not. Surfacing the m3u8
+   therefore needs a browser **and a form submission** — an operator action.
+   Budget from ~08:10 CDMX.
+2. `rm -f $HOME/ba-stream.url` **first**, then write the **master**. `run-arm.sh`
+   enforces both, but the file is the loaded gun between runs.
+
+**Boeing keyword risk, from the lexicon screen (`docs/BAKEOFF.md` §Collision):**
+`space` is the one to watch — 22 lexicon words have `▁SP A CE` as a strict
+token-prefix, of which **"spacecraft" is near-certain on this call** and settles
+NO. It is *not* an "aerospace" problem: embedded compounds tokenize `…S P A CE`
+with no word-start marker and cannot match at all. Because a false fire consumes
+the one-shot (`decision.rs:74`), a "spacecraft" hit would forfeit the genuine
+"Boeing Defense, Space & Security" mention. Also 2-token and preflight-flagged:
+`moon` (53 extensions), `oil` (19, incl. OILED/OILING). All at 1¢ observe, so
+none can lose money — they are there to earn evidence.
 
 They do not conflict. Run PayPal first; it is the safer detection problem (long
 rare words vs Ford's short common earnings language). **If only one runs, run
