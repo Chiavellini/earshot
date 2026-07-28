@@ -856,6 +856,70 @@ Next tier for Ford if it is armed: `china` (7), `recall` (6), `apple` (4),
 `autonomy` (4) — `autonomy` is the interesting one, since "auto" prefixes
 "automotive"/"automatic", which are constant on a car maker's call.
 
+### Ford 07-28 pre-arm screen (2026-07-28) — 1 genuine collision in 24 raw FAs, and the real risk is SEMANTIC
+
+15 keywords over **5.15 h of NON-Ford audio** (AXP/INTC/LMT/VZ), armed engine,
+chunk 160. **24 raw false alarms = 4.66/h** (PayPal: 15 = 2.91/h — Ford worse,
+as its history predicted). The raw figure is again badly misleading.
+
+Of the 14 the screen could explain (10 skipped — no AXP/VZ transcripts):
+
+| keyword | FA | true verdict | what was spoken |
+|---|---|---|---|
+| `autonomy` | 7 | **6 × VARIANT-CORRECT**, 1 GROUND-TRUTH | "**autonomous** sea drone / weapon systems / manufacturing" |
+| `market share` | 2 | GROUND-TRUTH | genuinely said (INTC, LMT) |
+| `skunk works` | 2 | GROUND-TRUTH | genuinely said — on a **Lockheed** call |
+| `recall` | 1 | GROUND-TRUTH ⚠ **SEMANTIC MISMATCH** | "as you **recall** Intel have a rich…" |
+| `artificial intelligence` | 1 | GROUND-TRUTH | genuinely said (LMT) |
+| `apple` | 1 | **PHONETIC** | "a little bit of an opportunity" |
+
+⇒ **Exactly ONE genuine collision (`apple`) among 14 explainable fires.**
+
+### ⚠ TOOL LIMITATION FOUND: `collision-screen.py` reads PHRASES, not VARIANTS
+
+`autonomy` carries `variants = ["autonomy", "autonomys", "autonomous"]`. Its six
+"PHONETIC" verdicts are the detector **correctly matching a configured variant**
+on calls where "autonomous" is genuinely spoken. The screen looks the *phrase*
+up in the transcript, so a correct variant match is reported as a phonetic false
+alarm. **Read every `PHONETIC` verdict against the keyword's `variants` list
+before believing it.** This inflates Ford's headline more than PayPal's, because
+Ford's set is variant-heavy.
+
+### ⚠ THE REAL FORD RISK IS `recall`, AND NO COLLISION SCREEN CAN FLAG IT
+
+`recall` fired on *"as you recall Intel have a rich…"* — the discourse verb, not
+a product recall. The screen scores it **GROUND-TRUTH** because the word genuinely
+was spoken, and it is right to. But the RECA market is about **vehicle recalls**,
+and "as you recall" / "if you recall" is a filler phrase earnings executives use
+constantly — Ford's included.
+
+**This is a keyword→market SEMANTICS mismatch, the same class as the ULTR note**
+(`ultra` a true mention on AAL, an unwinnable substring on LMT). It is invisible
+to a false-alarm screen by construction: the detector is behaving perfectly and
+the *market rule* is what disagrees. Expect RECA to fire early on filler and
+resolve on the race rather than on a genuine recall mention. Posture is 1¢
+non-crossing observe, so nothing is at risk but the detection log's readability.
+
+**CLEAN (0 FA):** `china`, `electric vehicle`, `geely`, `headwind`, `iran`,
+`oakville`, `tailwind`, `tariff`.
+
+### ⚠ THE TOKEN-LENGTH RISK HEURISTIC HAS NOW MISPREDICTED TWICE
+
+Before these screens I flagged, from the shortest-target rule alone, Ford's
+`apple`/`china`/`iran`/`geely`/`subsidy` and PayPal's `stash`. Measured:
+
+| predicted risky | actual |
+|---|---|
+| `stash` (2 tokens, "the board's highest risk") | **CLEAN, 0 fires in 5.15 h** |
+| `china`, `iran`, `geely` | **CLEAN** |
+| `apple`, `subsidy` | 1 FA each |
+| **not predicted** | **`autonomy` 14** (variant behaviour), **`stripe` ← "strike"** (phonetic), **`recall`** (semantic) |
+
+Short targets are cheap to *flag* and the flag carries almost no information.
+The failures that actually occurred were phonetic near-misses no length rule
+predicts, a variant firing correctly, and a semantic mismatch. **Screen; do not
+guess from token counts.**
+
 ### ⛔ PREFIX-FIRING CANNOT FIRE IN OBSERVE POSTURE — a structural bound, found 2026-07-28
 
 Asked to arm prefix-firing on near-certain-YES words for PayPal/Ford, and it
