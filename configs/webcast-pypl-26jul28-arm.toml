@@ -338,6 +338,22 @@ policy           = "confirmed_only"
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONPYPL-26JUL28-ECOM"
 phrase           = "e commerce"
+# ⚠⚠ INERT TOMORROW — VALIDATED GROUNDWORK ONLY, IT CANNOT FIRE.
+# The cut is real (`e comm` = ▁E ▁COM M, 3 of 5 tokens) and ECOM is
+# near-certain YES, so this is the right keyword to prefix. But at
+# `budget_contracts = 1` the Fast tier CANNOT produce an order:
+#   policy=confirmed_only -> src/decision.rs:81 has no (ConfirmedOnly, Fast)
+#     arm, so a Fast hit falls through to `None` and is IGNORED.
+#   policy=two_tier       -> tranche = budget * FAST_TRANCHE_PCT / 100
+#                          = 1 * 30 / 100 = 0 contracts (integer division),
+#     and Confirmed then still fires the same 1 contract. Strictly worse:
+#     a 0-contract intent plus a consumed FastFired state, for no gain.
+# Fast reaches 1 contract only at budget_contracts >= 4. Every keyword here is
+# at 1 because that IS the 1c non-crossing observe posture; raising it is
+# real-size trading and M4-GATED (CLAUDE.md). So DO NOT switch policy here.
+# The design targets large budgets — decision.rs's own test asserts
+# `fast.tranche_contracts == 60  // 30% of 200`.
+fast_prefixes    = ["e comm"]
 variants         = ["e commerce"]
 max_price_cents  = 1
 budget_contracts = 1

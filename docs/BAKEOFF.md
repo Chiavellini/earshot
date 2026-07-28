@@ -856,6 +856,72 @@ Next tier for Ford if it is armed: `china` (7), `recall` (6), `apple` (4),
 `autonomy` (4) — `autonomy` is the interesting one, since "auto" prefixes
 "automotive"/"automatic", which are constant on a car maker's call.
 
+### ⛔ PREFIX-FIRING CANNOT FIRE IN OBSERVE POSTURE — a structural bound, found 2026-07-28
+
+Asked to arm prefix-firing on near-certain-YES words for PayPal/Ford, and it
+**cannot be done at all tomorrow** — for a reason that has nothing to do with the
+FA bar, the token cuts, or the corpus. It is arithmetic in `src/decision.rs`.
+
+    FAST_TRANCHE_PCT = 30                        (src/decision.rs:15)
+    tranche = budget_contracts * 30 / 100        (u32 integer division)
+
+Every keyword on every observe-posture board has **`budget_contracts = 1`** —
+that IS the 1¢ non-crossing posture. So:
+
+| policy | Fast hit at budget=1 | result |
+|---|---|---|
+| `confirmed_only` (what all boards use) | no `(ConfirmedOnly, Fast)` arm exists (`decision.rs:81`) — falls to `None` | **ignored outright** |
+| `two_tier` | `1 * 30 / 100` = **0 contracts**, state → `FastFired`, Confirmed then still fires 1 | **strictly worse**: a 0-contract intent and a consumed one-shot state, for no gain |
+| `fast_only` | fires the full budget on the PREFIX, never waiting for the full word | reckless — the prefix becomes the only evidence |
+
+**The Fast tranche reaches 1 contract only at `budget_contracts ≥ 4.`** The
+mechanism is designed for large budgets; `decision.rs`'s own test asserts
+`fast.tranche_contracts == 60  // 30% of 200`.
+
+⇒ **Prefix-firing and the 1¢ observe posture are mutually exclusive.** Making it
+live requires raising budgets, i.e. real-size trading, which is **M4-gated**
+(CLAUDE.md). This supersedes the token-cut analysis as the binding constraint:
+even a perfect cut on a near-certain-YES word does nothing at budget 1.
+
+⚠ **This also re-reads §D2/§D2b.** Those measured prefix *detection* on the
+bench, where no decision table is involved — so their ~320 ms gain was never
+wrong, it was simply never reachable through the armed path in observe posture.
+Nothing in the ledger said so.
+
+`configs/webcast-pypl-26jul28-arm.toml` keeps a **validated but INERT**
+`fast_prefixes = ["e comm"]` on ECOM (cut `▁E ▁COM M`, 3 of 5 tokens,
+compile-clean) as groundwork, with the arithmetic written beside it so nobody
+reads it as a live capability.
+
+### PayPal 07-28 pre-arm screen (2026-07-28) — `stash` is CLEAN, and 11 of 15 FAs are unexplainable
+
+16 keywords over **5.15 h of NON-PayPal audio** (AXP/INTC/LMT/VZ), armed engine
+`streaming_ctc`, chunk 160. **15 raw false alarms = 2.91/h** — and as with META
+that raw figure must not be quoted bare.
+
+| keyword | FA | verdict | actually spoken |
+|---|---|---|---|
+| `regulation` | 2 | **GROUND-TRUTH** | "federal acquisition **regulation**" (LMT) |
+| `stripe` | 1 | **PHONETIC** | "conventional prompt **strike**" |
+| `european payments council` | 1 | **PHONETIC** | — |
+| `e commerce` | 5 | **UNEXPLAINED** | no AXP/VZ transcript |
+| `agentic commerce` | 3 | **UNEXPLAINED** | " |
+| `cash back` | 1 | **UNEXPLAINED** | " |
+
+**Only 4 of 15 could be classified.** `collision-screen.py` skipped 11 because
+**AXP and VZ have no transcripts** — the same gap §R1 hit (AXP's manifest carries
+zero occurrences). Any screen run against those two calls can count fires but
+cannot explain them.
+
+**`stash` is CLEAN (0 FA).** The runbook has carried it as the board's
+highest-risk target on the strength of its 2-token cut alone; measured, it did
+not fire once in 5.15 h. The token-length heuristic flagged the wrong word here —
+the actual phonetic collision was **`stripe` ← "strike"**, which no length rule
+would have predicted.
+
+Also clean: `ads id`, `anthropic`, `biometric`, `bitcoin`, `blockchain`,
+`braintree`, `google`, `perplexity`, `stablecoin`.
+
 ### META 07-29 pre-arm screen (2026-07-28) — `sam` <- "SambaNova", and a raw FA/h that must NOT be quoted bare
 
 18 keywords over **5.15 h of NON-Meta audio** (AXP/INTC/LMT/VZ), armed engine
