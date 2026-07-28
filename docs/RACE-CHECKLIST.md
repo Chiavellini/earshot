@@ -170,7 +170,10 @@ one falsifiable outcome with one evidence destination.
       **DELIVERED 2026-07-22 on the designed samples**: TSLA captured + LIVE
       observe-arm → first measured Δrace (steady-state **−8.7 s mean**, verdict
       **H1/H3 co-listeners, winnable**); GOOGL captured (partial) → replay Δw
-      incl. RECA at-or-ahead of the winning burst. Recall 14/18 + precision
+      incl. RECA at-or-ahead of the winning burst. Recall 14/18 (⚠ a LIVE
+      market-conditioned scoreboard, NOT corpus recall — see COMPETITOR-ANATOMY
+      §"14/18 IS A LIVE OPERATIONAL SCOREBOARD"; not comparable with the 0.903 /
+      0.833 corpus figures) + precision
       issues measured (both events). ALLY/GEV/ALK ended NO CAPTURE (tape-only,
       all CONTESTED). Evidence: COMPETITOR-ANATOMY §Per-tape 07-22 entries.
       Remaining for full W1 closure: AAL/INTC Thu + AXP/VZ Fri captures.

@@ -432,6 +432,24 @@ skew); ~4 fired-but-settled-NO words (EURO, CHIN, YOUT, MERG-replay). Both axes 
 on compounds and near-word precision — are now measured problems with a corpus (today's
 WAVs) to tune against.
 
+> ### ⚠ "14/18" IS A LIVE OPERATIONAL SCOREBOARD, NOT A RECALL FIGURE — do not compare it to corpus numbers
+>
+> Its denominator is **market-conditioned and tiny**: only words that were (a)
+> actually spoken, (b) on a market that settled **YES**, and (c) actually
+> **raced**, across **2 events**. Corpus recall (e.g. LMT **0.903**, AAL holdout
+> **0.833**) divides by **every ground-truth occurrence** in a manifest, on
+> lossless replay. **These are different populations and the ratio of one is not
+> comparable with the ratio of the other.**
+>
+> It also absorbs failures that are not the detector's: CHRO in this very entry
+> is marked *"its original fire predates our capture"* — a **capture-window**
+> artifact scored inside a "recall" number. GOOGL was a **partial** capture.
+> A late-joining leg depresses this figure without the detector missing anything.
+>
+> **Use it for what it is** — a running tally of "did we catch the words that
+> actually mattered, live" — and quote corpus recall when the question is about
+> the detector. Quoting 14/18 against a corpus figure answers neither question.
+
 #### LMT 2026-07-23 — FIRST FANOUT ARM RACE (autonomous; live fanout arm + box 4-leg capture + tape)
 
 First live run of the edge-join fanout posture (2 legs: streamlink `--hls-live-edge 1`
