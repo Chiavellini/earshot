@@ -29,18 +29,40 @@
 #   3. engine = sherpa_kws. FIXED — this runs streaming_ctc, and `prepare` also
 #      emits no [arbiter], so fanout had to be added by hand.
 #
-# ── ⚠ HIGHEST FALSE-ALARM RISK IN THIS SET: `sam` ─────────────────────────
-# `sam` compiles to **▁SA M — 2 tokens**, the shortest target here alongside
-# `orion` (▁OR ION). Concrete collision hypotheses to screen BEFORE arming,
-# all plausible on a Meta call:
-#     "Samsung"  (hardware partner/competitor — likely shares the ▁SA M prefix)
-#     "sample"   "same" (ubiquitous: "same period", "same store")
-# This is the identical class that produced the CURR/REGU false fires on AXP and
-# PERU/IRAN/APPL/TRUM on LMT. If the screen shows it firing loose, DROP the
-# keyword rather than tune a threshold (RUNBOOK, `stash` precedent).
+# ── ⚠ COLLISION SCREEN RUN 2026-07-28 — `sam` IS A REAL COLLISION ─────────
+# `scripts/collision-screen.py` over 5.15 h of NON-Meta audio (AXP/INTC/LMT/VZ),
+# armed engine, chunk 160. 23 raw false alarms = 4.47/h, but that number is
+# MISLEADING and must not be quoted bare: of the 11 the screen could explain,
+# EIGHT are GROUND-TRUTH (the word was genuinely spoken; the other call's
+# manifest simply does not list it) and only THREE are real collisions.
+# 12 more are unmapped — AXP and VZ have no transcripts.
 #
-# Other words that will simply be said a lot and so resolve on the RACE rather
-# than on detection: `advertising`, `cloud`, `hiring`, `algorithm`.
+#   sam       2  PHONETIC  <- "samba nova"  (SambaNova, the AI-chip company)  ⚠
+#   cloud     1  PHONETIC  <- "quad star seeker"
+#   silicon   5  GROUND-TRUTH  genuinely said (on an INTEL call, unsurprisingly)
+#   algorithm 2  GROUND-TRUTH  "algorithms" really spoken on LMT
+#   dividend  1  GROUND-TRUTH  "dividends" really spoken on LMT
+#
+# ⚠ **`sam` IS THE ONE TO ACT ON.** The predicted mechanism held — a 2-token
+# ▁SA M target capturing a hardware-company name — but the predicted words did
+# not: it was NOT "Samsung"/"sample"/"same", it was **SambaNova**, twice on one
+# call. SambaNova is entirely plausible on a Meta call discussing AI silicon, so
+# this is a LIVE risk, not a corpus artifact. Per the `stash` precedent, if it
+# fires loose on the day, DROP it rather than tune a threshold.
+#
+# ⚠ CORRECTION: an earlier revision of this header called `orion` an already-
+# proven collision, citing "orion <- inventory on" from collision-screen.py's
+# docstring (2026-07-24). **It did not reproduce.** On this corpus with the
+# ARMED engine `orion` fired ZERO times. That earlier finding was a different
+# engine/config and should not have been carried forward as established.
+#
+# ALL 12 META-SPECIFIC words are CLEAN (0 FA): advertising, age verification,
+# hyperion, llama, nebius, oakley, orion, prediction market, ray ban, tiktok,
+# united kingdom, virtual reality.
+#
+# Words that will simply be SAID a lot on a Meta call and therefore resolve on
+# the RACE rather than on detection: `advertising`, `cloud`, `hiring`,
+# `algorithm`, `silicon`, `dividend`.
 #
 # ── BEFORE THIS RUNS (none of it done yet) ────────────────────────────────
 #   1. `scripts/collision-screen.py` over the keyword set — screen `sam` first.

@@ -72,19 +72,31 @@
 # (`scripts/validate-from-log.py` → `prepare::tuned_library`) cannot silently
 # promote a word we already know is bad.
 #
-#   space   ⚠⚠ BOTH high-FA and high-TP, which is the dangerous combination.
-#           FA: Boeing says "aeroSPACE" constantly — a CLOSED COMPOUND, which
-#           does NOT settle under Q4 semantics (VERIFICATIONS.md:188-200; the
-#           exact `ultra`←"ultramaritime" class, `docs/BAKEOFF.md:789`).
-#           TP: "Boeing Defense, SPACE & Security" is a business-unit name said
-#           on every Boeing call, so SPAC very likely settles YES genuinely.
-#           THE REAL COST IS NOT THE CENT: an "aerospace" false fire CONSUMES
+#   space   ⚠⚠ BOTH high-FA and high-TP, the dangerous combination.
+#           ⚠ AN EARLIER REVISION OF THIS NOTE SAID THE RISK IS "aeroSPACE".
+#           **THAT IS WRONG** and the lexicon says so: an embedded compound
+#           tokenizes WITHOUT the word-start marker —
+#             AEROSPACE / HYPERSPACE / INTERSPACE → `... S P A CE`
+#           while the keyword target is `▁SP A CE`. The first token differs, so
+#           the spotter CANNOT fire on them. The `▁` marker already protects
+#           against words that merely CONTAIN the keyword.
+#           The real exposure is the opposite shape — words the keyword is a
+#           token-PREFIX of, 22 of them in this model's lexicon:
+#             SPACECRAFT SPACEPORT SPACEFORCE SPACEMAN SPACELINES SPACESUIT …
+#           `▁SP A CE` completes before the compound head is emitted, so the
+#           hit fires and only THEN does "craft" arrive. **"spacecraft" is
+#           near-certain on a Boeing call** and is a closed compound that does
+#           NOT settle under Q4 (VERIFICATIONS.md:188-200 — the `ultra`←
+#           "ultramaritime" class, docs/BAKEOFF.md:789).
+#           TP side: "Boeing Defense, SPACE & Security" is a business-unit name
+#           said on every Boeing call, so SPAC very likely settles YES too.
+#           THE REAL COST IS NOT THE CENT: a "spacecraft" false fire CONSUMES
 #           THE ONE-SHOT (`src/decision.rs:74` — after Done every further
-#           detection returns None forever), so the genuine mention can never
-#           fire and a winnable race is forfeited. This is the first word in the
-#           program where a false alarm costs a WIN rather than a loss, and it
-#           is the strongest single argument for the right-context gate
-#           (plan B1) — "aerospace" is precisely a non-word-start continuation.
+#           detection returns None forever), so the genuine standalone mention
+#           can never fire and a winnable race is forfeited. This is the first
+#           word in the program where a false alarm costs a WIN rather than a
+#           loss, and it is the strongest single argument for the right-context
+#           gate (plan B1) — which vetoes exactly this shape and nothing else.
 #   iran    CONFIRMED live false fire TWICE, both settled NO: TSLA 07-22 (×2)
 #           and LMT 07-23 (`docs/COMPETITOR-ANATOMY.md:473-499`).
 #   china   7 FAs in Ford's pre-arm screen (`docs/BAKEOFF.md:855`) + a live
@@ -298,9 +310,12 @@ budget_contracts = 1
 policy           = "confirmed_only"
 
 # Space (KXEARNINGSMENTIONBA-26JUL21-SPAC) — ⚠⚠ HIGHEST-RISK WORD IN THIS SET.
-# "aeroSPACE" (closed compound, settles NO) vs "Boeing Defense, SPACE & Security"
-# (a business-unit name, settles YES). A false fire CONSUMES THE ONE-SHOT
-# (decision.rs:74) and forfeits the genuine race. See the header note.
+# 22 lexicon words have `▁SP A CE` as a strict token-PREFIX (SPACECRAFT,
+# SPACEPORT, SPACEFORCE, SPACESUIT, …); "spacecraft" is near-certain on this
+# call and settles NO. Meanwhile "Boeing Defense, Space & Security" settles YES.
+# A false fire CONSUMES THE ONE-SHOT (decision.rs:74) and forfeits the genuine
+# race. NOT an "aerospace" problem — embedded compounds lack `▁SP` and cannot
+# match at all. See the header note.
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONBA-26JUL21-SPAC"
 phrase           = "space"

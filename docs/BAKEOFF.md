@@ -856,6 +856,54 @@ Next tier for Ford if it is armed: `china` (7), `recall` (6), `apple` (4),
 `autonomy` (4) — `autonomy` is the interesting one, since "auto" prefixes
 "automotive"/"automatic", which are constant on a car maker's call.
 
+### META 07-29 pre-arm screen (2026-07-28) — `sam` <- "SambaNova", and a raw FA/h that must NOT be quoted bare
+
+18 keywords over **5.15 h of NON-Meta audio** (AXP/INTC/LMT/VZ), armed engine
+`streaming_ctc`, chunk 160. Run BEFORE arming, as this section requires.
+
+**Raw: 23 false alarms = 4.47/h. That number is misleading and should not be
+quoted on its own.** Of the 11 the screen could explain:
+
+| keyword | FA | verdict | what was actually spoken |
+|---|---|---|---|
+| `silicon` | 5 | **GROUND-TRUTH** | genuinely said — on an **Intel** call |
+| `algorithm` | 2 | **GROUND-TRUTH** | "algorithms" (LMT) |
+| `dividend` | 1 | **GROUND-TRUTH** | "dividends" (LMT) |
+| **`sam`** | **2** | **PHONETIC** | **"samba nova"** ×2 |
+| `cloud` | 1 | **PHONETIC** | "quad star seeker" |
+
+**EIGHT of eleven are GROUND-TRUTH** — the word really was spoken and the *other*
+call's manifest simply does not list it. Only **three** are genuine collisions.
+12 further FAs are unmapped (AXP and VZ have no transcripts), so the true
+collision count is bounded below by 3, not by 23.
+
+⚠ **Methodological note worth keeping.** Screening a keyword set against other
+issuers' calls silently conflates *"absent from this call's manifest"* with
+*"false alarm"*. That is fine for issuer-SPECIFIC words (`llama`, `oakley`,
+`nebius`) and **wrong for generic vocabulary** (`dividend`, `cloud`, `silicon`,
+`algorithm`, `hiring`) — those are supposed to fire, because they are supposed
+to be said. `collision-screen.py`'s GROUND-TRUTH verdict is what rescues the
+method; the bare FA/h from `bench-detector` would have been read as a disaster.
+
+**The actionable finding is `sam`.** It compiles to `▁SA M` — 2 tokens — and
+fired on **SambaNova**, an AI-chip company, twice on one call. The predicted
+*mechanism* (a short `▁SA M` target capturing a "Sam-" company name) held; the
+predicted *words* ("Samsung", "sample", "same") did not. SambaNova is entirely
+plausible on a Meta call discussing AI silicon, so this is a live risk rather
+than a corpus artifact. Per the `stash` precedent: if it fires loose on the day,
+**drop it rather than tune a threshold.**
+
+⚠ **A prior claim of mine is RETRACTED here.** I flagged `orion` as an
+already-proven collision, citing "orion <- inventory on" from
+`collision-screen.py`'s own docstring (2026-07-24). **It did not reproduce** —
+on this corpus with the armed engine, `orion` fired **zero** times. That earlier
+finding came from a different engine/config and should not have been carried
+forward as established.
+
+**All 12 Meta-SPECIFIC words are CLEAN (0 FA):** advertising, age verification,
+hyperion, llama, nebius, oakley, orion, prediction market, ray ban, tiktok,
+united kingdom, virtual reality.
+
 ## Keyword arming blocklist — collisions that NO threshold can fix (2026-07-25)
 
 From the collision screen on the webcast dev split (INTC+LMT, 2.53 h,
