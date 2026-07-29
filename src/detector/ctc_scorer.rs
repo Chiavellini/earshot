@@ -60,6 +60,10 @@ struct EntryState {
     /// `alpha[s]`: best-path log-prob ending in lattice state `s` at the current
     /// frame. `f32::NEG_INFINITY` means unreachable.
     alpha: Vec<f32>,
+    /// Scratch for the Viterbi update (holds the previous frame's alpha after
+    /// the swap). Reused every frame — steady state allocates nothing (the
+    /// detector-layer obligation).
+    next: Vec<f32>,
     k: usize,
     threshold: f32,
     last_fire_frame: Option<u64>,
@@ -81,6 +85,7 @@ impl EntryState {
             tier: t.tier,
             sym,
             alpha: vec![f32::NEG_INFINITY; l],
+            next: vec![f32::NEG_INFINITY; l],
             k,
             threshold: t.threshold,
             last_fire_frame: None,
@@ -129,8 +134,9 @@ impl CtcKeywordScorer {
         let blank = self.blank;
         for e in &mut self.entries {
             let l = e.sym.len();
-            // Viterbi update into a scratch buffer (needs the *previous* alpha).
-            let mut next = vec![f32::NEG_INFINITY; l];
+            // Viterbi update into the reused scratch buffer (needs the
+            // *previous* alpha, so it cannot be done in place). Every slot is
+            // written unconditionally — no clear pass, no per-frame alloc.
             for s in 0..l {
                 // Predecessors: self-loop, s-1, and (for a non-blank symbol that
                 // differs from s-2) the skip s-2. Plus the start-anytime filler
@@ -145,11 +151,13 @@ impl CtcKeywordScorer {
                 if s <= 1 {
                     best = best.max(0.0); // filler: keyword may start here
                 }
-                if best > f32::NEG_INFINITY {
-                    next[s] = log_post[e.sym[s]] + best;
-                }
+                e.next[s] = if best > f32::NEG_INFINITY {
+                    log_post[e.sym[s]] + best
+                } else {
+                    f32::NEG_INFINITY
+                };
             }
-            e.alpha = next;
+            std::mem::swap(&mut e.alpha, &mut e.next);
 
             // Detection score: best path having consumed the last token or its
             // trailing blank.

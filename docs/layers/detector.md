@@ -116,7 +116,10 @@ KWS C API does not expose. Two wins over sherpa_kws: real per-hit `confidence`
   window advanced by `decode_chunk_len` each step. The 74 streaming cache tensors
   (`cached_{key,nonlin_attn,val1,val2,conv1,conv2}`×12 + `embed_states` +
   `processed_lens`) are carried across calls: each `new_X` output → next call's
-  `X` input. **Init states + shapes are read straight off the ONNX signature**
+  `X` input. Cache buffers are **moved** into each inference call (`mem::take`,
+  never cloned — the outputs replace them; a state input with no updating
+  output would fall back to cloning), so an inference `Err` poisons the
+  streaming state — callers must treat it as fatal, which both wiring sites do. **Init states + shapes are read straight off the ONNX signature**
   (batch dim `-1` → 1, zero-filled; i64 for `processed_lens`), so the same code
   drives any sherpa/k2 zipformer2-style streaming-CTC export — the English model
   is a drop-in. `T` from the `x` input shape, `decode_chunk_len` from ONNX
@@ -125,7 +128,9 @@ KWS C API does not expose. Two wins over sherpa_kws: real per-hit `confidence`
   variable per compiled entry over the CTC lattice `[blank, t0, blank, t1, …]`;
   fires when the best path reaches the final token (`max(alpha[L-2], alpha[L-1])`)
   with `confidence = exp(score / k)` ≥ threshold — the frame the last token
-  peaks, never endpointing. Fast entries carry the *cut prefix* token target, so
+  peaks, never endpointing. The per-entry update writes into a reused scratch
+  buffer swapped with `alpha` — no per-frame allocation (the steady-state
+  obligation above; A/B harness: `perf_ctc_scorer_ab` in `tests/perf_budget.rs`). Fast entries carry the *cut prefix* token target, so
   Fast fires earlier than Confirmed from the SAME single posterior stream (no
   second decoder — unlike sherpa_kws's two spotters).
 - **Keyword compilation**: reuses `kws_compile::compile` (same tier/prefix token
@@ -172,4 +177,6 @@ KWS C API does not expose. Two wins over sherpa_kws: real per-hit `confidence`
   gated on the corpus bake-off, see `docs/CTC-MODEL-SOURCING.md`) and the
   Chinese `sherpa-onnx-streaming-zipformer-small-ctc` stand-in (plumbing
   only). The out-frames-per-chunk figure is export-specific — tests assert
-  the model reports one, not a fixed number.
+  the model reports one, not a fixed number. Speed: `perf_streaming_ctc_rtf`
+  (same env vars; report-only RTF + per-call percentiles) and the model-free
+  `perf_ctc_scorer_ab` in `tests/perf_budget.rs`.

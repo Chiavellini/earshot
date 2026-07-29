@@ -709,6 +709,169 @@ fn perf_ingress_decode_ab() {
     assert!(pn < po * 2, "pipe direct-collect slower than the drain-first path: {pn} vs {po}");
 }
 
+/// CTC scorer per-frame A/B (sweep 2 2026-07-29): the pre-sweep-2 Viterbi
+/// update allocated a fresh `next` Vec per entry per posterior frame (inlined
+/// here as OLD); the scorer now reuses a per-entry scratch buffer. Model-free,
+/// interleaved rounds in one process; report-only prints both series — judge
+/// the series, not one number (~3.5× laptop run variance).
+#[test]
+#[ignore]
+fn perf_ctc_scorer_ab() {
+    use earshot::detector::ctc_scorer::{CtcKeywordScorer, KeywordTarget};
+
+    // Inline copy of the pre-sweep-2 per-entry update (alloc per frame),
+    // including the full post-update work (score/confidence/threshold) so the
+    // two sides do identical per-frame work except the scratch reuse.
+    struct OldEntry {
+        sym: Vec<usize>,
+        alpha: Vec<f32>,
+        k: usize,
+        threshold: f32,
+    }
+    fn old_accept(entries: &mut [OldEntry], log_post: &[f32], blank: usize) -> usize {
+        let mut fires = 0usize;
+        for e in entries.iter_mut() {
+            let l = e.sym.len();
+            let mut next = vec![f32::NEG_INFINITY; l];
+            for s in 0..l {
+                let mut best = e.alpha[s];
+                if s >= 1 {
+                    best = best.max(e.alpha[s - 1]);
+                }
+                if s >= 2 && e.sym[s] != blank && e.sym[s] != e.sym[s - 2] {
+                    best = best.max(e.alpha[s - 2]);
+                }
+                if s <= 1 {
+                    best = best.max(0.0);
+                }
+                if best > f32::NEG_INFINITY {
+                    next[s] = log_post[e.sym[s]] + best;
+                }
+            }
+            e.alpha = next;
+            let score = e.alpha[l - 1].max(e.alpha[l - 2]);
+            if score <= f32::NEG_INFINITY {
+                continue;
+            }
+            let confidence = (score / e.k as f32).exp().clamp(0.0, 1.0);
+            if confidence < e.threshold {
+                continue;
+            }
+            fires += 1;
+        }
+        fires
+    }
+
+    // Realistic shape: BPE-500 vocab, 24 entries (12 keywords × 2 tiers),
+    // 4-token targets (L = 9). High threshold so the new path never fires
+    // (keeps both sides doing identical per-frame work).
+    const VOCAB: usize = 500;
+    let targets: Vec<KeywordTarget> = (0..24u16)
+        .map(|i| KeywordTarget {
+            keyword: KeywordId(i / 2),
+            tier: if i % 2 == 0 { Tier::Fast } else { Tier::Confirmed },
+            tokens: (1..5).map(|t| (i as u32 * 7 + t * 13) % (VOCAB as u32 - 1) + 1).collect(),
+            threshold: 2.0, // unreachable: pure-throughput measurement
+        })
+        .collect();
+    // Pseudo-random-ish log-posterior frames, blank-dominated like real CTC.
+    let frames: Vec<Vec<f32>> = (0..64)
+        .map(|f: u32| {
+            (0..VOCAB)
+                .map(|v| if v == 0 { -0.05 } else { -8.0 - ((f as usize * 31 + v * 17) % 100) as f32 * 0.05 })
+                .collect()
+        })
+        .collect();
+
+    let iters = 2_000u64; // × 64 frames = 128k frames per side per round
+    let mut rows: Vec<(u64, u64)> = Vec::new();
+    for _round in 0..5 {
+        let mut old_entries: Vec<OldEntry> = targets
+            .iter()
+            .map(|t| {
+                let mut sym = Vec::new();
+                for &tok in &t.tokens {
+                    sym.push(0);
+                    sym.push(tok as usize);
+                }
+                sym.push(0);
+                let l = sym.len();
+                OldEntry { sym, alpha: vec![f32::NEG_INFINITY; l], k: t.tokens.len(), threshold: t.threshold }
+            })
+            .collect();
+        let t0 = Instant::now();
+        let mut sink = 0usize;
+        for _ in 0..iters {
+            for f in &frames {
+                sink += old_accept(&mut old_entries, f, 0);
+            }
+        }
+        let old_ns = t0.elapsed().as_nanos() as u64 / (iters * frames.len() as u64);
+        std::hint::black_box(sink);
+
+        let mut scorer = CtcKeywordScorer::new(&targets, 0);
+        let t0 = Instant::now();
+        let mut sink = 0usize;
+        let mut fidx = 0u64;
+        for _ in 0..iters {
+            for f in &frames {
+                sink += scorer.accept_frame(fidx, f, 100).len();
+                fidx += 1;
+            }
+        }
+        let new_ns = t0.elapsed().as_nanos() as u64 / (iters * frames.len() as u64);
+        std::hint::black_box(sink);
+        rows.push((old_ns, new_ns));
+    }
+    println!("ctc scorer per-frame ns, 24 entries × L=9 (interleaved rounds):");
+    for (i, (o, n)) in rows.iter().enumerate() {
+        println!("  round {i}: old {o}  new {n}");
+    }
+    let (o, n): (u64, u64) = (rows.iter().map(|r| r.0).sum(), rows.iter().map(|r| r.1).sum());
+    assert!(n < o * 2, "scratch-reuse scorer slower than alloc-per-frame: {n} vs {o}");
+}
+
+/// Streaming-CTC encoder throughput (the custom spotter's inference core).
+/// Model-gated: set EARSHOT_CTC_MODEL_DIR (+ ORT_DYLIB_PATH) or it SKIPs.
+/// Report-only RTF + per-step percentiles — cross-run comparisons on this
+/// laptop are inside noise; the printout is a drift record, not an A/B.
+#[test]
+#[ignore]
+fn perf_streaming_ctc_rtf() {
+    use earshot::detector::streaming_ctc::StreamingCtcModel;
+    let Some(dir) = std::env::var_os("EARSHOT_CTC_MODEL_DIR").map(std::path::PathBuf::from) else {
+        eprintln!("SKIP perf_streaming_ctc_rtf: set EARSHOT_CTC_MODEL_DIR (+ ORT_DYLIB_PATH)");
+        return;
+    };
+    let mut reader = hound::WavReader::open(dir.join("test_wavs/0.wav")).unwrap();
+    assert_eq!(reader.spec().sample_rate, 16_000);
+    let base: Vec<i16> = reader.samples::<i16>().map(|s| s.unwrap()).collect();
+    let pcm: Vec<i16> = base.iter().copied().cycle().take(16_000 * 60).collect();
+
+    let mut model = StreamingCtcModel::new(&dir, 1).unwrap();
+    let chunk = 16_000 / 10; // 100 ms feed quantum, as the pipeline delivers
+    let mut per_call_us: Vec<u64> = Vec::with_capacity(pcm.len() / chunk + 1);
+    let mut frames_out = 0usize;
+    let t0 = Instant::now();
+    for c in pcm.chunks(chunk) {
+        let c0 = Instant::now();
+        frames_out += model.accept_pcm(c).unwrap().len();
+        per_call_us.push(c0.elapsed().as_micros() as u64);
+    }
+    let elapsed = t0.elapsed().as_secs_f64();
+    per_call_us.sort_unstable();
+    let p50 = percentile(&per_call_us, 0.50);
+    let p95 = percentile(&per_call_us, 0.95);
+    let max = *per_call_us.last().unwrap();
+    let rtf = 60.0 / elapsed;
+    println!(
+        "streaming_ctc ({}): 60 s speech in {elapsed:.2} s → {rtf:.1}× realtime; \
+         {frames_out} posterior frames; per-100ms-call p50 {p50} µs  p95 {p95} µs  max {max} µs",
+        dir.file_name().unwrap().to_string_lossy()
+    );
+    assert!(rtf > 3.0, "streaming_ctc only {rtf:.1}× realtime — cannot keep up live");
+}
+
 /// Recorder overhead: it sits on the detect thread's inner loop.
 #[test]
 #[ignore]

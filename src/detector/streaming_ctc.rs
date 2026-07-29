@@ -18,7 +18,7 @@
 //! (reusing `kws_compile`'s tier/prefix logic), feeds each posterior frame to
 //! the CTC scorer, and maps fires to `Detection`s.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use kaldi_native_fbank::online::FeatureComputer;
@@ -56,6 +56,13 @@ pub struct StreamingCtcModel {
     states: HashMap<String, State>,
     /// Output names except `log_probs` (each maps to input `strip("new_")`).
     state_out_names: Vec<String>,
+    /// State inputs that a `new_X` output overwrites every step. Their data is
+    /// MOVED into the inference call (no per-step clone) because the output
+    /// replaces it; any state input without an updating output (none in the
+    /// sherpa/k2 exports we drive) falls back to cloning.
+    updated_states: HashSet<String>,
+    /// Reused f32 conversion buffer for `accept_pcm` (no per-call alloc).
+    sample_scratch: Vec<f32>,
     vocab: usize,
     /// `T` — feature frames fed to `x` per step (ChunkLength).
     t: usize,
@@ -139,12 +146,19 @@ impl StreamingCtcModel {
             .map(|o| o.name().to_string())
             .filter(|n| n != "log_probs")
             .collect();
+        let updated_states: HashSet<String> = state_out_names
+            .iter()
+            .map(|n| n.strip_prefix("new_").unwrap_or(n).to_string())
+            .filter(|t| states.contains_key(t))
+            .collect();
 
         Ok(StreamingCtcModel {
             session,
             feat: new_fbank(),
             states,
             state_out_names,
+            updated_states,
+            sample_scratch: Vec::new(),
             vocab,
             t,
             shift,
@@ -165,9 +179,14 @@ impl StreamingCtcModel {
 
     /// Feed PCM (i16 @ 16 kHz) and return newly available CTC posterior frames as
     /// `(global_output_frame_index, log_posteriors[vocab])`.
+    ///
+    /// On an inference `Err` the streaming cache state is left partially moved
+    /// out — the model must not be fed again after an error (both production
+    /// callers treat inference failure as fatal).
     pub fn accept_pcm(&mut self, pcm: &[i16]) -> Result<Vec<(u64, Vec<f32>)>, ort::Error> {
-        let samples: Vec<f32> = pcm.iter().map(|&s| s as f32 / 32768.0).collect();
-        self.feat.accept_waveform(EXPECTED_RATE_HZ as f32, &samples);
+        self.sample_scratch.clear();
+        self.sample_scratch.extend(pcm.iter().map(|&s| s as f32 / 32768.0));
+        self.feat.accept_waveform(EXPECTED_RATE_HZ as f32, &self.sample_scratch);
 
         let mut out = Vec::new();
         let ready = self.feat.num_frames_ready();
@@ -180,10 +199,22 @@ impl StreamingCtcModel {
 
             let mut inputs: Vec<(String, ort::session::SessionInputValue)> = Vec::new();
             inputs.push(("x".to_string(), x.into()));
-            for (name, st) in &self.states {
+            let updated = &self.updated_states;
+            for (name, st) in self.states.iter_mut() {
+                // A state the model overwrites this step is moved, not cloned:
+                // `mem::take` leaves an empty Vec that the matching `new_X`
+                // output replaces below. Non-updated states (none in practice)
+                // are cloned so they survive to the next step.
+                let take = updated.contains(name);
                 let v: ort::session::SessionInputValue = match st {
-                    State::F32(shape, data) => Tensor::from_array((shape.clone(), data.clone()))?.into(),
-                    State::I64(shape, data) => Tensor::from_array((shape.clone(), data.clone()))?.into(),
+                    State::F32(shape, data) => {
+                        let d = if take { std::mem::take(data) } else { data.clone() };
+                        Tensor::from_array((shape.clone(), d))?.into()
+                    }
+                    State::I64(shape, data) => {
+                        let d = if take { std::mem::take(data) } else { data.clone() };
+                        Tensor::from_array((shape.clone(), d))?.into()
+                    }
                 };
                 inputs.push((name.clone(), v));
             }
