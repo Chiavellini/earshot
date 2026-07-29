@@ -629,6 +629,86 @@ fn perf_ring_wake_ab() {
     );
 }
 
+/// Ingress per-frame decode A/B (sweep 2026-07-29): the old two-allocation
+/// pattern (decode into a Vec, then copy into `Arc<[i16]>` / drain into a
+/// Vec<u8>, then decode) vs the new single-allocation direct-collect paths now
+/// used by twilio_ws/sip (`decode_ulaw_arc`) and pipe's `emit`. Interleaved
+/// A/B rounds in one process; report-only prints both series — this laptop
+/// has ~3.5× run variance, so judge the series, not one number.
+#[test]
+#[ignore]
+fn perf_ingress_decode_ab() {
+    use earshot::source::twilio_ws::{decode_ulaw, decode_ulaw_arc};
+    let ulaw: Vec<u8> = (0..160u32).map(|i| (i * 7 % 256) as u8).collect();
+    let s16: Vec<u8> = (0..640u32).map(|i| (i * 13 % 256) as u8).collect();
+    let iters: u64 = 100_000;
+
+    let mut rows: Vec<(u64, u64, u64, u64)> = Vec::new();
+    for _round in 0..5 {
+        // A: μ-law old (Vec then Arc copy).
+        let t0 = Instant::now();
+        let mut sink = 0i64;
+        for _ in 0..iters {
+            let pcm: Arc<[i16]> = Arc::from(decode_ulaw(&ulaw).as_slice());
+            sink += pcm[0] as i64;
+        }
+        let ulaw_old = t0.elapsed().as_nanos() as u64 / iters;
+        std::hint::black_box(sink);
+
+        // B: μ-law new (single-allocation collect).
+        let t0 = Instant::now();
+        let mut sink = 0i64;
+        for _ in 0..iters {
+            let pcm = decode_ulaw_arc(&ulaw);
+            sink += pcm[0] as i64;
+        }
+        let ulaw_new = t0.elapsed().as_nanos() as u64 / iters;
+        std::hint::black_box(sink);
+
+        // A: pipe old (drain into Vec<u8>, decode, Arc copy).
+        let t0 = Instant::now();
+        let mut sink = 0i64;
+        for _ in 0..iters {
+            let mut buf = s16.clone();
+            let bytes: Vec<u8> = buf.drain(..).collect();
+            let pcm: Arc<[i16]> = bytes
+                .chunks_exact(2)
+                .map(|b| i16::from_le_bytes([b[0], b[1]]))
+                .collect();
+            sink += pcm[0] as i64;
+        }
+        let pipe_old = t0.elapsed().as_nanos() as u64 / iters;
+        std::hint::black_box(sink);
+
+        // B: pipe new (decode straight off the buffer, then drain).
+        let t0 = Instant::now();
+        let mut sink = 0i64;
+        for _ in 0..iters {
+            let mut buf = s16.clone();
+            let pcm: Arc<[i16]> = buf[..]
+                .chunks_exact(2)
+                .map(|b| i16::from_le_bytes([b[0], b[1]]))
+                .collect();
+            buf.drain(..);
+            sink += pcm[0] as i64;
+        }
+        let pipe_new = t0.elapsed().as_nanos() as u64 / iters;
+        std::hint::black_box(sink);
+
+        rows.push((ulaw_old, ulaw_new, pipe_old, pipe_new));
+    }
+    println!("ingress decode per-frame ns (interleaved rounds; 160-sample μ-law / 320-sample s16):");
+    for (i, (uo, un, po, pn)) in rows.iter().enumerate() {
+        println!("  round {i}: ulaw old {uo}  new {un}   pipe old {po}  new {pn}");
+    }
+    // Loose drift alarm only (2–3× convention): the new path must never be
+    // grossly slower than the old one.
+    let (uo, un): (u64, u64) = (rows.iter().map(|r| r.0).sum(), rows.iter().map(|r| r.1).sum());
+    let (po, pn): (u64, u64) = (rows.iter().map(|r| r.2).sum(), rows.iter().map(|r| r.3).sum());
+    assert!(un < uo * 2, "decode_ulaw_arc slower than the two-alloc path: {un} vs {uo}");
+    assert!(pn < po * 2, "pipe direct-collect slower than the drain-first path: {pn} vs {po}");
+}
+
 /// Recorder overhead: it sits on the detect thread's inner loop.
 #[test]
 #[ignore]

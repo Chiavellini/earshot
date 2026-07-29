@@ -150,11 +150,13 @@ impl AudioSource for PipeSource {
         let mut last_drop_warn = std::time::Instant::now();
 
         let mut emit = |buf: &mut Vec<u8>, seq: &mut u64, tx: &mut RingSender<AudioFrame>, n: usize| {
-            let bytes: Vec<u8> = buf.drain(..n).collect();
-            let pcm: Arc<[i16]> = bytes
+            // Decode straight out of the accumulation buffer: no intermediate
+            // Vec<u8> allocation/copy on the per-frame path.
+            let pcm: Arc<[i16]> = buf[..n]
                 .chunks_exact(2)
                 .map(|b| i16::from_le_bytes([b[0], b[1]]))
                 .collect();
+            buf.drain(..n);
             let frame = AudioFrame {
                 pcm,
                 sample_rate_hz: self.sample_rate_hz,

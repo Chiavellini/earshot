@@ -22,11 +22,15 @@ pub struct PreprocCfg {
 pub fn run(mut rx: RingReceiver<AudioFrame>, mut tx: RingSender<AudioFrame>, cfg: PreprocCfg) -> u64 {
     let mut frames = 0u64;
     let mut upsampler: Option<HalfBandUpsampler2x> = None;
+    // Reused per-frame scratch: only the final Arc<[i16]> is allocated fresh.
+    let mut scratch: Vec<i16> = Vec::new();
     while let Some(mut frame) = rx.recv() {
         if let Some(target_hz) = cfg.resample_to_hz {
             if frame.sample_rate_hz * 2 == target_hz {
                 let up = upsampler.get_or_insert_with(HalfBandUpsampler2x::new);
-                frame.pcm = up.process(&frame.pcm).into();
+                scratch.clear();
+                up.process_into(&frame.pcm, &mut scratch);
+                frame.pcm = std::sync::Arc::from(scratch.as_slice());
                 frame.sample_rate_hz = target_hz;
             } else if frame.sample_rate_hz != target_hz {
                 // Config validation limits the target to 16 kHz; a source that
@@ -82,6 +86,14 @@ impl HalfBandUpsampler2x {
     /// delayed by TAPS/2 samples; 2i+1 is the interpolated midpoint after it.
     pub fn process(&mut self, input: &[i16]) -> Vec<i16> {
         let mut out = Vec::with_capacity(input.len() * 2);
+        self.process_into(input, &mut out);
+        out
+    }
+
+    /// Allocation-free variant: appends 2× samples to `out` (the hot preproc
+    /// loop reuses one scratch buffer across frames).
+    pub fn process_into(&mut self, input: &[i16], out: &mut Vec<i16>) {
+        out.reserve(input.len() * 2);
         for &x in input {
             // Shift history: hist[0] is oldest, hist[TAPS-1] is newest (= x).
             self.hist.copy_within(1.., 0);
@@ -96,7 +108,6 @@ impl HalfBandUpsampler2x {
             }
             out.push(acc.round().clamp(i16::MIN as f32, i16::MAX as f32) as i16);
         }
-        out
     }
 }
 

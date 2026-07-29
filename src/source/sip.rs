@@ -15,17 +15,16 @@
 //! the `capture-bakeoff --jitter-buffer-ms` sweep. The leg it will eventually
 //! replace (Twilio conference→media-stream fork) is worth ~100–250 ms.
 //!
-//! Codec: G.711 µ-law / 8 kHz narrowband today (reusing `twilio_ws::decode_ulaw`),
+//! Codec: G.711 µ-law / 8 kHz narrowband today (reusing `twilio_ws::decode_ulaw_arc`),
 //! parity with the Twilio path. G.722 wideband is a follow-on (the ASR-quality win).
 
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 
-use super::twilio_ws::decode_ulaw;
+use super::twilio_ws::decode_ulaw_arc;
 use super::{AudioSource, LatencyClass, SourceDescriptor, SourceError, SourceExit, SourceKind};
 use crate::clock::MonotonicNs;
 use crate::ring::RingSender;
@@ -251,7 +250,7 @@ fn emit(
         return;
     }
     let frame = AudioFrame {
-        pcm: Arc::from(decode_ulaw(payload).as_slice()),
+        pcm: decode_ulaw_arc(payload),
         sample_rate_hz: SIP_SAMPLE_RATE_HZ,
         capture_ts,
         source,

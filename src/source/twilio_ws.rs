@@ -12,7 +12,6 @@
 //! the earliest observable point of the audio on this machine.
 
 use std::net::TcpListener as StdTcpListener;
-use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -54,6 +53,13 @@ const fn build_ulaw_lut() -> [i16; 256] {
 const ULAW_LUT: [i16; 256] = build_ulaw_lut();
 
 pub fn decode_ulaw(bytes: &[u8]) -> Vec<i16> {
+    bytes.iter().map(|&b| ULAW_LUT[b as usize]).collect()
+}
+
+/// Decode μ-law straight into a shared PCM slice: the map iterator is
+/// TrustedLen, so this is a single allocation with no intermediate `Vec` —
+/// the per-frame ingress path of both phone-lane sources uses this.
+pub fn decode_ulaw_arc(bytes: &[u8]) -> std::sync::Arc<[i16]> {
     bytes.iter().map(|&b| ULAW_LUT[b as usize]).collect()
 }
 
@@ -292,6 +298,11 @@ impl AudioSource for TwilioWsSource {
                 Ok(Some(Err(e))) => return Err(protocol_err(format!("websocket read: {e}"))),
                 Ok(Some(Ok(m))) => m,
             };
+            // Stamp at WS message arrival — before JSON/base64/μ-law work — so
+            // `capture_ts` is honestly "the earliest observable point of the
+            // audio on this machine" (module contract above): the decode cost
+            // shows up in the capture→preproc edge instead of vanishing.
+            let arrival_ts = MonotonicNs::now();
 
             let text = match msg {
                 Message::Text(t) => t,
@@ -341,9 +352,9 @@ impl AudioSource for TwilioWsSource {
                         .decode(payload)
                         .map_err(|e| protocol_err(format!("payload base64: {e}")))?;
                     let frame = AudioFrame {
-                        pcm: Arc::from(decode_ulaw(&bytes).as_slice()),
+                        pcm: decode_ulaw_arc(&bytes),
                         sample_rate_hz: TWILIO_SAMPLE_RATE_HZ,
-                        capture_ts: MonotonicNs::now(),
+                        capture_ts: arrival_ts,
                         source: source_id,
                         seq,
                         preproc_ts: MonotonicNs(0),
@@ -390,6 +401,8 @@ mod tests {
     fn decode_ulaw_maps_per_byte() {
         let got = decode_ulaw(&[0xFF, 0x80, 0x00]);
         assert_eq!(got, vec![0, 32124, -32124]);
+        // The single-allocation ingress variant decodes identically.
+        assert_eq!(&decode_ulaw_arc(&[0xFF, 0x80, 0x00])[..], &got[..]);
     }
 
     #[test]

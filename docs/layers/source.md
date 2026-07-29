@@ -22,8 +22,12 @@ We are the WS **server**; Twilio Media Streams connects to us after
 `scripts/twilio-dial.sh` places the dial-in call (`<Start><Stream>` TwiML).
 Message shapes and the capture path are pinned in `docs/TWILIO.md`. Each
 `media` message: base64 G.711 μ-law, 8 kHz mono, nominally 20 ms → decoded
-via a const LUT (`decode_ulaw`) into one `AudioFrame` stamped at arrival
-(clock domain "network" — includes WS transit, excludes the PSTN leg).
+via a const LUT (`decode_ulaw_arc`, single allocation straight into the
+frame's shared PCM slice; `decode_ulaw` is the `Vec` variant for tests/tools)
+into one `AudioFrame` whose `capture_ts` is stamped at WS message arrival,
+BEFORE the JSON/base64/μ-law work — so decode cost lands honestly in the
+capture→preproc edge (clock domain "network" — includes WS transit,
+excludes the PSTN leg).
 `accept_timeout` (call never lands) and `idle_timeout` (dead call) both
 fail loud. Twilio `sequenceNumber` gaps are warned (network loss
 visibility); our own `seq` stays dense. μ-law decode lives HERE because
@@ -170,7 +174,7 @@ Raw SIP/RTP dial-in, split into the two planes it naturally has:
   binds a UDP socket, parses RTP (RFC 3550: version/CSRC/extension/padding), dejitters/reorders
   by RTP sequence in an **owned jitter buffer** (start 40 ms, sweepable — bounded reorder depth
   = `jitter_ms / 20 ms`, persistent gaps skipped, late packets dropped), decodes **G.711 µ-law**
-  (reusing `twilio_ws::decode_ulaw`), and emits `AudioFrame`s (`capture_ts` at arrival, dense
+  (reusing `twilio_ws::decode_ulaw_arc`), and emits `AudioFrame`s (`capture_ts` at arrival, dense
   capture-order `seq`, send-and-warn drop policy — identical obligations to the adapters above).
   Idle-timeout guard ends a dead stream. Constructed by `build_leg` when `SourceConfig::Sip.rtp_bind`
   is set; the `--jitter-buffer-ms` sweep now threads into it (no longer a no-op). Tested against

@@ -260,7 +260,14 @@ pub fn compile(
 /// `compile-keywords` diagnostic can report per-candidate cuts without running
 /// the whole `compile` (which aborts on the first bad prefix).
 pub fn prefix_cut(tokens: &[String], prefix: &str) -> usize {
-    let target: usize = prefix.trim().to_uppercase().chars().count();
+    // Count prefix chars the way the token stream renders them: any run of
+    // whitespace between words is exactly one `▁` (encode() splits on
+    // split_whitespace), so a doubled space / tab in config must count as ONE
+    // char — counting it raw pushed the cut one token too far.
+    let upper = prefix.to_uppercase();
+    let words: Vec<&str> = upper.split_whitespace().collect();
+    let target: usize = words.iter().map(|w| w.chars().count()).sum::<usize>()
+        + words.len().saturating_sub(1);
     let mut covered = 0usize; // prefix chars covered (spaces count once)
     for (i, tok) in tokens.iter().enumerate() {
         for c in tok.chars() {
@@ -398,6 +405,28 @@ mod tests {
         let Some(t) = table() else { return };
         let err = compile(&[kw("go", &["go"], &["go"])], &t, 0.25, 2.0).unwrap_err();
         assert!(matches!(err, CompileError::PrefixNotShorter { .. }), "{err}");
+    }
+
+    /// Pure `prefix_cut` edge cases — no model needed. Whitespace runs in the
+    /// prefix must count as one inter-word `▁`, exactly as encode() renders
+    /// them, or the Fast cut lands one token too far.
+    #[test]
+    fn prefix_cut_collapses_whitespace_runs() {
+        let toks = |s: &str| s.split(' ').map(String::from).collect::<Vec<_>>();
+        // "artificial intel" over ▁A R T IF IC I AL ▁IN TE LL IG ENCE.
+        let full = toks("▁A R T IF IC I AL ▁IN TE LL IG ENCE");
+        let clean = prefix_cut(&full, "artificial intel");
+        assert_eq!(clean, 10); // …▁IN TE LL covers "intel"
+        // A doubled space or tab must give the SAME cut, not one token more.
+        assert_eq!(prefix_cut(&full, "artificial  intel"), clean);
+        assert_eq!(prefix_cut(&full, "artificial\tintel"), clean);
+        assert_eq!(prefix_cut(&full, " artificial intel "), clean);
+        // Single-word prefixes unchanged.
+        let rec = toks("▁RE CE S S ION");
+        assert_eq!(prefix_cut(&rec, "reces"), 3);
+        assert_eq!(prefix_cut(&rec, "recession"), 5);
+        // Uncoverable prefix still reports tokens.len() + 1.
+        assert_eq!(prefix_cut(&rec, "recessionary"), rec.len() + 1);
     }
 
     #[test]
