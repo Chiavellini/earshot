@@ -51,6 +51,43 @@ pub struct Fired {
     pub frame: u64,
 }
 
+/// Why an entry did not fire — the number the scorer used to throw away.
+///
+/// Before 2026-07-29 a sub-threshold entry was a bare `continue` (no log, no
+/// counter), so "0 detections" was an unexplainable number. That cost us: the
+/// recall gate found 12 of 52 market words scoring ZERO on clean studio TTS
+/// (`docs/BAKEOFF.md` §RECALL GATE) with no way to tell WHICH of two opposite
+/// failures each one was:
+///
+///   * `peak_confidence` just under `threshold`  ⇒ a NEAR-MISS. The model heard
+///     the word; the operating point rejected it. Threshold/scoring territory.
+///   * some `piece_best_logp[i]` deeply negative  ⇒ the model never emitted that
+///     piece at all, so `exp(score/k)` — a geometric mean — is dragged to ~0 no
+///     matter how strongly the other k−1 pieces peak. Spelling/variant
+///     territory, and NOT fixable by any threshold.
+///
+/// Diagnosis only: recorded on every frame, never consulted for firing.
+#[derive(Debug, Clone)]
+pub struct EntryExplain {
+    pub keyword: KeywordId,
+    pub tier: Tier,
+    /// Token pieces this entry targets (model vocab ids, blank excluded).
+    pub tokens: Vec<u32>,
+    /// Number of pieces — the geometric-mean divisor.
+    pub k: usize,
+    pub threshold: f32,
+    /// Best confidence this entry ever reached, fired or not.
+    pub peak_confidence: f32,
+    /// Frame at which `peak_confidence` occurred.
+    pub peak_frame: u64,
+    /// Per-piece best log-posterior seen anywhere in the stream, aligned to
+    /// `tokens`. The smallest entry here is what sinks the geometric mean.
+    pub piece_best_logp: Vec<f32>,
+    /// Frame of each `piece_best_logp`.
+    pub piece_best_frame: Vec<u64>,
+    pub fired: bool,
+}
+
 /// Per-entry streaming Viterbi state.
 struct EntryState {
     keyword: KeywordId,
@@ -63,6 +100,13 @@ struct EntryState {
     k: usize,
     threshold: f32,
     last_fire_frame: Option<u64>,
+    // ── diagnosis-only fields (never read by the firing decision) ────────────
+    tokens: Vec<u32>,
+    peak_confidence: f32,
+    peak_frame: u64,
+    piece_best_logp: Vec<f32>,
+    piece_best_frame: Vec<u64>,
+    fired: bool,
 }
 
 impl EntryState {
@@ -84,6 +128,12 @@ impl EntryState {
             k,
             threshold: t.threshold,
             last_fire_frame: None,
+            tokens: t.tokens.clone(),
+            peak_confidence: 0.0,
+            peak_frame: 0,
+            piece_best_logp: vec![f32::NEG_INFINITY; k],
+            piece_best_frame: vec![0; k],
+            fired: false,
         }
     }
 
@@ -92,6 +142,30 @@ impl EntryState {
             *a = f32::NEG_INFINITY;
         }
         self.last_fire_frame = None;
+        self.peak_confidence = 0.0;
+        self.peak_frame = 0;
+        for p in &mut self.piece_best_logp {
+            *p = f32::NEG_INFINITY;
+        }
+        for f in &mut self.piece_best_frame {
+            *f = 0;
+        }
+        self.fired = false;
+    }
+
+    fn explain(&self) -> EntryExplain {
+        EntryExplain {
+            keyword: self.keyword,
+            tier: self.tier,
+            tokens: self.tokens.clone(),
+            k: self.k,
+            threshold: self.threshold,
+            peak_confidence: self.peak_confidence,
+            peak_frame: self.peak_frame,
+            piece_best_logp: self.piece_best_logp.clone(),
+            piece_best_frame: self.piece_best_frame.clone(),
+            fired: self.fired,
+        }
     }
 }
 
@@ -151,6 +225,20 @@ impl CtcKeywordScorer {
             }
             e.alpha = next;
 
+            // ── diagnosis-only bookkeeping ───────────────────────────────────
+            // Per-piece best posterior, so a miss can name the piece the model
+            // never emitted. This is the quantity that decides whether a dead
+            // word is a near-miss or a spelling mismatch, and it is why the two
+            // are distinguishable at all. Pure observation: nothing below reads
+            // these fields, so firing behaviour is bit-identical.
+            for (i, &tok) in e.tokens.iter().enumerate() {
+                let lp = log_post[tok as usize];
+                if lp > e.piece_best_logp[i] {
+                    e.piece_best_logp[i] = lp;
+                    e.piece_best_frame[i] = frame_idx;
+                }
+            }
+
             // Detection score: best path having consumed the last token or its
             // trailing blank.
             let score = e.alpha[l - 1].max(e.alpha[l - 2]);
@@ -158,6 +246,12 @@ impl CtcKeywordScorer {
                 continue;
             }
             let confidence = (score / e.k as f32).exp().clamp(0.0, 1.0);
+            // Record the peak BEFORE the threshold gate — the whole point is to
+            // keep the number the gate used to discard.
+            if confidence > e.peak_confidence {
+                e.peak_confidence = confidence;
+                e.peak_frame = frame_idx;
+            }
             if confidence < e.threshold {
                 continue;
             }
@@ -167,9 +261,18 @@ impl CtcKeywordScorer {
                 }
             }
             e.last_fire_frame = Some(frame_idx);
+            e.fired = true;
             out.push(Fired { keyword: e.keyword, tier: e.tier, confidence, frame: frame_idx });
         }
         out
+    }
+
+    /// Per-entry diagnosis after a stream: what each target's best evidence was,
+    /// including the sub-threshold entries the firing path drops silently.
+    ///
+    /// Read this to answer "why didn't it fire?" — see [`EntryExplain`].
+    pub fn explain(&self) -> Vec<EntryExplain> {
+        self.entries.iter().map(|e| e.explain()).collect()
     }
 }
 

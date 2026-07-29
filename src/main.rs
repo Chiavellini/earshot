@@ -10,6 +10,10 @@ use earshot::clock::MonotonicNs;
 use earshot::config::{self, SourceConfig};
 use earshot::decision::DecisionTable;
 use earshot::detector::factory as detector_factory;
+// `process` is a Detector trait method; detect-explain drives the concrete
+// StreamingCtcDetector (it needs `explain()`, which the boxed trait cannot
+// expose), so the trait must be in scope for the call to resolve.
+use earshot::detector::Detector as _;
 use earshot::fixture::FixtureSpec;
 use earshot::kalshi::auth::{Presigner, Signer};
 use earshot::kalshi::book::{run_ws, BookCache};
@@ -205,6 +209,40 @@ enum Command {
         /// Seconds of synthetic 16 kHz audio to push through the detector.
         #[arg(long, default_value_t = 3)]
         secs: u32,
+    },
+    /// WHY didn't that keyword fire? Feed a wav through the config's real
+    /// streaming_ctc detector and print, per target, the number the firing path
+    /// throws away: the PEAK confidence reached (even sub-threshold) and the
+    /// per-piece best posterior.
+    ///
+    /// Built 2026-07-29 for the recall gate: 12 of 52 market words scored ZERO
+    /// on clean studio TTS and there was no way to tell which of two OPPOSITE
+    /// failures each one was —
+    ///   NEAR-MISS      peak just under threshold  ⇒ operating-point problem
+    ///   NO-EVIDENCE    a piece the model never emits ⇒ spelling problem, and
+    ///                  unreachable by ANY threshold, because confidence is a
+    ///                  geometric mean over the pieces
+    /// Read-only diagnosis: it cannot change what fires.
+    DetectExplain {
+        #[arg(long)]
+        config: PathBuf,
+        /// 16 kHz mono s16 wav (TTS clip from variant-study.sh, or a corpus call).
+        #[arg(long)]
+        wav: PathBuf,
+        /// Override the model dir. ⚠ USE IT. `compile-keywords` resolves the
+        /// FIRST detector block and the armed configs keep a [detector.sherpa_kws]
+        /// block, so a streaming_ctc config otherwise reports the GIGASPEECH
+        /// vocab (preflight-event.sh pins this trap). Default here is the
+        /// config's own streaming_ctc.model_dir, which is the correct one.
+        #[arg(long)]
+        model_dir: Option<PathBuf>,
+        /// Only report targets whose phrase contains this (case-insensitive).
+        #[arg(long)]
+        phrase: Option<String>,
+        /// A piece whose best log-posterior is below this is called "never
+        /// emitted". ln(0.01) ≈ -4.6, so -6.0 is ~0.25% posterior.
+        #[arg(long, default_value_t = -6.0)]
+        dead_logp: f32,
     },
     /// Region/edge RTT probe (docs/INGRESS-BAKEOFF.md §2): TCP-handshake RTT +
     /// loss from this box to each target, to pick the compute region before a
@@ -452,6 +490,143 @@ fn run(command: Command) -> Result<(), AnyErr> {
                 cfg.detector.engine,
                 t0.elapsed().as_millis()
             );
+            Ok(())
+        }
+        Command::DetectExplain { config, wav, model_dir, phrase, dead_logp } => {
+            let cfg = config::load(&config)?;
+            let sc = cfg
+                .detector
+                .streaming_ctc
+                .as_ref()
+                .ok_or("detect-explain needs a [detector.streaming_ctc] block")?;
+            let mdir = model_dir.unwrap_or_else(|| sc.model_dir.clone());
+
+            // id -> piece, so a dead piece can be NAMED rather than numbered.
+            let mut id_to_piece: std::collections::HashMap<u32, String> = Default::default();
+            for line in std::fs::read_to_string(mdir.join("tokens.txt"))?.lines() {
+                let mut it = line.rsplitn(2, ' ');
+                if let (Some(id), Some(p)) = (it.next(), it.next()) {
+                    if let Ok(id) = id.trim().parse::<u32>() {
+                        id_to_piece.insert(id, p.to_string());
+                    }
+                }
+            }
+
+            // StreamingCtcConfig is not Clone, so build one explicitly with the
+            // model dir overridden and every other knob taken verbatim from the
+            // config — the point of this tool is to reproduce the ARMED
+            // operating point, so nothing else may drift.
+            let scfg = earshot::config::StreamingCtcConfig {
+                model_dir: mdir.clone(),
+                num_threads: sc.num_threads,
+                blank_id: sc.blank_id,
+                default_threshold: sc.default_threshold,
+                refractory_ms: sc.refractory_ms,
+            };
+            let mut det = earshot::detector::streaming_ctc::StreamingCtcDetector::new(
+                &scfg,
+                &cfg.keywords,
+            )?;
+
+            let mut r = hound::WavReader::open(&wav)?;
+            let spec = r.spec();
+            if spec.channels != 1 || spec.sample_rate != 16_000 {
+                return Err(format!(
+                    "{}: need 16 kHz mono, got {} Hz / {} ch",
+                    wav.display(),
+                    spec.sample_rate,
+                    spec.channels
+                )
+                .into());
+            }
+            let pcm: Vec<i16> = match spec.sample_format {
+                hound::SampleFormat::Int => r.samples::<i16>().map(|s| s.unwrap_or(0)).collect(),
+                hound::SampleFormat::Float => r
+                    .samples::<f32>()
+                    .map(|s| (s.unwrap_or(0.0) * 32767.0) as i16)
+                    .collect(),
+            };
+            let chunk_samples = 16_000 * cfg.pipeline.chunk_ms.max(10) as usize / 1000;
+            let mut fired_n = 0usize;
+            for (seq, window) in pcm.chunks(chunk_samples).enumerate() {
+                let now = MonotonicNs::now();
+                let chunk = earshot::types::AudioChunk {
+                    pcm: Arc::from(window),
+                    sample_rate_hz: 16_000,
+                    first_capture_ts: now,
+                    last_capture_ts: now,
+                    first_preproc_ts: now,
+                    chunk_ts: now,
+                    source: SourceId(0),
+                    seq: seq as u64,
+                };
+                fired_n += det.process(&chunk).len();
+            }
+
+            println!(
+                "detect-explain  wav={}  {:.2}s  model={}",
+                wav.display(),
+                pcm.len() as f32 / 16_000.0,
+                mdir.display()
+            );
+            println!("keywords={} fires={fired_n}\n", cfg.keywords.len());
+
+            let filt = phrase.map(|p| p.to_lowercase());
+            for ex in det.explain() {
+                let kw = match cfg.keywords.get(ex.keyword.0 as usize) {
+                    Some(k) => k,
+                    None => continue,
+                };
+                if let Some(f) = &filt {
+                    if !kw.phrase.to_lowercase().contains(f) {
+                        continue;
+                    }
+                }
+                let pieces: Vec<String> = ex
+                    .tokens
+                    .iter()
+                    .map(|t| id_to_piece.get(t).cloned().unwrap_or_else(|| format!("<{t}>")))
+                    .collect();
+                // The smallest per-piece posterior is what a geometric mean is
+                // dominated by, so name it explicitly.
+                let worst = ex
+                    .piece_best_logp
+                    .iter()
+                    .enumerate()
+                    .min_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal));
+                let verdict = if ex.fired {
+                    "FIRED".to_string()
+                } else if let Some((i, &lp)) = worst {
+                    if lp < dead_logp {
+                        format!("NO-EVIDENCE (piece {:?} best logP {:.2})", pieces[i], lp)
+                    } else if ex.peak_confidence >= ex.threshold * 0.5 {
+                        format!(
+                            "NEAR-MISS (peak {:.4} vs threshold {:.4}, short by {:.4})",
+                            ex.peak_confidence,
+                            ex.threshold,
+                            ex.threshold - ex.peak_confidence
+                        )
+                    } else {
+                        format!("WEAK (peak {:.4} vs threshold {:.4})", ex.peak_confidence, ex.threshold)
+                    }
+                } else {
+                    "NO-TARGET".to_string()
+                };
+                println!(
+                    "{:<24} {:<9} k={} thr={:.3} peak={:.4}@f{}  {}",
+                    kw.phrase, format!("{:?}", ex.tier), ex.k, ex.threshold,
+                    ex.peak_confidence, ex.peak_frame, verdict
+                );
+                for (i, p) in pieces.iter().enumerate() {
+                    let lp = ex.piece_best_logp[i];
+                    let mark = if lp < dead_logp { " <-- never emitted" } else { "" };
+                    println!(
+                        "    piece {i}: {:<10} best logP {:>7.2}  (p={:.4}) @f{}{}",
+                        p, lp, lp.exp(), ex.piece_best_frame[i], mark
+                    );
+                }
+                println!();
+            }
             Ok(())
         }
         Command::Latprobe { targets, samples, timeout_ms, out } => {

@@ -304,6 +304,16 @@ impl StreamingCtcDetector {
             samples_fed: 0,
         }
     }
+
+    /// Per-target diagnosis after feeding audio: peak confidence reached (even
+    /// when it never cleared the threshold) and the per-piece best posterior.
+    ///
+    /// This is the instrument the 2026-07-29 recall gate lacked — see
+    /// [`super::ctc_scorer::EntryExplain`]. Diagnosis only; feeding audio and
+    /// reading this back cannot change what fired.
+    pub fn explain(&self) -> Vec<super::ctc_scorer::EntryExplain> {
+        self.scorer.explain()
+    }
 }
 
 impl Detector for StreamingCtcDetector {

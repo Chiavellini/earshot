@@ -1126,3 +1126,93 @@ word costs recall, never money.
 
 **Reproduce:** `scripts/variant-study.sh configs/webcast-<slug>-26jul29-arm.toml`
 (macOS only — uses `say`; exits 1 if ANY keyword scores zero).
+
+### Autopsy of the 12 dead words (2026-07-29) — three buckets, three different fixes
+
+The gate above says 12 words score zero. It could not say WHY, because
+`ctc_scorer` computed each entry's confidence and then dropped it with a bare
+`continue` — no log, no counter. `earshot detect-explain` (new) keeps that
+number: per target it records the PEAK confidence reached *before* the threshold
+gate, plus each BPE piece's best log-posterior. Pure observation — the firing
+path does not read these fields, so behaviour is unchanged.
+
+Run: `scripts/dead-word-autopsy.sh` over the variant-study TTS clips
+(16 kHz studio, `say` Samantha+Daniel), armed CTC model, `default_threshold = 0.15`.
+
+**CONTROLS FIRED — so the instrument is trustworthy.** A diagnostic that calls
+everything broken has proven nothing, so the runner always includes known-good
+words and voids the report if any fails:
+
+| control | k | peak confidence |
+|---|---|---|
+| `inflation` | 4 | **0.975** |
+| `advertising` | 6 | **0.952** |
+| `loyalty` | 4 | **0.822** |
+| `hyperion` | 5 | **0.712** |
+| `orion` | 2 | **0.428** |
+
+**The 12 dead words, bucketed:**
+
+| bucket | word | k | peak | verdict |
+|---|---|---|---|---|
+| NEAR-MISS | `matcha` | 4 | **0.1489** | **short of 0.1500 by 0.0011** |
+| NEAR-MISS | `tariff` | 4 | 0.1242 | short by 0.0258 |
+| NEAR-MISS | `llama` | 4 | 0.1239 | short by 0.0261 |
+| NEAR-MISS | `chipotle lane` | 7 | 0.0763 | short by 0.0737 |
+| NO-EVIDENCE | `horchata` | 5 | 0.0013 | pieces `CH` (p=0.0003) + `AT` (p=0.0001) absent |
+| NO-EVIDENCE | `chipotle kitchen` | 9 | 0.0549 | piece `OT` (p=0.0020) absent |
+| WEAK | `ray ban` | 4 | 0.0579 | — |
+| WEAK | `tailwind` | 6 | 0.0521 | — |
+| WEAK | `frappuccino` | 8 | 0.0499 | — |
+| WEAK | `autocado` | 6 | 0.0408 | — |
+| WEAK | `headwind` | 4 | 0.0259 | — |
+| WEAK | `protein` | 3 | 0.0145 | — |
+
+**`matcha` is the headline.** Compiled `▁MA T CH A`, and the model hears the word
+almost perfectly: `▁MA` p=0.998 @f161, `T` p=0.979 @f163, `CH` p=0.977 @f165 —
+three consecutive frames, an unambiguous real path. It scores 0.1489 against a
+0.1500 threshold and is therefore discarded. **A word near-certain to be spoken
+on a Starbucks call was lost by 0.7% of a threshold that was never measured
+against it.**
+
+**The geometric mean is confirmed as the mechanism.** `chipotle kitchen` is the
+clearest illustration: "kitchen" is essentially perfect (`▁K` 0.998, `IT` 0.998,
+`CH` 0.9997, `EN` 0.991) while "chipotle" is not segmented the way we compile it
+(`OT` p=0.0020, `LE` p=0.0055, `HI` p=0.026) — and one absent piece is enough to
+sink all nine. `autocado` likewise: four strong pieces (0.77/0.89/0.83/0.97)
+dragged to 0.041 by `UT` (0.11) and `C` (0.05).
+
+⚠ **Two limits of this instrument, stated so nobody over-reads the table.**
+
+1. **`piece_best_logp` is the best posterior ANYWHERE in the stream, not on the
+   winning path.** It is therefore a per-piece UPPER BOUND, and the product of
+   those bounds is an upper bound on confidence — not the confidence. `matcha`
+   proves the gap matters: piece `A`'s best is p=0.270 at f17, which is *before*
+   pieces 0-2 peak at f161-165, so no monotonic path can use it. A tiny
+   best-anywhere value soundly proves a piece is absent everywhere (so
+   NO-EVIDENCE is reliable); a healthy one does NOT prove the path is healthy.
+   Tracking per-piece evidence along the argmax path is the obvious next
+   increment.
+2. **This is 16 kHz studio TTS, not 8 kHz telephony corpus audio.** In
+   particular `tariff` peaking at 0.1242 here **does NOT overturn** the pinned
+   finding at §"tariff threshold+boost sweep" that its corpus misses "produce NO
+   detector hypothesis at all" and that config tuning cannot close its gap — that
+   was measured on band-limited 8 kHz occurrences, a different channel. The two
+   readings are about different inputs and are reconciled by a corpus run, not by
+   assertion. `tariff`'s four pieces are all merely mediocre here
+   (0.46/0.09/0.26/0.40) with none absent, which is consistent with the
+   acoustic-ceiling reading rather than against it.
+
+**No threshold has been changed on the strength of this table.** Lowering a
+threshold is exactly the move that buys recall with false fires, and the
+operator's standing bar for this work is *recall gains only if FA/h does not
+worsen*. The NEAR-MISS bucket is the candidate, and the FA side has to be
+measured per word before anything moves — with one methodological constraint
+already pinned above: screening a keyword against other issuers' calls is valid
+for ISSUER-SPECIFIC words (`matcha`, `llama`, `horchata`, `autocado`) and
+**wrong for generic vocabulary** (`tariff`, `headwind`, `protein`), where absence
+from a manifest does not mean absence from the audio.
+
+**Reproduce:** `scripts/dead-word-autopsy.sh` (controls + buckets + per-piece
+detail), or one word at a time:
+`earshot detect-explain --config <cfg> --wav <clip> [--phrase matcha]`.

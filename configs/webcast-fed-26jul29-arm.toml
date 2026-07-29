@@ -500,7 +500,30 @@ max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"
 
-# Recession (KXFEDMENTION-26JUL-RECE) — corpus-tuned; cap: probe (non-crossing, no fill)
+# Recession (KXFEDMENTION-26JUL-RECE) — cap: probe (non-crossing, no fill)
+#
+# ⚠ 2026-07-29: this block was labelled "corpus-tuned" and was NOT tuned for the
+# engine it runs on. `boost = 2.0` (REMOVED below) is silently discarded under
+# streaming_ctc — compile() is called with default_boost=1.0 at
+# streaming_ctc.rs:273 and KeywordTarget has no boost field at all — while
+# sherpa honours it. Eight sibling configs already carry this cleanup note
+# (webcast-cmg, webcast-cvna, webcast-sbux, the twilio-* pair, …); this config
+# was missed, so it went to the FOMC event with a dead knob set.
+#
+# `confirmed_threshold = 0.28` is the OTHER half of the same mistake and is
+# deliberately LEFT IN PLACE pending measurement, not silently changed:
+# 0.28 comes from prepare.rs's tuned_library, which is SHERPA-scale, and the two
+# engines' thresholds are different quantities on different scales
+# (docs/layers/detector.md). Against this config's CTC default_threshold = 0.15
+# it runs ~1.9x STRICTER than the engine default — a recall risk, on a scale it
+# was never tuned on.
+#
+# It is not guessed at here because `recession` is one of the five phrases with
+# real corpus ground truth (it is the FA control), so 0.28-vs-0.15 on CTC is
+# measurable: bench-detector, recall AND FA/h, both operating points. BAKEOFF
+# already shows recession at 0 FA on CTC at t=0.15 vs 4 on sherpa, which is why
+# the extra strictness is suspected unnecessary — but "suspected" is not a
+# number. Measure, then change.
 [[keywords]]
 market_ticker    = "KXFEDMENTION-26JUL-RECE"
 phrase           = "recession"
@@ -508,8 +531,7 @@ variants         = ["recession", "recessions"]
 max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"
-confirmed_threshold = 0.28
-boost            = 2.0
+confirmed_threshold = 0.28   # ⚠ sherpa-scale under a CTC engine — see note above
 
 # Renovation (KXFEDMENTION-26JUL-RENO) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
