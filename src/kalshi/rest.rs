@@ -26,6 +26,9 @@ pub struct RestClient {
     /// Full REST base including /trade-api/v2 (host may be a test mock; the
     /// signed path is always the real /trade-api/v2 one).
     base: String,
+    /// Pre-parsed `{base}{ORDERS_ENDPOINT}` — the fire path clones this
+    /// (internal string copy) instead of format!-ing and URL-parsing per send.
+    orders_url: reqwest::Url,
     client: reqwest::Client,
     signer: Arc<Signer>,
 }
@@ -150,7 +153,9 @@ impl RestClient {
             .http2_keep_alive_interval(Duration::from_secs(30))
             .http2_keep_alive_while_idle(true)
             .build()?;
-        Ok(RestClient { base, client, signer })
+        let orders_url = reqwest::Url::parse(&format!("{base}{ORDERS_ENDPOINT}"))
+            .map_err(|e| KalshiError::Validation(format!("bad REST base url {base:?}: {e}")))?;
+        Ok(RestClient { base, orders_url, client, signer })
     }
 
     pub fn signer(&self) -> &Arc<Signer> {
@@ -314,7 +319,7 @@ impl RestClient {
     ) -> Result<(OrderAck, MonotonicNs), KalshiError> {
         let mut req = self
             .client
-            .post(format!("{}{ORDERS_ENDPOINT}", self.base))
+            .post(self.orders_url.clone())
             .header("Content-Type", "application/json")
             .body(body);
         for (k, v) in headers {

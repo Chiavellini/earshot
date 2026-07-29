@@ -32,7 +32,8 @@ layer), or the wire itself (transport seam — see
   (`src/kalshi/transport.rs`) — an enum over the two order wires, selected by
   config `[kalshi] transport` (default `rest`) and wired in `main.rs::arm`:
   - `Rest`: `POST {base}/portfolio/events/orders` with pre-serialized `Bytes`
-    body and presigned `KALSHI-ACCESS-*` headers
+    body, presigned `KALSHI-ACCESS-*` headers, and the orders URL pre-parsed
+    at client construction (no per-send format!/URL-parse)
     (`rest::RestClient::create_order_presigned`; the `Presigner` lives INSIDE
     this arm). Warm TCP/h2 connection (Nagle off; one-shot pre-warm + a
     keep-warm task wired in `main.rs::arm`) — pinned in VERIFICATIONS.md.
