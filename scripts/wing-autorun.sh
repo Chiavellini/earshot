@@ -49,19 +49,35 @@ done
 
 # --- step 1: resolve ---------------------------------------------------------
 note "resolving $SLUG (webcastid=$WEBCASTID, deadline ${RESOLVE_DEADLINE_SECS}s)"
-rm -f "$HOME/$SLUG-stream.url"     # a stale URL is the loaded gun run-arm guard 2 exists for
+# A stale URL is the loaded gun run-arm guard 2 exists for; the .kind must go
+# with it or we could arm the fallback leg against a fresh HLS URL.
+rm -f "$HOME/$SLUG-stream.url" "$HOME/$SLUG-stream.kind"
+# --allow-progressive: accept .mp4/.m4a as well as .m3u8. The venue serves all
+# three off one field, ffmpeg reads all three, and a captured call on a
+# non-ideal transport beats a missed one. The kind file tells us which we got.
 if ! python3 scripts/choruscall-resolve.py \
       --webcastid "$WEBCASTID" --slug "$SLUG" \
-      --register --wait-secs "$RESOLVE_DEADLINE_SECS" --poll-secs 10; then
+      --register --allow-progressive \
+      --wait-secs "$RESOLVE_DEADLINE_SECS" --poll-secs 10; then
   page "WING NOT ARMED — stream unresolved" \
-       "choruscall-resolve could not produce an m3u8 for WING before the deadline. The call ran uncaptured. See $LOG"
+       "choruscall-resolve produced no usable stream for WING before the deadline (neither HLS nor progressive). The call ran uncaptured. See $LOG"
   note "FATAL: resolve failed; NOT arming"; exit 3
 fi
-note "resolved: $(cat "$HOME/$SLUG-stream.url")"
+KIND="$(cat "$HOME/$SLUG-stream.kind" 2>/dev/null || echo hls)"
+note "resolved [$KIND]: $(cat "$HOME/$SLUG-stream.url")"
 
 # --- step 2: arm -------------------------------------------------------------
 # run-arm.sh defaults to LIVE; posture stays 1c non-crossing observe, enforced
 # in `arm` itself, and the $1 ledger clamps real spend regardless.
+if [[ "$KIND" == "progressive" ]]; then
+  # hls-edge-fetch.py speaks manifests, not progressive bodies — both primary
+  # legs would die instantly. Swap to the single generic ffmpeg leg.
+  export EARSHOT_ARM_CONFIG="configs/wing-progressive-arm.toml"
+  export EARSHOT_ALLOW_NON_HLS=1
+  note "PROGRESSIVE stream — arming fallback config $EARSHOT_ARM_CONFIG"
+  page "WING on the progressive fallback" \
+       "hlsSource was not HLS; arming configs/wing-progressive-arm.toml with a plain ffmpeg leg. Capture proceeds; latency is NOT comparable with HLS venues."
+fi
 note "arming (hard stop in ${ARM_MAX_SECS}s via SIGTERM)"
 timeout --signal=TERM --kill-after=30 "$ARM_MAX_SECS" scripts/run-arm.sh "$SLUG"
 rc=$?

@@ -35,7 +35,8 @@ POLL = HOST + "/mediaframe/v2/dynamicframe/getPolledStatus?streamid={sid}"
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
 
-STATUS = {0: "upcoming", 1: "LIVE", 2: "in-progress/paused", 3: "archived"}
+STATUS = {0: "upcoming", 1: "LIVE", 2: "in-progress/paused", 3: "archived",
+          4: "expired"}   # 4 observed live 2026-07-29 on a lapsed archive
 
 
 def _open(url, jar, data=None, timeout=20):
@@ -142,6 +143,32 @@ def extract_m3u8(page):
     return [u for u in extract_media(page) if ".m3u8" in u]
 
 
+# The player does not guess, and neither should we. frameScripts.js builds its
+# videojs source list from ONE field — `webcastConfig.hlsSource` — and branches
+# on its extension (live-read 2026-07-29, VERIFICATIONS Q-CC):
+#     isValidURL(hlsSource,'http-hls') -> application/x-mpegurl   (.m3u8)
+#     isValidURL(hlsSource,'http-mp4') -> video/mp4
+#     isValidURL(hlsSource,'http-m4a') -> audio/mp4
+# So read that field by name; the generic scrape stays only as a backstop for a
+# page shape we have not seen.
+def extract_hls_source(page):
+    m = re.search(r"webcastConfig\.hlsSource\s*=\s*\"([^\"]+)\"", page)
+    return html.unescape(m.group(1)) if m else None
+
+
+PROGRESSIVE = (".mp4", ".m4a", ".mp3", ".aac")
+
+
+def classify(url):
+    """'hls' | 'progressive' | None — which arm path this URL needs."""
+    base = url.split("?", 1)[0].lower()
+    if base.endswith(".m3u8"):
+        return "hls"
+    if base.endswith(PROGRESSIVE):
+        return "progressive"
+    return None
+
+
 def validate(url):
     """Mirror run-arm.sh guards 2+3 so we fail HERE, not at fire time."""
     if not re.match(r"^https?://", url):
@@ -235,6 +262,18 @@ def selftest():
     chk("media sees archive mp4", extract_media(arch) and extract_media(arch)[0].endswith(".mp4"))
     chk("m3u8 rejects archive mp4", extract_m3u8(arch) == [])
 
+    print("extract_hls_source / classify (frameScripts.js contract):")
+    real = ('webcastConfig.hlsSource = '
+            '"http://vodchoruscall.akamaized.net/07452/starbucks/starbucks260128.mp4";')
+    chk("reads hlsSource by name", extract_hls_source(real) ==
+        "http://vodchoruscall.akamaized.net/07452/starbucks/starbucks260128.mp4")
+    chk("absent -> None", extract_hls_source(FIXTURE) is None)
+    chk("classify hls", classify("https://x.net/live/a/master.m3u8") == "hls")
+    chk("classify hls w/ query", classify("https://x.net/a.m3u8?tok=1") == "hls")
+    chk("classify progressive mp4", classify("http://x.net/a/b260128.mp4") == "progressive")
+    chk("classify progressive m4a", classify("http://x.net/a.m4a") == "progressive")
+    chk("classify unknown", classify("https://x.net/a.bin") is None)
+
     print("register endpoint selection (live-verified shapes):")
     up = '<form method="post" action="preregistration/submit">' + FIXTURE
     lv = '<form method="post" action="registration/submit">' + FIXTURE
@@ -284,6 +323,10 @@ def main():
     ap.add_argument("--wait-secs", type=int, default=0, help="poll until status==1 (live)")
     ap.add_argument("--poll-secs", type=int, default=10)
     ap.add_argument("--status-only", action="store_true")
+    ap.add_argument("--allow-progressive", action="store_true",
+                    help="accept a non-HLS hlsSource (.mp4/.m4a/.mp3) and mark it "
+                         "kind=progressive; the caller must then arm the generic "
+                         "ffmpeg leg instead of the HLS edge-fetch leg")
     ap.add_argument("--any-status", action="store_true",
                     help="skip the live gate — for validating the resolve chain "
                          "against an ARCHIVED event; never use on an arm path")
@@ -339,7 +382,15 @@ def main():
     # Reach the `frame` page one of two ways: an emailed/access link, or by
     # registering (live-verified 2026-07-29 — the POST returns the frame page
     # directly for a live/archived event).
-    if a.access_url:
+    # Already on the player? Then there is nothing to register. This happens for
+    # real — the venue can serve `frame` straight away to a registrant it
+    # recognises — and blindly POSTing produces "no registration form" instead
+    # of just using the page we already hold.
+    already_frame = (cfg.get("pageId") == "frame") or bool(extract_hls_source(page))
+    if already_frame:
+        print("note    : already on the player page; skipping registration")
+        frame, final = page, PAGE.format(wid=a.webcastid)
+    elif a.access_url:
         frame, final = _open(a.access_url, jar)
     elif a.register:
         ident = {"first": a.first, "last": a.last, "email": a.email, "company": a.company}
@@ -371,50 +422,85 @@ def main():
     # early is a second of lead the arm gets on the opening remarks.  Register
     # ONCE (a re-POST per poll would spam duplicate registrations) and re-fetch
     # with the same session.
-    media, good = extract_media(frame), []
-    good = [u for u in media if validate(u) is None]
-    while not good and time.time() < deadline:
+    def pick(pg):
+        """(url, kind, all_seen). hlsSource by name first, generic scrape after."""
+        seen = extract_media(pg)
+        named = extract_hls_source(pg)
+        if named:
+            seen = [named] + [u for u in seen if u != named]
+        for u in seen:
+            k = classify(u)
+            if k == "hls" and validate(u) is None:
+                return u, k, seen
+        if a.allow_progressive:
+            for u in seen:
+                if classify(u) == "progressive":
+                    return u, "progressive", seen
+        return None, None, seen
+
+    url, kind, media = pick(frame)
+    while not url and time.time() < deadline:
         time.sleep(a.poll_secs)
         try:
             frame, _ = _open(PAGE.format(wid=a.webcastid), jar)
         except urllib.error.URLError as e:
             print(f"  … fetch failed ({e}); retrying", file=sys.stderr)
             continue
-        media = extract_media(frame)
-        good = [u for u in media if validate(u) is None]
-        print(f"  … {len(media)} media candidate(s), {len(good)} usable  "
-              f"{int(deadline - time.time())}s left", flush=True)
+        url, kind, media = pick(frame)
+        print(f"  … hlsSource={str(extract_hls_source(frame))[:70]!r} "
+              f"({len(media)} media seen)  {int(deadline - time.time())}s left", flush=True)
 
-    if not good:
-        msg = (f"{a.slug or a.webcastid}: reached the page but found no usable m3u8 "
+    if not url:
+        msg = (f"{a.slug or a.webcastid}: reached the player but no usable stream "
                f"({len(media)} media candidate(s) present)")
         print("FAIL: " + msg, file=sys.stderr)
         for u in media:
-            print(f"  rejected: {u[:130]}  — {validate(u)}", file=sys.stderr)
-        if not media:
-            print("  (no media URLs at all — is the player still on a standby card?)",
+            print(f"  rejected: {u[:130]}  — kind={classify(u)} {validate(u) or ''}",
                   file=sys.stderr)
-        notify("chorus-call resolve found no m3u8", msg + f" | saw: {media[:3]}", notify_on)
+        if not media:
+            print("  (webcastConfig.hlsSource empty — player still on a standby card?)",
+                  file=sys.stderr)
+        notify("chorus-call resolve found no stream", msg + f" | saw: {media[:3]}", notify_on)
         return 5
 
-    url = good[0]
-    if len(good) > 1:
-        print(f"note    : {len(good)} usable candidates, taking the first:")
-        for u in good:
-            print(f"          {u[:140]}")
+    if kind == "progressive":
+        print(f"note    : NOT HLS — progressive media ({url.split('?')[0][-12:]}). "
+              "The arm must use the generic-ffmpeg fallback leg; the HLS edge-fetch "
+              "leg cannot read this.")
 
     out = a.out or (os.path.expanduser(f"~/{a.slug}-stream.url") if a.slug else None)
     if not out:
         print(url)
         return 0
     write_url(out, url)
-    print(f"wrote   : {out}\n          {url[:160]}")
+    # The companion .kind file is how the launcher picks the arm path without
+    # re-parsing the URL. Written AFTER the url file so it can never claim a
+    # kind for a URL that was not written.
+    write_url(out.replace(".url", ".kind") if out.endswith(".url") else out + ".kind", kind)
+    print(f"wrote   : {out}  [kind={kind}]\n          {url[:160]}")
     return 0
 
 
 if __name__ == "__main__":
+    # NOTHING may escape as a traceback. This runs unattended at 13:25Z with the
+    # operator asleep; a stack trace on stderr and exit 1 is indistinguishable
+    # from a crash and pages nobody. Every abnormal exit gets a named code and,
+    # unless --no-notify, an alert. (Learned the hard way 2026-07-29: an expired
+    # fixture made register() raise and the process exited 1, silently.)
     try:
         sys.exit(main())
+    except SystemExit:
+        raise
     except urllib.error.URLError as e:
         print(f"FAIL: network: {e}", file=sys.stderr)
+        if "--no-notify" not in sys.argv:
+            notify("chorus-call resolve: network failure", str(e))
         sys.exit(6)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"FAIL: unexpected: {type(e).__name__}: {e}", file=sys.stderr)
+        if "--no-notify" not in sys.argv:
+            notify("chorus-call resolve CRASHED",
+                   f"{type(e).__name__}: {e} — the event was NOT armed.")
+        sys.exit(7)

@@ -75,17 +75,31 @@ case "$SLUG" in
   # validate a file the arm never reads — every check green, wrong stream.
   f)    CONFIG=configs/webcast-f-26jul28-arm.toml;    URLF=$HOME/ford-stream.url; EVENT=KXEARNINGSMENTIONF-26JUL28 ;;
   *)
-    # Generic path (2026-07-29 onward): every staged config is
-    # configs/webcast-<slug>-<date>-arm.toml and reads $HOME/<slug>-stream.url —
-    # the slug/urlfile mismatch was a Ford-only legacy. Refuse ambiguity: more
-    # than one matching config means the operator must clean up, not us guess.
-    MATCHES=(configs/webcast-"$SLUG"-*-arm.toml)
-    [[ -f "${MATCHES[0]}" ]] || { echo "usage: $0 <slug> [--dry] [--url-ok] — no configs/webcast-$SLUG-*-arm.toml" >&2; exit 2; }
-    [[ ${#MATCHES[@]} -eq 1 ]] || fail "ambiguous slug $SLUG: ${MATCHES[*]} — delete or rename the stale one"
-    CONFIG="${MATCHES[0]}"
-    URLF="$HOME/$SLUG-stream.url"
-    EVENT="$(sed -n 's/^id[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$CONFIG" | head -1)"
-    [[ -n "$EVENT" ]] || fail "no event id parsed from $CONFIG"
+    # EARSHOT_ARM_CONFIG: explicit config override, for a fallback config that
+    # deliberately sits OUTSIDE the webcast-<slug>-*-arm.toml glob (a second
+    # match there would trip the ambiguity refusal below). The URL file and all
+    # seven guards are unchanged — this selects which config to arm, nothing
+    # more. Used by wing-autorun.sh when the venue serves progressive media.
+    if [[ -n "${EARSHOT_ARM_CONFIG:-}" ]]; then
+      CONFIG="$EARSHOT_ARM_CONFIG"
+      [[ -f "$CONFIG" ]] || fail "EARSHOT_ARM_CONFIG=$CONFIG not found"
+      URLF="$HOME/$SLUG-stream.url"
+      EVENT="$(sed -n 's/^id[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$CONFIG" | head -1)"
+      [[ -n "$EVENT" ]] || fail "no event id parsed from $CONFIG"
+      echo "NOTE: config overridden via EARSHOT_ARM_CONFIG=$CONFIG"
+    else
+      # Generic path (2026-07-29 onward): every staged config is
+      # configs/webcast-<slug>-<date>-arm.toml and reads $HOME/<slug>-stream.url —
+      # the slug/urlfile mismatch was a Ford-only legacy. Refuse ambiguity: more
+      # than one matching config means the operator must clean up, not us guess.
+      MATCHES=(configs/webcast-"$SLUG"-*-arm.toml)
+      [[ -f "${MATCHES[0]}" ]] || { echo "usage: $0 <slug> [--dry] [--url-ok] — no configs/webcast-$SLUG-*-arm.toml" >&2; exit 2; }
+      [[ ${#MATCHES[@]} -eq 1 ]] || fail "ambiguous slug $SLUG: ${MATCHES[*]} — delete or rename the stale one"
+      CONFIG="${MATCHES[0]}"
+      URLF="$HOME/$SLUG-stream.url"
+      EVENT="$(sed -n 's/^id[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$CONFIG" | head -1)"
+      [[ -n "$EVENT" ]] || fail "no event id parsed from $CONFIG"
+    fi
     ;;
 esac
 
@@ -95,7 +109,21 @@ esac
 # --- guard 2: stream URL present, non-empty, and not stale -------------------
 [[ -s "$URLF" ]] || fail "$URLF missing or empty — surface the m3u8 first (docs/RUNBOOK.md T−20)"
 URL="$(head -1 "$URLF" | tr -d '[:space:]')"
-[[ "$URL" == http*://*.m3u8* ]] || fail "$URLF does not look like an m3u8 URL: ${URL:0:60}"
+# EARSHOT_ALLOW_NON_HLS: some venues serve PROGRESSIVE audio rather than HLS
+# off the same player field (Chorus Call's webcastConfig.hlsSource accepts
+# .m3u8 / .mp4 / .m4a — VERIFICATIONS Q-CC). ffmpeg reads those natively, so a
+# blanket m3u8 requirement would refuse a stream we can capture perfectly well.
+# Narrow by construction: still http(s), still an explicit media extension, and
+# ONLY when the caller sets the variable. Default behaviour is unchanged.
+if [[ -n "${EARSHOT_ALLOW_NON_HLS:-}" ]]; then
+  case "$URL" in
+    http*://*.m3u8*|http*://*.mp4*|http*://*.m4a*|http*://*.mp3*) ;;
+    *) fail "$URLF is neither an m3u8 nor a recognised progressive media URL: ${URL:0:60}" ;;
+  esac
+  [[ "$URL" == http*://*.m3u8* ]] || echo "NOTE: NON-HLS stream (progressive) — arming the generic ffmpeg leg; race is unscoreable on this path"
+else
+  [[ "$URL" == http*://*.m3u8* ]] || fail "$URLF does not look like an m3u8 URL: ${URL:0:60}"
+fi
 if [[ "$URL_OK" -eq 0 && "$URLF" -ot "$CONFIG" ]]; then
   fail "$URLF is OLDER than $CONFIG — probably a stale URL from a previous run.
          Re-surface it (rm -f $URLF first), or pass --url-ok if you are certain."

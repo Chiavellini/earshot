@@ -885,9 +885,37 @@ is the first venue where the *"has it started"* signal is separable from the
   immediately unless `pageId == 'frame'`). Do not build a resolver against it —
   an earlier read of this file suggested the m3u8 arrives over that socket and
   that is wrong.
-- **Not yet pinned:** the shape of the stream URL on the `frame` page, and
-  whether the emailed confirmation link carries a token that bypasses the form.
-  Both are unresolved as of this entry — do not guess them in code.
+- **RESOLVED same night — the player reads ONE named field.** `frameScripts.js`
+  builds its video.js source list from `webcastConfig.hlsSource` and branches on
+  the extension, so the stream URL is EMBEDDED IN THE PAGE, not pushed over the
+  STOMP/SockJS channel the frame page also loads:
+
+  ```js
+  if (isValidURL(webcastConfig.hlsSource, 'http-hls'))  push({type:'application/x-mpegurl'})  // .m3u8
+  else if (isValidURL(webcastConfig.hlsSource,'http-mp4')) push({type:'video/mp4'})           // .mp4
+  else if (isValidURL(webcastConfig.hlsSource,'http-m4a')) push({type:'audio/mp4'})           // .m4a
+  ```
+
+  Confirmed against the live archive fixture: `webcastConfig.hlsSource =
+  "http://vodchoruscall.akamaized.net/07452/starbucks/starbucks260128.mp4"`.
+  **Read the field by name; do not regex the page for URLs** (the scrape stays
+  only as a backstop). ⚠ **A Chorus Call stream may legitimately be PROGRESSIVE
+  rather than HLS** — `hls-edge-fetch.py` speaks manifests and cannot read it,
+  which is why `configs/wing-progressive-arm.toml` (one plain ffmpeg leg)
+  exists and `choruscall-resolve.py --allow-progressive` emits a `.kind` file.
+  `mediaType` is the audio/video bit: **0 = audio-only** (the player is a 30 px
+  control bar; WING and the SBUX archive are both 0), 1 = video.
+- **`eventStatus` 4 = expired** — observed live when the SBUX archive lapsed
+  mid-session and the page flipped to `pageId: "expired"`. A resolver must treat
+  any non-1 status as "keep polling / fail closed", never assume 0/1/3.
+- **Still not pinned:** whether the emailed confirmation link carries a token
+  that bypasses the form (untested — programmatic registration made it moot),
+  and the URL shape of a genuinely LIVE Chorus Call event, which no probe has
+  yet observed. The live branch above is read from the vendor's own player code,
+  not from a live capture.
+- Evidence: transcript inline above; the probe wav is laptop-local and
+  UNTRACKED (`corpus/` is gitignored) at
+  `corpus/bridge-probes/wing-2026-07-29-bridge-entry.wav`.
 
 ## Q-OPS — Operator-screened bridges defeat the listen-only dial (2026-07-29, WING, live)
 

@@ -476,6 +476,30 @@ scripts/choruscall-resolve.py --webcastid Cv4NzoL0 --slug wing \
 scripts/choruscall-resolve.py --check          # 18-assertion offline self-test
 ```
 
+**Unattended WING (2026-07-29) is wired end to end** as
+`com.earshot.wing-arm.timer` → `scripts/wing-autorun.sh` (13:25Z, T-35):
+resolve → arm → hard SIGTERM at 90 min, paging `notify.sh` at every failure.
+The phone lane is NOT an option here — WING's published bridge is
+operator-screened (**Q-OPS**), which no listen-only system can pass.
+
+**Two-path capture, chosen automatically.** The venue serves `.m3u8`, `.mp4`
+or `.m4a` off the same `hlsSource` field, so the resolver writes a companion
+`$HOME/<slug>-stream.kind` and the launcher branches:
+
+| kind | config | leg |
+|---|---|---|
+| `hls` | `configs/webcast-wing-26jul29-arm.toml` | speculative edge-fetch + tuned ffmpeg |
+| `progressive` | `configs/wing-progressive-arm.toml` | one plain ffmpeg leg |
+
+The fallback exists because `hls-edge-fetch.py` speaks manifests and would die
+instantly on a progressive body — taking BOTH primary legs with it. It is
+selected via `EARSHOT_ARM_CONFIG` (an explicit override that bypasses the
+slug glob, so it cannot trip the ambiguity refusal) plus
+`EARSHOT_ALLOW_NON_HLS=1`, which widens guard 2 to `.mp4/.m4a/.mp3` **only
+when set** — default behaviour is unchanged and still refuses anything that is
+not an m3u8. ⚠ Progressive media carries no PDT, so **the race is unscoreable
+on that path**; capture it, but never pool its latency with HLS venues.
+
 `--status-only` is **fully unauthenticated** and works from the box today
 (WING → `0 upcoming`, streamId 28574, ~93 ms): a browser-free live-trigger
 keyed to the venue's own state instead of a wall-clock guess. Writing the URL
