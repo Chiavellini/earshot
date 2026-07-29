@@ -86,22 +86,60 @@ def event_status(sid, timeout=15):
     return int(body)
 
 
-# --- m3u8 extraction ---------------------------------------------------------
-# Deliberately generic: pull every absolute .m3u8 out of whatever page we were
-# able to reach, then let validate() decide.  We do NOT invent a URL template —
-# the shape of the stream URL on the `frame` page is explicitly UNPINNED in
-# VERIFICATIONS Q-CC, and this repo does not code against remembered API facts.
-M3U8_RE = re.compile(r"https?://[^\s\"'<>\\]{6,300}?\.m3u8(?:\?[^\s\"'<>\\]{0,200})?")
+# --- registration ------------------------------------------------------------
+# LIVE-VERIFIED 2026-07-29 (VERIFICATIONS Q-CC): the form POSTs the four
+# identity fields plus the page's hidden inputs, and the ENDPOINT DIFFERS BY
+# EVENT STATE — `preregistration/submit` for an upcoming event (WING, status 0)
+# vs `registration/submit` for a live/archived one (SBUX archive, status 3).
+# Posting to the wrong one is how this silently no-ops, so derive it, never
+# hardcode it.
+def register(webcastid, page, ident, jar):
+    hidden = parse_hidden_inputs(page)
+    m = re.search(r"<form[^>]*action=\"([^\"]+)\"", page)
+    action = m.group(1) if m else None
+    if not action:
+        raise RuntimeError("no registration form on the page")
+    url = urllib.parse.urljoin(HOST + "/mediaframe/", action)
+    fields = dict(hidden)
+    fields.update({
+        "firstName": ident["first"], "lastName": ident["last"],
+        "email": ident["email"], "company": ident["company"],
+    })
+    body = urllib.parse.urlencode(fields).encode()
+    op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+    req = urllib.request.Request(url, data=body, headers={
+        "User-Agent": UA,
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Referer": PAGE.format(wid=webcastid),
+    })
+    with op.open(req, timeout=30) as r:
+        return r.read().decode("utf-8", "replace"), r.geturl()
 
 
-def extract_m3u8(page):
+# --- media extraction --------------------------------------------------------
+# Deliberately generic: pull every absolute media URL out of whatever page we
+# reached and let validate() rank them.  We do NOT invent a URL template — the
+# shape of the LIVE stream URL is still UNPINNED in VERIFICATIONS Q-CC (the
+# archive fixture serves a plain Akamai .mp4), and this repo does not code
+# against remembered API facts.  Reporting the rejects matters as much as
+# finding the winner: "no m3u8" plus a list of what WAS there is diagnosable at
+# 07:40; a bare "nothing found" is not.
+MEDIA_RE = re.compile(
+    r"https?://[^\s\"'<>\\]{6,300}?\.(?:m3u8|mpd|mp4|mp3)(?:\?[^\s\"'<>\\]{0,200})?")
+
+
+def extract_media(page):
     seen, out = set(), []
-    for u in M3U8_RE.findall(page):
+    for u in MEDIA_RE.findall(page):
         u = html.unescape(u)
         if u not in seen:
             seen.add(u)
             out.append(u)
     return out
+
+
+def extract_m3u8(page):
+    return [u for u in extract_media(page) if ".m3u8" in u]
 
 
 def validate(url):
@@ -185,11 +223,26 @@ def selftest():
     chk("streamId", h.get("streamId") == "28574", repr(h.get("streamId")))
     chk("frameId == hidden streamId", c.get("frameId") == h.get("streamId"))
 
-    print("extract_m3u8:")
+    print("extract_m3u8 / extract_media:")
     u = extract_m3u8(FRAME_FIXTURE)
     chk("finds both", len(u) == 2, repr(u))
     chk("keeps query", u and u[0].endswith("token=abc"), repr(u[:1]))
     chk("none on register page", extract_m3u8(FIXTURE) == [])
+    # Real archive fixture: the SBUX Q1 frame page served a plain Akamai mp4.
+    # extract_media must SEE it (so the failure message can name it) while
+    # extract_m3u8 must NOT offer it to the arm.
+    arch = 'src: "http://vodchoruscall.akamaized.net/07452/starbucks/starbucks260128.mp4"'
+    chk("media sees archive mp4", extract_media(arch) and extract_media(arch)[0].endswith(".mp4"))
+    chk("m3u8 rejects archive mp4", extract_m3u8(arch) == [])
+
+    print("register endpoint selection (live-verified shapes):")
+    up = '<form method="post" action="preregistration/submit">' + FIXTURE
+    lv = '<form method="post" action="registration/submit">' + FIXTURE
+    chk("upcoming -> preregistration",
+        re.search(r'action="([^"]+)"', up).group(1) == "preregistration/submit")
+    chk("live/archived -> registration",
+        re.search(r'action="([^"]+)"', lv).group(1) == "registration/submit")
+    chk("hidden inputs carried into POST", parse_hidden_inputs(up).get("streamId") == "28574")
 
     print("validate:")
     chk("accepts master", validate("https://x.net/a/master.m3u8") is None)
@@ -218,10 +271,22 @@ def main():
     ap.add_argument("--slug", help="writes $HOME/<slug>-stream.url unless --out")
     ap.add_argument("--stream-id", help="frameId; parsed from the page if omitted")
     ap.add_argument("--access-url", help="post-registration/emailed link that reaches the `frame` page")
+    ap.add_argument("--register", action="store_true",
+                    help="submit the registration form to reach the `frame` page")
+    # Defaults come from the environment so the identity is never baked into a
+    # unit file or a repo config. See memory/RUNBOOK: registrations use the
+    # Actinver analyst identity, never the personal address.
+    ap.add_argument("--first", default=os.environ.get("EARSHOT_REG_FIRST"))
+    ap.add_argument("--last", default=os.environ.get("EARSHOT_REG_LAST"))
+    ap.add_argument("--email", default=os.environ.get("EARSHOT_REG_EMAIL"))
+    ap.add_argument("--company", default=os.environ.get("EARSHOT_REG_COMPANY"))
     ap.add_argument("--out")
     ap.add_argument("--wait-secs", type=int, default=0, help="poll until status==1 (live)")
     ap.add_argument("--poll-secs", type=int, default=10)
     ap.add_argument("--status-only", action="store_true")
+    ap.add_argument("--any-status", action="store_true",
+                    help="skip the live gate — for validating the resolve chain "
+                         "against an ARCHIVED event; never use on an arm path")
     ap.add_argument("--dump-frame", help="save the reached page here for inspection")
     ap.add_argument("--no-notify", action="store_true")
     ap.add_argument("--check", action="store_true")
@@ -252,44 +317,84 @@ def main():
         return 0
 
     deadline = time.time() + a.wait_secs
+    if a.any_status and st != 1:
+        print(f"  --any-status: proceeding on status {st} (VALIDATION ONLY)")
+        st = 1
     while st != 1 and time.time() < deadline:
         time.sleep(a.poll_secs)
         st = event_status(sid)
         print(f"  … status {st} ({STATUS.get(st, 'unknown')})  {int(deadline - time.time())}s left")
     if st != 1:
-        msg = f"{a.slug or a.webcastid}: still status {st} ({STATUS.get(st,'?')}) after {a.wait_secs}s"
-        print("FAIL: " + msg, file=sys.stderr)
-        notify("chorus-call not live", msg, notify_on)
-        return 3
+        # Not fatal when we hold a credential: the media poll below is the real
+        # gate, and the player can carry the stream URL before the status bit
+        # trips. Only a credential-less run has nothing further to try.
+        if not (a.register or a.access_url):
+            msg = f"{a.slug or a.webcastid}: still status {st} ({STATUS.get(st,'?')}) after {a.wait_secs}s"
+            print("FAIL: " + msg, file=sys.stderr)
+            notify("chorus-call not live", msg, notify_on)
+            return 3
+        print(f"  status still {st}; falling through to media polling anyway")
 
     # --- RESOLVE ------------------------------------------------------------
-    # UNPINNED (VERIFICATIONS Q-CC): the stream URL's shape on the `frame` page.
-    # We refuse to guess a template.  With --access-url we fetch whatever that
-    # link reaches and scrape it; without one we stop LOUDLY rather than arm on
-    # nothing.
-    if not a.access_url:
-        msg = (f"{a.slug or a.webcastid} is LIVE but no --access-url was given; the m3u8 "
-               "is behind Chorus Call registration and its shape is unpinned. "
-               "Surface the URL in a browser (VERIFICATIONS Q-OX recipe).")
+    # Reach the `frame` page one of two ways: an emailed/access link, or by
+    # registering (live-verified 2026-07-29 — the POST returns the frame page
+    # directly for a live/archived event).
+    if a.access_url:
+        frame, final = _open(a.access_url, jar)
+    elif a.register:
+        ident = {"first": a.first, "last": a.last, "email": a.email, "company": a.company}
+        missing = [k for k, v in ident.items() if not v]
+        if missing:
+            print(f"FAIL: --register needs {missing} (or EARSHOT_REG_* env)", file=sys.stderr)
+            return 4
+        frame, final = register(a.webcastid, page, ident, jar)
+        # An upcoming-event POST lands on thankYou, not the player; re-fetch the
+        # webcast page with the session now that we are registered.
+        if "pageId = \"frame\"" not in frame and "pageId: \"frame\"" not in frame:
+            frame, final = _open(PAGE.format(wid=a.webcastid), jar)
+    else:
+        msg = (f"{a.slug or a.webcastid} is LIVE but no credential was given: pass "
+               "--access-url <emailed link> or --register with the identity fields.")
         print("FAIL: " + msg, file=sys.stderr)
         notify("chorus-call LIVE, no credential", msg, notify_on)
         return 4
 
-    frame, final = _open(a.access_url, jar)
-    print(f"frame   : {len(frame)} bytes from {final[:110]}")
+    pid = re.search(r"pageId\s*[:=]\s*\"([^\"]*)\"", frame)
+    print(f"frame   : {len(frame)} bytes, pageId={pid.group(1) if pid else '?'} from {final[:100]}")
     if a.dump_frame:
         open(a.dump_frame, "w").write(frame)
         print(f"dumped  : {a.dump_frame}")
 
-    cands = extract_m3u8(frame)
-    good = [u for u in cands if validate(u) is None]
+    # Poll the FRAME PAGE for media, not just the status flip.  The status
+    # integer is the venue's own "we have started" bit, but the player often
+    # carries the stream URL before it trips — and every second we resolve
+    # early is a second of lead the arm gets on the opening remarks.  Register
+    # ONCE (a re-POST per poll would spam duplicate registrations) and re-fetch
+    # with the same session.
+    media, good = extract_media(frame), []
+    good = [u for u in media if validate(u) is None]
+    while not good and time.time() < deadline:
+        time.sleep(a.poll_secs)
+        try:
+            frame, _ = _open(PAGE.format(wid=a.webcastid), jar)
+        except urllib.error.URLError as e:
+            print(f"  … fetch failed ({e}); retrying", file=sys.stderr)
+            continue
+        media = extract_media(frame)
+        good = [u for u in media if validate(u) is None]
+        print(f"  … {len(media)} media candidate(s), {len(good)} usable  "
+              f"{int(deadline - time.time())}s left", flush=True)
+
     if not good:
         msg = (f"{a.slug or a.webcastid}: reached the page but found no usable m3u8 "
-               f"({len(cands)} candidate(s): {cands[:3]})")
+               f"({len(media)} media candidate(s) present)")
         print("FAIL: " + msg, file=sys.stderr)
-        for u in cands:
-            print(f"  rejected: {u[:120]}  — {validate(u)}", file=sys.stderr)
-        notify("chorus-call resolve found no m3u8", msg, notify_on)
+        for u in media:
+            print(f"  rejected: {u[:130]}  — {validate(u)}", file=sys.stderr)
+        if not media:
+            print("  (no media URLs at all — is the player still on a standby card?)",
+                  file=sys.stderr)
+        notify("chorus-call resolve found no m3u8", msg + f" | saw: {media[:3]}", notify_on)
         return 5
 
     url = good[0]
