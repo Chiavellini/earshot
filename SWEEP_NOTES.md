@@ -5,6 +5,95 @@ sweep. Base commit: f29976c (webcast-lane). Rules of the night: no pushes to
 main/webcast-lane, no risk/kill/ledger/launch-script/config/state changes, no
 live network side effects, no detector threshold/model changes.
 
+## NIGHT SUMMARY — for the morning reviewer (written by sweep 6)
+
+**16 commits** on `sweep/overnight-2026-07-29` (base f29976c = webcast-lane
+HEAD). All 6 sweeps ran; every sweep left the tree green. Final state:
+full suite green (**180 lib tests** — 179 + sweep 6's new pin — plus every
+integration suite, 0 failed anywhere; both model-gated streaming_ctc tests
+RAN via `scripts/ctc-test-env.sh`, not skipped) and the full release perf
+ladder green (**12 perf tests** — sweep 5's handoff said 13; that was a
+miscount, the file has exactly 12 `perf_` fns). Final ladder numbers are in
+the Sweep 6 section below; NO DRIFT vs the sweep-2 baseline table.
+
+**Forbidden-files invariant — MECHANICALLY VERIFIED at sweep 6**
+(`git diff --name-only webcast-lane..HEAD`): the whole night touched ONLY
+`.gitignore`, `SWEEP_NOTES.md`, `docs/layers/{book-cache,detector,executor,
+source,telemetry}.md`, `scripts/ctc-test-env.sh` (new test-env helper, not a
+launch/preflight/autorun script), `src/detector/{ctc_scorer,kws_compile,
+streaming_ctc}.rs`, `src/kalshi/{book,rest}.rs`, `src/pipeline/{chunker,mod,
+preproc}.rs`, `src/source/{pipe,sip,twilio_ws}.rs`, `src/telemetry.rs`,
+`tests/perf_budget.rs`. **No** src/risk.rs, **no** launch/preflight/autorun
+scripts, **no** configs/, **nothing** under state/, no detector thresholds,
+no models.
+
+**VERIFIED wins** (each won every interleaved A/B round; final-ladder
+confirmations in Sweep 6):
+- S1 μ-law ingress decode single-alloc (`decode_ulaw_arc`): 148–150 →
+  100–102 ns/frame (~33%), phone-lane capture thread.
+- S1 `kws_compile::prefix_cut` whitespace off-by-N — correctness fix
+  (Fast cut landed one token late on doubled-whitespace prefixes);
+  unit-test-pinned, bit-identical for well-formed configs.
+- S2 `ctc_scorer::accept_frame` scratch reuse: ~1250 → ~750 ns/frame
+  (~40%) on the streaming_ctc fire path; won all 15 rounds.
+- S3 `RestClient` orders-URL pre-parse at construction: exec→send p95
+  24–29 → 9–10 µs quiet-round (final ladder 6 µs); bad base URL now fails
+  at construction instead of first send.
+- S5 `kalshi/book.rs` ingest alloc-free: delta apply 444–453 → 233–237
+  ns/msg (−47%), snapshot apply 5868–6166 → 1587–1705 ns (−73%); won all
+  20 rounds. Includes a real latent-bug fix: `dollars_to_cents` now
+  `checked_mul` — absurd wire price no longer u32-wraps into a valid cent
+  value (pinned by unit assert).
+
+**UNVERIFIED-LOW-RISK / NOT RESOLVABLE** (strictly-less-work or
+honesty/test-only; inside laptop noise where measured):
+- S1 pipe.rs decode-off-accumulation-buffer (one less alloc+copy by
+  construction; A/B never separated from noise — final ladder even leaned
+  old-side by ~4 ns, still inside noise).
+- S1 Twilio `capture_ts` stamped at WS arrival — measurement-honesty fix:
+  phone-lane capture→preproc will read a few µs LARGER and truthful; do
+  not misread as regression.
+- S1 preproc resample scratch reuse; S4 chunker up-front reserve
+  (start-of-stream reallocs only); S4 detect_loop `ring_wake` recording
+  moved off the fire-critical span.
+- S2 streaming_ctc cache-tensor moves (mem::take instead of 74 tensor
+  clones per step; consequence: inference `Err` poisons streaming state —
+  documented, both callers already treat it as fatal).
+- S3 `PosteriorBatch` flat-buffer delivery (one ~2 KB Vec per posterior
+  frame removed; closes detector.md's no-steady-state-alloc obligation).
+- S6 arm-fold disjointness pin + telemetry doc truth-up (test/docs only).
+
+**The night's ONLY API-shape changes** (both internal, all callers updated,
+all suites green — flagged for review attention):
+1. S3: `StreamingCtc::accept_pcm` public return changed
+   `Result<Vec<(u64, Vec<f32>)>>` → `Result<PosteriorBatch>` (+
+   `posteriors()` accessor) in `src/detector/streaming_ctc.rs`.
+2. S5: `book.rs::apply_message` signature changed (borrows parsed msg;
+   `#[doc(hidden)] pub` along with `Ladders` for the perf harness — fields
+   stay private, no layer door changed).
+
+**Flagged, NOT fixed (latent, deliberately parked):**
+1. `main.rs:1009` — arm folds executor edges via
+   `report.edges.extend(snapshot())`; BTreeMap extend REPLACES on
+   collision, does not merge histograms. Correct today only because the
+   two recorders' edge sets are disjoint — sweep 6 turned that
+   precondition into a tested invariant (`arm_fold_edge_sets_are_disjoint`
+   extracts the literals from both producer files); the real fix
+   (extend → `LatencyRecorder::merge` via a `run_pipeline` return-seam
+   change) is post-event.
+2. `chunker.rs` — a sealed chunk ships the WHOLE buffer and can exceed
+   `chunk_ms` when input frames are large (never splits a frame). Judged
+   intentional (S1); noted so the reviewer confirms.
+3. S2's error-poisoning consequence (above) — documented behavior, not a
+   bug, but a semantic change worth knowing at review.
+
+**PARKED POST-EVENT list (pre-registered; none started, do not start
+before the live run is reviewed):** decision→exec transport restructure
+(ring+unpark or spin receiver; the 0.5–1 ms p95 mpsc wake), `Arc<str>`
+ticker / `Arc<PreStaged>` clone bundle (three sites together),
+main.rs:1009 extend→merge fold seam, Twilio typed WS deserialize,
+ort `TensorRef` borrowed feature window.
+
 ## Sweep 1 — 2026-07-29 (commit 5720c02 + this notes commit)
 
 Test status: `EARSHOT_REQUIRE_MODELS=1 cargo test` fully green in the
@@ -486,3 +575,77 @@ POST-EVENT, deliberately not done the night before a live run.
   Arc<str> ticker / Arc<PreStaged> bundle, main.rs:1009 extend→merge
   telemetry fold, Twilio typed WS deserialize, ort TensorRef feature
   window.
+
+## Sweep 6 — 2026-07-29 (FINAL — commit 00cc831 + this notes commit)
+
+Closing sweep: one test-only mitigation, mechanical forbidden-files
+verification, final full-suite + full-ladder runs, NIGHT SUMMARY written at
+the top of this file. Nothing risky touched.
+
+### What changed
+
+1. **Arm-fold edge-set disjointness pinned** (00cc831) — test/docs only,
+   zero production code. Sweep 5 flagged that `main.rs:1009`'s
+   `report.edges.extend(exec_report.recorder.snapshot())` is correct only
+   by coincidence (BTreeMap extend replaces on collision). New telemetry
+   unit test `arm_fold_edge_sets_are_disjoint` extracts every production
+   `.record("edge")` literal from `src/pipeline/mod.rs` and
+   `src/kalshi/executor.rs` (stopping at each file's `#[cfg(test)]`) and
+   asserts (a) the two sets are disjoint and (b) they partition `EDGES`
+   exactly — so a future colliding edge fails a test instead of silently
+   losing a histogram. Also corrected the misleading
+   `merge_folds_counts_across_recorders` comment ("the exact arm-time
+   fold" — arm does NOT use merge; fanout legs do) and trued up
+   `docs/layers/telemetry.md`'s teardown-fold claim to match the code.
+   The real extend→merge fix remains PARKED post-event.
+
+### Forbidden-files invariant — verified
+
+`git diff --name-only webcast-lane..HEAD` full list (19 files):
+.gitignore, SWEEP_NOTES.md, docs/layers/book-cache.md,
+docs/layers/detector.md, docs/layers/executor.md, docs/layers/source.md,
+docs/layers/telemetry.md, scripts/ctc-test-env.sh,
+src/detector/ctc_scorer.rs, src/detector/kws_compile.rs,
+src/detector/streaming_ctc.rs, src/kalshi/book.rs, src/kalshi/rest.rs,
+src/pipeline/chunker.rs, src/pipeline/mod.rs, src/pipeline/preproc.rs,
+src/source/pipe.rs, src/source/sip.rs, src/source/twilio_ws.rs,
+src/telemetry.rs, tests/perf_budget.rs. No risk.rs, no
+launch/preflight/autorun scripts, no configs/, nothing under state/.
+
+### Final test status
+
+`source scripts/ctc-test-env.sh && EARSHOT_REQUIRE_MODELS=1 cargo test`:
+fully green — 180 lib tests (179 + tonight's pin) + every integration
+suite, 0 failed anywhere; both model-gated streaming_ctc tests RAN
+(10 s real inference).
+
+### FINAL perf ladder — branch's closing numbers (HEAD 00cc831,
+`cargo test --release --test perf_budget -- --ignored --nocapture
+--test-threads=1`, 12 tests, all green; one run — no hot-path code changed
+since sweep 5's dedicated A/B):
+
+- preproc 2x upsampler: 11715× realtime
+- sherpa_kws: 21.9× RT; per-chunk p50 268/122/59/30 µs (160/80/40/20 ms);
+  p95 ~14.1–14.7 ms (structural decode-burst bimodality, unchanged)
+- executor fire path: presign 148 ns; decision→exec p95 439 µs;
+  exec→send p95 6 µs (sweep 3's URL pre-parse holding)
+- full chain paced: capture→decision p95 140.0 ms, capture→ack p95
+  140.6 ms (chunk-cadence-dominated, as all night)
+- cold first fire: process-warm premium 0 µs both postures
+- ring idle-wake: old p50 79 µs / new (unpark-on-send) 4 µs
+- ingress decode A/B: ulaw old 148–150 / new 100–102 ns (new won all 5
+  rounds — sweep 1's win holding); pipe old 118–120 / new 121–124 ns
+  (old leaned ahead this run by ~4 ns — inside noise, consistent with
+  sweep 1's NOT RESOLVABLE verdict, kept as strictly-less-work)
+- recorder 29 ns/op; risk record_send 27 ns/op
+- ctc scorer A/B: old anchor 1130–1245 / new 748–757 ns (new won all 5 —
+  sweep 2's win holding)
+- streaming_ctc: 23.8× RT, per-call p50 224 µs, 1496 posterior frames
+- book apply ingest: delta 233–234 ns, snapshot 1591–1648 ns (sweep 5's
+  −47%/−73% holding)
+
+Verdict vs the sweep-2 baseline and sweep-4 drift table: NO DRIFT; every
+verified win still shows at its claimed magnitude.
+
+Branch pushed to origin as `sweep/overnight-2026-07-29`; working tree
+clean. Night closed.
