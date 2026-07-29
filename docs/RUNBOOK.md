@@ -450,6 +450,42 @@ cluster. Surface each `$HOME/<slug>-stream.url` before its T-20; guard 2
 refuses a URL file older than the config. Shutdown stays ATTENDED (real
 SIGTERM) until RUNBOOK bugs 2–3 are fixed.
 
+> **⚠ NOTHING IS SCHEDULED — every row above is a hand-typed command.**
+> Checked 2026-07-29 02:40Z: `systemctl --user list-timers` on the box holds
+> only `com.earshot.ford-arm.timer`, inactive since Tuesday. Lingering IS on,
+> so timers *would* fire; none are installed. The blocker is not the timer, it
+> is that guard 2 needs a live m3u8 that (at 6 of 7 venues) only a logged-in
+> browser can produce at T-20. **13:40Z WING = 07:40 CDMX is inside the
+> human-absent window that silently dropped PYPL and BA on 07-28** — treat an
+> unattended WING as unarmed unless `choruscall-resolve.py` below is wired.
+>
+> **REGISTRATION IDENTITY (standing, corrected 2026-07-29):** every IR/webcast
+> registration uses the Actinver analyst identity — **`bdelriom@actinver.com.mx`**
+> — never the personal gmail. Applies to Chorus Call, webinar.net/Notified,
+> Q4 Inc and OpenExchange forms alike.
+
+**`scripts/choruscall-resolve.py` (new 2026-07-29) — WING + SBUX venue.**
+Splits the T-20 browser step in two, because Chorus Call is the first venue
+where the *"has it started"* signal is separable from the *"give me the audio"*
+credential (VERIFICATIONS Q-CC):
+
+```
+scripts/choruscall-resolve.py --webcastid Cv4NzoL0 --slug wing --status-only
+scripts/choruscall-resolve.py --webcastid Cv4NzoL0 --slug wing \
+    --access-url '<emailed confirmation link>' --wait-secs 900
+scripts/choruscall-resolve.py --check          # 18-assertion offline self-test
+```
+
+`--status-only` is **fully unauthenticated** and works from the box today
+(WING → `0 upcoming`, streamId 28574, ~93 ms): a browser-free live-trigger
+keyed to the venue's own state instead of a wall-clock guess. Writing the URL
+file still needs `--access-url`; **without one the script exits non-zero and
+pages via notify.sh rather than arming on nothing.** It mirrors run-arm.sh
+guards 2+3 (rejects variant playlists, writes atomically) so a bad URL fails
+in the resolver, not at fire time. ⚠ The stream URL's shape on the player page
+is UNPINNED — the script scrapes rather than templating it, and must be
+live-validated once against a real `frame` page before it is trusted unattended.
+
 ### Boeing — what differs from PayPal (same platform, 2.5 h later)
 
 Boeing is **Q4 Inc → Amazon IVS, exactly like PayPal**, so PayPal at 08:00 is a

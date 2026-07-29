@@ -842,3 +842,49 @@ probe under the $1 ledger → FIX-vs-REST send→ack A/B from the same box.
   (`SPECULATIVE: NO-GO` from manifest-probe; fetcher self-disabled correctly).
 - Full run evidence: `state/KXEARNINGSMENTIONF-26JUL28/postrun/` (arrival log
   n≈large, spec_edge SUMMARY, probe output) + RUNBOOK Ford 07-28 entry.
+
+## Q-CC — Chorus Call / Dynamic Media Frame venue class (2026-07-29, WING + SBUX)
+
+Two Wednesday events ride this venue (WING 14:00 UTC, SBUX 20:15 UTC), and it
+is the first venue where the *"has it started"* signal is separable from the
+*"give me the audio"* credential. Live-probed from the us-east box 2026-07-29
+~02:40 UTC; every line below is a curl result, not doc reading.
+
+- **Page identity.** `event.choruscall.com/mediaframe/webcast.html?webcastid=<id>`
+  serves a JS `webcastConfig` object with the durable per-event facts:
+  `webcastId`, `frameId` (== the form's hidden `streamId`), `accountName`,
+  `eventTitle`, `eventDate` (with an explicit `eventDateTimezone`), and
+  `eventStatus`. **WING = `Cv4NzoL0` / frameId `28574`**; SBUX Q1 FY26 archive
+  = `Im3S8SaF` / frameId `20448`.
+  ⚠ `eventDate` is rendered with a **named US zone** (`"Wed Jul 29 10:00:00
+  EDT 2026"` + `eventDateTimezone: "America/New_York"`), i.e. this venue does
+  NOT reproduce the EST-for-EDT misprint seen on the PYPL/META/CVNA IR widgets.
+- **UNAUTHENTICATED live-detector (the useful finding).**
+  `GET event.choruscall.com/mediaframe/v2/dynamicframe/getPolledStatus?streamid=<frameId>`
+  returns a bare integer, **no cookies, no registration, no browser**, from the
+  us-east box in **93 ms**:
+
+  | streamid | returned | meaning |
+  |---|---|---|
+  | 28574 (WING, upcoming) | `0` | not started |
+  | 20448 (SBUX Q1, archived) | `3` | archived |
+
+  `1` == live (from `commonScripts.js` `handleEventStatus`: the player reloads
+  on 0→1 and treats 1 as the live frame). This gives a browser-free arm trigger
+  keyed to the venue's own state rather than to a wall-clock guess — the first
+  venue where we have that.
+- **The m3u8 is NOT reachable this way.** `webcast.html` returns `pageId:
+  "register"` for BOTH an upcoming and an archived event, and the page contains
+  **zero** `.m3u8` / `streamUrl` / `mediaUrl` strings. The player page
+  (`pageId: "frame"`) is served only to a registered session; the form POSTs to
+  `preregistration/submit` with `firstName/lastName/email/company` (+ hidden
+  `streamId`, `loginType`). **`loginType` differs per event — WING = 2, SBUX
+  Q1 = 1** — so the registration shape is per-event and must not be assumed.
+- **`wss://webcast.choruscall.com/webcast-cmt/socket` is a CONNECTIVITY TEST,
+  not stream delivery** (`commonScripts.js` `websocket:` test block closes it
+  immediately unless `pageId == 'frame'`). Do not build a resolver against it —
+  an earlier read of this file suggested the m3u8 arrives over that socket and
+  that is wrong.
+- **Not yet pinned:** the shape of the stream URL on the `frame` page, and
+  whether the emailed confirmation link carries a token that bypasses the form.
+  Both are unresolved as of this entry — do not guess them in code.
