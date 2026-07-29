@@ -123,7 +123,13 @@ KWS C API does not expose. Two wins over sherpa_kws: real per-hit `confidence`
   (batch dim `-1` → 1, zero-filled; i64 for `processed_lens`), so the same code
   drives any sherpa/k2 zipformer2-style streaming-CTC export — the English model
   is a drop-in. `T` from the `x` input shape, `decode_chunk_len` from ONNX
-  metadata, `vocab` from the `log_probs` output.
+  metadata, `vocab` from the `log_probs` output. Posterior delivery is
+  flat-buffer: `accept_pcm` returns a `PosteriorBatch` (first global frame
+  index + count) and the log-posterior data is read from the model's reused
+  `posteriors()` buffer (`frames × vocab`, frame-major, valid until the next
+  call) — no per-frame Vec in steady state. The remaining per-step allocations
+  are the `x` feature tensor handed to `ort` by value and ort's own output
+  map — both inside the inference call itself.
 - **Prefix-firing** (`ctc_scorer.rs`): one start-anytime **Viterbi** forward
   variable per compiled entry over the CTC lattice `[blank, t0, blank, t1, …]`;
   fires when the best path reaches the final token (`max(alpha[L-2], alpha[L-1])`)

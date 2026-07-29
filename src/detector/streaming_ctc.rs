@@ -63,6 +63,10 @@ pub struct StreamingCtcModel {
     updated_states: HashSet<String>,
     /// Reused f32 conversion buffer for `accept_pcm` (no per-call alloc).
     sample_scratch: Vec<f32>,
+    /// Reused flat posterior buffer: the last `accept_pcm` call's output frames,
+    /// frame-major, `frames × vocab` values (no per-frame alloc). Read via
+    /// [`Self::posteriors`]; overwritten by the next call.
+    posterior_scratch: Vec<f32>,
     vocab: usize,
     /// `T` — feature frames fed to `x` per step (ChunkLength).
     t: usize,
@@ -159,6 +163,7 @@ impl StreamingCtcModel {
             state_out_names,
             updated_states,
             sample_scratch: Vec::new(),
+            posterior_scratch: Vec::new(),
             vocab,
             t,
             shift,
@@ -177,18 +182,22 @@ impl StreamingCtcModel {
         self.out_per_chunk
     }
 
-    /// Feed PCM (i16 @ 16 kHz) and return newly available CTC posterior frames as
-    /// `(global_output_frame_index, log_posteriors[vocab])`.
+    /// Feed PCM (i16 @ 16 kHz) and run the encoder over any newly complete
+    /// feature windows. Returns the batch metadata (first global output-frame
+    /// index + frame count); the flat log-posterior data itself is read via
+    /// [`Self::posteriors`] — a reused buffer, so no per-frame allocation in
+    /// steady state (the detector-layer obligation).
     ///
     /// On an inference `Err` the streaming cache state is left partially moved
     /// out — the model must not be fed again after an error (both production
     /// callers treat inference failure as fatal).
-    pub fn accept_pcm(&mut self, pcm: &[i16]) -> Result<Vec<(u64, Vec<f32>)>, ort::Error> {
+    pub fn accept_pcm(&mut self, pcm: &[i16]) -> Result<PosteriorBatch, ort::Error> {
         self.sample_scratch.clear();
         self.sample_scratch.extend(pcm.iter().map(|&s| s as f32 / 32768.0));
         self.feat.accept_waveform(EXPECTED_RATE_HZ as f32, &self.sample_scratch);
 
-        let mut out = Vec::new();
+        self.posterior_scratch.clear();
+        let first_frame = self.out_frames;
         let ready = self.feat.num_frames_ready();
         while self.pos + self.t <= ready {
             let mut xdata = Vec::with_capacity(self.t * 80);
@@ -224,10 +233,8 @@ impl StreamingCtcModel {
             let (shape, data) = outputs["log_probs"].try_extract_tensor::<f32>()?;
             let tt = shape[1] as usize;
             self.out_per_chunk.get_or_insert(tt);
-            for t in 0..tt {
-                out.push((self.out_frames, data[t * self.vocab..(t + 1) * self.vocab].to_vec()));
-                self.out_frames += 1;
-            }
+            self.posterior_scratch.extend_from_slice(&data[..tt * self.vocab]);
+            self.out_frames += tt as u64;
 
             let mut updates: Vec<(String, State)> = Vec::new();
             for out_name in &self.state_out_names {
@@ -246,7 +253,36 @@ impl StreamingCtcModel {
             }
             self.pos += self.shift;
         }
-        Ok(out)
+        Ok(PosteriorBatch { first_frame, frames: (self.out_frames - first_frame) as usize })
+    }
+
+    /// Flat log-posterior data for the LAST `accept_pcm` call's batch:
+    /// `batch.frames × vocab` values, frame-major (iterate with
+    /// `.chunks_exact(model.vocab())`). Overwritten by the next `accept_pcm`.
+    pub fn posteriors(&self) -> &[f32] {
+        &self.posterior_scratch
+    }
+}
+
+/// Metadata for the posterior frames produced by one
+/// [`StreamingCtcModel::accept_pcm`] call. The frame data lives in the model's
+/// reused flat buffer ([`StreamingCtcModel::posteriors`]) — this struct only
+/// carries where the batch sits in the global output-frame stream.
+#[derive(Debug, Clone, Copy)]
+pub struct PosteriorBatch {
+    /// Global output-frame index of the first frame in this batch.
+    pub first_frame: u64,
+    /// Number of posterior frames produced (each `vocab` values long).
+    pub frames: usize,
+}
+
+impl PosteriorBatch {
+    pub fn len(&self) -> usize {
+        self.frames
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.frames == 0
     }
 }
 
@@ -350,12 +386,12 @@ impl Detector for StreamingCtcDetector {
         self.samples_fed += chunk.pcm.len() as u64;
         let consumed_ms = self.samples_fed * 1000 / EXPECTED_RATE_HZ as u64;
 
-        let frames = self
+        let batch = self
             .model
             .accept_pcm(&chunk.pcm)
             .expect("streaming_ctc encoder inference failed");
         let mut out = SmallVec::new();
-        if frames.is_empty() {
+        if batch.is_empty() {
             return out;
         }
 
@@ -365,8 +401,10 @@ impl Detector for StreamingCtcDetector {
         let frame_shift_ms = FBANK_FRAME_SHIFT_MS * subsample as f32;
         let refractory_frames = (self.refractory_ms as f32 / frame_shift_ms).round() as u64;
 
-        for (fidx, logpost) in frames {
-            for f in self.scorer.accept_frame(fidx, &logpost, refractory_frames) {
+        let vocab = self.model.vocab();
+        for (i, logpost) in self.model.posteriors().chunks_exact(vocab).enumerate() {
+            let fidx = batch.first_frame + i as u64;
+            for f in self.scorer.accept_frame(fidx, logpost, refractory_frames) {
                 out.push(Detection {
                     keyword: f.keyword,
                     confidence: f.confidence,
@@ -436,8 +474,10 @@ mod tests {
         };
         let mut model = StreamingCtcModel::new(&dir, 1).unwrap();
         let pcm = read_wav_i16(&dir.join("test_wavs/0.wav"));
-        let frames = model.accept_pcm(&pcm).unwrap();
-        assert!(!frames.is_empty(), "model produced no posterior frames");
+        let batch = model.accept_pcm(&pcm).unwrap();
+        assert!(!batch.is_empty(), "model produced no posterior frames");
+        let vocab = model.vocab();
+        assert_eq!(model.posteriors().len(), batch.frames * vocab);
         // out/chunk is export-specific (decode_chunk_len / subsampling): 16 for
         // the zh stand-in (640 ms quantum), 8 for ctc-small-en 2024-03-18
         // (320 ms quantum). The invariant is that the model measured one.
@@ -448,7 +488,7 @@ mod tests {
         // scorer fires on it (blank = 0).
         let mut prev = usize::MAX;
         let mut ids = Vec::new();
-        for (_, lp) in &frames {
+        for lp in model.posteriors().chunks_exact(vocab) {
             let best = lp.iter().enumerate().max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).unwrap().0;
             if best != 0 && best != prev {
                 ids.push(best as u32);
@@ -464,8 +504,8 @@ mod tests {
         };
         let mut scorer = CtcKeywordScorer::new(&[target], 0);
         let mut fired = false;
-        for (fidx, lp) in &frames {
-            if !scorer.accept_frame(*fidx, lp, 100).is_empty() {
+        for (i, lp) in model.posteriors().chunks_exact(vocab).enumerate() {
+            if !scorer.accept_frame(batch.first_frame + i as u64, lp, 100).is_empty() {
                 fired = true;
             }
         }
@@ -483,10 +523,10 @@ mod tests {
         // First pass: discover a present subsequence.
         let mut m0 = StreamingCtcModel::new(&dir, 1).unwrap();
         let pcm = read_wav_i16(&dir.join("test_wavs/0.wav"));
-        let frames = m0.accept_pcm(&pcm).unwrap();
+        m0.accept_pcm(&pcm).unwrap();
         let mut prev = usize::MAX;
         let mut ids = Vec::new();
-        for (_, lp) in &frames {
+        for lp in m0.posteriors().chunks_exact(m0.vocab()) {
             let best = lp.iter().enumerate().max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).unwrap().0;
             if best != 0 && best != prev {
                 ids.push(best as u32);
