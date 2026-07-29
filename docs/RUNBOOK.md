@@ -449,17 +449,35 @@ a leg dies within 150 s, or the arrival log stalls >90 s mid-call.
 > ### ⚠ ROBINHOOD (HOOD) — the 8th row this table did not have (added 2026-07-29)
 >
 > `KXEARNINGSMENTIONHOOD-26JUL17` is **open and tradeable**, and its call is
-> **today, 21:00Z** — not July 17. The event ticker date is simply wrong, and
-> because `discover-events.py` derives the slate date FROM THE TICKER, HOOD
-> never entered `slate/latest.json` for 07-29, never reached
-> `slate/worklist.md`, and never got a runsheet row, a staged config, or a
-> pinned binary. It surfaced only because the operator named Robinhood by hand.
-> **This is the PYPL/BA silent-miss class repeating through a new door.**
-> Kalshi's own `settlement_sources` for the event points at
-> `investors.robinhood.com/.../robinhood-q2-2026-earnings` — the exchange knows
-> it is the Q2 call. **Fix: cross-check ticker-derived dates against
-> `settlement_sources` before trusting them.** Until that lands, any sweep
-> output is a floor, not a census.
+> **today, 21:00Z** — not July 17. HOOD never entered `slate/latest.json` for
+> 07-29, never reached `slate/worklist.md`, and never got a runsheet row, a
+> staged config, or a pinned binary. It surfaced only because the operator
+> named Robinhood by hand.
+>
+> ⚠ **CORRECTED 2026-07-29 (an earlier revision of this block, and commit
+> 5591943's message, blamed "discover-events.py derives the date from the
+> ticker". That is FALSE — do not go looking for date-from-ticker logic to
+> fix.)** `call_date()` reads `sub_title` and its docstring says *"NEVER from
+> the ticker."* It behaved correctly. The real failure is worse:
+>
+> | field | value | true? |
+> |---|---|---|
+> | `event_ticker` | `…HOOD-26JUL17` | ✗ |
+> | `sub_title` | `"On Jul 17, 2026"` | ✗ |
+> | `settlement_sources[0].url` | `…/robinhood-q2-2026-earnings` | ✓ |
+>
+> **Kalshi's ticker and `sub_title` are wrong TOGETHER**, so the existing
+> `ticker_misleads()` guard is *structurally blind* to this class: it
+> cross-checks two fields that derive from the same bad source and therefore
+> agree. It flags the BA case (ticker vs sub_title disagree) and can never flag
+> the HOOD case. **The only field carrying the truth is `settlement_sources`,
+> which the sweep does not read at all.**
+>
+> **Fix: resolve the call date from `settlement_sources[].url` (fetch the IR
+> page) and treat a disagreement with `sub_title` as an ESCALATE row.** That is
+> a genuinely new check, not a tightening of `ticker_misleads()`. Until it
+> lands, every sweep output is a floor, not a census — two independent
+> Kalshi-metadata misdatings (BA, HOOD) inside eight days.
 >
 > Access (`configs/dial-ins.toml [HOOD]`): **no phone leg at all** — YouTube
 > livestream + Say Technologies typed Q&A, zero numbers in the IR page.
