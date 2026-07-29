@@ -336,6 +336,87 @@ else
   check PASS "load average $load1 ($ncpu cores)"
 fi
 
+# ── Registration identity round-trip (2026-07-29) ──────────────────────────
+# ~/.earshot/registration.env feeds the browser-free Chorus Call resolver
+# (choruscall-resolve.py --register, driven by wing-autorun.sh). It held
+#     EARSHOT_REG_LAST=Del Rio
+# UNQUOTED, so `set -a; . registration.env` split on the space: it exported
+# EARSHOT_REG_LAST=Del and then tried to RUN `Rio` ("Rio: command not found").
+#
+# For THAT specific shape, wing-autorun.sh's emptiness check is in fact enough:
+# measured 2026-07-29, sourcing `EARSHOT_REG_LAST=Del Rio` leaves the variable
+# EMPTY (bash reads it as a temporary assignment prefix to the command `Rio`, so
+# nothing persists), and emptiness is caught. An earlier draft of this comment
+# claimed it yields "Del" and slips through — that was wrong.
+#
+# The reason to check ROUND-TRIP EQUALITY anyway is the corruption that is NOT
+# empty and therefore invisible to every existing guard. All three measured
+# 2026-07-29 by sourcing the file and printing the result:
+#   EARSHOT_REG_LAST=Del Rio   → ""   (empty — emptiness catches it)
+#   EARSHOT_REG_COMPANY=A&B    → ""   (empty — emptiness catches it)
+#   EARSHOT_REG_LAST=O$Brien   → "O"  ← NON-EMPTY AND WRONG, invisible to
+#                                       every check we have. `$Brien` is an
+#                                       unset variable, so it expands to
+#                                       nothing and leaves a plausible name.
+# That last class is the gap: we would register as "O" and never know.
+# Comparing what the file SAYS against what sourcing YIELDS catches all three.
+REG_ENV="${EARSHOT_REG_ENV:-$HOME/.earshot/registration.env}"
+if [[ -f "$REG_ENV" ]]; then
+  REG_OUT=$(
+    REG_ENV="$REG_ENV" python3 - <<'PY'
+import os, re, shlex, subprocess, sys
+
+path = os.environ["REG_ENV"]
+want = {}
+for ln in open(path):
+    ln = ln.strip()
+    if not ln or ln.startswith("#"):
+        continue
+    ln = re.sub(r"^export\s+", "", ln)
+    if "=" not in ln:
+        continue
+    k, v = ln.split("=", 1)
+    k = k.strip()
+    if not k.startswith("EARSHOT_REG_"):
+        continue
+    # The INTENDED value: what a human reading the file would say it is.
+    want[k] = v.strip().strip('"').strip("'")
+
+if not want:
+    print("SKIP no EARSHOT_REG_* keys")
+    sys.exit(0)
+
+# The ACTUAL value a shell produces by sourcing it, the way the autoruns do.
+probe = "set -a; . " + shlex.quote(path) + " >/dev/null 2>&1; set +a; " + \
+        "; ".join(f'printf "%s\\037%s\\036" {k} "${{{k}-}}"' for k in want)
+r = subprocess.run(["bash", "-c", probe], capture_output=True, text=True)
+got = {}
+for rec in r.stdout.split("\036"):
+    if "\037" in rec:
+        k, v = rec.split("\037", 1)
+        got[k] = v
+
+bad = [f"{k}: file says {want[k]!r} but sourcing yields {got.get(k, '')!r}"
+       for k in want if got.get(k, "") != want[k]]
+if bad:
+    print("FAIL " + "; ".join(bad))
+else:
+    print(f"OK {len(want)} keys round-trip exactly")
+PY
+  )
+  case "$REG_OUT" in
+    OK*)   check PASS "registration identity round-trips (${REG_OUT#OK }) — $REG_ENV" ;;
+    SKIP*) check WARN "registration identity: ${REG_OUT#SKIP } in $REG_ENV" ;;
+    FAIL*) check FAIL "registration identity CORRUPTED BY SOURCING — ${REG_OUT#FAIL }.
+       Quote the values (EARSHOT_REG_LAST=\"Del Rio\"). An unquoted value with a
+       space truncates silently and is NOT caught by an emptiness check." ;;
+    *)     check WARN "registration identity check could not run: $REG_OUT" ;;
+  esac
+else
+  # Only some hosts resolve Chorus Call; absence is not a failure.
+  check WARN "no $REG_ENV — browser-free Chorus Call registration unavailable on this host"
+fi
+
 # ── Dial-in go/no-go gate ──────────────────────────────────────────────────
 # The night-before FAIL-STOP promised by configs/<event>-autorun.env ("the
 # preflight must FAIL-STOP if these are still TBD"). Until 2026-07-16 that gate
@@ -366,6 +447,63 @@ if [[ -n "$EVENT_ENV" ]]; then
 else
   # Not passing --event-env is itself a risk: it silently skips the gate.
   check WARN "no --event-env given — dial-in go/no-go gate SKIPPED. Pass --event-env configs/<event>-autorun.env to enforce it."
+fi
+
+# ── Bridge admission gate (VERIFICATIONS Q-ADMIT, 2026-07-29) ──────────────
+# A number that resolves is NOT a bridge that admits us: MSFT's registry entry
+# said listen_access="yes" ("no password required") and the live bridge is an
+# operator screen that dropped the silent caller in 42 s. Every one of the
+# 2026-07-29 phone failures was knowable the night before with one ~$0.02
+# probe call. So: a phone arm requires a probe-observed `admission = "held"`
+# in configs/dial-ins.toml for this venue (scripts/bridge-probe.sh sets it).
+# Twilio-source configs only — a webcast arm dials nothing (don't cry wolf).
+if grep -q 'kind = "twilio' "$CONFIG" 2>/dev/null; then
+  ADMIT_OUT=$(EVENT_ID="$EVENT_ID" python3 - <<'PY'
+import os, re, sys, tomllib
+
+event_id = os.environ.get("EVENT_ID", "")
+m = re.match(r"KXEARNINGSMENTION([A-Z0-9]+)", event_id)
+if not m:
+    print(f"SKIP cannot derive series key from event id {event_id!r}")
+    sys.exit(0)
+key = m.group(1)
+try:
+    with open("configs/dial-ins.toml", "rb") as f:
+        reg = tomllib.load(f)
+except Exception as e:
+    print(f"FAIL configs/dial-ins.toml unreadable: {e}")
+    sys.exit(0)
+entry = reg.get(key)
+if entry is None:
+    print(f"FAIL venue {key} not in configs/dial-ins.toml — probe it: scripts/bridge-probe.sh --to <number> --label {key.lower()}-<date>")
+    sys.exit(0)
+admission = entry.get("admission", "untested")
+probed = entry.get("admission_probed", "never")
+detail = entry.get("admission_detail", "")
+if admission == "held":
+    from datetime import date, datetime
+    try:
+        age = (date.today() - datetime.strptime(probed, "%Y-%m-%d").date()).days
+    except ValueError:
+        age = 9999
+    if age <= 30:
+        print(f"PASS {key} admission=held (probed {probed}: {detail})")
+    else:
+        print(f"WARN {key} admission=held but STALE (probed {probed}, {age}d ago) — re-probe: scripts/bridge-probe.sh (~$0.02)")
+elif admission == "operator_screened":
+    print(f"FAIL {key} admission=operator_screened ({detail}) — a live human drops silent callers; unattended-infeasible until the gated operator path ships. NO-GO for a phone arm.")
+elif admission == "dropped":
+    print(f"FAIL {key} admission=dropped ({detail}) — the bridge hangs up on us. NO-GO until the drop cause is understood.")
+else:
+    print(f"FAIL {key} admission untested — one ~$0.02 call decides this: scripts/bridge-probe.sh --to <number> --label {key.lower()}-<date>")
+PY
+  )
+  case "$ADMIT_OUT" in
+    PASS*) check PASS "${ADMIT_OUT#PASS }" ;;
+    WARN*) check WARN "${ADMIT_OUT#WARN }" ;;
+    SKIP*) check WARN "bridge admission gate: ${ADMIT_OUT#SKIP }" ;;
+    *)     check FAIL "${ADMIT_OUT#FAIL }" ;;
+  esac
 fi
 
 # ── Mailer live test ───────────────────────────────────────────────────────

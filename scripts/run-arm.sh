@@ -307,5 +307,14 @@ nohup bash -c '
     fi
   done
   echo "$(date -u +%FT%TZ) watchdog down: arm exited"
+  # POST-RUN VERDICT (2026-07-29). Every check above fires only WHILE the arm is
+  # up, and each is a nudge the operator can sleep through — WING paged
+  # FETCHER STALLED twelve times into an empty room. Nothing had ever graded a
+  # FINISHED run, so "the arm started" was the only signal anyone reported, and
+  # a run with frames_in=0 (HOOD) or no report at all (WING, SBUX) read as a
+  # success. run-verdict.sh is that missing grade; it owns its own paging.
+  echo "$(date -u +%FT%TZ) grading the run…"
+  bash "$REPO/scripts/run-verdict.sh" "$EVENT" 2>&1 || \
+    echo "$(date -u +%FT%TZ) VERDICT: FAILED (exit $?) — see above; notify.sh was paged"
 ' watchdog "$LOG" "$EVENT" "$ARM_PID" "$ARRIVAL_LOG" "$REPO" "$EDGE_ERR" > "$HOME/${SLUG}-watchdog.log" 2>&1 &
 echo "watchdog (pid $!) — alerts via notify.sh; log $HOME/${SLUG}-watchdog.log"

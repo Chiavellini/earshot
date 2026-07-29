@@ -33,15 +33,27 @@ def build(slate, registry, days, stale_days, today):
     rows = []
     for ev in slate.get("events", []):
         cd = ev.get("call_date")
-        if not cd:
+        # ⚠ A DISPUTED event must be filtered on the date we BELIEVE, not the
+        # date we distrust. HOOD (2026-07-29) is the whole reason: Kalshi said
+        # 2026-07-17 for a call that was actually 2026-07-29, so the horizon
+        # test below silently dropped the one event most needing attention.
+        # Filtering on the disputed date would make the DATE-DISPUTED flag
+        # inert — it would flag events it had already thrown away.
+        disputed = bool(ev.get("call_date_disputed"))
+        eff = ev.get("ir_page_date") if disputed else cd
+        if not eff:
             continue
-        d = datetime.date.fromisoformat(cd)
+        d = datetime.date.fromisoformat(eff)
         if not (today <= d <= horizon):
             continue
         issuer = ev.get("issuer") or ""
         entry = registry.get(issuer)
         entry = entry if isinstance(entry, dict) else None
         flags = []
+        if disputed:
+            # Kalshi's metadata contradicts the issuer's own page. Staging
+            # against the slate date would arm on the wrong day.
+            flags.append(f"DATE-DISPUTED(kalshi={cd})")
         if entry is None:
             flags.append("NO-ENTRY")
         else:
@@ -60,7 +72,7 @@ def build(slate, registry, days, stale_days, today):
                 flags.append("UNKNOWN")
         if flags:
             rows.append({
-                "call_date": cd,
+                "call_date": eff,
                 "days_out": (d - today).days,
                 "issuer": issuer,
                 "event_ticker": ev.get("event_ticker", ""),
@@ -116,6 +128,13 @@ def check():
         # outside horizon → absent
         {"issuer": "TGT", "event_ticker": "KXEARNINGSMENTIONTGT-26SEP01",
          "call_date": "2026-09-01"},
+        # THE HOOD CASE (2026-07-29): Kalshi dates it into the PAST, so the
+        # horizon test would drop it — yet the issuer says it is tomorrow. It
+        # MUST appear, keyed on the issuer's date, with a fresh registry entry
+        # (i.e. flagged for the dispute ALONE, nothing else).
+        {"issuer": "HOOD", "event_ticker": "KXEARNINGSMENTIONHOOD-26JUL17",
+         "call_date": "2026-07-17", "call_date_disputed": True,
+         "ir_page_date": "2026-07-29"},
     ]}
     registry = {
         "F": {"tier": "bridge_unpublished", "listen_access": "no",
@@ -124,13 +143,21 @@ def check():
                 "last_verified": "2026-05-01"},
         "DIS": {"tier": "unknown", "listen_access": "unknown",
                 "last_verified": "2026-07-27"},
+        "HOOD": {"tier": "none", "listen_access": "no",
+                 "last_verified": "2026-07-29"},
     }
     rows = build(slate, registry, days=10, stale_days=45, today=today)
     got = {r["issuer"]: r["flags"] for r in rows}
-    assert set(got) == {"AMD", "WMT", "DIS"}, f"wrong issuers flagged: {got}"
+    assert set(got) == {"AMD", "WMT", "DIS", "HOOD"}, f"wrong issuers flagged: {got}"
     assert got["AMD"] == ["NO-ENTRY"], got
     assert got["WMT"] == ["STALE(88d)"], got
     assert got["DIS"] == ["UNKNOWN"], got
+    # Surfaced despite a Kalshi date in the past, keyed on the ISSUER's date.
+    assert got["HOOD"] == ["DATE-DISPUTED(kalshi=2026-07-17)"], got
+    hood = next(r for r in rows if r["issuer"] == "HOOD")
+    assert hood["call_date"] == "2026-07-29", \
+        f"disputed row must carry the BELIEVED date, got {hood['call_date']}"
+    assert hood["days_out"] == 1, f"days_out must count from the believed date: {hood}"
     esc = [r for r in rows if "NO-ENTRY" in r["flags"]
            and r["days_out"] <= ESCALATE_DAYS]
     assert [r["issuer"] for r in esc] == ["AMD"], esc
@@ -167,6 +194,16 @@ def main():
         if "NO-ENTRY" in r["flags"] and r["days_out"] <= ESCALATE_DAYS:
             print(f"ESCALATE: {r['issuer']} {r['event_ticker']} calls in "
                   f"{r['days_out']}d with NO registry entry")
+        # A disputed date escalates at ANY distance, not just inside
+        # ESCALATE_DAYS: the whole failure mode is that the slate has the event
+        # on the wrong day, so "how many days out" is exactly the number we
+        # cannot trust to decide urgency with.
+        dsp = next((f for f in r["flags"] if f.startswith("DATE-DISPUTED")), None)
+        if dsp:
+            kalshi = dsp[len("DATE-DISPUTED(kalshi="):-1]
+            print(f"ESCALATE: {r['issuer']} {r['event_ticker']} CALL DATE DISPUTED "
+                  f"— issuer says {r['call_date']}, Kalshi says {kalshi}; "
+                  f"stage against the issuer date")
     n_flag = len(rows)
     print(f"worklist: {n_flag} flagged in {a.days}d horizon", file=sys.stderr)
     return 0

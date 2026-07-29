@@ -515,13 +515,35 @@ SIGTERM) until RUNBOOK bugs 2–3 are fixed.
 > — never the personal gmail. Applies to Chorus Call, webinar.net/Notified,
 > Q4 Inc and OpenExchange forms alike.
 
-> ### ⚠ WING POST-MORTEM (2026-07-29) — it armed, and it captured NOTHING
+> ### ⚠ WING POST-MORTEM (2026-07-29) — a DEGRADED run that ended early
 >
-> The unattended chain fired correctly and the arm ran 14:06→15:09Z, so every
-> liveness signal looked green. `wing-arrival.log` is **0 bytes**:
-> `segs=353 spec_404=2095 poll_err=2247 deaf_s=2316 reresolve=0 DEAF-NOW`.
+> ⚠ **CORRECTED 2026-07-29.** An earlier revision of this block (and commit
+> 5591943's message) said WING "captured NOTHING". **That is FALSE.** It was
+> inferred from `wing-arrival.log` being 0 bytes — but that file is one *leg's*
+> fetcher telemetry, not the run's. ANSI-stripped, the arm log shows WING plainly
+> heard audio:
 >
-> Root cause: the URL written was a **templated guess** —
+> | signal | value |
+> |---|---|
+> | `tier=Confirmed` detections | **20** |
+> | distinct keywords fired | **5** (ids 1, 3, 5, 9, 12) |
+> | `decision intent` lines | 5 |
+> | `observe non-crossing` orders | 5 |
+> | max pipe frame `seq` | **161294** |
+>
+> What actually went wrong is narrower and still worth fixing: the run went
+> **single-legged and then died early**. `spec_edge` fetched `segs=353` and then
+> went blind — `spec_404=2095 poll_err=2247 deaf_s=2316 reresolve=0 DEAF-NOW` —
+> and at 15:05Z both legs died on `pipe source idle past 30s`, the tuned leg's
+> decoder tail reading `mime type is not rfc8216 compliant`. The arm then exited
+> through the **error** path and never wrote `report.json` at all, which is why
+> `scripts/run-verdict.sh` grades it `exit 4` (no report) rather than DEAF.
+>
+> So the cost was the *speculative* leg and the tail of the call — the race
+> advantage and ~4 minutes — not the capture. Do not cite WING as a
+> zero-capture event.
+>
+> Root cause of the deaf leg: the URL written was a **templated guess** —
 > `pmd.choruscall.com/httporiginlive/<webcastid>_http/playlist.m3u8` — not a
 > value scraped from the live player. It 404'd ~2100 consecutive times. The
 > "UNPINNED stream-URL shape" caveat below was the exact risk, and it fired.
