@@ -442,8 +442,41 @@ a leg dies within 150 s, or the arrival log stalls >90 s mid-call.
 | 19:55 | 20:15 | `scripts/run-arm.sh sbux` | needs day-of webcastid from browser |
 | 20:10 | 20:30 | `scripts/run-arm.sh cmg`  | app.webinar.net venue |
 | 20:10 | 20:30 | `scripts/run-arm.sh meta` | prefetch tier already in config |
+| 20:40 | 21:00 | `scripts/run-arm.sh hood` | ⚠ **WAS MISSING FROM THIS TABLE** — see the HOOD block below |
 | 21:10 | 21:30 | `scripts/run-arm.sh msft` | self-hosted/public — easiest m3u8 |
 | 21:10 | 21:30 | `scripts/run-arm.sh cvna` | app.webinar.net venue |
+
+> ### ⚠ ROBINHOOD (HOOD) — the 8th row this table did not have (added 2026-07-29)
+>
+> `KXEARNINGSMENTIONHOOD-26JUL17` is **open and tradeable**, and its call is
+> **today, 21:00Z** — not July 17. The event ticker date is simply wrong, and
+> because `discover-events.py` derives the slate date FROM THE TICKER, HOOD
+> never entered `slate/latest.json` for 07-29, never reached
+> `slate/worklist.md`, and never got a runsheet row, a staged config, or a
+> pinned binary. It surfaced only because the operator named Robinhood by hand.
+> **This is the PYPL/BA silent-miss class repeating through a new door.**
+> Kalshi's own `settlement_sources` for the event points at
+> `investors.robinhood.com/.../robinhood-q2-2026-earnings` — the exchange knows
+> it is the Q2 call. **Fix: cross-check ticker-derived dates against
+> `settlement_sources` before trusting them.** Until that lands, any sweep
+> output is a floor, not a census.
+>
+> Access (`configs/dial-ins.toml [HOOD]`): **no phone leg at all** — YouTube
+> livestream + Say Technologies typed Q&A, zero numbers in the IR page.
+>
+> **The venue is why it still captured nothing.** HOOD was the first
+> YouTube-hosted event we ever armed. It armed clean at 21:00:20Z and both legs
+> died inside 35 s with `frames=0` (`ffmpeg exit 183`; `segs=0 seg_err=71
+> poll_err=1625 DEAF-NOW`) because **YouTube bot-walls the us-east-1 IP at the
+> segment layer while the master manifest still returns HTTP 200.** The same
+> video piped 192000 bytes of clean PCM from the CDMX laptop the same minute.
+> Two durable lessons, both wired into `scripts/youtube-resolve.sh`:
+> 1. **A URL-reachability gate cannot clear a venue.** `arm-when-url.sh`
+>    checked HTTP 200 + `#EXTM3U` and passed — then the run was deaf. Gate on
+>    **PCM bytes** (`… | ffmpeg -t 6 - | wc -c` ≈ 192000), never on a 200.
+> 2. Use `yt-dlp -o -` piped into ffmpeg, not `hls-edge-fetch.py`, for YouTube
+>    (`configs/webcast-hood-ytdlp-arm.toml`). From the box that additionally
+>    needs cookies or residential egress.
 
 Box resize to 16 vCPU ~19:00Z (approved; revert ~23:30Z) before the 5-way
 cluster. Surface each `$HOME/<slug>-stream.url` before its T-20; guard 2
@@ -463,6 +496,29 @@ SIGTERM) until RUNBOOK bugs 2–3 are fixed.
 > registration uses the Actinver analyst identity — **`bdelriom@actinver.com.mx`**
 > — never the personal gmail. Applies to Chorus Call, webinar.net/Notified,
 > Q4 Inc and OpenExchange forms alike.
+
+> ### ⚠ WING POST-MORTEM (2026-07-29) — it armed, and it captured NOTHING
+>
+> The unattended chain fired correctly and the arm ran 14:06→15:09Z, so every
+> liveness signal looked green. `wing-arrival.log` is **0 bytes**:
+> `segs=353 spec_404=2095 poll_err=2247 deaf_s=2316 reresolve=0 DEAF-NOW`.
+>
+> Root cause: the URL written was a **templated guess** —
+> `pmd.choruscall.com/httporiginlive/<webcastid>_http/playlist.m3u8` — not a
+> value scraped from the live player. It 404'd ~2100 consecutive times. The
+> "UNPINNED stream-URL shape" caveat below was the exact risk, and it fired.
+> `reresolve=0` compounded it: nothing re-derived a good URL.
+>
+> **Do not template a Chorus Call media URL.** Scrape `webcastConfig.hlsSource`
+> off the real player page (`--dump-frame` to inspect), and validate before
+> arming. SBUX was run this way the same afternoon as the corrective.
+>
+> Also fixed 07-29: `~/.earshot/registration.env` had `EARSHOT_REG_LAST=Del Rio`
+> **unquoted**, so `set -a; . registration.env` split on the space and the
+> surname never reached the resolver — every unattended Chorus Call
+> registration would have failed the `--register` identity check. All four
+> values are now quoted; verify with
+> `set -a; . ~/.earshot/registration.env; set +a; echo "[$EARSHOT_REG_LAST]"`.
 
 **`scripts/choruscall-resolve.py` (new 2026-07-29) — WING + SBUX venue.**
 Splits the T-20 browser step in two, because Chorus Call is the first venue

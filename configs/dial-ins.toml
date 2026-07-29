@@ -731,3 +731,16 @@ number_src    = "https://ir.charter.com/"
 confidence    = "medium"
 last_verified = "2026-07-16"
 notes         = "⚠ LIKELY-NONE but not recorded as none: an 'Operator' is still credited ('this conference is being recorded… if you have any objections, please disconnect'), failing the TSLA no-operator tell, and a private dial-in into the webinar platform can't be excluded. Same webinar-with-operator shape as AEE and ALLE."
+
+[HOOD]
+tier          = "none"
+qa_mechanism  = "say_typed"
+listen_access = "no"
+evidence      = "IR event page for 'Robinhood Q2 2026 Earnings' (July 29, 2026 5:00 PM EDT) publishes exactly two access artifacts: a YouTube livestream link and a 'Say Q&A' link. ZERO phone numbers appear anywhere on the page (regex-swept the rendered text: no match for any NNN-NNN-NNNN form). Q&A is Say Technologies — retail shareholders submit TYPED questions that management reads aloud, so there is no dial-in to hold and no keypad queue to join."
+evidence_src  = "https://investors.robinhood.com/events/event-details/robinhood-q2-2026-earnings"
+number_src    = "https://investors.robinhood.com/events/"
+confidence    = "high"
+last_verified = "2026-07-29"
+notes         = """OPEN EVENT KXEARNINGSMENTIONHOOD-26JUL17 — ⚠ THE TICKER DATE IS A LIE. The event ticker says 26JUL17; the call is 2026-07-29T21:00:00Z. Corroborated three ways: the IR page ('July 29, 2026 5:00 PM EDT'), the page's own Google-calendar link (dates=20260729T210000Z), and yt-dlp on the livestream ('This live event will begin in 63 minutes' at 19:57Z). Kalshi's settlement_sources for the event points at .../robinhood-q2-2026-earnings, i.e. Kalshi itself knows it is the Q2 call. BECAUSE discover-events.py derives the slate date from the TICKER, HOOD never appeared in slate/latest.json for 07-29 and was absent from the RUNBOOK runsheet — a silent miss of the PYPL/BA class, caught only because the operator named Robinhood by hand. Any date-from-ticker logic needs a settlement_sources cross-check.
+VENUE = YouTube Live (youtube.com/live/PpJSU4M87nw) — first YouTube-hosted event we have ever armed, and it is NOT capturable from the box: YouTube bot-walls the us-east-1 IP at the segment layer while the master manifest still 200s. Full failure signature + the PCM-bytes gate that would have caught it in scripts/youtube-resolve.sh. Laptop (residential) piped clean PCM the same minute.
+'kalshi' is itself one of the 17 market words on this event."""

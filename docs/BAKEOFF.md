@@ -1083,3 +1083,46 @@ raw CTC frame posteriors and produces real confidences, which is what a
 negative-context rule ("suppress `record` when the frames also support
 `quarter`") would need. That is a second, independent argument for the engine
 swap — beyond its measured 38 % FA reduction.
+
+## ⛔ RECALL GATE, 2026-07-29 — 12 of 52 market words are DEAD on clean studio TTS
+
+Every screen above this line hunts **false** fires (collisions, prefix hits,
+FA/h). `scripts/variant-study.sh` (new, born after WING lost CITR + AI to
+flagged-but-unenforced gaps) asks the opposite question: **does the word fire at
+all?** It synthesizes each configured variant with two macOS voices, splices
+them 2.6 s apart, and replays through the config's OWN detector block.
+
+Run against the four staged 07-29 configs. **A word scoring 0 on clean,
+noise-free, studio-quality TTS will not fire on a live compressed webcast** —
+this is a floor, not an estimate (LATENCY-PROOF D1g).
+
+| event | DEAD (0 detections) | live-plausible? |
+|---|---|---|
+| SBUX | `matcha`, `protein`, `frappuccino`, `horchata` | **matcha + protein near-certain on a Starbucks call** |
+| CMG  | `tariff`, `headwind`, `tailwind`, `autocado`, `chipotle kitchen`, `chipotle lane` | **tariff/headwind/tailwind are generic earnings language — near-certain** |
+| META | `llama`, `ray ban` | **both near-certain on a Meta call** |
+| MSFT | (not yet run) | — |
+
+Detector-side facts, so nobody re-derives them:
+
+- **It is not the harness.** Same runs, same configs, passing words emit
+  normally (`orion` 4/4, `hyperion` 4/4, `inflation` 12/4, `advertising` 14/4).
+  Failing words show the audio fully consumed and nothing emitted:
+  `event DRYRUN-VARSTUDY-LLAM chunk 80ms frames 625 chunks 157 detections 0`.
+- **It is not "multi-word phrases don't work."** `honey chicken`, `carne asada`,
+  `al pastor`, `share purchase`, `supply chain`, `comparable sales` all pass
+  while `ray ban` and `chipotle lane` fail.
+- **It is not only rare brand words.** `tariff`, `protein`, `headwind` and
+  `tailwind` are ordinary English and still score 0, so "out-of-vocabulary"
+  does not explain the set.
+
+⚠ **Do NOT paper over this by bolting on guessed pronunciation variants under
+time pressure.** A false fire consumes the one-shot (`decision.rs:74`), so an
+untested variant does not merely fail — it can forfeit the genuine mention it
+was added to catch. Any added variant must be re-run through
+`variant-study.sh` and land in this table with a number before it is trusted.
+The 40 passing keywords are unaffected, and observe posture is 1¢, so a dead
+word costs recall, never money.
+
+**Reproduce:** `scripts/variant-study.sh configs/webcast-<slug>-26jul29-arm.toml`
+(macOS only — uses `say`; exits 1 if ANY keyword scores zero).
