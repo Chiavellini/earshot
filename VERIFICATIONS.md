@@ -888,3 +888,42 @@ is the first venue where the *"has it started"* signal is separable from the
 - **Not yet pinned:** the shape of the stream URL on the `frame` page, and
   whether the emailed confirmation link carries a token that bypasses the form.
   Both are unresolved as of this entry — do not guess them in code.
+
+## Q-OPS — Operator-screened bridges defeat the listen-only dial (2026-07-29, WING, live)
+
+**A published dial-in with no passcode is NOT the same as an automatable one.**
+`configs/dial-ins.toml [WING]` recorded `tier: published`, `listen_access: yes`
+on the strength of the IR release quoting two numbers and no participant code.
+Live-dialled 2026-07-29 ~03:35 UTC (CallSid `CA420e89f4999c89af78362d25b748ac14`,
+`+14123175176`, listen-only, **no DTMF sent**, 33 s, $0.014) and the tier is
+right about the numbers and wrong about the access:
+
+```
+[ 0.00- 4.00] Welcome to Chorus Call. Please hold for the Wingstop Conference.
+[ 4.00- 7.00] A Conference Specialist will be with you shortly.
+[ 7.00-25.00] (hold music)
+[27.00-29.00] Welcome to Chorus. …how can I help?     <- LIVE HUMAN OPERATOR
+[29.00-33.00] (our silence) -> operator disconnects
+```
+
+Evidence: `corpus/bridge-probes/wing-2026-07-29-bridge-entry.wav` (8 kHz μ-law
+via Twilio Media Streams), transcript by faster-whisper base.en on a +6 dB
+16 kHz resample; per-second RMS shows the announcement, the hold music, and the
+operator turn as distinct energy bands.
+
+- **No passcode exists** — so DTMF was never the obstacle, and `--dtmf` would
+  not have helped. The obstacle is a human asking who you are.
+- **We cannot answer, by design.** `docs/TWILIO.md` listen-only invariant: audio
+  is one-way by construction and DTMF is passcode-entry only. There is no
+  supported path for the system to speak to a screener, and adding one would
+  breach the invariant that keeps us out of the Q&A queue. **This is a hard
+  architectural block, not a missing feature.**
+- **Therefore: an operator-screened bridge is UNATTENDED-INFEASIBLE.** It needs a
+  human on the line at join time. Do not schedule one into a human-absent window.
+- ⚠ **Generalize before trusting any `listen_access: yes`.** The registry field
+  was inferred from published numbers, never from a dial. MSFT is the documented
+  counter-example — its operator preamble ("all participants are in listen-only
+  mode… press star one") proves an AUTO-JOIN bridge, so the field is genuinely
+  per-issuer. **Probe-dial before relying on any bridge unattended**; the probe
+  costs ~1.4¢ and 33 s. Bridges that answer with an announcement + hold music +
+  a specialist are Chorus-Call-operator-assisted and fail this test.

@@ -281,7 +281,7 @@ notes         = "OPEN EVENT KXEARNINGSMENTIONCVNA-26JUL29. ⚠ TIMEZONE MISPRINT
 [WING]
 tier          = "published"
 qa_mechanism  = "unknown"
-listen_access = "yes"
+listen_access = "operator_screened"   # ⚠ DOWNGRADED 2026-07-29 by live probe — VERIFICATIONS Q-OPS
 evidence      = "IR PR: call Wed 2026-07-29 10:00 a.m. ET — MORNING call, results released before market open. 'dialing 1-877-259-5243 or 1-412-317-5176 (international)' (no live participant code quoted; replay 1-855-669-9658 / 1-412-317-0088 code 4572027). Chorus Call webcast page itself renders 'Wed Jul 29 10:00:00 EDT 2026' — explicit EDT ⇒ 14:00 UTC."
 evidence_src  = "https://ir.wingstop.com/wingstop-inc-to-announce-fiscal-second-quarter-2026-financial-results-on-july-29-2026/"
 number_src    = "https://ir.wingstop.com/wingstop-inc-to-announce-fiscal-second-quarter-2026-financial-results-on-july-29-2026/"
