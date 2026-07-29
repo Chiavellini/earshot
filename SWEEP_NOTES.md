@@ -390,3 +390,99 @@ lane; fanout's `Arc<Mutex<DecisionTable>>` is the designed dedupe point.
 - If the 07-29 morning event produced `state/` telemetry on the box, compare
   the mock-harness exec→send / decision→exec magnitudes against real wire
   numbers before investing further in either edge.
+
+## Sweep 5 — 2026-07-29 (commit 6124cca + this notes commit)
+
+Test status: `source scripts/ctc-test-env.sh && EARSHOT_REQUIRE_MODELS=1
+cargo test` fully green after all changes (179 lib tests + every integration
+suite, 0 failed; the two model-gated streaming_ctc tests ran, 10 s of real
+inference). Took sweep 4's fresh-territory list in order: book.rs WS ingest
+(changed), decision.rs decide() (audited, clean), telemetry teardown
+(audited — one latent bug class FOUND and flagged, not fixed; see below).
+Per sweep 4's guidance the full perf ladder was NOT rerun (no fire-path code
+touched; the one hot-ish path changed got its own dedicated A/B).
+
+### What changed
+
+1. **`kalshi/book.rs` WS ingest apply path: alloc-free steady state**
+   (6124cca) — VERIFIED. Two per-message costs removed on the path between
+   `serde_json::from_str` and `publish` in `connect_and_stream`:
+   (a) `apply_message` built the ticker `String` TWICE per message
+   (`to_string` + `clone` for the entry key); now it borrows the ticker from
+   the parsed msg and allocates the key only on first sight per connection.
+   (b) `dollars_to_cents` / `fp_to_centi_contracts` each did a `format!` +
+   `chars().collect::<String>()` per price level / quantity (a 24-level
+   snapshot = ~100 allocations); now byte-wise via a shared
+   `frac_hundredths()` — zero allocs, identical semantics (padding,
+   non-digit refusal, loud sub-cent refusal, truncation warn all pinned by
+   new edge-case asserts). Bonus robustness: the dollars leg is now
+   `checked_mul`, so an absurd wire price ("42949673.00") parses to None
+   instead of u32-wrapping into a bogus valid cent value (old latent bug,
+   unreachable from sane wire data; new unit assert pins it).
+   Numbers (binary-vs-binary A/B per the sweep-3 method — old release binary
+   stashed before the change, 4 alternated OLD/NEW runs × 5 in-process
+   rounds, new `perf_book_apply_ingest` harness): delta apply 444–453 →
+   233–237 ns/msg (−47%); snapshot apply 5868–6166 → 1587–1705 ns (−73%);
+   NEW won all 20 interleaved rounds. Not fire-path but feeds book freshness
+   (`book_age` at decision time) and reconnect catch-up speed. All 5 book
+   unit tests + ws_book integration suite green; book-cache.md test section
+   updated.
+2. **New perf harness `perf_book_apply_ingest`** in `tests/perf_budget.rs`
+   (report-only + loose 20 µs absolute alarm; exactly-cancelling delta pairs
+   so per-iteration work is steady). `Ladders` + `apply_message` are now
+   `#[doc(hidden)] pub` for it (precedent: `touch`/`publish`); fields stay
+   private, no door changed.
+
+### Latent bug FLAGGED (not fixed — needs a seam change): telemetry fold
+
+`main.rs:1009` folds the executor's edges into the pipeline report with
+`report.edges.extend(exec_report.recorder.snapshot())` — BTreeMap `extend`
+REPLACES on key collision, it does not merge histograms. Today the two
+recorders' edge sets are disjoint (pipeline: ring_wake, capture→preproc,
+preproc→chunk, chunk→detect, detect→decision, capture→decision; executor:
+the rest), so behavior is correct-by-coincidence — but telemetry.rs's own
+merge test calls `merge()` "the exact arm-time fold", which arm does NOT
+use. If any edge is ever recorded on both sides, one side's stats silently
+vanish. Proper fix: have `run_pipeline` return its recorder (or take a
+recorder in), fold via `LatencyRecorder::merge`, snapshot once — a return-
+seam change to `run_pipeline`/`PipelineReport` touching main/replay/tests:
+POST-EVENT, deliberately not done the night before a live run.
+
+### Inspected and deliberately left alone
+
+- **`decision.rs` decide()** (sweep 4's item): already minimal — table hit
+  by `KeywordId` index, copy-only state machine, the ONLY alloc is
+  `entry.market_ticker.clone()` into the intent, which is exactly the
+  parked `Arc<str>` ticker bundle item. Nothing safe to shave; untouched.
+- **Telemetry teardown perf**: `snapshot()`/`merge()`/`render_table` run
+  once at teardown, off every latency-relevant path — no perf work
+  warranted (found the fold bug above instead).
+- **Remaining book.rs per-message costs**: `serde_json::from_str::<Value>`
+  per WS frame (~µs; same verdict class as the Twilio typed-deserialize
+  item, sweeps 1–4) and `to_book()`'s two Vecs + fresh `Arc<Book>` per
+  publish — the latter IS the designed publish-complete-books mechanism
+  (readers hold Arcs; in-place mutation is off the table). Left.
+- **`Arc<PreStaged>` / Twilio typed WS deserialize / decision→exec
+  transport / `Arc<str>` ticker**: fifth sweep, same PARKED-post-event
+  verdict; not re-argued.
+
+### Suggested next steps for sweep 6 (FINAL — morning-review prep)
+
+- Primary job: leave the branch review-ready. Run the FULL suite once
+  (`source scripts/ctc-test-env.sh && EARSHOT_REQUIRE_MODELS=1 cargo test`)
+  and the full release ladder once with `--nocapture --test-threads=1`
+  (now 13 tests incl. `perf_book_apply_ingest`) and record the table as the
+  branch's final numbers.
+- Review `git diff webcast-lane...sweep/overnight-2026-07-29 --stat` and
+  confirm the forbidden-files invariant held all night: no changes under
+  src/risk.rs caps, scripts/launch-event.sh, preflight/autorun scripts,
+  configs of armed events, state/. (Nothing in sweeps 1–5 touched them;
+  verify once more mechanically.)
+- Double-check before review: sweep 3 changed a PUBLIC API
+  (`accept_pcm` → `PosteriorBatch`) and sweep 5 changed `apply_message`'s
+  signature (doc-hidden) — both green here, but worth calling out in the
+  morning summary as the only API-shape changes of the night.
+- Carry-forward post-event list (do NOT start): decision→exec transport,
+  Arc<str> ticker / Arc<PreStaged> bundle, main.rs:1009 extend→merge
+  telemetry fold, Twilio typed WS deserialize, ort TensorRef feature
+  window.
