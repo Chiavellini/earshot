@@ -291,3 +291,102 @@ true interleaving across the change, same machine, same session.
 - If the live event ran by sweep-4 time: check `state/`-side telemetry for
   the widened exec→send claim against real wire numbers before believing
   the mock-harness magnitude.
+
+## Sweep 4 — 2026-07-29 (commits 38bb5ed, afeaff4 + this notes commit)
+
+Test status: `source scripts/ctc-test-env.sh && EARSHOT_REQUIRE_MODELS=1
+cargo test` fully green after all changes (179 lib tests + every integration
+suite incl. ws_book, 0 failed; the two model-gated streaming_ctc tests ran).
+Did sweep 3's three handoff items in order: full-ladder drift run, phone-lane
+chunker→detect audit, decision→exec inspect-only.
+
+### Perf-ladder drift table (sweep 3's ask) — one full release run at
+sweep-3 HEAD 1f184b7, `cargo test --release --test perf_budget --
+--ignored --nocapture --test-threads=1`, vs sweep 2's baseline:
+
+| test | sweep 2 baseline | tonight (pre-change) | drift |
+|---|---|---|---|
+| preproc 2x upsampler | 11485/11767× RT | 11760× RT | none |
+| sherpa_kws 160 ms | 21.8–22.2× RT, p50 265–279 µs | 22.2× RT, p50 253 µs | none |
+| sherpa_kws 80/40/20 | p50 120–122/59/30 µs | 120/59/30 µs | none |
+| executor fire path | presign 140/141 ns; d→e p95 476/630 µs; e→s p95 14/25 µs | 144 ns; 462 µs; 7 µs | none (e→s reflects sweep 3's URL pre-parse: 24–29 → 7–10 µs quiet-round) |
+| full chain paced | cap→dec p95 140.1/142.0 ms | 142.7 ms | none (cadence-dominated) |
+| cold first fire | premium 0 µs | premium 0 µs (one 13 µs cold outlier rig-1) | none |
+| ring idle-wake | old p50 75–77 / new 4 µs | old 77 / new 4 µs | none |
+| ingress decode A/B | ulaw old 145–152 / new 100–109 ns | old 148–149 / new 99–101 ns | none |
+| recorder / risk record_send | 28–29 / 26–27 ns | 30 / 27 ns | none |
+| ctc scorer A/B | new 745–769 ns/frame (old anchor ~1126–1218) | new 742–745 (anchor 1134–1272) | none |
+| streaming_ctc RTF | 23.7–24.3× RT, p50 218–227 µs | 24.2× RT, p50 218 µs | none |
+
+Verdict: NO DRIFT — every row inside this laptop's variance. Sweeps 1–3's
+verified wins (ulaw decode, ring unpark, ctc scorer, URL pre-parse) all
+still show at their claimed magnitudes.
+
+### What changed
+
+1. **`detect_loop`: `ring_wake` bookkeeping off the fire-critical span**
+   (38bb5ed) — UNVERIFIED-LOW-RISK. The chunker→detect handoff audit found
+   exactly one telemetry call between `recv()` and the intent `try_send`:
+   `recorder.record("ring_wake", …)` ran BEFORE `detector.process`, despite
+   the loop's own fire-first rule (record = hashmap lookup + Vec push,
+   occasional realloc). The sample is still TAKEN per-recv (values
+   identical); it is now RECORDED in the deferred bookkeeping section.
+   Strictly less work before the trade; unmeasurable here
+   (`perf_full_chain_paced` p95 142.7 pre vs 139.5 ms post = noise).
+   telemetry.md needs no change (same edge, same semantics).
+2. **`chunker`: one up-front `buf.reserve(chunk_samples + frame.len())` per
+   stream** (afeaff4) — UNVERIFIED-LOW-RISK. First chunk previously grew the
+   buffer through doubling reallocs; steady state was already alloc-free
+   (`clear()` keeps capacity). Start-of-stream only, behavior identical.
+   chunker.md needs no change (internal detail, door semantics unchanged).
+
+### Phone-lane chunker→detect handoff audit (sweep 3's item b) — result
+
+The lane is now clean end-to-end after sweeps 1–3: ingress = one
+`decode_ulaw_arc` alloc/frame; preproc reuses scratch (one unavoidable
+`Arc<[i16]>` alloc/frame — that IS the door type); chunker steady-state
+alloc-free, one unavoidable `Arc::from` per sealed chunk (2.5 KB @ 8 kHz
+160 ms); ring handoff has unpark-on-send (p50 4 µs measured again tonight);
+detect thread now has zero non-trade work on the critical span except
+`i.clone()` of the fired `DecisionIntent` (heap `String` ticker, once per
+FIRE not per frame — see left-alone). No locks anywhere on the single-chain
+lane; fanout's `Arc<Mutex<DecisionTable>>` is the designed dedupe point.
+
+### Inspected and deliberately left alone
+
+- **decision→exec mpsc wake structure** (sweep 3's item c, inspect-only):
+  confirmed the ~0.5–1 ms p95 is the executor's current-thread tokio runtime
+  parked in the OS poller; the detect thread's `try_send` wakes it via the
+  waker → syscall path, then `select!{biased}` polls `rx.recv()` first.
+  Nothing trivially safe: any fix is a transport change (dedicated ring +
+  unpark pattern, or a spin-mode receiver) = executor-structure territory,
+  correctly post-event. Tonight's numbers: p95 462 µs (pre-run) / 1043 µs
+  (post-run, 6 samples) — the edge is 2× noisy at this sample count; do not
+  chase single-run readings.
+- **`DecisionIntent` clone on the fire span**: `tx.try_send` takes by value
+  and `DetectionRecord` keeps the intent for the report, so the clone (one
+  String alloc, once per fire) is structural. Making `market_ticker:
+  Arc<str>` would touch decision/executor/telemetry serialization (serde
+  rc feature) — not the night before a live run.
+- **`Arc<PreStaged>` + Twilio typed WS deserialize**: fourth sweep, same
+  verdict as sweeps 1–3; not re-argued.
+- **cargo-clippy**: not installed for this toolchain; did NOT install
+  components on the user's machine overnight.
+
+### Suggested next steps for sweep 5
+
+- Perf ladder: no drift tonight; a single confirmation run is enough unless
+  you change hot-path code.
+- The two remaining pre-registered post-event items are now well-scoped:
+  (a) decision→exec transport (ring + unpark or spin receiver — reuse the
+  sweep-2 `perf_ring_wake_ab` A/B pattern, target the 0.5–1 ms p95),
+  (b) `Arc<str>` ticker / `Arc<PreStaged>` bundle (do all three clone sites
+  together). Both are POST-EVENT; do not start them if the live run hasn't
+  happened and been reviewed.
+- Unaudited-by-any-sweep areas that fit the conservative envelope:
+  `src/kalshi/book.rs` WS ingest path (off the fire path but feeds
+  `book_age`), `src/decision.rs` decide() internals (sweep 1 glanced only),
+  and the telemetry `snapshot()`/`merge()` teardown path.
+- If the 07-29 morning event produced `state/` telemetry on the box, compare
+  the mock-harness exec→send / decision→exec magnitudes against real wire
+  numbers before investing further in either edge.
