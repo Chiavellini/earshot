@@ -1,5 +1,5 @@
 {
-  "generated_utc": "2026-07-28T20:00:20.212600+00:00",
+  "generated_utc": "2026-07-29T02:02:22.908972+00:00",
   "horizon_days": 21,
   "series_count": 154,
   "counts": {
@@ -38,16 +38,6 @@
       "issuer": "BULL",
       "sub_title": "On Jul 24, 2026",
       "call_date": "2026-07-24",
-      "call_date_source": "sub_title",
-      "found_by": "both",
-      "ticker_date_misleading": false
-    },
-    {
-      "event_ticker": "KXEARNINGSMENTIONF-26JUL28",
-      "series_ticker": "KXEARNINGSMENTIONF",
-      "issuer": "F",
-      "sub_title": "On Jul 28, 2026",
-      "call_date": "2026-07-28",
       "call_date_source": "sub_title",
       "found_by": "both",
       "ticker_date_misleading": false
@@ -346,6 +336,16 @@
       "event_ticker": "KXEARNINGSMENTIONABNB-26AUG06",
       "series_ticker": "KXEARNINGSMENTIONABNB",
       "issuer": "ABNB",
+      "sub_title": "On Aug 6, 2026",
+      "call_date": "2026-08-06",
+      "call_date_source": "sub_title",
+      "found_by": "both",
+      "ticker_date_misleading": false
+    },
+    {
+      "event_ticker": "KXEARNINGSMENTIONCELH-26AUG06",
+      "series_ticker": "KXEARNINGSMENTIONCELH",
+      "issuer": "CELH",
       "sub_title": "On Aug 6, 2026",
       "call_date": "2026-08-06",
       "call_date_source": "sub_title",
