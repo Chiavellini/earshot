@@ -321,7 +321,12 @@ mod tests {
 
     #[test]
     fn merge_folds_counts_across_recorders() {
-        // The exact arm-time fold: executor recorder merged into pipeline's.
+        // merge() is the fanout leg fold (pipeline::run_pipeline). NOTE: the
+        // arm-time pipeline↔executor fold does NOT use it — main.rs::arm does
+        // `report.edges.extend(exec_report.recorder.snapshot())`, which is
+        // histogram-correct only while the two recorders' edge sets stay
+        // disjoint (pinned by `arm_fold_edge_sets_are_disjoint` below).
+        // Switching that fold to merge() is a parked post-event seam change.
         let mut pipeline = LatencyRecorder::new();
         let mut exec = LatencyRecorder::new();
         pipeline.record("capture→decision", 5_000_000);
@@ -332,5 +337,58 @@ mod tests {
         assert_eq!(snap["capture→decision"].count, 1);
         assert_eq!(snap["send→ack"].count, 2);
         assert!(close(snap["send→ack"].max_us, 100_000));
+    }
+
+    #[test]
+    fn arm_fold_edge_sets_are_disjoint() {
+        // main.rs::arm folds the executor's edges into the pipeline report via
+        // `report.edges.extend(exec_report.recorder.snapshot())`. BTreeMap
+        // `extend` REPLACES on key collision — it does not merge histograms —
+        // so that fold is correct only while the pipeline recorder and the
+        // executor recorder record strictly disjoint edge sets. This test pins
+        // the partition mechanically from the two producers' source: if an
+        // edge ever shows up on both sides, fix the arm fold (extend →
+        // `LatencyRecorder::merge`) — do NOT just rename the edge.
+        fn recorded_edges(src: &str) -> std::collections::BTreeSet<String> {
+            // Production code only: stop at the file's #[cfg(test)] mod.
+            let prod = src.split("#[cfg(test)]").next().unwrap();
+            let mut out = std::collections::BTreeSet::new();
+            let mut rest = prod;
+            while let Some(i) = rest.find(".record(") {
+                rest = &rest[i + ".record(".len()..];
+                if let Some(lit) = rest.trim_start().strip_prefix('"') {
+                    if let Some(end) = lit.find('"') {
+                        out.insert(lit[..end].to_string());
+                    }
+                }
+            }
+            out
+        }
+        let root = env!("CARGO_MANIFEST_DIR");
+        let read = |p: &str| std::fs::read_to_string(format!("{root}/{p}")).unwrap();
+        let pipeline = recorded_edges(&read("src/pipeline/mod.rs"));
+        let exec = recorded_edges(&read("src/kalshi/executor.rs"));
+        assert!(
+            !pipeline.is_empty() && !exec.is_empty(),
+            "edge extractor found nothing — did the record() call shape change?"
+        );
+        let overlap: Vec<_> = pipeline.intersection(&exec).collect();
+        assert!(
+            overlap.is_empty(),
+            "edges recorded by BOTH recorders — arm's extend-fold silently \
+             drops one side's histogram: {overlap:?}"
+        );
+        // Every recorded edge must be declared (record() on an undeclared
+        // edge is a silent no-op — the book_age failure class), and the two
+        // sides must partition EDGES exactly.
+        let declared: std::collections::BTreeSet<String> =
+            EDGES.iter().map(|s| s.to_string()).collect();
+        let union: std::collections::BTreeSet<String> =
+            pipeline.union(&exec).cloned().collect();
+        assert_eq!(
+            union, declared,
+            "recorded edges no longer partition EDGES — update EDGES/this \
+             test AND re-check the arm fold"
+        );
     }
 }

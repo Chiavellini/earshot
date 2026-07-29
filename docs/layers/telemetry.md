@@ -24,8 +24,15 @@ layer — it never sits between two stages.
 - **Ownership rule:** each recorder is owned by exactly one thread/task (the
   detect thread owns the pipeline recorder; the executor owns its own) —
   recording is lock-free-by-ownership (~20 ns into a pre-allocated
-  hdrhistogram). Recorders merge at teardown via
-  `LatencyRecorder::merge(&other)` (hdrhistogram `add`).
+  hdrhistogram). Teardown folds: fanout legs fold into the top-level
+  recorder via `LatencyRecorder::merge(&other)` (hdrhistogram `add`);
+  the arm-time pipeline↔executor fold in `main.rs::arm` is currently
+  `report.edges.extend(exec_recorder.snapshot())`, which is
+  histogram-correct ONLY because the two recorders record strictly
+  disjoint edge sets — that partition is pinned by the
+  `arm_fold_edge_sets_are_disjoint` unit test (an edge recorded on both
+  sides would be silently replaced, not merged; switching that fold to
+  `merge()` is a parked post-event seam change).
 - Logging: `telemetry::init_logging(json)` — tracing with EnvFilter
   (`RUST_LOG`), JSON mode for machine ingestion. The writer is deliberately
   SYNCHRONOUS: hot-path code logs only AFTER the intent handoff / order send
