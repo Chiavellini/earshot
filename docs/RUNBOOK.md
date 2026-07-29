@@ -2170,3 +2170,24 @@ is the durable follow-on for the recall ceiling.
 Verdict on: capture health (drops/gaps), detection correctness (per ear),
 order acceptance (ack shapes), timing edge (ack vs close). THEN the M4 caps
 conversation, with data.
+
+**Systemd-fired rehearsal — PASSED 2026-07-29 06:52Z** (the CLAUDE.md rule:
+an unattended path is validated only when fired by the real mechanism, not by
+hand). `systemctl --user start com.earshot.wing-arm.service` under the unit's
+own minimal env: EnvironmentFile loaded, identity present, registration
+submitted, resolver polled to its deadline, then **failed closed — exit 3,
+"FATAL: resolve failed; NOT arming"** with `notify.sh` paged. The arm was
+never reached, which is the required behaviour when no stream exists.
+
+Two things it taught, both acted on:
+1. **Pre-event, `webcastConfig.hlsSource` is EMPTY and the page is still the
+   registration card** — there is no player to scrape before go-live. The whole
+   run therefore hinges on that field populating when the event starts, which is
+   read from vendor code (Q-CC) and still not observed live.
+2. The resolve window was widened **2700 → 4200 s** (`WING_RESOLVE_SECS`), so
+   the poll runs 13:25Z→~14:35Z. A late-populating player costs lead time; a
+   window that closes early costs the entire event.
+
+⚠ The rehearsal sends REAL alert mail ("WING NOT ARMED", "chorus-call resolve
+found no stream"). Expect those timestamps in the mailbox; they are artifacts,
+not failures.
