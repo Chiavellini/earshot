@@ -177,6 +177,8 @@ KWS C API does not expose. Two wins over sherpa_kws: real per-hit `confidence`
   no model needed. `streaming_ctc.rs` integration tests drive a real streaming-
   CTC model end-to-end: set `EARSHOT_CTC_MODEL_DIR` to a model dir and
   `ORT_DYLIB_PATH` to the onnxruntime dylib; they SKIP loudly when unset.
+  `source scripts/ctc-test-env.sh` exports both from `models/` + `vendor/`
+  (fetched by `scripts/fetch-models.sh`; both may be symlinks in a worktree).
   Two models qualify (both in `scripts/fetch-models.sh`): the ENGLISH
   `sherpa-onnx-streaming-zipformer-ctc-small-2024-03-18` (landed 2026-07-17 —
   LibriSpeech BPE-500, 320 ms decode quantum, `out_per_chunk` 8; quality
