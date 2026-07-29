@@ -146,9 +146,10 @@ fn detect_loop(
         // Detect-hop park wake cost (None when the chunk was already
         // waiting, or in spin mode). The other hops aren't recorded —
         // this hop is the representative one and owns the recorder.
-        if let Some(wake_ns) = detect_rx.take_last_wake_ns() {
-            recorder.record("ring_wake", wake_ns);
-        }
+        // Taken here (the value is per-recv), RECORDED below with the
+        // rest of the bookkeeping — nothing but the trade sits on the
+        // critical span between recv and the intent handoff.
+        let wake_ns = detect_rx.take_last_wake_ns();
         let detections = detector.process(&chunk);
         let after = MonotonicNs::now();
 
@@ -180,6 +181,9 @@ fn detect_loop(
 
         // Off the critical span: per-chunk edges, then per-detection
         // edges, logs, and records.
+        if let Some(wake_ns) = wake_ns {
+            recorder.record("ring_wake", wake_ns);
+        }
         recorder.record(
             "capture→preproc",
             chunk.first_preproc_ts.saturating_since(chunk.first_capture_ts),
