@@ -116,11 +116,26 @@ impl BookCache {
 }
 
 /// Mutable scratch state owned by the WS task. Quantities in centi-contracts.
+/// Public (doc-hidden) only so the perf harness can drive `apply_message`;
+/// fields stay private — not part of any layer's door.
+#[doc(hidden)]
 #[derive(Default)]
-struct Ladders {
+pub struct Ladders {
     yes_bids: BTreeMap<u32, u32>,
     yes_asks: BTreeMap<u32, u32>,
     seq: u64,
+}
+
+/// First two fractional digits as a 0–99 hundredths value, right-padded with
+/// zeros ("9" → 90, "" → 0); None on a non-digit byte. Allocation-free — this
+/// runs per price level and per quantity on every WS book message.
+fn frac_hundredths(frac: &[u8]) -> Option<u32> {
+    let digit = |i: usize| match frac.get(i) {
+        None => Some(0u32),
+        Some(c) if c.is_ascii_digit() => Some((c - b'0') as u32),
+        Some(_) => None,
+    };
+    Some(digit(0)? * 10 + digit(1)?)
 }
 
 /// "0.9900" → 99¢. Integer parsing only; None for anything outside 0–100¢.
@@ -131,13 +146,11 @@ struct Ladders {
 pub fn dollars_to_cents(s: &str) -> Option<u32> {
     let (int, frac) = s.split_once('.').unwrap_or((s, ""));
     let dollars: u32 = int.parse().ok()?;
-    if frac.chars().skip(2).any(|c| c != '0') {
+    if frac.bytes().skip(2).any(|c| c != b'0') {
         tracing::error!(price = s, "sub-cent price level (deci_cent?) — dropping level; validator should have refused this market");
         return None;
     }
-    let frac2 = format!("{:0<2}", frac.chars().take(2).collect::<String>());
-    let cents_part: u32 = frac2.parse().ok()?;
-    let cents = dollars * 100 + cents_part;
+    let cents = dollars.checked_mul(100)?.checked_add(frac_hundredths(frac.as_bytes())?)?;
     (cents <= 100).then_some(cents)
 }
 
@@ -151,9 +164,8 @@ fn fp_to_centi_contracts(s: &str) -> Option<i64> {
     let s = s.trim_start_matches('-');
     let (int, frac) = s.split_once('.').unwrap_or((s, ""));
     let whole: i64 = int.parse().ok()?;
-    let frac2 = format!("{:0<2}", frac.chars().take(2).collect::<String>());
-    let centi_part: i64 = frac2.parse().ok()?;
-    if frac.chars().skip(2).any(|c| c != '0') {
+    let centi_part = frac_hundredths(frac.as_bytes())? as i64;
+    if frac.bytes().skip(2).any(|c| c != b'0') {
         tracing::warn!(qty = s, "quantity finer than centi-contracts — truncating beyond hundredths");
     }
     let centi = whole.checked_mul(100)?.checked_add(centi_part)?;
@@ -192,12 +204,20 @@ impl Ladders {
 }
 
 /// Apply one parsed WS message to the scratch ladders; returns the ticker
-/// whose book changed. Wire shapes pinned from live capture (see module doc).
-fn apply_message(scratch: &mut HashMap<String, Ladders>, msg: &Value) -> Option<String> {
+/// whose book changed (borrowed from `msg`). Wire shapes pinned from live
+/// capture (see module doc).
+/// Public (doc-hidden) for the perf harness; not part of any layer's door.
+#[doc(hidden)]
+pub fn apply_message<'a>(scratch: &mut HashMap<String, Ladders>, msg: &'a Value) -> Option<&'a str> {
     let kind = msg["type"].as_str()?;
     let m = &msg["msg"];
-    let ticker = m["market_ticker"].as_str()?.to_string();
-    let ladders = scratch.entry(ticker.clone()).or_default();
+    let ticker = m["market_ticker"].as_str()?;
+    // The ticker String is built only the first time a ticker is seen (the
+    // subscribed set is fixed per connection); steady state is alloc-free.
+    if !scratch.contains_key(ticker) {
+        scratch.insert(ticker.to_string(), Ladders::default());
+    }
+    let ladders = scratch.get_mut(ticker)?;
 
     match kind {
         "orderbook_snapshot" => {
@@ -341,7 +361,7 @@ async fn connect_and_stream(
             continue;
         }
         if let Some(ticker) = apply_message(&mut scratch, &msg) {
-            cache.publish(&ticker, scratch[&ticker].to_book());
+            cache.publish(ticker, scratch[ticker].to_book());
         }
     }
     Ok(())
@@ -392,6 +412,16 @@ mod tests {
         assert_eq!(fp_to_centi_contracts("0.77"), Some(77));
         assert_eq!(fp_to_centi_contracts("-0.30"), Some(-30));
         assert_eq!(fp_to_centi_contracts("9888.38"), Some(988_838));
+        // Allocation-free parser edge cases (sweep 5 rewrite parity pins).
+        assert_eq!(dollars_to_cents("0.9"), Some(90)); // short frac right-pads
+        assert_eq!(dollars_to_cents("1"), Some(100)); // no fractional part
+        assert_eq!(dollars_to_cents("0.9x"), None); // non-digit refused
+        assert_eq!(dollars_to_cents(""), None);
+        assert_eq!(dollars_to_cents("42949673.00"), None); // no u32 wrap-around
+        assert_eq!(fp_to_centi_contracts("5"), Some(500));
+        assert_eq!(fp_to_centi_contracts("5.4"), Some(540));
+        assert_eq!(fp_to_centi_contracts("1.005"), Some(100)); // truncates (loud)
+        assert_eq!(fp_to_centi_contracts("3.2x"), None);
     }
 
     #[test]

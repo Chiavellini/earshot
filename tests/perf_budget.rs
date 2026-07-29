@@ -905,3 +905,85 @@ fn perf_risk_record_send() {
     println!("RiskGate.record_send(): {per_op_ns} ns/op");
     assert!(per_op_ns < 200, "record_send {per_op_ns} ns/op — blocking I/O back on the fire path?");
 }
+
+/// Book-cache WS ingest apply path (sweep 5 2026-07-29): per-message cost of
+/// applying pre-parsed snapshot/delta messages to the scratch ladders —
+/// the work between `serde_json::from_str` and `to_book()` in
+/// `connect_and_stream`. Pre-change this allocated per message (ticker
+/// `to_string` + `clone`) and per price/qty parse (`format!` + `collect`);
+/// the sweep-5 change makes the steady state alloc-free. Report-only; A/B
+/// across the change is binary-vs-binary (sweep-3 method) since the old code
+/// is not inlinable here (private `Ladders` internals). Delta pairs cancel
+/// exactly, so ladder size — and per-iteration work — is steady.
+#[test]
+#[ignore]
+fn perf_book_apply_ingest() {
+    use earshot::kalshi::book::{apply_message, Ladders};
+    use serde_json::{json, Value};
+
+    fn fp(cents: u32) -> String {
+        format!("{}.{:02}00", cents / 100, cents % 100)
+    }
+
+    // Realistic mention-market snapshot: 12 levels per side, fractional sizes.
+    let snapshot: Value = json!({
+        "type": "orderbook_snapshot", "sid": 1, "seq": 1,
+        "msg": {
+            "market_ticker": "KX-PERF-MENTION",
+            "yes_dollars_fp": (1..=12u32)
+                .map(|i| json!([fp(20 + i), format!("{}.{:02}", i * 7, (i * 13) % 100)]))
+                .collect::<Vec<_>>(),
+            "no_dollars_fp": (1..=12u32)
+                .map(|i| json!([fp(50 + i), format!("{}.{:02}", i * 5, (i * 17) % 100)]))
+                .collect::<Vec<_>>(),
+        }
+    });
+    // 64 deltas in exactly-cancelling pairs (fractional, alternating sides).
+    let deltas: Vec<Value> = (0..32u32)
+        .flat_map(|i| {
+            let side = if i % 2 == 0 { "yes" } else { "no" };
+            let price = fp(30 + (i % 8));
+            let mk = |d: &str| {
+                json!({
+                    "type": "orderbook_delta", "sid": 1, "seq": 2 + i,
+                    "msg": {
+                        "market_ticker": "KX-PERF-MENTION", "side": side,
+                        "price_dollars": price, "delta_fp": d,
+                    }
+                })
+            };
+            [mk("3.25"), mk("-3.25")]
+        })
+        .collect();
+
+    let iters = 20_000u64;
+    let mut rows: Vec<(u64, u64)> = Vec::new();
+    for _round in 0..5 {
+        let mut scratch: HashMap<String, Ladders> = HashMap::new();
+        assert!(apply_message(&mut scratch, &snapshot).is_some());
+
+        let t0 = Instant::now();
+        for _ in 0..iters {
+            for d in &deltas {
+                std::hint::black_box(apply_message(&mut scratch, d).is_some());
+            }
+        }
+        let delta_ns = t0.elapsed().as_nanos() as u64 / (iters * deltas.len() as u64);
+
+        let snap_iters = iters / 8;
+        let t0 = Instant::now();
+        for _ in 0..snap_iters {
+            std::hint::black_box(apply_message(&mut scratch, &snapshot).is_some());
+        }
+        let snap_ns = t0.elapsed().as_nanos() as u64 / snap_iters;
+        rows.push((delta_ns, snap_ns));
+    }
+    println!("book apply_message per-message ns (12x2-level book):");
+    for (i, (d, s)) in rows.iter().enumerate() {
+        println!("  round {i}: delta {d}  snapshot {s}");
+    }
+    // Loose absolute alarm only: a delta apply is a hashmap hit + two fixed-
+    // point parses + a BTreeMap update — far under 20 µs on any build.
+    let avg_delta: u64 = rows.iter().map(|r| r.0).sum::<u64>() / rows.len() as u64;
+    assert!(avg_delta < 20_000, "book delta apply {avg_delta} ns/msg — ingest path regressed");
+}

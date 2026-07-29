@@ -61,5 +61,10 @@ cache, never a blocking REST fetch"). NOT responsible for: deciding anything
 ## How to test in isolation
 - Unit tests build wire-exact JSON (`snapshot()`/`delta()` helpers in the
   file) and assert ladder convergence + leg conversion — no network.
+- Perf: `perf_book_apply_ingest` (`tests/perf_budget.rs`, release
+  `--ignored`) measures the per-message apply cost via the doc-hidden
+  `apply_message` seam. The parse/apply steady state is allocation-free
+  (2026-07-29): fixed-point parsing is byte-wise and the ticker `String` is
+  built only on first sight per connection.
 - Live read-only soak: `earshot book --ticker T --secs N` prints
   bid/ask/levels/seq/feed_age every second.
