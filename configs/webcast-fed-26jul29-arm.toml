@@ -182,6 +182,7 @@ audio_stale_ms           = 2000
 allowlist_tickers = [
   "KXFEDMENTION-26JUL-ADP",
   "KXFEDMENTION-26JUL-AI",
+  "KXFEDMENTION-26JUL-FAMI",
   "KXFEDMENTION-26JUL-ANCH",
   "KXFEDMENTION-26JUL-BAL",
   "KXFEDMENTION-26JUL-BITC",
@@ -228,7 +229,7 @@ allowlist_tickers = [
 [[keywords]]
 market_ticker    = "KXFEDMENTION-26JUL-ADP"
 phrase           = "adp"
-variants         = ["adp", "adps"]
+variants         = ["adp", "a d p"]
 max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"
@@ -239,7 +240,7 @@ policy           = "confirmed_only"
 [[keywords]]
 market_ticker    = "KXFEDMENTION-26JUL-AI"
 phrase           = "artificial intelligence"
-variants         = ["artificial intelligence"]
+variants         = ["artificial intelligence", "a i"]
 max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"
@@ -248,7 +249,7 @@ policy           = "confirmed_only"
 [[keywords]]
 market_ticker    = "KXFEDMENTION-26JUL-ANCH"
 phrase           = "anchor"
-variants         = ["anchor", "anchors", "anchored", "anchoreds"]
+variants         = ["anchor", "anchors", "anchored"]
 max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"
@@ -257,7 +258,7 @@ policy           = "confirmed_only"
 [[keywords]]
 market_ticker    = "KXFEDMENTION-26JUL-BAL"
 phrase           = "balance sheet"
-variants         = ["balance sheet"]
+variants         = ["balance sheet", "balance sheets"]
 max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"
@@ -275,7 +276,7 @@ policy           = "confirmed_only"
 [[keywords]]
 market_ticker    = "KXFEDMENTION-26JUL-CENT"
 phrase           = "central bank"
-variants         = ["central bank"]
+variants         = ["central bank", "central banks", "central banker", "central bankers"]
 max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"
@@ -302,7 +303,7 @@ policy           = "confirmed_only"
 [[keywords]]
 market_ticker    = "KXFEDMENTION-26JUL-CRYP"
 phrase           = "crypto"
-variants         = ["crypto", "cryptos", "cryptocurrency", "cryptocurrencys"]
+variants         = ["crypto", "cryptos", "cryptocurrency", "cryptocurrencies"]
 max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"
@@ -311,7 +312,7 @@ policy           = "confirmed_only"
 [[keywords]]
 market_ticker    = "KXFEDMENTION-26JUL-DISS"
 phrase           = "dissent"
-variants         = ["dissent", "dissents"]
+variants         = ["dissent", "dissents", "dissented", "dissenting"]
 max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"
@@ -338,7 +339,7 @@ policy           = "confirmed_only"
 [[keywords]]
 market_ticker    = "KXFEDMENTION-26JUL-GAS"
 phrase           = "gas"
-variants         = ["gas", "gasoline", "gasolines", "natural gas"]
+variants         = ["gas", "gasoline", "natural gas"]
 max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"
@@ -347,7 +348,7 @@ policy           = "confirmed_only"
 [[keywords]]
 market_ticker    = "KXFEDMENTION-26JUL-GOLD"
 phrase           = "gold"
-variants         = ["gold", "golds"]
+variants         = ["gold"]
 max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"
@@ -383,7 +384,7 @@ policy           = "confirmed_only"
 [[keywords]]
 market_ticker    = "KXFEDMENTION-26JUL-IRAN"
 phrase           = "iran"
-variants         = ["iran", "irans"]
+variants         = ["iran"]
 max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"
@@ -446,7 +447,7 @@ policy           = "confirmed_only"
 [[keywords]]
 market_ticker    = "KXFEDMENTION-26JUL-PROB"
 phrase           = "probability"
-variants         = ["probability", "probabilitys"]
+variants         = ["probability", "probabilities"]
 max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"
@@ -455,7 +456,7 @@ policy           = "confirmed_only"
 [[keywords]]
 market_ticker    = "KXFEDMENTION-26JUL-PROD"
 phrase           = "productivity"
-variants         = ["productivity", "productivitys"]
+variants         = ["productivity"]
 max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"
@@ -472,6 +473,10 @@ policy           = "confirmed_only"
 # QE / Quantitative Easing (KXFEDMENTION-26JUL-QE) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 # DROPPED ultra-short variant "qe" — <3 chars matches a syllable, not a word (measured: 38 FA in one event set). Re-add deliberately if this phrasing matters, and own the precision cost.
 # DROPPED ultra-short variant "qes" — <3 chars matches a syllable, not a word (measured: 38 FA in one event set). Re-add deliberately if this phrasing matters, and own the precision cost.
+# ⚠ NOT-RESOLVABLE 2026-07-29: rules count the spoken short form ("QE"), but no
+# tested spelling ("q e"/phonetic respellings) fires even at thr 0.05 — the letter
+# sequence is outside the CTC model's spoken-letter behavior. Full phrase only;
+# recall gap accepted consciously. variants-reviewed 2026-07-29.
 [[keywords]]
 market_ticker    = "KXFEDMENTION-26JUL-QE"
 phrase           = "quantitative easing"
@@ -483,6 +488,10 @@ policy           = "confirmed_only"
 # QT / Quantitative Tightening (KXFEDMENTION-26JUL-QT) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 # DROPPED ultra-short variant "qt" — <3 chars matches a syllable, not a word (measured: 38 FA in one event set). Re-add deliberately if this phrasing matters, and own the precision cost.
 # DROPPED ultra-short variant "qts" — <3 chars matches a syllable, not a word (measured: 38 FA in one event set). Re-add deliberately if this phrasing matters, and own the precision cost.
+# ⚠ NOT-RESOLVABLE 2026-07-29: rules count the spoken short form ("QT"), but no
+# tested spelling ("q t"/phonetic respellings) fires even at thr 0.05 — the letter
+# sequence is outside the CTC model's spoken-letter behavior. Full phrase only;
+# recall gap accepted consciously. variants-reviewed 2026-07-29.
 [[keywords]]
 market_ticker    = "KXFEDMENTION-26JUL-QT"
 phrase           = "quantitative tightening"
@@ -515,7 +524,7 @@ policy           = "confirmed_only"
 [[keywords]]
 market_ticker    = "KXFEDMENTION-26JUL-REST"
 phrase           = "restrictive"
-variants         = ["restrictive", "restrictives"]
+variants         = ["restrictive"]
 max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"
@@ -551,7 +560,7 @@ policy           = "confirmed_only"
 [[keywords]]
 market_ticker    = "KXFEDMENTION-26JUL-SOFT"
 phrase           = "softening"
-variants         = ["softening", "softenings"]
+variants         = ["softening"]
 max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"
@@ -560,7 +569,7 @@ policy           = "confirmed_only"
 [[keywords]]
 market_ticker    = "KXFEDMENTION-26JUL-STAG"
 phrase           = "stagflation"
-variants         = ["stagflation", "stagflations"]
+variants         = ["stagflation"]
 max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"
@@ -569,7 +578,7 @@ policy           = "confirmed_only"
 [[keywords]]
 market_ticker    = "KXFEDMENTION-26JUL-TAX"
 phrase           = "tax"
-variants         = ["tax", "taxs"]
+variants         = ["tax", "taxes"]
 max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"
@@ -578,7 +587,7 @@ policy           = "confirmed_only"
 [[keywords]]
 market_ticker    = "KXFEDMENTION-26JUL-TRU"
 phrase           = "truflation"
-variants         = ["truflation", "truflations"]
+variants         = ["truflation"]
 max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"
@@ -598,7 +607,7 @@ policy           = "confirmed_only"
 [[keywords]]
 market_ticker    = "KXFEDMENTION-26JUL-UNCE"
 phrase           = "uncertainty"
-variants         = ["uncertainty", "uncertaintys"]
+variants         = ["uncertainty", "uncertainties"]
 max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"
@@ -607,7 +616,7 @@ policy           = "confirmed_only"
 [[keywords]]
 market_ticker    = "KXFEDMENTION-26JUL-UNCH"
 phrase           = "unchanged"
-variants         = ["unchanged", "unchangeds"]
+variants         = ["unchanged"]
 max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"
@@ -616,9 +625,23 @@ policy           = "confirmed_only"
 [[keywords]]
 market_ticker    = "KXFEDMENTION-26JUL-VOLA"
 phrase           = "volatility"
-variants         = ["volatility", "volatilitys"]
+variants         = ["volatility"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+confirmed_threshold = 0.05   # long-word posterior dilution: 0/4 TTS at default, fires at 0.05 (2026-07-29)
+
+# Family Fight / Family Feud (KXFEDMENTION-26JUL-FAMI) — added 2026-07-29 by
+# allowlist-diff (market opened 07-28 13:45Z, AFTER this config was staged —
+# INDI-class gap caught pre-event). Rules: EITHER phrase resolves YES.
+# variants-reviewed 2026-07-29 (variant-study pass same day).
+[[keywords]]
+market_ticker    = "KXFEDMENTION-26JUL-FAMI"
+phrase           = "family feud"
+variants         = ["family feud", "family fight", "family feuds", "family fights"]
 max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"
 
 # --- prepare summary: 43 tradeable, 0 skipped (said-N-times), 0 skipped (unencodable), 0 variants dropped of 43 markets ---
+# --- 2026-07-29: +FAMI (44th market, allowlist-diff catch) → 44 tradeable ---

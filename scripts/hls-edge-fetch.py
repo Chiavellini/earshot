@@ -557,11 +557,19 @@ def main():
             sys.stderr.flush()
 
         # Emit any parked arrival record now that this poll carries its PDT.
+        # A manifest with no per-segment PDT must NOT discard the record (WING
+        # 2026-07-29: zero arrival writes for the whole call, watchdog paged
+        # false stalls all morning) — fall back to fetch wall-clock and tag the
+        # mode "-nopdt" so analysis can tell wall-clock-only rows apart.
         if arr_log is not None and arr_pending:
             for _u, _p in pairs:
                 rec = arr_pending.pop(_u, None)
-                if rec is not None and _p is not None:
+                if rec is None:
+                    continue
+                if _p is not None:
                     arrival(arr_log, _p, rec[0], rec[1], rec[2], rec[3])
+                else:
+                    arrival(arr_log, rec[0], rec[0], rec[1], rec[2], rec[3] + "-nopdt")
             if len(arr_pending) > 200:      # never grow without bound
                 arr_pending.clear()
 

@@ -69,6 +69,32 @@ fi
 source "$ACCOUNT"
 : "${TWILIO_ACCOUNT_SID:?}" "${TWILIO_AUTH_TOKEN:?}" "${TWILIO_FROM_NUMBER:?}"
 
+# streaming_ctc dlopens onnxruntime. With ORT_DYLIB_PATH unset the DETECTOR
+# BUILD hangs — and because build_pipeline_input constructs the source (binding
+# the WS listener) BEFORE the detector, the port is already open when the hang
+# happens. Everything downstream then lies: `nc -z` below passes, ngrok logs
+# "join connections", Twilio dials in and the media socket sits unaccepted in
+# the kernel backlog (Recv-Q > 0) while the arm prints nothing after "twilio
+# stream source bound". Cost 2026-07-29: the whole phone lane, diagnosed as a
+# WS/signature bug for hours. Same silent-hang class as RUNBOOK bug 1 (Ford
+# 07-28 ORT dylib), whose guards existed only in run-arm.sh/launch-webcast.sh —
+# never here, on the TELEPHONY launcher. Resolve + REFUSE before the dial.
+if grep -qE '^[[:space:]]*engine[[:space:]]*=[[:space:]]*"streaming_ctc"' "$CONFIG"; then
+  if [[ -z "${ORT_DYLIB_PATH:-}" ]]; then
+    _ort=$(find "${EARSHOT_ROOT:-$HOME/ear}/vendor" -name 'libonnxruntime*.so*' 2>/dev/null | head -1 || true)
+    if [[ -n "$_ort" ]]; then
+      export ORT_DYLIB_PATH="$_ort"
+    fi
+  fi
+  [[ -n "${ORT_DYLIB_PATH:-}" && -f "${ORT_DYLIB_PATH}" ]] || {
+    echo "REFUSING: config uses engine=streaming_ctc but ORT_DYLIB_PATH is unset/invalid." >&2
+    echo "  run scripts/fetch-models.sh (it fetches the dylib and prints the export), or" >&2
+    echo "  export ORT_DYLIB_PATH=/path/to/libonnxruntime.so before launching." >&2
+    exit 2
+  }
+  echo "streaming_ctc: ORT_DYLIB_PATH=${ORT_DYLIB_PATH}"
+fi
+
 # Per-event state dir, keyed off the config's [event] id so ledgers/STOP never
 # collide between concurrent events. Parsed with sed, not python tomllib —
 # tomllib needs python ≥3.11 and the launchd PATH may resolve an older one

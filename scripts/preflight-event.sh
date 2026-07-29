@@ -219,6 +219,20 @@ case "$AL_OUT" in
   *)      check FAIL "allowlist coverage check could not run ($AL_OUT)" ;;
 esac
 
+# ── Allowlist vs LIVE board (INDI class) ──────────────────────────────────
+# The inverse direction of the check above: markets Kalshi lists for the event
+# that the config never arms. WING 2026-07-29 shipped 13/14 (India missing);
+# FED 2026-07-29 shipped 43/44 (FAMI opened after staging). Public endpoint,
+# no creds; network failure is a WARN, a live-not-armed market is a FAIL.
+if DIFF_OUT=$(bash "$(dirname "$0")/allowlist-diff.sh" "$CONFIG" 2>&1); then
+  check PASS "allowlist matches the live Kalshi board ($(head -1 <<<"$DIFF_OUT"))"
+else
+  case $? in
+    1) check FAIL "live board has markets this config does not arm: $(grep LIVE-NOT-ARMED <<<"$DIFF_OUT" | tr '\n' ' ')" ;;
+    *) check WARN "allowlist-vs-live diff could not run: $(head -1 <<<"$DIFF_OUT")" ;;
+  esac
+fi
+
 # ── Credentials (live probes, read-only) ───────────────────────────────────
 if [[ -f "$ACCOUNT" ]]; then
   if [[ "$(uname -s)" == Darwin ]]; then

@@ -7,6 +7,7 @@
 #   scripts/run-arm.sh ba          # Boeing  Tue 07-28 10:30 ET
 #   scripts/run-arm.sh f           # Ford    Tue 07-28 17:00 ET
 #   scripts/run-arm.sh <slug> --dry    # dry run (no --i-am-live)
+#   scripts/run-arm.sh <slug> --force  # arm even if this event is already armed
 #
 # Why this exists: before 2026-07-27 there was no arm helper at all — every
 # ~/run-*.sh on the box is a `capture-bakeoff`, not an `arm` — so the three
@@ -32,6 +33,13 @@
 #   5. DRY RUN BY ACCIDENT. --i-am-live is REQUIRED to place orders (W7 lifted
 #      2026-07-27). Default here is LIVE, and --dry is the explicit opt-out, so
 #      forgetting a flag cannot silently produce a no-order run.
+#   6. DOUBLE-ARM (guard 8, added 2026-07-29). The ONE guard here that is NOT a
+#      past incident — it is pre-emptive, and said so plainly. 07-29 is the
+#      first day with two exact start-time ties (cmg+meta 20:30Z, msft+cvna
+#      21:30Z), so four arms get hand-typed in two bursts and a repeated slug
+#      is the obvious way to lose an event. Two DIFFERENT slugs are already
+#      fully isolated (per-event state dir, per-slug logs/URL files, no ports)
+#      and stay that way; only a repeat of the SAME event is refused.
 #
 # Posture is enforced in `arm`, not here: --allow-mention is the mention-PROBE
 # gate (cap must be ≤1¢, orders non-crossing), so a live arm on these configs
@@ -39,11 +47,12 @@
 set -euo pipefail
 
 SLUG="${1:-}"; shift || true
-LIVE=1; URL_OK=0
+LIVE=1; URL_OK=0; FORCE=0
 for a in "$@"; do
   case "$a" in
     --dry)    LIVE=0 ;;
     --url-ok) URL_OK=1 ;;
+    --force)  FORCE=1 ;;
     *) echo "unknown arg: $a" >&2; exit 2 ;;
   esac
 done
@@ -105,6 +114,38 @@ esac
 
 # --- guard 1: config present -------------------------------------------------
 [[ -f "$CONFIG" ]] || fail "config $CONFIG not found"
+
+# --- guard 8: NO DOUBLE-ARM (added 2026-07-29) -------------------------------
+# Numbered 8 but placed HERE, second, on purpose: guards 2–7 are cited by number
+# in docs/RUNBOOK.md so they keep their numbers, and a refusal this early costs
+# nothing (guard 6 alone is a 90 s detector smoke).
+#
+# Why it exists: the webcast lane has NO single-instance protection anywhere —
+# no pidfile, no flock, no pgrep in this script or in launch-webcast.sh. That
+# was harmless while events ran one at a time. It stopped being harmless on
+# 2026-07-29, the first day with two exact start-time ties (cmg+meta 20:30Z,
+# msft+cvna 21:30Z): four arms hand-typed in two bursts, under time pressure,
+# and a repeated slug is the realistic operator error. Two arms on the SAME
+# event share one state dir — two writers on state/<EVENT>/report.json, two $1
+# probe ledgers debiting one Kalshi account, and a STOP file that stops only
+# one of them. Two DIFFERENT slugs are fully isolated and are not touched here.
+#
+# Matches both stages of the launch: the launcher (before it execs) and the arm
+# itself, which carries `--state-dir state/<EVENT>` (launch-webcast.sh:189).
+if [[ "$FORCE" -eq 0 ]]; then
+  DUP_PIDS="$( { pgrep -f -- "--state-dir state/${EVENT}([[:space:]]|$)" || true
+                 pgrep -f -- "launch-webcast\.sh .*${CONFIG}([[:space:]]|$)"  || true
+               } | sort -u | tr '\n' ' ' )"
+  DUP_PIDS="${DUP_PIDS% }"
+  if [[ -n "$DUP_PIDS" ]]; then
+    fail "an arm for $EVENT is ALREADY RUNNING (pid(s): $DUP_PIDS).
+         A second arm on one event shares state/$EVENT — two report.json writers,
+         two probe ledgers on one account, and a STOP that only stops one.
+         Check it first:  ps -fp $DUP_PIDS
+         Kill it:         kill $DUP_PIDS       (arm's SIGTERM path writes the report)
+         Override:        $0 $SLUG --force     (deliberate second arm only)"
+  fi
+fi
 
 # --- guard 2: stream URL present, non-empty, and not stale -------------------
 [[ -s "$URLF" ]] || fail "$URLF missing or empty — surface the m3u8 first (docs/RUNBOOK.md T−20)"
@@ -225,12 +266,17 @@ echo "abort: touch $REPO/state/$EVENT/STOP   (or SIGTERM the arm)"
 #           'ARMED' followed by detector init). Absence = the silent-hang class.
 #   t+150s  any leg already dead? ('leg source finished' within the first 150 s
 #           = Ford bug 5: pipe_tuned died 0.68 s in with frames=0, no alert).
-#   every 60s until the call ends: arrival log stalled >90 s while the arm is
-#           still up = fetcher deaf mid-call (LATENCY-PROOF §V6 class).
+#   every 60s until the call ends: BOTH fetcher heartbeats (arrival log AND the
+#           spec-edge stderr SUMMARY stream) stale >90 s while the arm is still
+#           up = fetcher deaf mid-call (LATENCY-PROOF §V6 class). Keying on the
+#           arrival log alone false-paged all of WING 2026-07-29 (no-PDT
+#           manifest → 0-byte arrival log while segments flowed fine).
 ARRIVAL_LOG="$HOME/${SLUG}-arrival.log"
 [[ "$SLUG" == "f" ]] && ARRIVAL_LOG="$HOME/ford-arrival.log"
+EDGE_ERR="$HOME/${SLUG}_spec_edge.err"
+[[ "$SLUG" == "f" ]] && EDGE_ERR="$HOME/ford_spec_edge.err"
 nohup bash -c '
-  LOG="$1"; EVENT="$2"; ARM_PID="$3"; ARRIVAL="$4"; REPO="$5"
+  LOG="$1"; EVENT="$2"; ARM_PID="$3"; ARRIVAL="$4"; REPO="$5"; EDGE_ERR="$6"
   page() {  # page <subject> <body> — notify + a local line (notify.sh is silent on success)
     echo "$(date -u +%FT%TZ) PAGE: $1 — $2"
     bash "$REPO/scripts/notify.sh" "$1" "$2" --quiet
@@ -246,14 +292,20 @@ nohup bash -c '
   fi
   while kill -0 "$ARM_PID" 2>/dev/null; do
     sleep 60
-    if [[ -f "$ARRIVAL" ]]; then
-      AGE=$(( $(date +%s) - $(stat -c %Y "$ARRIVAL" 2>/dev/null || stat -f %m "$ARRIVAL") ))
+    NEWEST=0
+    for F in "$ARRIVAL" "$EDGE_ERR"; do
+      [[ -f "$F" ]] || continue
+      M=$(stat -c %Y "$F" 2>/dev/null || stat -f %m "$F")
+      (( M > NEWEST )) && NEWEST=$M
+    done
+    if (( NEWEST > 0 )); then
+      AGE=$(( $(date +%s) - NEWEST ))
       if (( AGE > 90 )); then
-        page "FETCHER STALLED: $EVENT" "$ARRIVAL silent for ${AGE}s while arm is up"
+        page "FETCHER STALLED: $EVENT" "newest fetcher heartbeat ($ARRIVAL / $EDGE_ERR) is ${AGE}s old while arm is up"
         sleep 240   # do not re-page every minute for the same stall
       fi
     fi
   done
   echo "$(date -u +%FT%TZ) watchdog down: arm exited"
-' watchdog "$LOG" "$EVENT" "$ARM_PID" "$ARRIVAL_LOG" "$REPO" > "$HOME/${SLUG}-watchdog.log" 2>&1 &
+' watchdog "$LOG" "$EVENT" "$ARM_PID" "$ARRIVAL_LOG" "$REPO" "$EDGE_ERR" > "$HOME/${SLUG}-watchdog.log" 2>&1 &
 echo "watchdog (pid $!) — alerts via notify.sh; log $HOME/${SLUG}-watchdog.log"
