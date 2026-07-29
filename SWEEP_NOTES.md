@@ -203,3 +203,91 @@ test is untouched by tonight's changes (all inside run variance):
   engines.
 - Consider pinning a tiny `vendor/` symlink note or env-var helper for the
   worktree so future sweeps run the model-gated CTC tests by default.
+
+## Sweep 3 — 2026-07-29 (commits 2d38400, 149e56f, bc40052 + this notes commit)
+
+Test status: `source scripts/ctc-test-env.sh && EARSHOT_REQUIRE_MODELS=1
+cargo test` fully green after all changes (179 lib tests + every integration
+suite, 0 failed everywhere); the two model-gated streaming_ctc tests
+confirmed RUNNING (2.5 s of real inference), not skipping. Perf A/Bs below
+were run binary-vs-binary: the pre-change release `perf_budget` binary was
+copied aside before editing, then OLD/NEW alternated in one shell loop —
+true interleaving across the change, same machine, same session.
+
+### What changed
+
+1. **`streaming_ctc::accept_pcm`: flat-buffer posterior delivery** —
+   NOT RESOLVABLE end-to-end / strictly-less-work by construction (sweep 2's
+   #1 handoff item). The public API changed from
+   `Result<Vec<(u64, Vec<f32>)>>` to `Result<PosteriorBatch>` (Copy struct:
+   `first_frame` + `frames`, with `len()`/`is_empty()`) + a
+   `posteriors() -> &[f32]` accessor over a reused frame-major buffer —
+   removes one vocab-sized Vec (~2 KB at BPE-500) per output frame (~25/s)
+   plus the outer Vec per call. This closes the detector-layer "no
+   steady-state allocation" gap for this engine: the only remaining per-step
+   allocs are the `x` feature tensor handed to ort by value and ort's own
+   output map, both inside the inference call. A/B `perf_streaming_ctc_rtf`,
+   3 interleaved rounds: old 23.7/24.2/24.1× vs new 24.0/24.3/24.1×, p50
+   220–222 vs 219–221 µs, identical 1496 frames out — inside noise
+   (inference dominates), as predicted. All callers updated (detector
+   `process`, both model-gated tests, `perf_streaming_ctc_rtf` needed no
+   change thanks to `PosteriorBatch::len`). detector.md updated.
+
+2. **`RestClient`: orders URL pre-parsed at construction** — VERIFIED.
+   `create_order_presigned` did `format!("{base}{ORDERS_ENDPOINT}")` + a
+   full reqwest/url parse on EVERY send, on the exec→send edge. Now a
+   `reqwest::Url` is parsed once in `with_base_and_timeout` (a bad base now
+   fails at construction with `KalshiError::Validation` instead of at first
+   send — strictly earlier, strictly better) and cloned per send (internal
+   memcpy, no parse). A/B `perf_executor_fire_path`, 5 interleaved rounds
+   (old binary vs new): exec→send p95 old {356, 25, 24, 827, 29} µs vs new
+   {38, 9, 9, 209, 10} µs — new won ALL 5; in the quiet rounds the edge
+   drops 24–29 → 9–10 µs. (Rounds 1/4 are the known first-run/system-noise
+   outliers on both sides; the ordering never flips.) Order-path suites
+   (exec_mock, exec_fix_mock, validator_mock, e2e_full_chain) all green.
+   executor.md updated.
+
+3. **`scripts/ctc-test-env.sh`** — closes sweep 2's last handoff item. New
+   sourceable helper (bash + zsh; find -L so the worktree's `models`/`vendor`
+   symlinks resolve) exporting `EARSHOT_CTC_MODEL_DIR` + `ORT_DYLIB_PATH`,
+   so the model-gated CTC tests and `perf_streaming_ctc_rtf` stop silently
+   skipping: `source scripts/ctc-test-env.sh && EARSHOT_REQUIRE_MODELS=1
+   cargo test`. Also symlinked `vendor` → main checkout's vendor in THIS
+   worktree (untracked, gitignored) so the helper resolves here. Doc pointer
+   in detector.md's test section. Touches no launch/preflight/autorun script.
+
+### Inspected and deliberately left alone
+
+- **`Arc<PreStaged>` in `PreStagedMap`** (executor fire path, third sweep in
+  a row): still ~100 ns once per fire (2 String clones + a Bytes refcount).
+  Same verdict as sweeps 1–2 — not touching `handle_intent`'s structure the
+  night before a live run for a sub-µs win. If sweep 4+ wants it anyway,
+  note `OrderRecord` construction clones the same two Strings again, so do
+  both or neither.
+- **Twilio typed WS deserialize**: unchanged verdict (message shapes are
+  pinned evidence in docs/TWILIO.md; parse ~µs at 50/s, not the bottleneck).
+- `create_order_presigned`'s response side (`resp.json()` into `Value`,
+  `raw.clone()` into the ack): after the wire, off the send edge; the TTFB
+  split (`hdrs→ack`) already accounts for it. Left alone.
+- `cancel_order` / `order_by_client_id` still format! URLs per call —
+  non-hot-path by design (kill switch, ambiguous-outcome query); left.
+- `xdata` feature-window Vec per encoder step: handing ort a borrowed view
+  (`TensorRef`) would drop it, but that's an ort-API-shape change on the
+  inference call the night before a live event; deferred with a note.
+
+### Suggested next steps for sweep 4
+
+- The perf ladder was NOT rerun in full tonight (only preproc-adjacent
+  suites via cargo test + the two A/B targets above). A full
+  `cargo test --release --test perf_budget -- --ignored --nocapture
+  --test-threads=1` drift record against sweep 2's baseline table would be
+  cheap and useful.
+- exec→send is now ~9–10 µs p95 in the mock harness; the next real lever on
+  the order path is upstream (`decision→exec` p95 ~650–930 µs in the same
+  harness — mpsc wake + task polling; sweep 2's ring unpark-on-send pattern
+  may transplant, but that's executor-structure territory: post-event).
+- Phone-lane hot path beyond ingress decode is still the least-audited area
+  (chunker → detect handoff on the 8 kHz lane).
+- If the live event ran by sweep-4 time: check `state/`-side telemetry for
+  the widened exec→send claim against real wire numbers before believing
+  the mock-harness magnitude.
