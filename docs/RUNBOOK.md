@@ -360,6 +360,10 @@ None of the three conflict; each gets its own process and state dir.
 >    the last-words report. OPEN — SIGTERM path after STOP-consumed watcher
 >    was never drilled. Ledger + detections were recoverable from
 >    probe_ledger.json and the arm log; nothing lost but the summary file.
+>    07-29 00:03Z rehearsal refinement: SIGTERM mid-live-stream (no prior
+>    STOP, fanout mode) exits cleanly — kill switch 2–3 ms, all children
+>    reaped — but does NOT rewrite report.json either; only a natural
+>    drain does. Audit trail for attended runs = arm log + ledger + tape.
 >
 > Post-mortem 07-28 evening (tape + arrival-log + arm-log decomposition)
 > found two MORE bugs the live narrative missed — and they, not the detector,

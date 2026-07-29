@@ -203,23 +203,29 @@ ARRIVAL_LOG="$HOME/${SLUG}-arrival.log"
 [[ "$SLUG" == "f" ]] && ARRIVAL_LOG="$HOME/ford-arrival.log"
 nohup bash -c '
   LOG="$1"; EVENT="$2"; ARM_PID="$3"; ARRIVAL="$4"; REPO="$5"
+  page() {  # page <subject> <body> — notify + a local line (notify.sh is silent on success)
+    echo "$(date -u +%FT%TZ) PAGE: $1 — $2"
+    bash "$REPO/scripts/notify.sh" "$1" "$2" --quiet
+  }
+  echo "$(date -u +%FT%TZ) watchdog up: event=$EVENT arm_pid=$ARM_PID"
   sleep 150
-  kill -0 "$ARM_PID" 2>/dev/null || { bash "$REPO/scripts/notify.sh" "ARM DIED EARLY: $EVENT" "arm pid $ARM_PID gone within 150 s — read $LOG" --quiet; exit 0; }
+  kill -0 "$ARM_PID" 2>/dev/null || { page "ARM DIED EARLY: $EVENT" "arm pid $ARM_PID gone within 150 s — read $LOG"; exit 0; }
   if ! grep -qaE "fanout: per-leg detect chains|Loaded ONNX Runtime dylib|dry-run: orders" "$LOG"; then
-    bash "$REPO/scripts/notify.sh" "ARM DEAF: $EVENT" "150 s after launch: no pipeline/detector-init line in $LOG — Ford deaf-gap signature. Kill and relaunch." --quiet
+    page "ARM DEAF: $EVENT" "150 s after launch: no pipeline/detector-init line in $LOG — Ford deaf-gap signature. Kill and relaunch."
   fi
   if grep -qa "leg source finished" "$LOG"; then
-    bash "$REPO/scripts/notify.sh" "ARM LEG DEAD: $EVENT" "a fanout leg exited within 150 s of launch (Ford bug 5: single-legged run). grep \"leg source finished\" $LOG" --quiet
+    page "ARM LEG DEAD: $EVENT" "a fanout leg exited within 150 s of launch (Ford bug 5: single-legged run). grep \"leg source finished\" $LOG"
   fi
   while kill -0 "$ARM_PID" 2>/dev/null; do
     sleep 60
     if [[ -f "$ARRIVAL" ]]; then
       AGE=$(( $(date +%s) - $(stat -c %Y "$ARRIVAL" 2>/dev/null || stat -f %m "$ARRIVAL") ))
       if (( AGE > 90 )); then
-        bash "$REPO/scripts/notify.sh" "FETCHER STALLED: $EVENT" "$ARRIVAL silent for ${AGE}s while arm is up" --quiet
+        page "FETCHER STALLED: $EVENT" "$ARRIVAL silent for ${AGE}s while arm is up"
         sleep 240   # do not re-page every minute for the same stall
       fi
     fi
   done
+  echo "$(date -u +%FT%TZ) watchdog down: arm exited"
 ' watchdog "$LOG" "$EVENT" "$ARM_PID" "$ARRIVAL_LOG" "$REPO" > "$HOME/${SLUG}-watchdog.log" 2>&1 &
 echo "watchdog (pid $!) — alerts via notify.sh; log $HOME/${SLUG}-watchdog.log"
