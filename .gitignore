@@ -18,5 +18,7 @@ corpus-quiet/
 .env
 .env.*
 state/
-vendor/
+# no trailing slash: worktrees symlink vendor back to the main checkout, and
+# `vendor/` (dir-only) would leave the symlink untracked-and-addable
+vendor
 scripts/__pycache__/
