@@ -909,13 +909,55 @@ is the first venue where the *"has it started"* signal is separable from the
   mid-session and the page flipped to `pageId: "expired"`. A resolver must treat
   any non-1 status as "keep polling / fail closed", never assume 0/1/3.
 - **Still not pinned:** whether the emailed confirmation link carries a token
-  that bypasses the form (untested — programmatic registration made it moot),
-  and the URL shape of a genuinely LIVE Chorus Call event, which no probe has
-  yet observed. The live branch above is read from the vendor's own player code,
-  not from a live capture.
+  that bypasses the form (untested — programmatic registration made it moot).
 - Evidence: transcript inline above; the probe wav is laptop-local and
   UNTRACKED (`corpus/` is gitignored) at
   `corpus/bridge-probes/wing-2026-07-29-bridge-entry.wav`.
+
+### Q-CC LIVE URL SHAPE — now OBSERVED, twice (2026-07-29, WING + SBUX, live)
+
+The open item above ("the URL shape of a genuinely LIVE Chorus Call event, which
+no probe has yet observed") is **closed**. Both of today's Chorus Call events were
+captured live and the shape is identical:
+
+```
+https://pmd.choruscall.com/httporiginlive/<STREAM-ID>_http/playlist.m3u8
+                                          └─ master; lists one chunklist.m3u8
+```
+
+- WING 14:0x UTC: `…/httporiginlive/Cv4NzoL0_http/playlist.m3u8` → HTTP 200,
+  `#EXT-X-STREAM-INF:BANDWIDTH=71410,CODECS="mp4a.40.2"`, one `chunklist.m3u8`.
+  Captured 85 min on it (arm log `wing-arm-20260729T140620Z.log`).
+- SBUX 20:10 UTC: `…/httporiginlive/6216819_http/playlist.m3u8` → HTTP 200,
+  same shape, `BANDWIDTH=71259`. Captured from 5 min before the call.
+
+⚠ **`<STREAM-ID>` IS NOT ALWAYS THE `webcastid`.** This is the trap and it nearly
+cost SBUX. WING's happened to be its webcastid (`Cv4NzoL0`), so the pattern looked
+like `{webcastid}_http`. SBUX's is a **numeric id** (`6216819`) bearing no relation
+to its webcastid (`Vwxw4BrF`) — a URL built from the webcastid 404s forever, and
+the live gate simply never flips (silent miss, exactly the WING failure mode).
+The numeric id is **not** `frameId`/`streamId` from `webcastConfig` either (SBUX
+`frameId` was a different number). It is only observable from the LIVE player's
+own network traffic, after registration.
+
+**Implication for `choruscall-resolve.py`:** the template is a *probe candidate*,
+never a substitute for reading the player. Correct order: (1) resolve `hlsSource`
+from the player as today; (2) only if that stays empty, probe
+`httporiginlive/<webcastid>_http/playlist.m3u8` and `validate()` it before use;
+(3) never assume the webcastid form is the live id. A browser-equivalent fetch of
+the live player page remains the only general way to get `<STREAM-ID>`.
+
+**Also observed:** the live manifest carries **no per-segment
+`#EXT-X-PROGRAM-DATE-TIME`**, which is why `hls-edge-fetch.py --arrival-log`
+wrote a 0-byte file for all of WING (fixed same day: records now fall back to
+fetch wall-clock, tagged `-nopdt`).
+
+- Evidence: browser network capture (WING + SBUX live players), `curl` from the
+  us-east box returning 200 on both, and both arms' fetcher SUMMARY lines
+  (`wing_spec_edge.err`, `sbux_spec_edge.err`) showing segments flowing.
+  Confidence: high (two independent issuers, same day, both captured).
+  Re-verify: any Chorus Call event where the numeric-vs-webcastid form differs
+  again, and whenever `pmd.choruscall.com` changes hostname.
 
 ## Q-OPS — Operator-screened bridges defeat the listen-only dial (2026-07-29, WING, live)
 
@@ -955,3 +997,35 @@ operator turn as distinct energy bands.
   per-issuer. **Probe-dial before relying on any bridge unattended**; the probe
   costs ~1.4¢ and 33 s. Bridges that answer with an announcement + hold music +
   a specialist are Chorus-Call-operator-assisted and fail this test.
+
+## Q-NGROK — one free static endpoint ⇒ only ONE phone lane at a time (2026-07-29, live)
+
+Measured on the us-east box while CMG's phone leg was live: starting a second
+`ngrok http` agent — different local port, different `web_addr`, with and
+without a per-event config — fails immediately:
+
+```
+ERR_NGROK_334  failed to start tunnel: The endpoint
+'https://sondra-unshivering-derelictly.ngrok-free.dev' is already online.
+Either 1. stop your existing endpoint first, or
+       2. start both endpoints with `--pooling-enabled` to load balance between them.
+```
+
+The free plan issues ONE static domain and every agent session is assigned it;
+random per-session hostnames are no longer handed out, so a second concurrent
+tunnel has nowhere to land. `--pooling-enabled` is NOT a fix here — it load
+balances across the endpoints, which would split one call's media between two
+listeners.
+
+**Implication:** `docs/MULTI-EVENT.md` §8 concurrency (one process per event,
+per-event `--bind-port` + tunnel) holds for the WEBCAST lane, but the PHONE lane
+is capped at **one simultaneous event** on this ngrok account. 2026-07-29 hit
+this directly: CMG (20:30) and MSFT+CVNA (21:30) overlap, so at most one of them
+can run a phone leg. Concurrent phone events need either a paid ngrok plan
+(multiple reserved domains) or the no-ngrok path already approved in
+`docs/INGRESS-BAKEOFF.md` (TLS terminating on the box itself, which also removes
+a whole hop of latency from the lane we most care about).
+
+- Evidence: `/tmp/ngrok2.log`, `/tmp/ngrok3.log` on the box, 2026-07-29 20:27 UTC.
+  Confidence: high (reproduced twice, distinct configs). Re-verify: on any plan
+  change, or after the no-ngrok migration lands.
