@@ -55,6 +55,10 @@ pub fn run(
             sample_rate_hz = frame.sample_rate_hz;
             source = frame.source;
             chunk_samples = (frame.sample_rate_hz as usize * chunk_ms as usize) / 1000;
+            // One up-front reservation (+ headroom for the frame that tips
+            // the buffer over chunk_samples) instead of doubling reallocs on
+            // the first chunk. `clear()` keeps the capacity afterwards.
+            buf.reserve(chunk_samples + frame.pcm.len());
         }
         last_capture_ts = frame.capture_ts;
         buf.extend_from_slice(&frame.pcm);
