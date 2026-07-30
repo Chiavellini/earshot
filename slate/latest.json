@@ -1,11 +1,11 @@
 {
-  "generated_utc": "2026-07-29T02:02:22.908972+00:00",
+  "generated_utc": "2026-07-30T02:02:04.566411+00:00",
   "horizon_days": 21,
-  "series_count": 154,
+  "series_count": 156,
   "counts": {
-    "paginated": 56,
-    "per_series": 56,
-    "union": 56
+    "paginated": 50,
+    "per_series": 50,
+    "union": 50
   },
   "sweep_delta": {
     "per_series_only": [],
@@ -20,17 +20,13 @@
       "call_date": "2026-07-15",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
-    },
-    {
-      "event_ticker": "KXEARNINGSMENTIONHOOD-26JUL17",
-      "series_ticker": "KXEARNINGSMENTIONHOOD",
-      "issuer": "HOOD",
-      "sub_title": "On Jul 17, 2026",
-      "call_date": "2026-07-17",
-      "call_date_source": "sub_title",
-      "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://investors.progressive.com/events/events/event-details/2026/The-Progressive-Corporation-June-Earnings-Release-2026-Py7jkaBPHi/default.aspx",
+      "call_date_confirmed": null,
+      "call_date_disputed": false,
+      "ir_page_date": null,
+      "call_time_utc": null,
+      "call_date_evidence": "fetch failed: HTTPError: HTTP Error 404: Not Found"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONBULL-26JUL24",
@@ -40,17 +36,13 @@
       "call_date": "2026-07-24",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
-    },
-    {
-      "event_ticker": "KXEARNINGSMENTIONCMG-26JUL29",
-      "series_ticker": "KXEARNINGSMENTIONCMG",
-      "issuer": "CMG",
-      "sub_title": "On Jul 29, 2026",
-      "call_date": "2026-07-29",
-      "call_date_source": "sub_title",
-      "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://www.webullcorp.com/investor-relations/pressreleases",
+      "call_date_confirmed": null,
+      "call_date_disputed": false,
+      "ir_page_date": null,
+      "call_time_utc": null,
+      "call_date_evidence": "unconfirmable (none)"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONCVNA-26JUL29",
@@ -60,57 +52,13 @@
       "call_date": "2026-07-29",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
-    },
-    {
-      "event_ticker": "KXFEDMENTION-26JUL",
-      "series_ticker": "KXFEDMENTION",
-      "issuer": "FED",
-      "sub_title": "On Jul 29, 2026",
-      "call_date": "2026-07-29",
-      "call_date_source": "sub_title",
-      "found_by": "both",
-      "ticker_date_misleading": true
-    },
-    {
-      "event_ticker": "KXEARNINGSMENTIONMETA-26JUL29",
-      "series_ticker": "KXEARNINGSMENTIONMETA",
-      "issuer": "META",
-      "sub_title": "On Jul 29, 2026",
-      "call_date": "2026-07-29",
-      "call_date_source": "sub_title",
-      "found_by": "both",
-      "ticker_date_misleading": false
-    },
-    {
-      "event_ticker": "KXEARNINGSMENTIONMSFT-26JUL29",
-      "series_ticker": "KXEARNINGSMENTIONMSFT",
-      "issuer": "MSFT",
-      "sub_title": "On Jul 29, 2026",
-      "call_date": "2026-07-29",
-      "call_date_source": "sub_title",
-      "found_by": "both",
-      "ticker_date_misleading": false
-    },
-    {
-      "event_ticker": "KXEARNINGSMENTIONSBUX-26JUL29",
-      "series_ticker": "KXEARNINGSMENTIONSBUX",
-      "issuer": "SBUX",
-      "sub_title": "On Jul 29, 2026",
-      "call_date": "2026-07-29",
-      "call_date_source": "sub_title",
-      "found_by": "both",
-      "ticker_date_misleading": false
-    },
-    {
-      "event_ticker": "KXEARNINGSMENTIONWING-26JUL29",
-      "series_ticker": "KXEARNINGSMENTIONWING",
-      "issuer": "WING",
-      "sub_title": "On Jul 29, 2026",
-      "call_date": "2026-07-29",
-      "call_date_source": "sub_title",
-      "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://app.webinar.net/VB5J89y8N0k",
+      "call_date_confirmed": null,
+      "call_date_disputed": false,
+      "ir_page_date": null,
+      "call_time_utc": null,
+      "call_date_evidence": "unconfirmable (none)"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONAAPL-26JUL30",
@@ -120,7 +68,13 @@
       "call_date": "2026-07-30",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://investor.apple.com/investor-relations/default.aspx",
+      "call_date_confirmed": null,
+      "call_date_disputed": false,
+      "ir_page_date": null,
+      "call_time_utc": null,
+      "call_date_evidence": "unconfirmable (none)"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONAMZN-26JUL30",
@@ -130,7 +84,13 @@
       "call_date": "2026-07-30",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://ir.aboutamazon.com/events/event-details/2026/Q2-2026-Amazoncom-Inc-Earnings-Conference-Call/default.aspx",
+      "call_date_confirmed": true,
+      "call_date_disputed": false,
+      "ir_page_date": "2026-07-30",
+      "call_time_utc": null,
+      "call_date_evidence": "page_text agrees: vents Event Details Q2 2026 Amazon.com, Inc. Earnings Conference Call July 30, 2026 02:00 PM PT Add to Calendar Add to Apple Calendar Add to Google Calen | slug Q2-2026"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONRACE-26JUL30",
@@ -140,7 +100,13 @@
       "call_date": "2026-07-30",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://www.ferrari.com/en-EN/corporate/financial-corporate-calendar",
+      "call_date_confirmed": true,
+      "call_date_disputed": false,
+      "ir_page_date": "2026-07-30",
+      "call_time_utc": null,
+      "call_date_evidence": "page_text agrees: allery Media accreditation FINANCIAL AND CORPORATE CALENDAR Thursday, July 30, 2026 2026 SECOND QUARTER GROUP RESULTS 2:30 p.m. BST / 3:30 p.m. CEST / 9:"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONRDDT-26JUL30",
@@ -150,7 +116,13 @@
       "call_date": "2026-07-30",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://investor.redditinc.com/events/event-details/2026/Reddit-Q226-Earnings-Call-2026-UY_eEjESzL/default.aspx",
+      "call_date_confirmed": null,
+      "call_date_disputed": false,
+      "ir_page_date": null,
+      "call_time_utc": null,
+      "call_date_evidence": "unconfirmable (none)"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONYUM-26JUL30",
@@ -160,7 +132,13 @@
       "call_date": "2026-07-30",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://investors.yum.com/news-events/events-and-presentations/",
+      "call_date_confirmed": null,
+      "call_date_disputed": false,
+      "ir_page_date": null,
+      "call_time_utc": null,
+      "call_date_evidence": "unconfirmable (none)"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONGRAB-26AUG03",
@@ -170,7 +148,13 @@
       "call_date": "2026-08-03",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://investors.grab.com/news-and-events/news-details/2026/Grab-to-Announce-Second-Quarter-2026-Results-on-3-August-2026-2026-0nRL6bYnpf/default.aspx",
+      "call_date_confirmed": null,
+      "call_date_disputed": false,
+      "ir_page_date": null,
+      "call_time_utc": null,
+      "call_date_evidence": "unconfirmable (page_text_ambiguous, 3 dates on page)"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONPLTR-26AUG03",
@@ -180,7 +164,13 @@
       "call_date": "2026-08-03",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://investors.palantir.com/news-details/2026/Palantir-Announces-Date-of-Second-Quarter-2026-Earnings-Release-and-Webcast/",
+      "call_date_confirmed": null,
+      "call_date_disputed": false,
+      "ir_page_date": null,
+      "call_time_utc": null,
+      "call_date_evidence": "unconfirmable (none)"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONSNAP-26AUG03",
@@ -190,7 +180,13 @@
       "call_date": "2026-08-03",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://investor.snap.com/events-and-presentations/events/default.aspx",
+      "call_date_confirmed": null,
+      "call_date_disputed": false,
+      "ir_page_date": null,
+      "call_time_utc": null,
+      "call_date_evidence": "unconfirmable (none)"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONAMD-26AUG04",
@@ -200,7 +196,13 @@
       "call_date": "2026-08-04",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://ir.amd.com/news-events/press-releases/detail/1289/amd-to-report-fiscal-second-quarter-2026-financial-results",
+      "call_date_confirmed": null,
+      "call_date_disputed": false,
+      "ir_page_date": "2026-07-08",
+      "call_time_utc": null,
+      "call_date_evidence": "page date 2026-07-08 != Kalshi 2026-08-04, NOT disputed \u2014 page_text cannot distinguish a call date from a press-release date; only a gcal link may dispute. quote: ockholders AMD to Report Fiscal Second Quarter 2026 Financial Results July 08, 2026 4:15 pm EDT Download as PDF SANTA CLARA, Calif., July 08, 2026 (GLOBE"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONMCD-26AUG04",
@@ -210,7 +212,13 @@
       "call_date": "2026-08-04",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://corporate.mcdonalds.com/corpmcd/investors/events-and-presentations.html",
+      "call_date_confirmed": null,
+      "call_date_disputed": false,
+      "ir_page_date": null,
+      "call_time_utc": null,
+      "call_date_evidence": "fetch failed: TimeoutError: The read operation timed out"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONSPCX-26AUG04",
@@ -220,7 +228,13 @@
       "call_date": "2026-08-04",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://ir.spacex.com/updates/releases-details/2026/SpaceX-to-Post-Second-Quarter-2026-Results-and-Host-Webcast-on-August-4-2026-2026-g8layJlbFm/default.aspx",
+      "call_date_confirmed": null,
+      "call_date_disputed": false,
+      "ir_page_date": null,
+      "call_time_utc": null,
+      "call_date_evidence": "unconfirmable (page_text_ambiguous, 2 dates on page)"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONSPOT-26AUG04",
@@ -230,7 +244,13 @@
       "call_date": "2026-08-04",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://app.webinar.net/24zaxYZl1G3",
+      "call_date_confirmed": null,
+      "call_date_disputed": false,
+      "ir_page_date": null,
+      "call_time_utc": null,
+      "call_date_evidence": "unconfirmable (none)"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONTOST-26AUG04",
@@ -240,7 +260,13 @@
       "call_date": "2026-08-04",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://investors.toasttab.com/events-and-presentations/events/event-details/2026/Toast-Second-Quarter-Fiscal-2026-Earnings-Call/default.aspx",
+      "call_date_confirmed": null,
+      "call_date_disputed": false,
+      "ir_page_date": null,
+      "call_time_utc": null,
+      "call_date_evidence": "unconfirmable (none)"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONZETA-26AUG04",
@@ -250,7 +276,13 @@
       "call_date": "2026-08-04",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://investors.zetaglobal.com/events-and-presentations/events/event-details/2026/Zeta-Q2-2026-Earnings-Call/default.aspx",
+      "call_date_confirmed": true,
+      "call_date_disputed": false,
+      "ir_page_date": "2026-08-04",
+      "call_time_utc": null,
+      "call_date_evidence": "page_text agrees: ources Investor FAQs Investor Email Alerts Zeta Q2 2026 Earnings Call August 4, 2026 4:30 PM ET Add to Calendar Add to Apple Calendar Add to Google Calend | slug Q2-2026"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONDASH-26AUG05",
@@ -260,7 +292,13 @@
       "call_date": "2026-08-05",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://ir.doordash.com/events-and-presentations/default.aspx",
+      "call_date_confirmed": null,
+      "call_date_disputed": false,
+      "ir_page_date": null,
+      "call_time_utc": null,
+      "call_date_evidence": "unconfirmable (none)"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONDIS-26AUG05",
@@ -270,7 +308,13 @@
       "call_date": "2026-08-05",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://investors.thewaltdisneycompany.com/events-and-presentations/event-details/2026/Disneys-Q3-FY26-Earnings-Results-Webcast-2026-PXZSBx9qZg/default.aspx",
+      "call_date_confirmed": true,
+      "call_date_disputed": false,
+      "ir_page_date": "2026-08-05",
+      "call_time_utc": null,
+      "call_date_evidence": "page_text agrees: eholder Newsletter Contacts Disney\u2019s Q3 FY26 Earnings Results Webcast August 5, 2026 5:30 AM PT Add to Calendar Add to Apple Calendar Add to Google Calend"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONEBAY-26AUG05",
@@ -280,7 +324,13 @@
       "call_date": "2026-08-05",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://investors.ebayinc.com/overview/default.aspx",
+      "call_date_confirmed": null,
+      "call_date_disputed": false,
+      "ir_page_date": null,
+      "call_time_utc": null,
+      "call_date_evidence": "unconfirmable (none)"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONFIG-26AUG05",
@@ -290,7 +340,13 @@
       "call_date": "2026-08-05",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://investor.figma.com/overview/default.aspx",
+      "call_date_confirmed": null,
+      "call_date_disputed": false,
+      "ir_page_date": null,
+      "call_time_utc": null,
+      "call_date_evidence": "unconfirmable (none)"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONMELI-26AUG05",
@@ -300,7 +356,13 @@
       "call_date": "2026-08-05",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://investor.mercadolibre.com/news-and-events",
+      "call_date_confirmed": null,
+      "call_date_disputed": false,
+      "ir_page_date": null,
+      "call_time_utc": null,
+      "call_date_evidence": "unconfirmable (none)"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONSHOP-26AUG05",
@@ -310,7 +372,13 @@
       "call_date": "2026-08-05",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://www.shopify.com/investors/events",
+      "call_date_confirmed": null,
+      "call_date_disputed": false,
+      "ir_page_date": null,
+      "call_time_utc": null,
+      "call_date_evidence": "unconfirmable (gcal_link_ambiguous, 4 dates on page)"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONTLN-26AUG05",
@@ -320,7 +388,29 @@
       "call_date": "2026-08-05",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://ir.talenenergy.com/news-releases/news-release-details/talen-energy-report-second-quarter-2026-financial-results-august",
+      "call_date_confirmed": null,
+      "call_date_disputed": false,
+      "ir_page_date": null,
+      "call_time_utc": null,
+      "call_date_evidence": "unconfirmable (page_text_ambiguous, 2 dates on page)"
+    },
+    {
+      "event_ticker": "KXEARNINGSMENTIONUBER-26AUG05",
+      "series_ticker": "KXEARNINGSMENTIONUBER",
+      "issuer": "UBER",
+      "sub_title": "On Aug 5, 2026",
+      "call_date": "2026-08-05",
+      "call_date_source": "sub_title",
+      "found_by": "both",
+      "ticker_date_misleading": false,
+      "settlement_url": "https://investor.uber.com/news-events/news/press-release-details/2026/Uber-Announces-Date-of-Second-Quarter-2026-Results-Conference-Call/default.aspx",
+      "call_date_confirmed": null,
+      "call_date_disputed": false,
+      "ir_page_date": "2026-07-13",
+      "call_time_utc": null,
+      "call_date_evidence": "page date 2026-07-13 != Kalshi 2026-08-05, NOT disputed \u2014 page_text cannot distinguish a call date from a press-release date; only a gcal link may dispute. quote: ts Uber Announces Date of Second Quarter 2026 Results Conference Call July 13, 2026 Download this Press Release PDF Format (opens in new window) SAN FRAN"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONYOU-26AUG05",
@@ -330,7 +420,13 @@
       "call_date": "2026-08-05",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://ir.clearme.com/news-events/ir-calendar/detail/20260805-second-quarter-2026-earnings-call",
+      "call_date_confirmed": true,
+      "call_date_disputed": false,
+      "ir_page_date": "2026-08-05",
+      "call_time_utc": null,
+      "call_date_evidence": "page_text agrees: R Calendar Email Alerts In the News Second Quarter 2026 Earnings Call August 5, 2026 8:00 am EDT Investors and analysts can access the live teleconference"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONABNB-26AUG06",
@@ -340,7 +436,13 @@
       "call_date": "2026-08-06",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://investors.airbnb.com/events-and-presentations/event-details/2026/Airbnb-Q2-2026-Earnings-Call/default.aspx",
+      "call_date_confirmed": true,
+      "call_date_disputed": false,
+      "ir_page_date": "2026-08-06",
+      "call_time_utc": null,
+      "call_date_evidence": "page_text agrees: key to go to link or open dropdown menu. Airbnb Q2 2026 Earnings Call August 06, 2026 2:00 PM PT Add to Calendar Add to Apple Calendar Add to Google Calend | slug Q2-2026"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONCELH-26AUG06",
@@ -350,7 +452,13 @@
       "call_date": "2026-08-06",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://ir.celsiusholdingsinc.com/events-and-presentations/default.aspx",
+      "call_date_confirmed": null,
+      "call_date_disputed": false,
+      "ir_page_date": null,
+      "call_time_utc": null,
+      "call_date_evidence": "unconfirmable (none)"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONLYFT-26AUG06",
@@ -360,7 +468,13 @@
       "call_date": "2026-08-06",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://investor.lyft.com/news-events-presentations/events/detail/20260806-lyft-second-quarter-2026-earnings-call",
+      "call_date_confirmed": null,
+      "call_date_disputed": false,
+      "ir_page_date": null,
+      "call_time_utc": null,
+      "call_date_evidence": "unconfirmable (none)"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONNBIS-26AUG06",
@@ -370,7 +484,13 @@
       "call_date": "2026-08-06",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://nebius.com/investor-hub",
+      "call_date_confirmed": null,
+      "call_date_disputed": false,
+      "ir_page_date": "2026-08-12",
+      "call_time_utc": null,
+      "call_date_evidence": "page date 2026-08-12 != Kalshi 2026-08-06, NOT disputed \u2014 page_text cannot distinguish a call date from a press-release date; only a gcal link may dispute. quote: will release its second quarter 2026 financial results on Wednesday, August 12, 2026, before market open. Nebius Group will also hold a conference call to"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONDKNG-26AUG07",
@@ -380,7 +500,13 @@
       "call_date": "2026-08-07",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://ir.aboutdraftkings.com/financials/events-and-presentations/event-details/2026/DraftKings-Q2-2026-Earnings-Call/default.aspx",
+      "call_date_confirmed": true,
+      "call_date_disputed": false,
+      "ir_page_date": "2026-08-07",
+      "call_time_utc": null,
+      "call_date_evidence": "page_text agrees: s Contact Email Alerts Event Details DraftKings Q2 2026 Earnings Call August 7, 2026 8:30 AM Add to Calendar Add to Apple Calendar Add to Google Calendar | slug Q2-2026"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONLLY-26AUG07",
@@ -390,7 +516,13 @@
       "call_date": "2026-08-07",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://investor.lilly.com/news-releases/news-release-details/lilly-confirms-date-and-conference-call-second-quarter-2025",
+      "call_date_confirmed": null,
+      "call_date_disputed": false,
+      "ir_page_date": null,
+      "call_time_utc": null,
+      "call_date_evidence": "unconfirmable (page_text_ambiguous, 2 dates on page)"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONWEN-26AUG07",
@@ -400,7 +532,13 @@
       "call_date": "2026-08-07",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://www.irwendys.com/events-and-presentations/event-details/2026/Q2-2026-The-Wendys-Company-Earnings-Conference-Call/default.aspx",
+      "call_date_confirmed": true,
+      "call_date_disputed": false,
+      "ir_page_date": "2026-08-07",
+      "call_time_utc": null,
+      "call_date_evidence": "page_text agrees: Alerts RSS Feeds Q2 2026 The Wendy's Company Earnings Conference Call August 7, 2026 8:30 AM ET Add to Calendar Add to Apple Calendar Add to Google Calend | slug Q2-2026"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONHIMS-26AUG10",
@@ -410,7 +548,13 @@
       "call_date": "2026-08-10",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://investors.hims.com/events-and-presentations/events-calendar/event-details/2026/Hims--Hers-Second-Quarter-2026-Earnings-Call/default.aspx",
+      "call_date_confirmed": true,
+      "call_date_disputed": false,
+      "ir_page_date": "2026-08-10",
+      "call_time_utc": null,
+      "call_date_evidence": "page_text agrees: s Investor email alerts Hims & Hers Second Quarter 2026 Earnings Call August 10, 2026 5:00 PM ET Add to Calendar Add to Apple Calendar Add to Google Calend"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONCAVA-26AUG11",
@@ -420,7 +564,13 @@
       "call_date": "2026-08-11",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://investor.cava.com/events-and-presentations/events/event-details/2026/CAVA-Q2-2026-Earnings-Call/default.aspx",
+      "call_date_confirmed": true,
+      "call_date_disputed": false,
+      "ir_page_date": "2026-08-11",
+      "call_time_utc": null,
+      "call_date_evidence": "page_text agrees: es Investor Email Alerts Investor Contacts CAVA Q2 2026 Earnings Call August 11, 2026 5:00 PM ET Add to Calendar Add to Apple Calendar Add to Google Calend | slug Q2-2026"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONAC-26AUG12",
@@ -430,7 +580,13 @@
       "call_date": "2026-08-12",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://www.aircanada.com/media/media-advisory-air-canada-to-present-second-quarter-2026-results/",
+      "call_date_confirmed": null,
+      "call_date_disputed": false,
+      "ir_page_date": null,
+      "call_time_utc": null,
+      "call_date_evidence": "unconfirmable (page_text_ambiguous, 2 dates on page)"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONHD-26AUG18",
@@ -440,7 +596,13 @@
       "call_date": "2026-08-18",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://ir.homedepot.com/",
+      "call_date_confirmed": null,
+      "call_date_disputed": false,
+      "ir_page_date": null,
+      "call_time_utc": null,
+      "call_date_evidence": "unconfirmable (none)"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONKLAR-26AUG18",
@@ -450,7 +612,13 @@
       "call_date": "2026-08-18",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://investors.klarna.com/News--Events/events-and-presentations/event-details/2026/Q2-2026-Klarna-earnings-call-2026-pk3rSPJls6/default.aspx",
+      "call_date_confirmed": true,
+      "call_date_disputed": false,
+      "ir_page_date": "2026-08-18",
+      "call_time_utc": null,
+      "call_date_evidence": "page_text agrees: l Alerts Pre-IPO Investors Event Details Q2 2026 Klarna earnings call August 18, 2026 8:30 AM ET Add to Calendar Add to Apple Calendar Add to Google Calend | slug Q2-2026"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONTOL-26AUG18",
@@ -460,7 +628,13 @@
       "call_date": "2026-08-18",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://investors.tollbrothers.com/news-and-events/events-and-presentations",
+      "call_date_confirmed": null,
+      "call_date_disputed": false,
+      "ir_page_date": null,
+      "call_time_utc": null,
+      "call_date_evidence": "unconfirmable (page_text_ambiguous, 30 dates on page)"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONTGT-26AUG19",
@@ -470,7 +644,13 @@
       "call_date": "2026-08-19",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://corporate.target.com/investors/events-presentations",
+      "call_date_confirmed": true,
+      "call_date_disputed": false,
+      "ir_page_date": "2026-08-19",
+      "call_time_utc": null,
+      "call_date_evidence": "page_text agrees: events Q2 2026 Target Corporation Earnings Conference Call Wednesday, August 19, 2026 8:00 - 9:00 a.m. EDT Archived events & presentations 2026 2025 2024 2"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONFUTU-26AUG20",
@@ -480,7 +660,13 @@
       "call_date": "2026-08-20",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://ir.futuholdings.com/news-events/events",
+      "call_date_confirmed": null,
+      "call_date_disputed": false,
+      "ir_page_date": null,
+      "call_time_utc": null,
+      "call_date_evidence": "unconfirmable (page_text_ambiguous, 29 dates on page)"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONWMT-26AUG20",
@@ -490,7 +676,13 @@
       "call_date": "2026-08-20",
       "call_date_source": "sub_title",
       "found_by": "both",
-      "ticker_date_misleading": false
+      "ticker_date_misleading": false,
+      "settlement_url": "https://corporate.walmart.com/news/events/fy2027-q2-earnings-release",
+      "call_date_confirmed": true,
+      "call_date_disputed": false,
+      "ir_page_date": "2026-08-20",
+      "call_time_utc": "2026-08-20T12:00:00Z",
+      "call_date_evidence": "gcal_link agrees: dates=20260820T120000Z"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONNVDA-26AUG26",
