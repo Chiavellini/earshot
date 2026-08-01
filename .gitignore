@@ -8,6 +8,14 @@ corpus/raw/
 corpus/telephony/
 # call-structure spike: raw transcripts stay local; corpus/structure/ IS committed
 corpus/transcripts/
+# Bridge-probe ASR transcripts: an operator/IVR reads the dial-in aloud, so these
+# carry live digits (CVNA and MSFT both do). Same rule as corpus/transcripts/.
+# The .json verdicts and .jsonl frame telemetry alongside them ARE committed —
+# they hold held_ms and capture_ns only, never speech.
+corpus/bridge-probes/*.txt
+# ABC World News Tonight broadcast VODs + their transcripts (scripts/wnt-vod-fetch.sh).
+# Third-party broadcast audio, ~37 MB/session, and re-fetchable from the source.
+corpus/wnt/
 # generated adversarial (fast/quiet) corpora — reproducible via scripts/corpus-degrade.sh
 corpus-t*/
 corpus-quiet/

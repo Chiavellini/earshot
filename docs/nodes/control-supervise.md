@@ -1,0 +1,91 @@
+# Node: `control.supervise`
+
+## Job
+
+Watch one launched run, apply bounded recovery policy, and emit lifecycle events
+until the run is terminal.
+
+## Owns
+
+Unattended lifecycle/retry logic in `scripts/event-autorun.sh`,
+`scripts/wing-autorun.sh`, and `scripts/arm-when-url.sh`, plus mid-call phone
+recovery in `scripts/redial-supervisor.sh` and event-timer installation in
+`scripts/install-event-timer.sh`. It also owns the autorun environment
+templates under `configs/*-autorun.env`, `docs/RUNBOOK.md`, and the current
+phone-lane operational handoff in `PHONE-LANE-HANDOFF.md`.
+
+## Does not own
+
+It does not construct the runtime, invent a media endpoint, change trading
+posture, broaden retry budgets, reinterpret source data, or decide PASS/FAIL
+quality after termination.
+
+## Input contracts
+
+The node receives a `RunHandle`-equivalent, explicit deadlines/retry/redial
+budgets, STOP semantics, and recovery requests such as the current atomic
+`<state-dir>/redial.request` marker. `redial-supervisor.sh` consumes that
+marker by CONTENT (never mtime — two drops in the same second must both
+fire; whatever content exists at startup is the already-consumed baseline)
+and parses its JSON `reason` field
+(`stop|idle|socket_closed|close_frame|ws_error`). It also consumes launch's
+`<state-dir>/listener.ready` token as a dial precondition, and takes a
+`--call-end-grace <secs>` budget (default 2700) plus a `--dial-script <path>`
+parameter (default `scripts/twilio-dial.sh`) so gated operator-venue dial
+scripts can be substituted with identical pass-through args.
+
+## Output contracts
+
+The target `SupervisorEvent` stream records start, heartbeat, source drop,
+recovery attempt, budget exhaustion, STOP, child exit, and terminal status.
+Current outputs are per-event logs, marker files, exit codes, and notifications.
+
+## Side effects and exclusive resources
+
+It watches processes/files, may hang up and redial a call, may perform bounded
+pre-run retries, writes supervisor logs, and stops children. Dial/hangup effects
+are delegated to `control.phone_session`; one supervisor exclusively owns
+recovery policy for one `RunHandle`.
+
+## Failure contract
+
+Budgets and deadlines are hard stops. Failed recovery is logged and terminal or
+degraded according to explicit policy; it must not create an unbounded loop or
+restart a traded run merely because grading later reports deafness.
+
+Redial policy specifics (2026-07-29): a `reason=stop` marker consumed after
+the `--call-end-grace` window is judged a genuine call end — the supervisor
+logs the far-end call status for the old CallSid (best-effort curl to the
+Twilio Calls API; `twilio-status.sh` has no per-call mode) and exits 0
+without dialing; early stops and every abnormal reason still redial. The
+first redial is immediate — the backoff sleep (1 -> 2 -> ... -> 30 s cap)
+applies only AFTER a failed dial attempt and resets to zero on the next
+success. If `<state-dir>/listener.ready` is missing the supervisor refuses
+to dial (logged once per marker) but leaves the request unconsumed so it
+retries each 0.25 s poll; a dial into a pipeline that cannot accept is the
+2026-07-29 ORT-hang failure repeated. The zombie hangup of the previous
+CallSid runs concurrently with the new dial (the source rejects zombie
+streams by callSid, so ordering is safe).
+
+## Parallel work boundary
+
+Recovery policy and lifecycle events stay here. Launch creates the handle,
+Twilio source creates a recovery request, phone-session control performs the
+dial/hangup, grade evaluates final artifacts, and notify delivers alerts.
+
+## Verification
+
+Run `bash -n` on the supervisor scripts and rehearsal modes/short budgets where
+available. Exercise stale marker, STOP, launcher death, max-redials, deadline,
+and failed-dial paths without a traded account. For `redial-supervisor.sh`,
+drive it with stub dial/hangup scripts in a scratch state dir and prove:
+same-second double-marker both consumed, stop-after-grace exits 0 without a
+dial, abnormal reasons dial immediately with no pre-dial backoff, failed dial
+backs off and success resets, missing `listener.ready` refuses then honors
+the pending request.
+
+## Migration status
+
+Supervision is split among event-specific shell hubs and file/process
+conventions. Replace marker polling and implicit PIDs with typed
+`RunHandle`/`SupervisorEvent` records before generalizing retry behavior.

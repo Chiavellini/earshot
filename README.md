@@ -1,21 +1,17 @@
 # earshot
 
-Audio-signal latency trader for Kalshi mention markets. **M0** (replay
-pipeline + latency chain), **M2** (Kalshi execution layer, live-validated)
-and **M1** (detector bake-off) are complete. M1 holdout verdict (unseen
-companies, frozen config): precision 0.95–1.00, Confirmed recall 0.915,
-Fast p95 onset→emit 1066 ms vs the 350 ms bar — the sherpa_kws engine runs
-live **Confirmed-weighted** (~1 s from word onset); the pre-declared
-follow-on is a custom low-lookahead spotter (`docs/BAKEOFF.md`). Next: M3
-(Twilio Media Streams dial-in capture) and that spotter.
+Audio-signal latency trader for Kalshi mention markets. The replay, detector,
+bounded live-execution, and telephony-capture milestones are implemented; the
+current posture and immediate work are tracked only in `docs/STATUS.md`.
 
-New here (human or agent)? **Read `docs/ARCHITECTURE.md`** — every layer has
-a documented typed door and can be edited in isolation. Conventions in
-`CLAUDE.md`. All Kalshi API facts are pinned with evidence in
-`VERIFICATIONS.md`.
+New here (human or agent)? Read `AGENTS.md`, then `docs/NODES.md`. The runtime
+data plane retains typed doors in `docs/ARCHITECTURE.md`; the same node/contract
+discipline now covers discovery, preparation, launch, supervision, evidence,
+and grading. External Kalshi/venue facts are pinned in `VERIFICATIONS.md`.
 
 ```
-cargo test                                                    # 109 tests: unit + mock + e2e (+5 perf budgets, --ignored)
+cargo test                                                    # unit + mock + e2e
+scripts/doc-lint.sh                                           # node/docs/ownership contracts
 cargo run --release -- gen-fixture --out configs/fixture.wav
 cargo run --release -- replay --config configs/example-event.toml   # M0 pipeline
 cargo run --release -- arm --config configs/m2-drill.toml           # + executor, DRY-RUN

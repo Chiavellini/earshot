@@ -1,0 +1,678 @@
+schema_version = 1
+as_of = "2026-08-01"
+authority = "open-collaboration-claims"
+
+# Every table is an open, collision-protected claim. `complete_pending_commit`
+# remains open until its paths are committed or explicitly handed off.
+
+[[claim]]
+id = "phone.runtime_assembly"
+node = "runtime.assembly"
+worker = "phone-lane"
+branch = "webcast-lane"
+state = "active"
+contract_change = true
+paths = [
+  "docs/nodes/runtime-assembly.md",
+  "src/lib.rs",
+  "src/main.rs",
+]
+verification = [
+  "cargo test --test e2e_full_chain",
+  "cargo test --test twilio_listen_only",
+]
+evidence = ["docs/nodes/runtime-assembly.md"]
+
+[[claim]]
+id = "phone.runtime_config"
+node = "runtime.config"
+worker = "phone-lane"
+branch = "webcast-lane"
+state = "active"
+contract_change = true
+paths = [
+  "docs/layers/config.md",
+  "src/config.rs",
+]
+verification = ["cargo test --lib config"]
+evidence = ["docs/layers/config.md"]
+
+[[claim]]
+id = "phone.source_port"
+node = "runtime.source.port"
+worker = "phone-lane"
+branch = "webcast-lane"
+state = "active"
+contract_change = true
+paths = [
+  "docs/layers/source.md",
+  "docs/nodes/source-port.md",
+]
+verification = ["cargo test --lib source"]
+evidence = ["docs/nodes/source-port.md"]
+
+[[claim]]
+id = "phone.source_twilio"
+node = "runtime.source.twilio"
+worker = "phone-lane"
+branch = "webcast-lane"
+state = "active"
+contract_change = true
+paths = [
+  "docs/TWILIO.md",
+  "docs/nodes/source-twilio.md",
+  "src/source/twilio_ws.rs",
+  "tests/twilio_source.rs",
+]
+verification = ["cargo test --test twilio_source"]
+evidence = ["docs/TWILIO.md"]
+
+[[claim]]
+id = "phone.prepare"
+node = "control.prepare"
+worker = "phone-lane"
+branch = "webcast-lane"
+state = "active"
+contract_change = true
+paths = [
+  "configs/twilio-aapl-26jul30-arm.toml",
+  "configs/twilio-cmg-26jul29-arm.toml",
+  "configs/twilio-cvna-26jul29-arm.toml",
+  "configs/twilio-msft-26jul29-arm.toml",
+  "configs/twilio-yum-26jul30-arm.toml",
+  "configs/webcast-aapl-26jul30-arm-wc.toml",
+  "configs/webcast-abcwnt-26jul29-replay.toml",
+  "configs/webcast-abcwnt-capture.toml",
+  "configs/webcast-amzn-26jul30-arm-wc.toml",
+  "configs/webcast-cmg-26jul29-arm-wc.toml",
+  "scripts/slate-stage.sh",
+  "configs/webcast-cvna-26jul29-arm-wc.toml",
+  "configs/webcast-msft-26jul29-arm-wc.toml",
+  "configs/webcast-race-26jul30-arm-wc.toml",
+  "configs/webcast-rddt-26jul30-arm-wc.toml",
+  "configs/webcast-yum-26jul30-arm-wc.toml",
+  "docs/layers/prepare.md",
+  "docs/work/PLAN-26JUL30.md",
+  "src/prepare.rs",
+  # read-quantum-lane 2026-07-30: pre-registered two-leg A/B (q32k vs q40ms)
+  # asking whether earlier bytes become earlier PCM. Bar is written; NEVER RUN.
+  "configs/pcm-lead-chunkms.toml",
+]
+verification = [
+  "cargo test --lib prepare",
+  "scripts/preflight-event.sh --help",
+]
+evidence = ["docs/layers/prepare.md"]
+
+[[claim]]
+id = "phone.session"
+node = "control.phone_session"
+worker = "phone-lane"
+branch = "webcast-lane"
+state = "active"
+contract_change = true
+paths = [
+  "docs/nodes/control-phone-session.md",
+  "scripts/twilio-dial.sh",
+  "tests/twilio_listen_only.rs",
+]
+verification = [
+  "bash -n scripts/twilio-dial.sh",
+  "cargo test --test twilio_listen_only",
+]
+evidence = ["docs/nodes/control-phone-session.md"]
+
+[[claim]]
+id = "operator.handler"
+node = "control.operator"
+worker = "phone-lane"
+branch = "webcast-lane"
+state = "active"
+contract_change = true
+paths = [
+  "docs/OPERATOR-HANDLER.md",
+  "docs/nodes/control-operator.md",
+  "scripts/twilio-operator-dial.sh",
+  "scripts/operator-page.sh",
+  "scripts/operator-redial.sh",
+  "scripts/probe-q-conf.sh",
+  "scripts/probe-q-update.sh",
+  "scripts/fake-operator/README.md",
+  "scripts/fake-operator/server.py",
+  "tests/twilio_operator_gated.rs",
+]
+verification = [
+  "cargo test --test twilio_operator_gated",
+  "bash -n scripts/twilio-operator-dial.sh scripts/operator-page.sh scripts/probe-q-conf.sh scripts/probe-q-update.sh",
+  "python3 scripts/doc-lint.py",
+]
+evidence = ["docs/nodes/control-operator.md"]
+
+[[claim]]
+id = "phone.supervise"
+node = "control.supervise"
+worker = "phone-lane"
+branch = "webcast-lane"
+state = "active"
+contract_change = true
+paths = [
+  "PHONE-LANE-HANDOFF.md",
+  "docs/RUNBOOK.md",
+  "docs/nodes/control-supervise.md",
+  "scripts/redial-supervisor.sh",
+  "scripts/url-escalate.sh",
+  "scripts/webcast-autorun.sh",
+]
+verification = ["bash -n scripts/redial-supervisor.sh"]
+evidence = ["PHONE-LANE-HANDOFF.md"]
+
+[[claim]]
+id = "phone_tls.launch"
+node = "control.launch"
+worker = "phone-lane + tls-box-lane"
+branch = "webcast-lane"
+state = "active"
+contract_change = true
+paths = [
+  "docs/MULTI-EVENT.md",
+  "docs/nodes/control-launch.md",
+  "scripts/launch-event.sh",
+]
+verification = [
+  "bash -n scripts/launch-event.sh",
+  "cargo test --test launch_webcast_posture",
+]
+evidence = ["docs/MULTI-EVENT.md"]
+
+[[claim]]
+id = "admission.qualify"
+node = "control.qualify"
+worker = "admission-evidence-lane"
+branch = "webcast-lane"
+state = "active"
+contract_change = true
+paths = [
+  "configs/dial-ins.toml",
+  "docs/nodes/control-qualify.md",
+]
+verification = ["python3 scripts/mine-dial-in.py --help"]
+evidence = ["configs/dial-ins.toml"]
+
+[[claim]]
+id = "admission.probe"
+node = "control.admission"
+worker = "admission-evidence-lane"
+branch = "webcast-lane"
+state = "active"
+contract_change = true
+paths = [
+  "docs/nodes/control-admission.md",
+  "scripts/bridge-probe-batch.sh",
+  "scripts/bridge-probe.sh",
+]
+verification = [
+  "bash -n scripts/bridge-probe.sh",
+  "bash -n scripts/bridge-probe-batch.sh",
+]
+evidence = ["docs/nodes/control-admission.md"]
+
+[[claim]]
+id = "admission.capture"
+node = "evidence.capture"
+worker = "admission-evidence-lane"
+branch = "webcast-lane"
+state = "active"
+contract_change = true
+paths = [
+  "corpus/bridge-probes/tts_rehearsal_2026_07_29.json",
+  "corpus/bridge-probes/tts_rehearsal_2026_07_29.jsonl",
+  "corpus/bridge-probes/qconf_2026_07_30.json",
+  "corpus/bridge-probes/qconf_2026_07_30.jsonl",
+  "corpus/bridge-probes/qconf_cell_2026_07_30.json",
+  "corpus/bridge-probes/qconf_cell_2026_07_30.jsonl",
+  "corpus/bridge-probes/qupdate_2026_07_30.json",
+  "corpus/bridge-probes/qupdate_2026_07_30.jsonl",
+  "corpus/bridge-probes/tts_tls_2026_07_30.json",
+  "corpus/bridge-probes/tts_tls_2026_07_30.jsonl",
+  "corpus/bridge-probes/yum_2026_07_30_bridge_entry.json",
+  "corpus/bridge-probes/yum_2026_07_30_bridge_entry.jsonl",
+  "docs/nodes/evidence-capture.md",
+  "scripts/wnt-daily.sh",
+  # wnt-source-lane: bank the real WNT broadcast (Q-WNT-SRC retargeting).
+  "scripts/wnt-captions-parse.py",
+  "scripts/wnt-vod-fetch.sh",
+  "src/capture_bakeoff/mod.rs",
+]
+verification = ["cargo test --lib capture_bakeoff"]
+evidence = ["corpus/bridge-probes/tts_rehearsal_2026_07_29.json"]
+
+[[claim]]
+id = "admission.measure"
+node = "evidence.measure"
+worker = "admission-evidence-lane"
+branch = "webcast-lane"
+state = "active"
+contract_change = true
+paths = [
+  "VERIFICATIONS.md",
+  "docs/COMPETITOR-ANATOMY.md",
+  "docs/INGRESS-BAKEOFF.md",
+  "docs/nodes/evidence-measure.md",
+  "scripts/abs-lag.py",
+  "scripts/drace-wallclock.py",
+  # wnt-source-lane: is the WNT pack reachable from a delayed feed at all?
+  "scripts/wnt-pack-lag.py",
+  "scripts/wnt-score.py",
+  # read-quantum-lane (2026-07-30, INTERRUPTED — see the note below). Claimed
+  # here rather than as its own [[claim]] because doc-lint allows exactly one
+  # open claim per node and evidence.measure already has this one.
+  "docs/LATENCY-PROOF.md",
+  "scripts/arrival-lead.py",
+  "scripts/clock-anchor.py",
+  "scripts/prefetch-gate.sh",
+  "scripts/prefetch-verdict.py",
+]
+verification = [
+  "python3 -m py_compile scripts/abs-lag.py scripts/drace-wallclock.py",
+  "python3 -m py_compile scripts/arrival-lead.py scripts/clock-anchor.py scripts/prefetch-verdict.py",
+  "bash -n scripts/prefetch-gate.sh",
+]
+evidence = ["VERIFICATIONS.md"]
+# ── read-quantum-lane: PARKED MID-EDIT, 2026-07-30 17:10, power loss ─────────
+# `scripts/prefetch-gate.sh` is the 90-minute drop-safety gate that
+# docs/LATENCY-PROOF.md §Q1 names as its own blocking open item. It was being
+# retrofitted to run against a local low-bitrate fixture when the session died.
+# Do not run it and trust the result until these four are fixed:
+#   1. the GATE START banner still prints a hardcoded `master=IVS demo`, so a
+#      run against a custom $3/$EARSHOT_GATE_MASTER mislabels its own log;
+#   2. `cd "$HOME/ear"` is the box path — on this laptop (~/Code/ear) it exits 1;
+#   3. the sampler uses GNU `stat -c %s`; on macOS that fails, `|| echo 0` makes
+#      the `-gt 1000` guard never pass, and prefetch-verdict.py then returns
+#      INCONCLUSIVE — a silent null on the very gate the edit exists to enable;
+#   4. the ~71 kbps rolling fixture the new comment depends on was built ad hoc
+#      and never committed; no generator script exists in the repo.
+# Until the gate runs and passes, `--chunk-ms` correctly still defaults to 0.
+# `configs/pcm-lead-chunkms.toml` (claimed under control.prepare) is the
+# pre-registered A/B for the same question and has never been run.
+
+[[claim]]
+id = "tls.acquire"
+node = "control.acquire"
+worker = "tls-box-lane"
+branch = "webcast-lane"
+state = "active"
+contract_change = true
+paths = ["docs/nodes/control-acquire.md"]
+verification = ["bash -n scripts/manifest-probe.sh scripts/venue-probe.sh"]
+evidence = ["docs/nodes/control-acquire.md"]
+
+[[claim]]
+id = "tls.deploy"
+node = "platform.deploy"
+worker = "tls-box-lane"
+branch = "webcast-lane"
+state = "active"
+contract_change = true
+paths = [
+  "deploy/caddy/Caddyfile",
+  "docs/nodes/platform-deploy.md",
+  "scripts/deploy-box.sh",
+  "scripts/install-tls-ingress.sh",
+]
+verification = [
+  "bash -n scripts/deploy-box.sh",
+  "bash -n scripts/install-tls-ingress.sh",
+]
+evidence = ["docs/nodes/platform-deploy.md"]
+
+[[claim]]
+id = "root.architecture"
+node = "project.architecture"
+worker = "/root"
+branch = "webcast-lane"
+state = "complete_pending_commit"
+contract_change = true
+paths = [
+  "AGENTS.md",
+  "CLAUDE.md",
+  "README.md",
+  "architecture/claims.toml",
+  "architecture/nodes.toml",
+  "docs/ARCHITECTURE.md",
+  "docs/NODES.md",
+  "docs/ROADMAP.md",
+  "docs/SPEC.md",
+  "docs/STATUS.md",
+  "docs/nodes/TEMPLATE.md",
+  "docs/nodes/project-architecture.md",
+  "docs/work/ACTIVE.md",
+  "scripts/doc-lint.py",
+  "scripts/doc-lint.sh",
+  "tests/architecture_contract.rs",
+]
+verification = [
+  "python3 scripts/doc-lint.py --self-test",
+  "scripts/doc-lint.sh",
+  "cargo test --test architecture_contract",
+]
+evidence = ["architecture/nodes.toml", "architecture/claims.toml"]
+
+[[claim]]
+id = "root.build"
+node = "project.build"
+worker = "/root"
+branch = "webcast-lane"
+state = "complete_pending_commit"
+contract_change = true
+paths = [
+  ".gitignore",
+  "Cargo.toml",
+  "docs/nodes/project-build.md",
+]
+verification = [
+  "cargo metadata --locked --no-deps",
+  "cargo check --locked",
+]
+evidence = ["docs/nodes/project-build.md"]
+
+[[claim]]
+id = "root.control_discover_contract"
+node = "control.discover"
+worker = "/root"
+branch = "webcast-lane"
+state = "complete_pending_commit"
+contract_change = true
+paths = [
+  "docs/nodes/control-discover.md",
+  "scripts/mentions-census.py",
+  "scripts/slate-diff.py",
+  "scripts/slate-intraday.sh",
+  "slate/census.json",
+]
+verification = ["scripts/doc-lint.sh"]
+evidence = ["docs/nodes/control-discover.md"]
+
+[[claim]]
+id = "root.control_grade_contract"
+node = "control.grade"
+worker = "/root"
+branch = "webcast-lane"
+state = "complete_pending_commit"
+contract_change = true
+paths = ["docs/nodes/control-grade.md"]
+verification = ["scripts/doc-lint.sh"]
+evidence = ["docs/nodes/control-grade.md"]
+
+[[claim]]
+id = "root.control_preflight_contract"
+node = "control.preflight"
+worker = "/root"
+branch = "webcast-lane"
+state = "complete_pending_commit"
+contract_change = true
+paths = [
+  "docs/nodes/control-preflight.md",
+  "scripts/preflight-event.sh",
+  "scripts/preflight-nightly.sh",
+  "scripts/market-phrase-screen.py",
+]
+verification = [
+  "scripts/doc-lint.sh",
+  "bash -n scripts/preflight-event.sh",
+  "scripts/preflight-event.sh --config <cfg> --only-readiness  # fixture matrix: missing/stale/hash-mismatch/confirmed=0/pass",
+]
+evidence = ["docs/nodes/control-preflight.md"]
+
+[[claim]]
+id = "root.detector_port_contract"
+node = "runtime.detector.port"
+worker = "/root"
+branch = "webcast-lane"
+state = "complete_pending_commit"
+contract_change = true
+paths = ["docs/layers/detector.md"]
+verification = [
+  "cargo test --lib detector",
+  "scripts/doc-lint.sh",
+]
+evidence = ["docs/layers/detector.md"]
+
+[[claim]]
+id = "root.detector_keyword_contract"
+node = "runtime.detector.keyword_compile"
+worker = "/root"
+branch = "webcast-lane"
+state = "complete_pending_commit"
+contract_change = true
+paths = ["docs/nodes/detector-keyword-compile.md"]
+verification = [
+  "cargo test --lib detector::kws_compile::tests",
+  "scripts/doc-lint.sh",
+]
+evidence = ["docs/nodes/detector-keyword-compile.md"]
+
+[[claim]]
+id = "root.detector_sherpa_contract"
+node = "runtime.detector.sherpa"
+worker = "/root"
+branch = "webcast-lane"
+state = "complete_pending_commit"
+contract_change = true
+paths = ["docs/nodes/detector-sherpa.md"]
+verification = ["scripts/doc-lint.sh"]
+evidence = ["docs/nodes/detector-sherpa.md"]
+
+[[claim]]
+id = "root.detector_ctc_contract"
+node = "runtime.detector.streaming_ctc"
+worker = "/root"
+branch = "webcast-lane"
+state = "complete_pending_commit"
+contract_change = true
+paths = [
+  "docs/nodes/detector-streaming-ctc.md",
+  "src/detector/streaming_ctc.rs",
+]
+verification = [
+  "cargo test --lib detector::ctc_scorer::tests",
+  "cargo test --lib detector::streaming_ctc",
+  "scripts/doc-lint.sh",
+]
+evidence = ["docs/nodes/detector-streaming-ctc.md"]
+
+[[claim]]
+id = "root.telemetry_contract"
+node = "runtime.telemetry"
+worker = "/root"
+branch = "webcast-lane"
+state = "complete_pending_commit"
+contract_change = true
+paths = ["docs/layers/telemetry.md"]
+verification = ["scripts/doc-lint.sh"]
+evidence = ["docs/layers/telemetry.md"]
+
+[[claim]]
+id = "root.evidence_benchmark_contract"
+node = "evidence.benchmark"
+worker = "/root"
+branch = "webcast-lane"
+state = "complete_pending_commit"
+contract_change = true
+paths = [
+  "docs/BAKEOFF.md",
+  "docs/nodes/evidence-benchmark.md",
+  "scripts/dead-word-autopsy.sh",
+  "scripts/keywords-extract.py",
+  "scripts/variant-study.sh",
+]
+verification = [
+  "scripts/doc-lint.sh",
+  "bash -n scripts/variant-study.sh",
+  "python3 -m py_compile scripts/keywords-extract.py",
+]
+evidence = ["docs/nodes/evidence-benchmark.md"]
+
+[[claim]]
+id = "root.evidence_corpus_contract"
+node = "evidence.corpus"
+worker = "/root"
+branch = "webcast-lane"
+state = "complete_pending_commit"
+contract_change = true
+paths = [
+  "docs/nodes/evidence-corpus.md",
+  # wnt-source-lane: ground truth for the real WNT broadcast, built by
+  # manifest-from-words.py from the VOD caption track (VERIFICATIONS Q-WNT-RECALL).
+  "corpus/manifests/WNTVOD-26JUL29.toml",
+]
+verification = ["scripts/doc-lint.sh"]
+evidence = ["docs/nodes/evidence-corpus.md"]
+
+[[claim]]
+id = "root.platform_notify_contract"
+node = "platform.notify"
+worker = "/root"
+branch = "webcast-lane"
+state = "complete_pending_commit"
+contract_change = true
+paths = ["docs/nodes/platform-notify.md"]
+verification = ["scripts/doc-lint.sh"]
+evidence = ["docs/nodes/platform-notify.md"]
+
+[[claim]]
+id = "root.platform_runtime_contract"
+node = "platform.runtime"
+worker = "/root"
+branch = "webcast-lane"
+state = "complete_pending_commit"
+contract_change = true
+paths = [
+  "configs/launchd/com.earshot.hunt-daily.plist",
+  "configs/launchd/com.earshot.wnt-daily.plist",
+  "docs/nodes/platform-runtime.md",
+]
+verification = ["scripts/doc-lint.sh"]
+evidence = ["docs/nodes/platform-runtime.md"]
+
+[[claim]]
+id = "root.runtime_foundation_contract"
+node = "runtime.foundation"
+worker = "/root"
+branch = "webcast-lane"
+state = "complete_pending_commit"
+contract_change = true
+paths = ["docs/nodes/runtime-foundation.md"]
+verification = ["scripts/doc-lint.sh"]
+evidence = ["docs/nodes/runtime-foundation.md"]
+
+[[claim]]
+id = "root.market_validation_contract"
+node = "runtime.market_validation"
+worker = "/root"
+branch = "webcast-lane"
+state = "complete_pending_commit"
+contract_change = true
+paths = ["docs/nodes/runtime-market-validation.md"]
+verification = ["scripts/doc-lint.sh"]
+evidence = ["docs/nodes/runtime-market-validation.md"]
+
+[[claim]]
+id = "root.order_transport_contract"
+node = "runtime.order_transport"
+worker = "/root"
+branch = "webcast-lane"
+state = "complete_pending_commit"
+contract_change = true
+paths = ["docs/nodes/runtime-order-transport.md"]
+verification = ["scripts/doc-lint.sh"]
+evidence = ["docs/nodes/runtime-order-transport.md"]
+
+[[claim]]
+id = "root.source_arbiter_contract"
+node = "runtime.source.arbiter"
+worker = "/root"
+branch = "webcast-lane"
+state = "complete_pending_commit"
+contract_change = true
+paths = ["docs/nodes/source-arbiter.md"]
+verification = ["scripts/doc-lint.sh"]
+evidence = ["docs/nodes/source-arbiter.md"]
+
+[[claim]]
+id = "root.source_pipe_contract"
+node = "runtime.source.pipe"
+worker = "/root"
+branch = "webcast-lane"
+state = "active"
+contract_change = true
+paths = [
+  "docs/nodes/source-pipe.md",
+  # read-quantum-lane 2026-07-30: chunk_bytes_for()/synth_pdt()/join_key() and
+  # the --chunk-ms flag. Finished and --selftest-clean; the gate that would let
+  # its default change is the parked one under `admission.measure`.
+  "scripts/hls-edge-fetch.py",
+]
+verification = [
+  "scripts/doc-lint.sh",
+  "python3 scripts/hls-edge-fetch.py --selftest",
+]
+evidence = ["docs/nodes/source-pipe.md"]
+
+[[claim]]
+id = "root.source_replay_contract"
+node = "runtime.source.replay"
+worker = "/root"
+branch = "webcast-lane"
+state = "complete_pending_commit"
+contract_change = true
+paths = ["docs/nodes/source-replay.md"]
+verification = ["scripts/doc-lint.sh"]
+evidence = ["docs/nodes/source-replay.md"]
+
+[[claim]]
+id = "root.source_sip_contract"
+node = "runtime.source.sip"
+worker = "/root"
+branch = "webcast-lane"
+state = "complete_pending_commit"
+contract_change = true
+paths = ["docs/nodes/source-sip.md"]
+verification = ["scripts/doc-lint.sh"]
+evidence = ["docs/nodes/source-sip.md"]
+
+[[claim]]
+id = "expansion.pm_measure"
+node = "evidence.expansion"
+worker = "expansion-lane"
+branch = "webcast-lane"
+state = "active"
+contract_change = true
+paths = [
+  "docs/EXPANSION.md",
+  "docs/nodes/evidence-expansion.md",
+  "scripts/pm-capture.py",
+  "configs/pm-map-26jul30.json",
+]
+verification = ["python3 -m py_compile scripts/pm-capture.py", "scripts/doc-lint.sh"]
+evidence = ["VERIFICATIONS.md#q-pm"]
+
+[[claim]]
+id = "hunt.bridge_acquisition"
+node = "control.hunt"
+worker = "hunt-lane"
+branch = "webcast-lane"
+state = "active"
+contract_change = true
+paths = [
+  "docs/nodes/control-hunt.md",
+  "docs/HUNT.md",
+  "scripts/hunt-dial-in.py",
+  "scripts/hunt-daily.sh",
+  "slate/hunt-status.json",
+]
+verification = [
+  "python3 scripts/hunt-dial-in.py --self-test",
+  "bash -n scripts/hunt-daily.sh",
+  "scripts/doc-lint.sh",
+]
+evidence = ["slate/hunt-status.json", "docs/HUNT.md"]

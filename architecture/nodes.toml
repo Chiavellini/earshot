@@ -1,0 +1,1518 @@
+schema_version = 1
+
+[lint]
+node_required_headings = [
+  "Job",
+  "Owns",
+  "Does not own",
+  "Input contracts",
+  "Output contracts",
+  "Side effects and exclusive resources",
+  "Failure contract",
+  "Parallel work boundary",
+  "Verification",
+  "Migration status",
+]
+layer_required_headings = [
+  "Role",
+  "Entry door",
+  "Exit door",
+  "Obligations",
+  "Failure policy",
+  "How to replace or edit",
+  "How to test",
+]
+citation_globs = [
+  "*.md",
+  "docs/**/*.md",
+  "src/**/*.rs",
+  "tests/**/*.rs",
+  "scripts/**/*.py",
+  "scripts/**/*.sh",
+]
+
+[lint.ownership]
+# The collaboration universe is derived from Git's tracked + non-ignored
+# untracked candidates. These globs say which first-party classes must have
+# exactly one node owner. Local/generated/vendor surfaces stay outside it.
+govern_root_files = true
+governed_globs = [
+  "architecture/**",
+  "benches/**",
+  "configs/**",
+  "corpus/manifests/**",
+  "corpus/structure/**",
+  "corpus/bridge-probes/**",
+  "deploy/**",
+  "docs/**",
+  "examples/**",
+  "scripts/**",
+  "slate/**",
+  "src/**",
+  "state/**",
+  "tests/**",
+  "**/Cargo.toml",
+]
+excluded_globs = [
+  ".git/**",
+  ".agents/**",
+  ".codex/**",
+  ".claude/scheduled_tasks.lock",
+  ".venv*/**",
+  "target/**",
+  "vendor/**",
+  "models/**",
+  "credentials/**",
+  "secrets/**",
+  "state/**",
+  "corpus/raw/**",
+  "corpus/telephony/**",
+  "corpus/transcripts/**",
+  "corpus-t*/**",
+  "corpus-quiet/**",
+  # keyword-readiness artifacts written by scripts/variant-study.sh and read
+  # by preflight's readiness gate — generated per study run, never claimed.
+  "configs/.readiness/**",
+  "scripts/__pycache__/**",
+  # nested bytecode caches too (e.g. scripts/fake-operator/__pycache__/)
+  "scripts/**/__pycache__/**",
+  "**/.DS_Store",
+  "**/*.wav",
+  "**/*.pem",
+  "**/*.key",
+  ".env",
+  ".env.*",
+  "**/.env",
+  "**/.env.*",
+  "**/report.json",
+]
+# These three checked-in reports are durable evidence, not local run state.
+reincluded_paths = [
+  "state/KXEARNINGSMENTIONAAL-26JUL23/box/capture-report.json",
+  "state/KXEARNINGSMENTIONINTC-26JUL23/report-box.json",
+  "state/KXEARNINGSMENTIONLMT-26JUL23/box/capture-report.json",
+]
+
+# `owns` is exclusive implementation ownership, not a dependency list. A node
+# may call another node's files, but must not add those files to its own list.
+
+[[node]]
+id = "project.architecture"
+job = "Define the project node map, contract vocabulary, documentation template, and automated documentation checks."
+status = "active"
+doc = "docs/nodes/project-architecture.md"
+doc_style = "node"
+owns = [
+  "AGENTS.md",
+  "CLAUDE.md",
+  "README.md",
+  "architecture/claims.toml",
+  "architecture/nodes.toml",
+  "docs/ARCHITECTURE.md",
+  "docs/NODES.md",
+  "docs/ROADMAP.md",
+  "docs/SPEC.md",
+  "docs/STATUS.md",
+  "docs/nodes/TEMPLATE.md",
+  "docs/work/ACTIVE.md",
+  "scripts/doc-lint.py",
+  "scripts/doc-lint.sh",
+  "tests/architecture_contract.rs",
+]
+inputs = []
+outputs = ["project.node_registry"]
+
+[[node]]
+id = "project.build"
+job = "Define the Rust workspace, dependency resolution, feature surface, and repository build exclusions."
+status = "active"
+doc = "docs/nodes/project-build.md"
+doc_style = "node"
+owns = [
+  ".gitignore",
+  "Cargo.lock",
+  "Cargo.toml",
+]
+inputs = []
+outputs = ["project.build.workspace"]
+
+[[node]]
+id = "runtime.foundation"
+job = "Provide the shared clock, immutable data types, bounded rings, and atomic filesystem writes."
+status = "active"
+doc = "docs/nodes/runtime-foundation.md"
+doc_style = "node"
+owns = [
+  "src/clock.rs",
+  "src/fsio.rs",
+  "src/ring.rs",
+  "src/types.rs",
+]
+inputs = []
+outputs = ["runtime.core"]
+
+[[node]]
+id = "runtime.assembly"
+job = "Wire configured runtime nodes into one process and own lifecycle startup and shutdown."
+status = "active"
+doc = "docs/nodes/runtime-assembly.md"
+doc_style = "node"
+owns = [
+  "src/lib.rs",
+  "src/main.rs",
+  "src/pipeline/mod.rs",
+  "tests/e2e_fanout.rs",
+  "tests/e2e_full_chain.rs",
+  "tests/e2e_replay.rs",
+  "tests/perf_budget.rs",
+]
+inputs = [
+  "project.build.workspace",
+  "runtime.core",
+  "runtime.config.loaded",
+  "runtime.market.plan",
+  "runtime.source.interface",
+  "runtime.source.replay.frames",
+  "runtime.source.twilio.frames",
+  "runtime.source.sip.frames",
+  "runtime.source.pipe.frames",
+  "runtime.source.arbiter.frames",
+  "platform.runtime.profile",
+]
+outputs = [
+  "runtime.audio.frames",
+  "runtime.pipeline.lifecycle",
+  "runtime.source.twilio.listener_ready",
+]
+
+[[node]]
+id = "runtime.config"
+job = "Parse and locally validate one event configuration into the typed runtime configuration."
+status = "active"
+doc = "docs/layers/config.md"
+doc_style = "layer"
+owns = [
+  "src/config.rs",
+]
+inputs = [
+  "runtime.core",
+  "control.event.prepared",
+]
+outputs = ["runtime.config.loaded"]
+
+[[node]]
+id = "runtime.source.port"
+job = "Define the origin-neutral AudioSource boundary implemented by every media adapter."
+status = "active"
+doc = "docs/nodes/source-port.md"
+doc_style = "node"
+owns = [
+  "docs/layers/source.md",
+  "src/source/mod.rs",
+]
+inputs = ["runtime.core"]
+outputs = ["runtime.source.interface"]
+
+[[node]]
+id = "runtime.source.replay"
+job = "Convert paced or unpaced WAV replay input into timestamped audio frames."
+status = "active"
+doc = "docs/nodes/source-replay.md"
+doc_style = "node"
+owns = ["src/source/replay.rs"]
+inputs = [
+  "runtime.core",
+  "runtime.source.interface",
+]
+outputs = ["runtime.source.replay.frames"]
+
+[[node]]
+id = "runtime.source.twilio"
+job = "Accept Twilio Media Streams WebSocket audio and emit timestamped audio frames."
+status = "active"
+doc = "docs/nodes/source-twilio.md"
+doc_style = "node"
+owns = [
+  "docs/TWILIO.md",
+  "src/source/twilio_ws.rs",
+  "tests/twilio_source.rs",
+]
+inputs = [
+  "runtime.core",
+  "runtime.source.interface",
+]
+outputs = ["runtime.source.twilio.frames"]
+
+[[node]]
+id = "runtime.source.sip"
+job = "Receive a SIP media session and emit decoded timestamped audio frames."
+status = "active"
+doc = "docs/nodes/source-sip.md"
+doc_style = "node"
+owns = [
+  "src/source/sip.rs",
+  "tests/sip_source.rs",
+]
+inputs = [
+  "runtime.core",
+  "runtime.source.interface",
+  "control.endpoint.resolved",
+]
+outputs = ["runtime.source.sip.frames"]
+
+[[node]]
+id = "runtime.source.pipe"
+job = "Supervise an external decoder command and convert its PCM stream into timestamped audio frames."
+status = "active"
+doc = "docs/nodes/source-pipe.md"
+doc_style = "node"
+owns = [
+  "src/source/pipe.rs",
+  "scripts/hls-edge-fetch.py",
+  "scripts/test-deaf-leg.py",
+  "tests/pipe_source.rs",
+]
+inputs = [
+  "runtime.core",
+  "runtime.source.interface",
+  "control.endpoint.resolved",
+]
+outputs = ["runtime.source.pipe.frames"]
+
+[[node]]
+id = "runtime.source.arbiter"
+job = "Align and select among multiple source legs before presenting one origin-neutral frame stream."
+status = "active"
+doc = "docs/nodes/source-arbiter.md"
+doc_style = "node"
+owns = [
+  "src/source/arbiter.rs",
+  "src/xcorr.rs",
+  "tests/arbiter.rs",
+]
+inputs = [
+  "runtime.core",
+  "runtime.source.interface",
+  "runtime.source.replay.frames",
+  "runtime.source.twilio.frames",
+  "runtime.source.sip.frames",
+  "runtime.source.pipe.frames",
+]
+outputs = ["runtime.source.arbiter.frames"]
+
+[[node]]
+id = "runtime.preproc"
+job = "Apply frame-local signal preprocessing and stamp the preprocessing boundary without changing ownership of source timing."
+status = "active"
+doc = "docs/layers/preproc.md"
+doc_style = "layer"
+owns = ["src/pipeline/preproc.rs"]
+inputs = [
+  "runtime.core",
+  "runtime.audio.frames",
+]
+outputs = ["runtime.audio.preprocessed"]
+
+[[node]]
+id = "runtime.chunker"
+job = "Accumulate preprocessed frames into detector-sized audio chunks."
+status = "active"
+doc = "docs/layers/chunker.md"
+doc_style = "layer"
+owns = ["src/pipeline/chunker.rs"]
+inputs = [
+  "runtime.core",
+  "runtime.audio.preprocessed",
+]
+outputs = ["runtime.audio.chunks"]
+
+[[node]]
+id = "runtime.detector.port"
+job = "Select a configured detector capability behind the origin-neutral Detector port and turn audio chunks into detections."
+status = "active"
+doc = "docs/layers/detector.md"
+doc_style = "layer"
+owns = [
+  "docs/TELEPHONY-DETECTION-SPEC.md",
+  "src/detector/factory.rs",
+  "src/detector/mod.rs",
+  "src/detector/stub.rs",
+]
+inputs = [
+  "runtime.core",
+  "runtime.audio.chunks",
+  "runtime.config.loaded",
+  "runtime.detector.keyword_compiler",
+  "runtime.detector.sherpa_engine",
+  "runtime.detector.streaming_ctc_engine",
+]
+outputs = ["runtime.detections"]
+
+[[node]]
+id = "runtime.detector.keyword_compile"
+job = "Compile BPE tokens, keyword phrases, and prefix-safety metadata into detector-ready keyword inputs."
+status = "active"
+doc = "docs/nodes/detector-keyword-compile.md"
+doc_style = "node"
+owns = [
+  "docs/PREFIX-SAFETY.md",
+  "src/detector/kws_compile.rs",
+]
+inputs = ["runtime.core"]
+outputs = ["runtime.detector.keyword_compiler"]
+
+[[node]]
+id = "runtime.detector.sherpa"
+job = "Construct and verify the Sherpa-ONNX keyword-spotting detector engine."
+status = "active"
+doc = "docs/nodes/detector-sherpa.md"
+doc_style = "node"
+owns = [
+  "examples/kws_probe.rs",
+  "src/detector/sherpa_kws.rs",
+  "tests/sherpa_kws.rs",
+]
+inputs = [
+  "runtime.core",
+  "runtime.detector.keyword_compiler",
+]
+outputs = ["runtime.detector.sherpa_engine"]
+
+[[node]]
+id = "runtime.detector.streaming_ctc"
+job = "Construct the streaming CTC detector engine and own its start-anytime Viterbi scorer."
+status = "active"
+doc = "docs/nodes/detector-streaming-ctc.md"
+doc_style = "node"
+owns = [
+  "docs/CTC-MODEL-SOURCING.md",
+  "scripts/export-english-streaming-ctc.md",
+  "src/detector/ctc_scorer.rs",
+  "src/detector/streaming_ctc.rs",
+]
+inputs = [
+  "runtime.core",
+  "runtime.detector.keyword_compiler",
+]
+outputs = ["runtime.detector.streaming_ctc_engine"]
+
+[[node]]
+id = "runtime.decision"
+job = "Apply one-shot keyword policy to detections and emit bounded execution intents."
+status = "active"
+doc = "docs/layers/decision.md"
+doc_style = "layer"
+owns = ["src/decision.rs"]
+inputs = [
+  "runtime.core",
+  "runtime.detections",
+]
+outputs = ["runtime.execution.intents"]
+
+[[node]]
+id = "runtime.market_validation"
+job = "Validate configured markets and safety posture against live Kalshi state before arming."
+status = "active"
+doc = "docs/nodes/runtime-market-validation.md"
+doc_style = "node"
+owns = [
+  "src/kalshi/validator.rs",
+  "tests/validator_mock.rs",
+]
+inputs = [
+  "runtime.core",
+  "runtime.config.loaded",
+  "runtime.order.api",
+]
+outputs = ["runtime.market.plan"]
+
+[[node]]
+id = "runtime.order_transport"
+job = "Normalize REST and FIX staging, send, and acknowledgement behavior behind one order-wire seam."
+status = "active"
+doc = "docs/nodes/runtime-order-transport.md"
+doc_style = "node"
+owns = [
+  "src/kalshi/mod.rs",
+  "src/kalshi/rest.rs",
+  "src/kalshi/transport.rs",
+]
+inputs = [
+  "runtime.core",
+  "runtime.auth.headers",
+  "runtime.fix.session",
+]
+outputs = ["runtime.order.api"]
+
+[[node]]
+id = "runtime.kalshi.auth"
+job = "Load Kalshi credentials and produce correctly signed and presigned request headers."
+status = "active"
+doc = "docs/layers/auth.md"
+doc_style = "layer"
+owns = [
+  "examples/sign_probe.rs",
+  "src/kalshi/auth.rs",
+]
+inputs = [
+  "runtime.core",
+  "runtime.config.loaded",
+]
+outputs = ["runtime.auth.headers"]
+
+[[node]]
+id = "runtime.kalshi.book"
+job = "Maintain a reconnecting Kalshi WebSocket order-book cache with wait-free reads."
+status = "active"
+doc = "docs/layers/book-cache.md"
+doc_style = "layer"
+owns = [
+  "src/kalshi/book.rs",
+  "tests/ws_book.rs",
+]
+inputs = [
+  "runtime.core",
+  "runtime.auth.headers",
+  "runtime.market.plan",
+]
+outputs = ["runtime.market.books"]
+
+[[node]]
+id = "runtime.kalshi.fix"
+job = "Encode, parse, sequence, and drive the stateful Kalshi FIX order-entry session."
+status = "active"
+doc = "docs/layers/fix-transport.md"
+doc_style = "layer"
+owns = [
+  "src/kalshi/fix/*.rs",
+  "tests/fix_session_mock.rs",
+]
+inputs = [
+  "runtime.core",
+  "runtime.auth.headers",
+]
+outputs = ["runtime.fix.session"]
+
+[[node]]
+id = "runtime.risk"
+job = "Enforce non-widenable trading caps, session-scoped cancellation, and the durable probe ledger."
+status = "active"
+doc = "docs/layers/risk.md"
+doc_style = "layer"
+owns = [
+  "src/risk.rs",
+  "tests/kill_sigterm.rs",
+]
+inputs = [
+  "runtime.core",
+  "runtime.config.loaded",
+  "runtime.market.plan",
+]
+outputs = ["runtime.risk.permission"]
+
+[[node]]
+id = "runtime.kalshi.executor"
+job = "Consume decision intents, apply final book and risk checks, and submit prestaged orders."
+status = "active"
+doc = "docs/layers/executor.md"
+doc_style = "layer"
+owns = [
+  "src/kalshi/executor.rs",
+  "tests/exec_fix_mock.rs",
+  "tests/exec_mock.rs",
+]
+inputs = [
+  "runtime.core",
+  "runtime.execution.intents",
+  "runtime.market.books",
+  "runtime.market.plan",
+  "runtime.order.api",
+  "runtime.risk.permission",
+]
+outputs = ["runtime.execution.records"]
+
+[[node]]
+id = "runtime.telemetry"
+job = "Record cross-stage latency, counters, source health, and execution outcomes into one session report."
+status = "active"
+doc = "docs/layers/telemetry.md"
+doc_style = "layer"
+owns = ["src/telemetry.rs"]
+inputs = [
+  "runtime.core",
+  "runtime.pipeline.lifecycle",
+  "runtime.detections",
+  "runtime.execution.intents",
+  "runtime.market.books",
+  "runtime.execution.records",
+  "control.phone.attached",
+]
+outputs = ["runtime.telemetry.report"]
+
+[[node]]
+id = "control.discover"
+job = "Discover the upcoming event slate and make changes or discovery failures visible."
+status = "active"
+doc = "docs/nodes/control-discover.md"
+doc_style = "node"
+owns = [
+  "slate/changes/**",
+  "slate/latest.json",
+  "slate/census.json",
+  "scripts/discover-events.py",
+  "scripts/mentions-census.py",
+  "scripts/slate-daily.sh",
+  "scripts/slate-diff.py",
+  "scripts/slate-intraday.sh",
+]
+inputs = ["platform.notification"]
+outputs = ["control.events.discovered"]
+
+[[node]]
+id = "control.qualify"
+job = "Enrich discovered events with read-only market, venue, and access facts required by preparation and admission."
+status = "active"
+doc = "docs/nodes/control-qualify.md"
+doc_style = "node"
+owns = [
+  "configs/dial-ins.toml",
+  "docs/DIAL-INS.md",
+  "scripts/mine-dial-in.py",
+  "scripts/recon-worklist.py",
+  "scripts/fetch-say-qa.sh",
+  "docs/SAY-QA-PRIOR.md",
+  "slate/worklist.md",
+]
+inputs = ["control.events.discovered"]
+outputs = ["control.event.qualified"]
+
+[[node]]
+id = "control.prepare"
+job = "Generate a reviewable event configuration and keyword policy without arming the runtime."
+status = "active"
+doc = "docs/layers/prepare.md"
+doc_style = "layer"
+owns = [
+  "configs/[!d]*.toml",
+  "docs/work/PLAN-26JUL30.md",
+  "src/prepare.rs",
+  "scripts/stage-webcast-arm.sh",
+  "scripts/stage-webcast-capture.sh",
+  "scripts/slate-stage.sh",
+]
+inputs = [
+  "runtime.core",
+  "control.event.qualified",
+  "runtime.detector.keyword_compiler",
+]
+outputs = ["control.event.prepared"]
+
+[[node]]
+id = "control.preflight"
+job = "Refuse an event before launch when configuration, credentials, binaries, allowlists, or keyword readiness are incomplete."
+status = "active"
+doc = "docs/nodes/control-preflight.md"
+doc_style = "node"
+owns = [
+  "docs/RACE-CHECKLIST.md",
+  "scripts/allowlist-diff.sh",
+  "scripts/collision-screen.py",
+  "scripts/market-phrase-screen.py",
+  "scripts/preflight-event.sh",
+  "scripts/preflight-nightly.sh",
+]
+inputs = [
+  "control.event.prepared",
+  "control.event.admitted",
+  "control.endpoint.resolved",
+  "runtime.market.plan",
+  "platform.deploy.artifact",
+  "platform.runtime.profile",
+  "platform.notification",
+]
+outputs = ["control.event.preflighted"]
+
+[[node]]
+id = "control.hunt"
+job = "Search SEC primary sources for an issuer's earnings-call dial-in bridge and publish evidence-backed number candidates for admission to probe."
+status = "active"
+doc = "docs/nodes/control-hunt.md"
+doc_style = "node"
+owns = [
+  "scripts/hunt-dial-in.py",
+  "scripts/hunt-daily.sh",
+  "docs/HUNT.md",
+  "slate/hunt-status.json",
+]
+inputs = [
+  "control.events.discovered",
+  "platform.notification",
+]
+outputs = ["control.bridge.candidates"]
+
+[[node]]
+id = "control.admission"
+job = "Probe conference-bridge admission behavior and produce an explicit listen-access verdict."
+status = "active"
+doc = "docs/nodes/control-admission.md"
+doc_style = "node"
+owns = [
+  "scripts/bridge-probe-batch.sh",
+  "scripts/bridge-probe.sh",
+]
+inputs = [
+  "control.event.qualified",
+  "control.bridge.candidates",
+]
+outputs = ["control.event.admitted"]
+
+[[node]]
+id = "control.acquire"
+job = "Resolve and establish an event's usable phone or webcast media endpoint."
+status = "active"
+doc = "docs/nodes/control-acquire.md"
+doc_style = "node"
+owns = [
+  "scripts/choruscall-resolve.py",
+  "scripts/manifest-probe.sh",
+  "scripts/venue-probe.sh",
+  "scripts/youtube-resolve.sh",
+]
+inputs = [
+  "control.event.qualified",
+  "platform.deploy.artifact",
+  "platform.notification",
+]
+outputs = ["control.endpoint.resolved"]
+
+[[node]]
+id = "control.launch"
+job = "Start exactly one isolated armed or capture session from preflighted configuration and acquired media."
+status = "active"
+doc = "docs/nodes/control-launch.md"
+doc_style = "node"
+owns = [
+  "docs/MULTI-EVENT.md",
+  "scripts/launch-event.sh",
+  "scripts/launch-webcast.sh",
+  "scripts/ms-morning.sh",
+  "scripts/run-arm.sh",
+  "tests/launch_webcast_posture.rs",
+]
+inputs = [
+  "control.event.preflighted",
+  "control.endpoint.resolved",
+  "runtime.config.loaded",
+  "runtime.market.plan",
+  "platform.deploy.artifact",
+  "platform.runtime.profile",
+]
+outputs = ["control.session.launched"]
+
+[[node]]
+id = "control.phone_session"
+job = "Attach and terminate a Twilio phone leg only after the runtime listener has bound."
+status = "active"
+doc = "docs/nodes/control-phone-session.md"
+doc_style = "node"
+owns = [
+  "scripts/twilio-dial.sh",
+  "scripts/twilio-hangup.sh",
+  "scripts/twilio-status.sh",
+  "tests/twilio_listen_only.rs",
+]
+inputs = [
+  "control.event.admitted",
+  "control.session.launched",
+  "runtime.source.twilio.listener_ready",
+]
+outputs = ["control.phone.attached"]
+
+[[node]]
+id = "control.operator"
+job = "Attach a gated operator-capable phone leg that conferences the configured human cell into a screened bridge call without touching the default listen-only path."
+status = "active"
+doc = "docs/nodes/control-operator.md"
+doc_style = "node"
+owns = [
+  "docs/OPERATOR-HANDLER.md",
+  "scripts/operator-redial.sh",
+  "scripts/twilio-operator-dial.sh",
+  "scripts/operator-page.sh",
+  "scripts/probe-q-conf.sh",
+  "scripts/probe-q-update.sh",
+  "scripts/fake-operator/**",
+  "tests/twilio_operator_gated.rs",
+]
+inputs = [
+  "control.event.admitted",
+  "runtime.source.twilio.listener_ready",
+  "platform.notification",
+]
+outputs = ["control.operator.attached"]
+
+[[node]]
+id = "control.supervise"
+job = "Keep one launched session alive, redial when explicitly requested, stop it on bounded conditions, and surface failures."
+status = "active"
+doc = "docs/nodes/control-supervise.md"
+doc_style = "node"
+owns = [
+  "PHONE-LANE-HANDOFF.md",
+  "configs/*-autorun.env",
+  "docs/RUNBOOK.md",
+  "scripts/arm-when-url.sh",
+  "scripts/event-autorun.sh",
+  "scripts/install-event-timer.sh",
+  "scripts/redial-supervisor.sh",
+  "scripts/url-escalate.sh",
+  "scripts/webcast-autorun.sh",
+  "scripts/wing-autorun.sh",
+]
+inputs = [
+  "control.session.launched",
+  "control.phone.attached",
+  "runtime.pipeline.lifecycle",
+  "runtime.telemetry.report",
+  "platform.notification",
+]
+outputs = ["control.session.completed"]
+
+[[node]]
+id = "control.grade"
+job = "Turn completed run artifacts into explicit hearing, detection, and execution verdicts."
+status = "active"
+doc = "docs/nodes/control-grade.md"
+doc_style = "node"
+owns = [
+  "scripts/run-verdict.sh",
+  "scripts/validate-from-log.py",
+]
+inputs = [
+  "control.session.completed",
+  "runtime.execution.records",
+  "runtime.telemetry.report",
+  "evidence.corpus.dataset",
+  "evidence.benchmark.result",
+  "platform.notification",
+]
+outputs = ["control.run.verdict"]
+
+[[node]]
+id = "platform.runtime"
+job = "Define, apply, and verify the host scheduling and operating-system posture used by runtime threads."
+status = "active"
+doc = "docs/nodes/platform-runtime.md"
+doc_style = "node"
+owns = [
+  "configs/launchd/**",
+  "docs/OS-TUNING.md",
+  "src/perf.rs",
+  "scripts/os-tune-apply.sh",
+  "scripts/os-tune-check.sh",
+]
+inputs = [
+  "runtime.core",
+  "platform.deploy.artifact",
+]
+outputs = ["platform.runtime.profile"]
+
+[[node]]
+id = "platform.deploy"
+job = "Produce and verify a host-correct deployment without copying platform-specific runtime artifacts."
+status = "active"
+doc = "docs/nodes/platform-deploy.md"
+doc_style = "node"
+owns = [
+  "deploy/**",
+  "scripts/deploy-box.sh",
+  "scripts/fetch-models.sh",
+  "scripts/install-tls-ingress.sh",
+]
+inputs = ["project.build.workspace"]
+outputs = ["platform.deploy.artifact"]
+
+[[node]]
+id = "platform.notify"
+job = "Deliver one operational alert through the configured notification channels."
+status = "active"
+doc = "docs/nodes/platform-notify.md"
+doc_style = "node"
+owns = ["scripts/notify.sh"]
+inputs = []
+outputs = ["platform.notification"]
+
+[[node]]
+id = "evidence.capture"
+job = "Bank raw media, timing sidecars, public tapes, and acquisition metadata without interpreting the result."
+status = "active"
+doc = "docs/nodes/evidence-capture.md"
+doc_style = "node"
+owns = [
+  "corpus/bridge-probes/*.json",
+  "corpus/bridge-probes/*.jsonl",
+  # *.txt (ASR of the bridge) and *.wav are gitignored: an operator reads the
+  # dial-in aloud, so the transcript carries live digits. Local evidence only.
+  "state/KXEARNINGSMENTIONAAL-26JUL23/box/capture-report.json",
+  "state/KXEARNINGSMENTIONINTC-26JUL23/report-box.json",
+  "state/KXEARNINGSMENTIONLMT-26JUL23/box/capture-report.json",
+  "src/capture_bakeoff/*.rs",
+  "scripts/fetch-tape.sh",
+  "scripts/pdt-log.py",
+  "scripts/wnt-captions-parse.py",
+  "scripts/wnt-daily.sh",
+  "scripts/wnt-vod-fetch.sh",
+]
+inputs = [
+  "runtime.core",
+  "control.endpoint.resolved",
+]
+outputs = ["evidence.capture.raw"]
+
+[[node]]
+id = "evidence.corpus"
+job = "Transform captured or sourced media into reviewable audio, transcripts, manifests, and structural labels."
+status = "active"
+doc = "docs/nodes/evidence-corpus.md"
+doc_style = "node"
+owns = [
+  "corpus/manifests/**",
+  "corpus/structure/**",
+  "docs/CALL-STRUCTURE.md",
+  "scripts/corpus-align.py",
+  "scripts/corpus-degrade.sh",
+  "scripts/corpus-process.sh",
+  "scripts/corpus-verify.py",
+  "scripts/manifest-from-words.py",
+  "scripts/manifest-rescale.py",
+  "scripts/section-label-rules.py",
+  "scripts/section-label.py",
+  "scripts/structure-analyze.py",
+  "scripts/transcript-fetch.py",
+]
+inputs = ["evidence.capture.raw"]
+outputs = ["evidence.corpus.dataset"]
+
+[[node]]
+id = "evidence.benchmark"
+job = "Run detector and keyword-regression experiments against a frozen corpus and report the declared gates."
+status = "active"
+doc = "docs/nodes/evidence-benchmark.md"
+doc_style = "node"
+owns = [
+  "benches/hot_path.rs",
+  "docs/BAKEOFF.md",
+  "src/bench/*.rs",
+  "src/fixture.rs",
+  "scripts/dead-word-autopsy.sh",
+  "scripts/keywords-extract.py",
+  "scripts/miss-autopsy.py",
+  "scripts/prefix-gate-score.py",
+  "scripts/variant-audit.py",
+  "scripts/variant-study.sh",
+  "scripts/verify-occurrences.py",
+  "tests/bench_fixture.rs",
+]
+inputs = [
+  "project.build.workspace",
+  "runtime.core",
+  "control.event.prepared",
+  "evidence.corpus.dataset",
+]
+outputs = ["evidence.benchmark.result"]
+
+[[node]]
+id = "evidence.measure"
+job = "Compute latency, arrival, physical-bound, competitor, and acquisition-mechanism measurements from banked evidence."
+status = "active"
+doc = "docs/nodes/evidence-measure.md"
+doc_style = "node"
+owns = [
+  "HANDOFF-RACE-PROGRAM.md",
+  "VERIFICATIONS.md",
+  "docs/COMPETITOR-ANATOMY.md",
+  "docs/INGRESS-BAKEOFF.md",
+  "docs/LATENCY-PROOF.md",
+  "docs/RACE-STRATEGY.md",
+  "src/latprobe/*.rs",
+  "scripts/abs-lag.py",
+  "scripts/arrival-ab.sh",
+  "scripts/arrival-lead.py",
+  "scripts/arrival-profile.py",
+  # writes the clock_anchor.json that drace-wallclock.py and wnt-score.py have
+  # always read and that had no writer until 2026-07-30
+  "scripts/clock-anchor.py",
+  "scripts/drace-wallclock.py",
+  "scripts/experimental/**",
+  "scripts/f2-probe.py",
+  "scripts/ivs-prefetch-probe.py",
+  "scripts/leg-lag.py",
+  "scripts/physical-bound.py",
+  "scripts/wnt-pack-lag.py",
+  "scripts/wnt-score.py",
+  "scripts/prefetch-gate.sh",
+  "scripts/prefetch-verdict.py",
+  "scripts/rival-decompose.py",
+  "scripts/spec-probe.py",
+]
+inputs = [
+  "runtime.core",
+  "runtime.telemetry.report",
+  "evidence.capture.raw",
+  "evidence.corpus.dataset",
+  "evidence.benchmark.result",
+]
+outputs = ["evidence.measurement.result"]
+
+[[node]]
+id = "evidence.expansion"
+job = "Survey adjacent mention-market surfaces (Kalshi census classes, Polymarket mirrors) read-only and rank where the capture-detect-fire infra is reusable."
+status = "active"
+doc = "docs/nodes/evidence-expansion.md"
+doc_style = "node"
+owns = [
+  "docs/EXPANSION.md",
+  "scripts/pm-capture.py",
+  "configs/pm-map-*.json",
+]
+inputs = [
+  "control.events.discovered",
+  "evidence.measurement.result",
+]
+outputs = ["evidence.pm.capture"]
+
+[[contract]]
+id = "project.node_registry"
+kind = "artifact"
+maturity = "implemented"
+door = "architecture/nodes.toml parsed and validated by scripts/doc-lint.py"
+producer = "project.architecture"
+consumers = []
+
+[[contract]]
+id = "project.build.workspace"
+kind = "artifact"
+maturity = "implemented"
+door = "Cargo.toml plus Cargo.lock workspace and feature resolution"
+producer = "project.build"
+consumers = [
+  "runtime.assembly",
+  "platform.deploy",
+  "evidence.benchmark",
+]
+
+[[contract]]
+id = "runtime.core"
+kind = "capability"
+maturity = "implemented"
+door = "clock, types, rings, and atomic filesystem APIs exported by the earshot crate"
+producer = "runtime.foundation"
+consumers = [
+  "runtime.assembly",
+  "runtime.config",
+  "runtime.source.port",
+  "runtime.source.replay",
+  "runtime.source.twilio",
+  "runtime.source.sip",
+  "runtime.source.pipe",
+  "runtime.source.arbiter",
+  "runtime.preproc",
+  "runtime.chunker",
+  "runtime.detector.port",
+  "runtime.detector.keyword_compile",
+  "runtime.detector.sherpa",
+  "runtime.detector.streaming_ctc",
+  "runtime.decision",
+  "runtime.market_validation",
+  "runtime.order_transport",
+  "runtime.kalshi.auth",
+  "runtime.kalshi.book",
+  "runtime.kalshi.fix",
+  "runtime.risk",
+  "runtime.kalshi.executor",
+  "runtime.telemetry",
+  "control.prepare",
+  "platform.runtime",
+  "evidence.capture",
+  "evidence.benchmark",
+  "evidence.measure",
+]
+
+[[contract]]
+id = "runtime.config.loaded"
+kind = "artifact"
+maturity = "implemented"
+door = "config::load(path) returns a locally validated EventConfig"
+producer = "runtime.config"
+consumers = [
+  "runtime.assembly",
+  "runtime.detector.port",
+  "runtime.market_validation",
+  "runtime.kalshi.auth",
+  "runtime.risk",
+  "control.launch",
+]
+
+[[contract]]
+id = "runtime.source.interface"
+kind = "capability"
+maturity = "implemented"
+door = "source::AudioSource trait and SourceConfig construction boundary"
+producer = "runtime.source.port"
+consumers = [
+  "runtime.assembly",
+  "runtime.source.replay",
+  "runtime.source.twilio",
+  "runtime.source.sip",
+  "runtime.source.pipe",
+  "runtime.source.arbiter",
+]
+
+[[contract]]
+id = "runtime.source.replay.frames"
+kind = "stream"
+maturity = "implemented"
+door = "RingSender<AudioFrame> emitted by ReplaySource"
+producer = "runtime.source.replay"
+consumers = [
+  "runtime.assembly",
+  "runtime.source.arbiter",
+]
+
+[[contract]]
+id = "runtime.source.twilio.frames"
+kind = "stream"
+maturity = "implemented"
+door = "RingSender<AudioFrame> emitted from decoded Twilio Media Stream messages"
+producer = "runtime.source.twilio"
+consumers = [
+  "runtime.assembly",
+  "runtime.source.arbiter",
+]
+
+[[contract]]
+id = "runtime.source.sip.frames"
+kind = "stream"
+maturity = "implemented"
+door = "RingSender<AudioFrame> emitted by the SIP source adapter"
+producer = "runtime.source.sip"
+consumers = [
+  "runtime.assembly",
+  "runtime.source.arbiter",
+]
+
+[[contract]]
+id = "runtime.source.pipe.frames"
+kind = "stream"
+maturity = "implemented"
+door = "RingSender<AudioFrame> emitted from supervised decoder PCM stdout"
+producer = "runtime.source.pipe"
+consumers = [
+  "runtime.assembly",
+  "runtime.source.arbiter",
+]
+
+[[contract]]
+id = "runtime.source.arbiter.frames"
+kind = "stream"
+maturity = "implemented"
+door = "RingSender<AudioFrame> carrying the selected aligned source leg"
+producer = "runtime.source.arbiter"
+consumers = ["runtime.assembly"]
+
+[[contract]]
+id = "runtime.audio.frames"
+kind = "stream"
+maturity = "implemented"
+door = "bounded RingReceiver<AudioFrame> handed from assembly to preprocessing"
+producer = "runtime.assembly"
+consumers = ["runtime.preproc"]
+
+[[contract]]
+id = "runtime.pipeline.lifecycle"
+kind = "event"
+maturity = "implemented"
+door = "runtime startup, health, teardown, and PipelineReport lifecycle observations"
+producer = "runtime.assembly"
+consumers = [
+  "runtime.telemetry",
+  "control.supervise",
+]
+
+[[contract]]
+id = "runtime.source.twilio.listener_ready"
+kind = "event"
+maturity = "implemented"
+door = "<state_dir>/listener.ready token ({port,pid,unix_ts} JSON) written by main.rs::arm only after build_pipeline_input returns (detector constructed) and the pipeline thread is spawned — never on bind alone"
+producer = "runtime.assembly"
+consumers = [
+  "control.phone_session",
+  "control.operator",
+]
+
+[[contract]]
+id = "runtime.audio.preprocessed"
+kind = "stream"
+maturity = "implemented"
+door = "bounded RingReceiver<AudioFrame> with preproc_ts stamped"
+producer = "runtime.preproc"
+consumers = ["runtime.chunker"]
+
+[[contract]]
+id = "runtime.audio.chunks"
+kind = "stream"
+maturity = "implemented"
+door = "bounded RingReceiver<AudioChunk> at the configured chunk duration"
+producer = "runtime.chunker"
+consumers = ["runtime.detector.port"]
+
+[[contract]]
+id = "runtime.detector.keyword_compiler"
+kind = "capability"
+maturity = "implemented"
+door = "kws_compile token-table and keyword compilation constructors"
+producer = "runtime.detector.keyword_compile"
+consumers = [
+  "control.prepare",
+  "runtime.detector.port",
+  "runtime.detector.sherpa",
+  "runtime.detector.streaming_ctc",
+]
+
+[[contract]]
+id = "runtime.detector.sherpa_engine"
+kind = "capability"
+maturity = "implemented"
+door = "SherpaKws constructor implementing the Detector capability"
+producer = "runtime.detector.sherpa"
+consumers = ["runtime.detector.port"]
+
+[[contract]]
+id = "runtime.detector.streaming_ctc_engine"
+kind = "capability"
+maturity = "implemented"
+door = "StreamingCtcDetector constructor and start-anytime Viterbi CTC scoring capability"
+producer = "runtime.detector.streaming_ctc"
+consumers = ["runtime.detector.port"]
+
+[[contract]]
+id = "runtime.detections"
+kind = "stream"
+maturity = "implemented"
+door = "Detector::process returns SmallVec<[Detection; 2]> for each AudioChunk"
+producer = "runtime.detector.port"
+consumers = [
+  "runtime.decision",
+  "runtime.telemetry",
+]
+
+[[contract]]
+id = "runtime.execution.intents"
+kind = "stream"
+maturity = "implemented"
+door = "bounded tokio mpsc channel of DecisionIntent values"
+producer = "runtime.decision"
+consumers = [
+  "runtime.kalshi.executor",
+  "runtime.telemetry",
+]
+
+[[contract]]
+id = "runtime.market.plan"
+kind = "artifact"
+maturity = "implemented"
+door = "validated immutable market and safety plan returned before runtime arming"
+producer = "runtime.market_validation"
+consumers = [
+  "runtime.assembly",
+  "runtime.kalshi.book",
+  "runtime.risk",
+  "runtime.kalshi.executor",
+  "control.preflight",
+  "control.launch",
+]
+
+[[contract]]
+id = "runtime.auth.headers"
+kind = "capability"
+maturity = "implemented"
+door = "signing and presigning APIs returning authenticated Kalshi request headers"
+producer = "runtime.kalshi.auth"
+consumers = [
+  "runtime.order_transport",
+  "runtime.kalshi.book",
+  "runtime.kalshi.fix",
+]
+
+[[contract]]
+id = "runtime.fix.session"
+kind = "capability"
+maturity = "implemented"
+door = "stateful sequenced FIX session API with durable sequence storage"
+producer = "runtime.kalshi.fix"
+consumers = ["runtime.order_transport"]
+
+[[contract]]
+id = "runtime.order.api"
+kind = "capability"
+maturity = "implemented"
+door = "normalized stage, send, acknowledge, and reconcile order transport API"
+producer = "runtime.order_transport"
+consumers = [
+  "runtime.market_validation",
+  "runtime.kalshi.executor",
+]
+
+[[contract]]
+id = "runtime.market.books"
+kind = "capability"
+maturity = "implemented"
+door = "BookCache wait-free read and feed-age snapshot API"
+producer = "runtime.kalshi.book"
+consumers = [
+  "runtime.kalshi.executor",
+  "runtime.telemetry",
+]
+
+[[contract]]
+id = "runtime.risk.permission"
+kind = "capability"
+maturity = "implemented"
+door = "RiskGate check_order and session-scoped order registration verdicts"
+producer = "runtime.risk"
+consumers = ["runtime.kalshi.executor"]
+
+[[contract]]
+id = "runtime.execution.records"
+kind = "artifact"
+maturity = "implemented"
+door = "ExecReport containing durable OrderRecord outcomes"
+producer = "runtime.kalshi.executor"
+consumers = [
+  "runtime.telemetry",
+  "control.grade",
+]
+
+[[contract]]
+id = "runtime.telemetry.report"
+kind = "artifact"
+maturity = "implemented"
+door = "PipelineReport rendered or written at session teardown"
+producer = "runtime.telemetry"
+consumers = [
+  "control.supervise",
+  "control.grade",
+  "evidence.measure",
+]
+
+[[contract]]
+id = "control.events.discovered"
+kind = "artifact"
+maturity = "compatibility"
+door = "slate/latest.json plus discover-events.py and slate-daily.sh exit status"
+producer = "control.discover"
+consumers = ["control.qualify", "evidence.expansion", "control.hunt"]
+
+[[contract]]
+id = "control.event.qualified"
+kind = "artifact"
+maturity = "compatibility"
+door = "reviewed worklist, dial-in catalog, and qualification script output for one event"
+producer = "control.qualify"
+consumers = [
+  "control.prepare",
+  "control.admission",
+  "control.acquire",
+]
+
+[[contract]]
+id = "control.event.prepared"
+kind = "artifact"
+maturity = "compatibility"
+door = "EventConfig TOML written by earshot prepare or a staging script"
+producer = "control.prepare"
+consumers = [
+  "runtime.config",
+  "control.preflight",
+  "evidence.benchmark",
+]
+
+[[contract]]
+id = "control.event.preflighted"
+kind = "event"
+maturity = "compatibility"
+door = "successful preflight-event.sh exit for an immutable event configuration"
+producer = "control.preflight"
+consumers = ["control.launch"]
+
+[[contract]]
+id = "control.bridge.candidates"
+kind = "artifact"
+maturity = "implemented"
+door = "per-issuer candidate record: classified numbers and labelled passcodes in gitignored state/hunt/, digits-free tier verdict and provenance in slate/hunt-status.json"
+producer = "control.hunt"
+consumers = ["control.admission"]
+
+[[contract]]
+id = "control.event.admitted"
+kind = "artifact"
+maturity = "compatibility"
+door = "bridge-probe evidence and explicit listen-access verdict"
+producer = "control.admission"
+consumers = [
+  "control.preflight",
+  "control.phone_session",
+  "control.operator",
+]
+
+[[contract]]
+id = "control.endpoint.resolved"
+kind = "artifact"
+maturity = "compatibility"
+door = "resolver stdout or run-scoped file containing a verified media endpoint"
+producer = "control.acquire"
+consumers = [
+  "runtime.source.sip",
+  "runtime.source.pipe",
+  "control.preflight",
+  "control.launch",
+  "evidence.capture",
+]
+
+[[contract]]
+id = "control.session.launched"
+kind = "event"
+maturity = "compatibility"
+door = "launch script success with run-scoped PID, state directory, and listener configuration"
+producer = "control.launch"
+consumers = [
+  "control.phone_session",
+  "control.supervise",
+]
+
+[[contract]]
+id = "control.phone.attached"
+kind = "event"
+maturity = "compatibility"
+door = "Twilio CallSid and run-scoped status marker after a dial reaches the bound listener"
+producer = "control.phone_session"
+consumers = [
+  "runtime.telemetry",
+  "control.supervise",
+]
+
+[[contract]]
+id = "control.operator.attached"
+kind = "event"
+maturity = "compatibility"
+door = "operator bridge leg admitted to the venue conference with the media fork live; today observed via the operator dial script's exit status + sid files"
+producer = "control.operator"
+consumers = []
+
+[[contract]]
+id = "control.session.completed"
+kind = "event"
+maturity = "compatibility"
+door = "bounded supervisor exit with run-scoped process and report artifacts"
+producer = "control.supervise"
+consumers = ["control.grade"]
+
+[[contract]]
+id = "control.run.verdict"
+kind = "artifact"
+maturity = "compatibility"
+door = "run-verdict output recording hearing, detection, and execution status"
+producer = "control.grade"
+consumers = []
+
+[[contract]]
+id = "platform.runtime.profile"
+kind = "capability"
+maturity = "compatibility"
+door = "verified host tuning state plus perf thread-placement APIs"
+producer = "platform.runtime"
+consumers = [
+  "runtime.assembly",
+  "control.preflight",
+  "control.launch",
+]
+
+[[contract]]
+id = "platform.deploy.artifact"
+kind = "artifact"
+maturity = "compatibility"
+door = "deploy-box.sh verified host binary, models, scripts, and ingress configuration"
+producer = "platform.deploy"
+consumers = [
+  "platform.runtime",
+  "control.preflight",
+  "control.acquire",
+  "control.launch",
+]
+
+[[contract]]
+id = "platform.notification"
+kind = "event"
+maturity = "compatibility"
+door = "notify.sh channel delivery attempt and exit status"
+producer = "platform.notify"
+consumers = [
+  "control.discover",
+  "control.preflight",
+  "control.acquire",
+  "control.supervise",
+  "control.grade",
+  "control.operator",
+
+  "control.hunt",
+]
+
+[[contract]]
+id = "evidence.capture.raw"
+kind = "artifact"
+maturity = "implemented"
+door = "run-scoped raw media, capture report, timing sidecars, and acquisition metadata"
+producer = "evidence.capture"
+consumers = [
+  "evidence.corpus",
+  "evidence.measure",
+]
+
+[[contract]]
+id = "evidence.corpus.dataset"
+kind = "artifact"
+maturity = "implemented"
+door = "versioned corpus manifest and structural labels with verification output"
+producer = "evidence.corpus"
+consumers = [
+  "control.grade",
+  "evidence.benchmark",
+  "evidence.measure",
+]
+
+[[contract]]
+id = "evidence.benchmark.result"
+kind = "artifact"
+maturity = "implemented"
+door = "frozen-corpus detector score report evaluated against declared gates"
+producer = "evidence.benchmark"
+consumers = [
+  "control.grade",
+  "evidence.measure",
+]
+
+[[contract]]
+id = "evidence.measurement.result"
+kind = "artifact"
+maturity = "implemented"
+door = "dated latency, arrival, bound, or competitor measurement report"
+producer = "evidence.measure"
+consumers = ["evidence.expansion"]
+
+[[contract]]
+id = "evidence.pm.capture"
+kind = "artifact"
+maturity = "implemented"
+door = "state/pm/<event>/pm-<date>.jsonl.gz book/trade rows with wall+mono+venue timestamps"
+producer = "evidence.expansion"
+consumers = []

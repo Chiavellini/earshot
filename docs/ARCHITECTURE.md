@@ -1,12 +1,56 @@
-# EARSHOT Architecture — the layer map
+# EARSHOT architecture
 
-Read this first. Every layer has exactly one **entry door** and one **exit
-door** — a typed ring, channel, or trait. To work on a layer you need only:
-this page, the layer's doc in `docs/layers/`, and the layer's source file.
-Nothing else. If a change requires touching two layers' internals at once,
-the doors are wrong — stop and fix the door design first.
+The unit of architecture is a node: one job, one owner, one input contract,
+one output contract, and an independent verification path. The complete
+machine-readable ownership map is `architecture/nodes.toml`; `docs/NODES.md`
+is its human index.
 
-## The chain
+The project contains three connected pipelines. They share versioned
+artifacts, not implementation knowledge:
+
+```text
+CONTROL
+discover → qualify ─┬→ prepare(EventConfig) ────┐
+                    ├→ admission(ArmPermit) ────┼→ preflight → launch/bind
+                    └→ acquire(SourceEndpoint) ─┘                 │
+                                      listener_ready              ▼
+                                                    [phone session] → phone_attached
+                                                                         │
+                                                              supervise + telemetry → grade
+
+RUNTIME
+source → preproc → chunker → detector.port → decision → executor → PipelineReport
+                                 ▲
+             keyword compiler → engine constructor
+                                              ▲        ▲
+                                           book     risk/auth
+
+EVIDENCE
+capture → curate corpus → benchmark/measure → reviewed verification pin
+```
+
+Qualification fans out into three independently owned control nodes. Preflight
+is their explicit join. A phone session is optional and may dial only after
+launch/assembly has bound the advertised listener and emitted
+`runtime.source.twilio.listener_ready`; it is never part of source
+acquisition. The later `control.phone.attached` event reports live attachment
+to supervision and telemetry. It is not an adapter-construction dependency.
+
+The detector boundary is likewise split by job: `runtime.detector.port` owns
+the trait and single factory, `runtime.detector.keyword_compile` owns
+model-token-aligned keyword compilation, and the Sherpa and streaming-CTC
+nodes each expose an engine-constructor capability to the factory. Engine
+work can proceed in parallel without changing the port.
+
+Adapters translate external systems into a contract. Composers connect nodes
+and own lifecycle; they do not own domain policy. A change that needs two
+nodes' internals at once is a contract change and must be treated as such.
+
+## Runtime data plane
+
+Every runtime node has one **entry door** and one **exit door**—a typed ring,
+channel, return value, or trait. To work on one, read its contract in
+`docs/layers/` or `docs/nodes/` and the two adjacent contract definitions.
 
 ```
 config.toml ──► config ──────────────────────────────┐ (arm-time wiring)
@@ -67,11 +111,14 @@ extends per event). The signing/credential layer is `docs/layers/auth.md`.
 | — | telemetry | `LatencyRecorder::record(edge, ns)` — each recorder is single-owner, merged at teardown via `merge()` | `PipelineReport` (`render_table()`, `write_json()`) | owning thread | `src/telemetry.rs` |
 | — | config | per-event TOML file | `config::EventConfig` via `config::load(path)` | arm-time only | `src/config.rs` |
 
-Wiring lives in exactly two places: `pipeline::run_pipeline` /
+Current runtime wiring lives in exactly two legacy composers:
+`pipeline::run_pipeline` /
 `run_pipeline_fanout` (doors 1–5; both entry points share the same stage code
 in `src/pipeline/mod.rs`) and `main.rs::arm` (doors 6–8 + planes;
 `build_pipeline_input` picks the entry point from `arbiter.mode`). Nothing
-else may connect layers.
+else may connect runtime layers. `main.rs::arm` is a documented legacy hub;
+`docs/ROADMAP.md` replaces it with a prepared-run lifecycle without creating
+a third composer.
 
 ## Invariants (hold across every layer — breaking one is a bug even if tests pass)
 
@@ -104,8 +151,10 @@ The M1 detector bake-off (corpus design, dev/holdout protocol,
 pre-registered sign-off criteria, `bench-detector` usage) is documented in
 `docs/BAKEOFF.md`; the harness lives in `src/bench/`.
 
-## Definition of done for a layer change
+## Definition of done for a node change
 
-A layer change is complete when: (a) its unit tests pass, (b) the e2e replay
-test passes, (c) **its `docs/layers/<layer>.md` matches the new code** —
-types cited by exact name. New layers ship with a doc from the same template.
+A node change is complete when its focused tests pass, affected contract/e2e
+tests pass, its contract doc matches the code, external facts are pinned, and
+`scripts/doc-lint.sh` passes. New nodes require an
+`architecture/nodes.toml` entry and a doc based on
+`docs/nodes/TEMPLATE.md`.

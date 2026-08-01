@@ -1,21 +1,21 @@
-# EARSHOT — agent guide
+# EARSHOT — runtime and safety guide
 
-**Start at `docs/ARCHITECTURE.md`.** It maps every pipeline layer, the exact
-typed door between each pair, and the system-wide invariants. Then read ONLY
-the `docs/layers/<layer>.md` for the layer you're changing — the docs are
-written so you can work on one layer without reading the rest of the system.
+**Start at `AGENTS.md`, `docs/STATUS.md`, and `docs/NODES.md`.** Claim one
+node in `docs/work/ACTIVE.md`, then read that node's contract. For a runtime
+layer, `docs/ARCHITECTURE.md` maps the exact typed doors and
+`docs/layers/<layer>.md` gives the leaf contract.
 
 ## Conventions (non-negotiable)
 
-- **A layer change is not done until its `docs/layers/<layer>.md` matches
-  the code.** Types are cited by exact name in the docs; keep them true.
-  New layers ship with a doc from the same template (Role / Entry door /
-  Exit door / Obligations / Failure policy / How to edit / How to test).
+- **A node change is not done until its contract doc matches the code.**
+  Runtime types are cited by exact name; keep them true. New nodes ship with
+  a registry entry and a contract from `docs/nodes/TEMPLATE.md`.
 - **Kalshi API facts live in `VERIFICATIONS.md`** — dated, evidence-backed
   live pins. Never code against remembered API details; if you discover a
   new wire fact, pin it there (with evidence) in the same change.
-- Layer wiring exists in exactly two places: `pipeline::run_pipeline`
-  (audio chain) and `main.rs::arm` (execution side). Don't add a third.
+- Current runtime wiring exists in `pipeline::run_pipeline` (audio chain) and
+  `main.rs::arm` (execution side). Do not add a third composer; the roadmap
+  migrates both behind an explicit run supervisor.
 - Money: integer cents + whole contracts internally; fixed-point strings
   only at the wire (`rest::cents_to_dollar_str` / `count_to_fp_str`).
   Latency: `clock::MonotonicNs` only.
@@ -45,6 +45,7 @@ written so you can work on one layer without reading the rest of the system.
 
 ```
 cargo test                                   # unit + mock-integration + e2e
+scripts/doc-lint.sh                          # node ownership + docs contracts
 EARSHOT_REQUIRE_MODELS=1 cargo test          # model tests FAIL instead of skipping (use on boxes with models/)
 cargo test --release -- --ignored perf_      # speed budgets (tests/perf_budget.rs); prints measured numbers
 scripts/fetch-models.sh                      # M1 detector models → models/ (gitignored)
@@ -52,19 +53,10 @@ cargo run --release -- replay --config configs/example-event.toml
 cargo run --release -- bench-detector --config <cfg> --corpus corpus/   # see docs/BAKEOFF.md
 cargo run --release -- arm --config configs/m2-drill.toml            # dry-run
 cargo run --release -- book --ticker <T> --secs 10                   # read-only
+scripts/bridge-probe.sh --to +1… --label <venue-date> [--dtmf 1234#]  # admission probe → dial-ins.toml `admission` (Q-ADMIT; preflight requires a fresh `held`)
 scripts/launch-event.sh --config <cfg> --account <env> --bind-port <p> --to +1…  # one isolated event; run per event for concurrent calls (docs/MULTI-EVENT.md §8)
 source ~/.kalshi/earshot_env                 # credentials (never in repo)
 ```
 
-Milestone state: M0 ✅ M2 ✅ (live-validated) M1 ✅ (sherpa_kws engine +
-corpus + bake-off run; holdout results and the pre-declared follow-on —
-a custom low-lookahead spotter for the latency bar — in `docs/BAKEOFF.md`)
-M3 ✅ (2026-07-14: Twilio capture live-verified — loopback rehearsal passed,
-3 real streams incl. the actual MS bridge via the full `launch-event.sh`
-chain; pins upgraded in `docs/TWILIO.md` + `VERIFICATIONS.md` Q-M3).
-Next: the first live event run (Morgan Stanley 2026-07-15, mention-fill
-tiered posture — `docs/RUNBOOK.md`), then the low-latency detector
-milestone. See the meta-spec for the roadmap.
-Concurrent multi-event (two Kalshi + two Twilio accounts, one process per event)
-isolation machinery is implemented — `docs/MULTI-EVENT.md` §8; a live two-event
-run is downstream of M3.
+Milestone definitions live in `docs/SPEC.md`; current completion and next
+outcomes live only in `docs/STATUS.md` / `docs/ROADMAP.md`.

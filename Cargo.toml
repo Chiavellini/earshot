@@ -2,7 +2,7 @@
 name = "earshot"
 version = "0.1.0"
 edition = "2021"
-description = "Audio-signal latency trader for Kalshi mention markets (M0 skeleton)"
+description = "Modular low-latency audio-signal runtime for Kalshi mention markets"
 publish = false
 
 [dependencies]
@@ -23,7 +23,7 @@ ndarray = "0.16"
 # load-dynamic: ort dlopens its own onnxruntime (1.27) at runtime via
 # ORT_DYLIB_PATH, so it does NOT statically link onnxruntime — avoiding a symbol
 # clash with sherpa-onnx's bundled static onnxruntime 1.24.2 (they can't share:
-# ort needs API 27). See docs/layers/streaming_ctc.md.
+# ort needs API 27). See docs/layers/detector.md (streaming_ctc engine).
 ort = { version = "2.0.0-rc.12", features = ["ndarray", "load-dynamic"] }
 reqwest = { version = "0.12", features = ["json", "blocking", "http2"] }
 rsa = { version = "0.9", features = ["sha2"] }
