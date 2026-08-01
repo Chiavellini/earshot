@@ -134,6 +134,31 @@ def find(needle: np.ndarray, hay: np.ndarray):
     return k, float(cc[k] / den) if den > 0 else 0.0
 
 
+def whole_hour_skew(segs, t_lo, t_hi):
+    """Offset (seconds) undoing a PDT *timezone-label* bug — and only that.
+
+    Some packagers stamp `EXT-X-PROGRAM-DATE-TIME` in LOCAL time but label it
+    `+00:00`. Measured 2026-07-29 (VERIFICATIONS Q-WNT): YouTube stamps Eastern
+    — wall 22:12:17Z against `last_pdt 2026-07-29T18:12:10.016+00:00`, a 4 h
+    skew. Uncorrected, every PDT lands hours from the capture window and this
+    tool exits "no segment PDT inside capture window": loud, but unusable on
+    the whole venue class.
+
+    The correction is snapped to a WHOLE number of hours, which is what makes
+    it safe: it can only ever undo a timezone label. Real acquisition lag is
+    seconds — it can never be absorbed here, and a genuinely broken feed still
+    fails the window test. Returns 0 when no correction is warranted.
+
+    NOT hardcoded to 4 h on purpose: the offset is the venue's local-time
+    offset, so it moves with US DST.
+    """
+    if not segs:
+        return 0
+    span = sorted(s[0] for s in segs)
+    med = span[len(span) // 2]
+    return round(((t_lo + t_hi) / 2 - med) / 3600.0) * 3600
+
+
 def main() -> None:
     m3u8, rec = sys.argv[1], sys.argv[2]
     legs = sys.argv[3:]
@@ -151,6 +176,14 @@ def main() -> None:
     # probe leg lengths so we can pick a segment inside the capture window
     first = load_leg(rec, legs[0])
     t_lo, t_hi = to_utc(first[2][0]), to_utc(first[2][-1])
+
+    skew = whole_hour_skew(segs, t_lo, t_hi)
+    if skew:
+        print(f"⚠ PDT timezone-label skew: {skew/3600:+.0f} h — this packager "
+              f"stamps local time but labels it +00:00 (VERIFICATIONS Q-WNT). "
+              f"Correcting; whole hours only, so no real lag is absorbed.")
+        segs = [(p + skew, d, u) for p, d, u in segs]
+
     cands = [s for s in segs if t_lo + 30 < s[0] < t_hi - 30]
     if not cands:
         sys.exit(f"no segment PDT inside capture window "

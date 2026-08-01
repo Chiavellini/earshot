@@ -19,8 +19,21 @@ DUR=${1:-5400}
 # "--prefetch --stream-body" to gate the streamed one (measured +2.073 s
 # first-byte lead, n=600 — but a 20-min run is not the 90-min bar).
 CAND_FLAGS=${2:---prefetch --prefetch-report}
-MASTER="https://fcc3ddae59ed.us-west-2.playback.live-video.net/api/video/v1/us-west-2.893648527354.channel.DmumNckWFTqz.m3u8"
-OUT=$HOME/pfgate
+# $3 / $EARSHOT_GATE_MASTER — the stream to gate against. Default stays the AWS
+# IVS demo channel so every existing invocation is unchanged.
+#
+# WHY THIS IS NOW A PARAMETER. The bar is 90 minutes, and the venues this gate
+# actually protects — Chorus Call at 71 kbps, webinar.net at 96 kbps — do not
+# exist for 90 minutes: their origins come up shortly before a call and die
+# after it. That is why no `--stream-body`-class change has ever been gated at
+# the bitrate where it matters. Pointing this at a LOCAL rolling fixture
+# throttled to ~71 kbps clears the bar at the right bitrate with no external
+# dependency; the demo channel then serves as the real-origin cross-check.
+# ⚠ The candidate/baseline leg NAMES stay `prefetch`/`plain` — they are baked
+# into prefetch-verdict.py's sample regex, so renaming them here silently
+# produces zero parsed samples and an INCONCLUSIVE verdict.
+MASTER=${3:-${EARSHOT_GATE_MASTER:-https://fcc3ddae59ed.us-west-2.playback.live-video.net/api/video/v1/us-west-2.893648527354.channel.DmumNckWFTqz.m3u8}}
+OUT=${EARSHOT_GATE_OUT:-$HOME/pfgate}
 # ⚠ WIPE FIRST. On 2026-07-27 the streamed-tier gate reported FAIL on the
 # strength of ONE sample of 180: the sampler's first read caught the PREVIOUS
 # run's plain.wav (172,769,140 B — a full 5399 s file) before ffmpeg truncated

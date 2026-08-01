@@ -33,6 +33,13 @@ def load(path):
             continue
         h, t, d, mode = f[0], float(f[1]), float(f[2]), f[3]
         tf = float(f[4]) if len(f) > 4 else t
+        # Column 6, when present, is the segment's own name — written only for
+        # rows whose column 1 is NOT a real encoder PDT (`-synth` / `-nopdt`).
+        # At a PDT-less venue column 1 is derived from THIS leg's poll instant,
+        # so it differs between legs by 0-250 ms and joins on nothing; the
+        # segment name is byte-identical across legs by construction. Prefer it.
+        if len(f) > 5:
+            h = f[5]
         if h not in out:
             out[h] = (t, d, mode, tf)
     return out

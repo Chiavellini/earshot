@@ -178,6 +178,22 @@ failover.
   rehearsal ladder, gated on: (1) TLS/WSS endpoint decision (Elastic IP
   ≈$3.7/mo + Let's Encrypt vs per-start certs — operator sign-off, cost
   rule), (2) operator consent to place per-event credentials on the box.
+  **TLS endpoint decision MADE 2026-07-29** (phone-lane robustification
+  WS5): owned domain (user sign-off, ~$10/yr) + Elastic IP `3.212.174.94`
+  (already attached) + **Caddy sidecar** terminating TLS with automatic
+  Let's Encrypt, reverse-proxying per-event paths `/e/<bind-port>` to the
+  loopback WS listeners. Chosen over in-process rustls (would drag cert
+  lifecycle into the source layer for a sub-ms loopback hop) and
+  nginx+certbot (two moving parts where caddy is one). Assets:
+  `deploy/caddy/Caddyfile` + `scripts/install-tls-ingress.sh`; launcher
+  flag `launch-event.sh --tls-host media.<domain>` composes
+  `wss://media.<domain>/e/<port>` and rides the existing tunnel-free
+  branch. ⚠ The proxy must never rewrite Host or the path — the signature
+  base is the exact stream URL (Q-M3). GATE: pin **Q-TLS** in
+  `VERIFICATIONS.md` (live TTS-number call through the endpoint: cert
+  issuance, Twilio TLS/SNI acceptance, signature validation through the
+  proxy, path routing) before any event uses this path. This also removes
+  the Q-NGROK one-phone-event cap.
 - **Jitter buffer is a tunable — sweep it.** Applies to the SIP/RTP path (we own
   the buffer; Twilio owns its own). Start at 40 ms, find the minimum stable
   value, log the choice. `capture-bakeoff --jitter-buffer-ms` is the sweep hook

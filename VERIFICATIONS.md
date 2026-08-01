@@ -998,6 +998,16 @@ operator turn as distinct energy bands.
   costs ~1.4¢ and 33 s. Bridges that answer with an announcement + hold music +
   a specialist are Chorus-Call-operator-assisted and fail this test.
 
+> ⚠ **AMENDED 2026-07-29 (same day, evening).** The MSFT "auto-join
+> counter-example" bullet above is WRONG — it was inferred from an earnings-call
+> transcript preamble, not from a dial. A live dial the same evening reached an
+> INCOM **operator screen** ("please be ready to provide your full name with
+> spelling; an operator will assist you momentarily") that dropped the silent
+> caller in 42–73 s. See Q-ADMIT below. **Unaffected:** everything else in this
+> pin — the WING evidence, the invariant analysis, and the probe-before-trust
+> rule (which this amendment only strengthens: even the pin's own counter-example
+> didn't survive a dial). **Affected:** any claim that MSFT joins unattended.
+
 ## Q-NGROK — one free static endpoint ⇒ only ONE phone lane at a time (2026-07-29, live)
 
 Measured on the us-east box while CMG's phone leg was live: starting a second
@@ -1029,3 +1039,743 @@ a whole hop of latency from the lane we most care about).
 - Evidence: `/tmp/ngrok2.log`, `/tmp/ngrok3.log` on the box, 2026-07-29 20:27 UTC.
   Confidence: high (reproduced twice, distinct configs). Re-verify: on any plan
   change, or after the no-ngrok migration lands.
+
+> ⚠ **AMENDED 2026-07-29 (same day, evening).** The no-ngrok path is now BUILT
+> (Caddy TLS ingress: `deploy/caddy/Caddyfile`,
+> `scripts/install-tls-ingress.sh`, `launch-event.sh --tls-host`) and is the
+> production answer to this cap. **Unaffected:** every fact above — the free
+> plan still serves one endpoint, and ngrok remains the loopback-rehearsal
+> path, still capped. **Affected:** production concurrency planning — once
+> Q-TLS is pinned (live call through the new endpoint), the phone lane's
+> one-event cap is lifted; do not provision paid ngrok or second accounts.
+
+## Q-TLS — TLS-on-box ingress carries a live Twilio media stream (2026-07-30, live)
+
+**PINNED.** One live call to the TTS rehearsal number (+17627212978) through
+`wss://media.3-212-174-94.sslip.io/e/8099` — Caddy terminating TLS on the box,
+reverse-proxying to the loopback listener. CallSid
+`CA6b1e301e669cf4703ddfe0221a3f345d`, 2026-07-30 03:14 UTC.
+
+- **X-Twilio-Signature verified through the proxy** — Caddy preserved Host and
+  path exactly (the Q-M3 hazard the Caddyfile header warns about). `connected`
+  → `start` (mediaFormat verified 8 kHz μ-law mono) → 2801 media frames in
+  55.8 s → clean stop at the probe's 60 s cap. Zero stalls ≥100 ms.
+- **Hostname:** `media.3-212-174-94.sslip.io` — sslip.io wildcard DNS mapping
+  to the Elastic IP `3.212.174.94`; Let's Encrypt issued normally
+  (`certificate obtained successfully`, caddy journal 03:13:07 UTC). This is a
+  zero-cost stopgap name: it moves with nothing (encodes the IP), but the
+  namespace is shared and LE rate limits on sslip.io are communal — an owned
+  domain should replace it when available; only `EARSHOT_DOMAIN` changes.
+- **Ingress jitter, same TTS number, same probe tool, same box** (caveat: one
+  day apart, not interleaved — but the effect size dwarfs any daily drift):
+
+  | path | p50 | p90 | p99 | max | stalls ≥100 ms | <1 ms bursts |
+  |---|---|---|---|---|---|---|
+  | ngrok (07-29, `tts_rehearsal_2026_07_29.jsonl`) | 16.67 ms | 35.11 ms | 226 ms | 460 ms | 61 | 31.5 % |
+  | TLS-on-box (07-30, `tts_tls_2026_07_30.jsonl`) | 20.00 ms | 20.04 ms | **20.10 ms** | **20.46 ms** | **0** | 0.4 % |
+
+  The TLS path delivers native Twilio 20 ms pacing; the tunnel's burst/stall
+  signature (INGRESS-BAKEOFF's stated p99 hazard) is absent entirely.
+- **Consequences:** the Q-NGROK one-event cap is lifted for production (per-event
+  `/e/<port>` paths 8080–8085 + 8099 are routed); ngrok remains the
+  loopback-rehearsal fallback. Launch with `launch-event.sh --tls-host
+  media.3-212-174-94.sslip.io`.
+- Evidence: `corpus/bridge-probes/tts_tls_2026_07_30.{json,jsonl}`; caddy
+  journal on the box. Confidence: high. Re-verify: after any instance/EIP move
+  (the sslip.io name encodes the IP — it must be re-derived), on domain swap,
+  or caddy config change.
+
+## Q-REDIAL — mid-call drop recovered in-run, production mechanism (2026-07-30, live)
+
+**PINNED.** Full rehearsal via `scripts/launch-event.sh` (pinned binary, TLS
+ingress `--tls-host media.3-212-174-94.sslip.io`, `configs/rehearsal-qredial.toml`
+with `max_reconnects = 2`, `idle_timeout_secs = 8`) against the TTS rehearsal
+number, with a REAL induced far-end hangup (REST `Status=completed` — the exact
+MSFT drop signature) and a REAL SIGTERM teardown. Timeline (box, 04:01 UTC):
+
+- 04:01:36.25 call1 `CA68449c37944a6ac21cab806b0742a383` stream started (attempt 0)
+- 04:01:47.32 detection fired pre-drop ("gaming" → Confirmed intent → designed 1¢ observe)
+- 04:01:48.10 far-end hangup POSTed (HTTP 200)
+- 04:01:48.18 source: `stream stopped frames=595`; marker written
+  `{"unix_ts":1785384108,"old_call_sid":"CA684…","attempt":1,"reason":"stop"}`
+- 04:01:48    supervisor consumed the marker BY CONTENT in the same wall-clock
+  second (the old mtime watch would have missed it), logged far-end status,
+  hung up the zombie concurrently, redialed with NO backoff:
+  **drop → new CallSid 0.60 s**
+- 04:01:52.21 call2 `CA34389d…` stream connected+started (attempt 1):
+  **drop → fresh audio 4.03 s** (previous floor: 10–15 s + up to 30 s detection)
+- 04:02:03.03 post-splice detection: "gaming" heard again on call2 and
+  **correctly IGNORED by the one-shot keyword state machine** — detection
+  works across the splice AND the no-double-fire property holds across redials
+- 04:02:28    real SIGTERM: clean last-words report (`"terminated":"SIGTERM"`),
+  ledger 0¢, no session orders
+
+Evidence: `/tmp/qredial-launch2.log` + `state/KXEARNINGSMENTIONAAPL-26JUL30-QREDIAL/redial.log`
+on the box. Confidence: high. Re-verify: after any change to
+`twilio_ws.rs` reconnect handling, `redial-supervisor.sh`, or the launcher wait.
+NOTE: round 1 of this rehearsal produced a false NO-REDIAL because the harness
+never sourced Twilio creds — the hangup silently no-opped and no drop occurred.
+When a persistence rehearsal shows no redial, first verify the drop actually
+happened (call status/duration), then blame the code.
+
+## Q-OPERATOR-V1 — human-first operator handler, full ladder (2026-07-30, live)
+
+**PINNED.** Complete rehearsal of the gated operator path via the PRODUCTION
+mechanism: `scripts/launch-event.sh --operator-handler` (pinned binary, TLS
+ingress, `configs/rehearsal-qoperator.toml` with `[operator_handler]
+enabled=true, cell_number="+525545436717"`), against the fake-operator number
+**+17622164408** (`scripts/fake-operator/server.py --base-path /fake-operator`
+on the box behind Caddy, VoiceUrl `https://media.3-212-174-94.sslip.io/fake-operator/`).
+
+Ladder observed (04:18–04:20 UTC):
+1. Arm → `listener.ready` → **page call to the human cell ANSWERED and joined
+   the conference** (page sid `CA170c20a3d50c7e34350f16cc46309a37`); the bridge
+   was dialed ONLY after the join confirmed (`--wait-joined`).
+2. Bridge leg `CA93d84edb1abd3cc6f5a8ff5107f93f83` → fake operator answered,
+   asked name/company (`<Gather input="speech">` heard speech at /step2 and
+   /step3 — Twilio ASR garbled the words but the human's answers advanced the
+   screen, as with a real operator) → **admitted**.
+3. Keyword script played post-admission and **all three armed keywords
+   detected** on the bridge leg's inbound track while conference-parked:
+   gaming 04:19:48.02, competition 04:19:52.50, acquisition 04:19:59.22 —
+   Confirmed intents, dry-run journaled.
+4. Real SIGTERM: clean last-words (`"terminated":"SIGTERM"`), ledger 0¢.
+
+Fail-closed also proven live (attempt 1, same night): when the pager refused
+(gate flag missing from the orchestration — since fixed), the launcher REFUSED
+to dial the bridge unmanned and tore down cleanly in 2 ms. The unmanned-silent-
+leg drop class (MSFT/CVNA/WING 21–73 s) is structurally unreachable.
+
+Registry consequence: YUM (admission=operator_screened, probed same night)
+gains `operator_handler = "rehearsed-2026-07-30"`; preflight downgrades its
+FAIL to PASS-with-note only when the config enables the handler.
+Evidence: `/tmp/qoperator-launch.log` + `/tmp/fake-operator.log` on the box.
+Confidence: high. Re-verify: after any change to the operator scripts, the
+launcher orchestration, or conference TwiML shapes (re-run this ladder).
+
+## Q-CONF — `<Start><Stream>` fork vs `<Dial><Conference>` (2026-07-30, live; both steps pinned)
+
+**Claim (step 1, PINNED):** a `<Start><Stream track="inbound_track">` fork started
+before `<Dial><Conference>` KEEPS FLOWING once the call enters the conference,
+carrying the far end's audio. TTS rehearsal call `CAc3d1273db27d66f46f738b720dccd605`
+parked in conference `qconf-1785381966`: 2783 frames / 55.4 s of a 60 s window,
+0 stalls, through the Q-TLS ingress. The captured WAV transcribes to the full
+TTS keyword script (gaming / Hollywood / competition / ad-supported /
+acquisition — `corpus/transcripts/qconf-2026-07-30.txt`), so the fork carries
+real program audio while conference-parked, at native 20 ms pacing.
+**Step 2 (PINNED, same night):** a second conference participant's voice (the
+paged human cell) stays OFF the inbound track. `--with-cell` run
+`qconf-cell-2026-07-30`: bridge leg `CAd4f03d34672b632a9a6c079364bea2c8` +
+cell leg `CA9ed50cb1f7b31767b0e91be67537bc21` to +525545436717 — ANSWERED,
+63 s on the line, the human spoke the marker phrase ("earshot marker check one
+two three") into the live conference. Captured 3541 frames / 70.6 s; the
+transcript (`corpus/transcripts/qconf-cell-2026-07-30.txt`) is the TTS script
+VERBATIM — the marker phrase is entirely absent. Conference-injected audio
+does not reach `inbound_track`.
+Side-pin: outbound voice to +52 (Mexico) works on this Twilio account — no
+21215 geo-permission block.
+**Implication:** operator handler v1 carries the capture fork on the bridge
+leg itself — no stream handoff needed after admission; the human answers the
+operator without contaminating detection audio. Confidence: high (both steps).
+Re-verify: on any Twilio Media Streams change.
+Evidence: `corpus/bridge-probes/qconf_2026_07_30.{json,jsonl}`,
+`corpus/bridge-probes/qconf_cell_2026_07_30.{json,jsonl}`,
+`corpus/transcripts/qconf-2026-07-30.txt`,
+`corpus/transcripts/qconf-cell-2026-07-30.txt`.
+
+## Q-UPDATE — live TwiML replacement vs a running `<Start><Stream>` (2026-07-30, live)
+
+**Claim (PINNED):** `POST /Calls/<sid>.json` with replacement TwiML does NOT
+kill a running `<Start><Stream>` fork — the fork is CALL-scoped, not
+TwiML-document-scoped. TTS call `CA0440befa2f2c7a21ea8af0d2be5a568b`: TwiML
+replaced with `<Response><Pause length="120"/></Response>` at ≈20 s
+(status `in-progress` at POST time); frames_before=1011, frames_after=1070,
+stream ran 41.4 s total (far end's script ended it), 0 stalls.
+**Implication:** mid-call REST re-steering is compatible with an uninterrupted
+capture fork. This enables (a) v2 clip-play/hold flows, and (b) a v1 ESCAPE
+HATCH: a listen-only call that unexpectedly hits an operator screen can be
+REST-redirected into a conference (+ page the human) without losing capture.
+Confidence: high. Re-verify: on any Twilio Media Streams behavior change.
+Evidence: `corpus/bridge-probes/qupdate_2026_07_30.{json,jsonl}`.
+
+## Q-ADMIT — per-venue bridge admission, observed by dial (2026-07-29, live)
+
+**What a bridge does to a silent listen-only caller is a per-venue fact that only
+a dial can establish.** Four venues dialled live on 2026-07-29; two classes
+emerged. Every line below is from a recording of the bridge's own audio
+(diagnostic Twilio calls; transcripts by faster-whisper small.en int8 on the
+laptop, `.venv-corpus`). DTMF timing is RULED OUT as a drop cause: diagnostic
+calls that sent **no digits at all** died at the same hold times as calls that
+sent them (CVNA: digits at 10 s repeated 3× → dropped 31 s; no digits → 21 s).
+
+### Class A — automated passcode bridge: HOLDS
+
+- **CMG** `+1 888 317 6003` code `3937444#`: admitted by code, **held 4572 s
+  (76 min)** with 4 live detections until we killed the leg ourselves (21:13 UTC,
+  to free the ngrok tunnel — Q-NGROK). CallSid `CAeb4f8bbaa252ebb41dbbb2b7532c4eaf`.
+  Continuous conference audio the whole way. This is the venue class the
+  unattended phone lane can serve today.
+
+### Class B — live-operator screen: DROPS the silent caller in <90 s
+
+- **MSFT** `+1 877 407 0666` (no code): INCOM conference center.
+  ```
+  [ 0.00- 2.40] Welcome to the INCOM conference center.
+  [ 2.40- 5.36] Please be ready to provide your full name with spelling.
+  [ 5.36- 7.96] An operator will assist you momentarily.
+  [ 7.96-36.40] Conference center, may I have your first and last name, please?  <- LIVE HUMAN
+  [37.40-43.40] Hello? Anyone on the line, are you on mute? Hello?
+  ```
+  4 calls, held 42/73/42/48 s, all `status=completed` (far end hangs up).
+  Drop time is independent of dial timing (16 min early, 3.5 min early, and
+  after call start all died identically).
+  Artifact: `corpus/bridge-probes/msft-2026-07-29-bridge-entry.wav` + `.txt`
+  (45 s, 8 kHz; Twilio recording `REa618e98bb5337dc33a933760c864799c`).
+- **CVNA** `+1 800 715 9871` code `3609424#`: Chorus-style operator screen. The
+  code is irrelevant — a human answers before any code prompt.
+  ```
+  [ 0.00- 2.88] Well, thank you for holding.
+  [ 2.88- 4.80] May I have the name of your conference?                          <- LIVE HUMAN
+  [ 8.44-11.56] Hello caller, I can hear you. Please check if your line's on mute.
+  [15.04-18.84] Apologies … due to no response, I will now disconnect this caller. Thank you.
+  ```
+  Held 23/31/21 s. The operator announces the disconnect policy out loud.
+  Artifact: `corpus/bridge-probes/cvna-2026-07-29-bridge-entry.wav` + `.txt`
+  (19 s, 8 kHz; Twilio recording `RE7791b0336482835f219224343faf3026`).
+- **WING** `+1 412 317 5176`: Chorus Call operator screen, 33 s — see Q-OPS
+  above (the founding member of this class).
+
+**Implications:**
+- `configs/dial-ins.toml` gains a probe-only `admission` field (contract in the
+  file header): paper sources (IR page / PR / 8-K) can establish the NUMBER but
+  never ADMISSION — MSFT was recorded `listen_access="yes"` ("no password
+  required") and drops us in 42 s.
+- Class B venues are unattended-infeasible until the gated operator-responder
+  path exists (approved 2026-07-29); until then they must FAIL preflight for a
+  phone arm.
+- Class A/B is decidable the night before with one ~$0.02 call. Preflight
+  requires a dated probe.
+- Confidence: high (MSFT ×4 calls, CVNA ×3, CMG 76 min, WING ×1). Re-verify: a
+  venue's admission pin is stale after 30 days or any change of conferencing
+  provider (the bridge greeting names the provider: INCOM, Chorus Call).
+
+### Q-ADMIT addendum — 2026-07-30 off-hours probes (YUM, AAPL)
+
+- **YUM +18007159871 (code 8719077#): Class B — operator_screened.** Probe
+  2026-07-30 03:44 UTC, CallSid `CA79973ec7ad974d27e56d10162304f1d6`: answered
+  immediately into an INCOM-style queue — "Welcome to the conference center.
+  Please wait for the next available operator." Held 118.7 s / 5945 frames in
+  queue (overnight, no operator picked up; WE hung up at the probe cap). The
+  MSFT RULE vindicated again: published digits + "all lines placed on mute"
+  transcript language looked automatable; the live dial found a screen.
+  Evidence: `corpus/bridge-probes/yum_2026_07_30_bridge_entry.{wav,json,jsonl}`,
+  `corpus/transcripts/yum-2026-07-30-bridge-entry.txt`.
+- **AAPL +18002160480 (code 650941): reservation INACTIVE off-hours.** Probe
+  2026-07-30 03:40 UTC, CallSid `CAdf6b601752f28876b7db0c3536773e83`: rang 55 s,
+  Twilio `status=no-answer`, zero media. A standing conference reservation
+  (numbers+code byte-identical in Wayback 2024-02-01→2026-07-02) that answers
+  only around the event. NEW SUB-FACT for the probe playbook: off-hours probes
+  cannot classify venues whose bridges activate per-event — those need a
+  pre-call-window probe (T-90..T-30 min) on event day.
+
+## Q-WNT — ABC World News Tonight: a DAILY mention market (2026-07-29, live)
+
+**Claim:** `KXWORLDNEWSMENTION` ("World News Mention", category Mentions) is a
+**daily** market on ABC's flagship TV newscast. Event ticker
+`KXWORLDNEWSMENTION-<yyMONdd>`; today `KXWORLDNEWSMENTION-26JUL29`, sub_title
+`"any host or reporter - ABC World News Tonight with David Muir"`. Airs
+6:30 PM ET = **22:30Z = 16:30 CDMX**, ~22 min. Board = **16 strikes**, all
+`can_close_early: true` / `early_close_condition: "This market will close and
+expire early if the event occurs."`. `close_time`/`expiration_time` are a
+2026-08-13T14:00:00Z **placeholder** while the board is open. ⛔ This pin then
+read that placeholder as "early close on utterance is the real mechanism, same
+as `KXFEDMENTION-26JUL-VOLA` (Q4)" — **that inference is WRONG and is
+superseded by Q-WNT-CLOSE**: across all 16 settled sessions the board closes in
+one ~23:05Z batch and no strike has ever closed on an utterance. Prices are
+live and two-sided (`-TRUM` 30/31¢, `-HIKE` 25/26¢, `-AI` 18/19¢).
+**Source:** `GET /trade-api/v2/series/KXWORLDNEWSMENTION`,
+`GET /trade-api/v2/events?series_ticker=KXWORLDNEWSMENTION&status=open&with_nested_markets=true`,
+`GET /trade-api/v2/markets?event_ticker=KXWORLDNEWSMENTION-26JUL29` (live prod).
+**Implication:** ⚠⚠ **14 of the 16 strikes are FIRST-UTTERANCE strikes** — pure
+latency races, the `good afternoon` archetype called out in
+`configs/webcast-fed-26jul29-arm.toml` ("decided PURELY by the race — not by
+detection quality"). Only 2 are cumulative-count strikes (`-TRUM` "Trump (5+
+times)", `-IRAN` "Iran (3+ times)"), the sole ones where prediction beats
+speed. And it is DAILY: every fix amortises across ~250 sessions/yr instead of
+one call. Highest-leverage market found so far.
+**Confidence:** high (live API, 16/16 markets read). **Re-verify:** the strike
+board is regenerated per session — re-read `rules_primary` and the
+count-vs-first-utterance split at every arm; `earshot prepare --event-ticker`
+handles it identically to any Mentions event.
+
+**Claim:** The series was **structurally invisible to our own discovery job**
+until 2026-07-29. `scripts/discover-events.py` swept
+`PREFIXES = ("KXEARNINGSMENTION", "KXFEDMENTION")`, and even after adding the
+prefix, `call_date()` reads the airdate out of `sub_title` — which for a
+recurring broadcast carries **no date at all** — so every session landed in
+`UNRESOLVED` and dropped out of the horizon list and `slate/worklist.md`.
+**Source:** the series is only findable by hand-listing
+`GET /series?category=Mentions` (**397 series** as of 2026-07-29, up from the
+379 pinned in Q4) and reading titles.
+**Implication:** Third instance of the Boeing/FOMC class. Fixed by
+`DAILY_SERIES` in `discover-events.py` — a narrow per-series opt-in that takes
+the airdate from the event-ticker suffix and tags it
+`call_date_source: "ticker_daily"`. Deliberately NOT a general
+date-from-ticker inference (commit `6be80aa`: "HOOD was not a
+date-from-ticker bug — Kalshi's metadata lies in stereo"), and
+`ticker_date_misleading` reports `null` for these rows because comparing a
+ticker against a date derived from that ticker can only ever agree with
+itself — reporting `false` would claim "checked and clean", the exact HOOD
+failure mode. Regression frozen in `--self-test`.
+**Confidence:** high. **Re-verify:** re-list `series?category=Mentions` monthly
+and diff the titles — a prefix sweep cannot discover a family it doesn't know.
+
+**Claim (venue):** YouTube (`youtube.com/@ABCNews/live`) is the reachable
+ABC News Live feed and it carries WNT, but it is a **hostile venue for our
+best fetcher**: `hls-edge-fetch.py` reports
+`speculative: DISABLED — segment URLs are not predictable` because YouTube
+signs every segment URL (`/sig/…`, `/lsig/…`), and `prefetch=NONE-SEEN`. The
++1.02 s pre-announcement lead measured on the DW reference stream
+(`docs/LATENCY-PROOF.md` §THE GAP IS LOCATED) is **not available here** — the
+leg degrades to manifest-driven polling. The manifest is a **DVR playlist**
+(`playlist_type/DVR`, ~2886-segment window, `EXT-X-TARGETDURATION:5`), so
+`media_sequence` is the window START, not the edge; ffmpeg `-live_start_index -1`
+did land on the true edge. `streamlink` has **no plugin for
+`abcnews.go.com/Live`** and that page yields no `m3u8` on a plain fetch, so the
+direct ABC packager is still unreconned.
+**Source:** live capture 2026-07-29 22:12–23:03Z, laptop (residential IP;
+the us-east box is YouTube bot-walled — `docs/RACE-STRATEGY.md:159`).
+`configs/webcast-abcwnt-capture.toml`, `~/abcwnt/spec_edge.err`.
+**Confidence:** high (observed). **Re-verify:** YouTube URL signing is a
+platform property — re-check only if a non-YouTube ABC manifest is found.
+
+**Claim (clock trap):** YouTube stamps `EXT-X-PROGRAM-DATE-TIME` in **Eastern
+time but labels it `+00:00`** — a **4 h** label skew. Measured: wall
+22:12:17Z against `last_pdt 2026-07-29T18:12:10.016+00:00`. After correcting
++4 h, the manifest edge sits within roughly ±3 s of wall clock.
+**Implication:** ⚠ `scripts/abs-lag.py` computes
+`arrival_utc − (segment_PDT + EXTINF)`. Fed this manifest uncorrected it
+returns a ~4-hour "lag" — garbage that looks like a catastrophic finding. Any
+absolute-lag run against a YouTube venue MUST apply the offset (or calibrate
+it per run; do not hardcode 4 h — it is the venue's local-time offset, so it
+moves with US DST). Note also that PDT only anchors the CDN/packager output;
+the studio→packager contribution is invisible to us and shared by every
+internet consumer, so **the decisive number remains Δrace against the Kalshi
+tape**, not absolute lag.
+**Confidence:** high (measured, n=370 polls). **Re-verify:** every venue,
+first run — a `+00:00` label is not evidence of UTC.
+
+## Q-WNT-SRC — ⛔ ABC News Live does NOT carry World News Tonight (2026-07-30)
+
+**Claim:** The 2026-07-29 WNT capture recorded **the wrong program**, and every
+conclusion drawn from it about detector accuracy or race latency is void.
+`KXWORLDNEWSMENTION` resolves on words said "as part of **ABC World News
+Tonight with David Muir**" — the linear ABC *television network* newscast.
+**ABC News Live** (`youtube.com/@ABCNews/live`, the free 24/7 streaming
+channel) is a DIFFERENT service with its own schedule, and on 2026-07-29 it did
+not simulcast WNT at 22:30Z.
+
+**Source:** faster-whisper transcript of our own 50-minute capture
+(`corpus/transcripts/abcwnt-26jul29.{txt,words.json}`, 8 337 words; preserved
+as `abcwnt-26jul29.ABCNEWSLIVE-WRONGSOURCE.{txt,words.json}` — see the
+filename warning at the end of this pin):
+
+- `"world news tonight"` and `"david muir"` occur **only at 22:24:34–22:24:45Z**
+  — inside an ADVERTISEMENT, six minutes before air: *"World News Tonight with
+  David Muir is the number one newscast in America… Thank you for making World
+  News Tonight with David Muir the number one newscast in America."*
+- At 22:30:00Z the stream continues its OWN programming mid-sentence
+  (*"…Lindsay's medical timeline asking how many medications she was
+  prescribed. Turning to the Middle East…"*). Signatures of that show —
+  `"top searches"` (22:42:03, 22:43:54), `"the spiral"` (22:43:04, 22:44:00),
+  `"welcome back to search"` — are ABC News Live's own trending-news format,
+  hosted by someone addressed as "Oshin". No `"good evening"` cold open.
+- Words that **settled YES** are absent from the audio entirely:
+  `blanche` 0, `maintain` 0, `unchanged` 0, `midterm` 0, `midterms` 0
+  occurrences in 8 337 transcribed words. An ASR does not miss "maintain" and
+  "midterm" wholesale; they were never said on the feed we recorded.
+
+**Implication — what this retracts:**
+
+1. ⛔ **The "+12.9 s race win" on `FIFT` is RETRACTED.** The detection at
+   22:30:23.460Z was "**Fifth** Amendment" in ABC News Live's Fauci segment,
+   not the `FIFT` occurrence on WNT. Both programs covered the same news day
+   (Iran strikes, Fauci invoking the Fifth, the Fed decision), which is
+   precisely why the coincidence was convincing — and why cross-leg
+   corroboration did not catch it. **Two legs agreeing tells you the two legs
+   heard the same audio; it says nothing about whether that audio is the
+   right program.** No valid Δrace exists for this market yet.
+2. The apparent recall collapse (4 of 6 said-words undetected) was mostly a
+   WRONG-SOURCE failure, not a detector failure. The threshold sweep
+   (0.15→0.05, recall flat at 2/6) was measuring the wrong audio and proves
+   nothing about the operating point.
+3. The variant-study/autopsy verdicts DO stand — they are TTS-based and
+   independent of the capture: `iraq` is genuinely NO-EVIDENCE (piece `Q`
+   logP −10.46), `tariff`/`ice` NEAR-MISS, `midterm` WEAK, `blanche` fires
+   strongly on clean speech.
+
+**What the market actually requires:** the **linear ABC network feed**. Free
+ABC News Live is not a substitute. Candidate obtainable sources, none yet
+verified: a live-TV subscription carrying the local ABC affiliate (Hulu + Live
+TV, YouTube TV, DirecTV Stream, Fubo), or off-air ATSC on physical hardware at
+a US address. This reopens the question the operator raised first — that
+capturing the *actual broadcast* is the hard part — and closes the
+"co-listener on the same feed" reading inherited from the earnings lane.
+
+**Note on the promo, which may be its own signal:** the 22:24:20Z teaser
+previews the headline words — *"tracking the flooding … Dr. Anthony Fauci,
+grilled by lawmakers, invokes the fifth, and the Fed's decision on interest
+rates"* — and `FIFT` and `MAIN` (maintain/unchanged, i.e. the Fed decision)
+both settled YES. A teaser cannot RESOLVE the market (it is not part of the
+newscast) but it predicts it, ~6 minutes early. Unverified as a repeatable
+edge; recorded so it is not lost.
+
+**⚠ Filename hazard, found 2026-07-30 while banking the right programme.**
+macOS is case-insensitive, so a transcript written as
+`corpus/transcripts/ABCWNT-26JUL29.words.json` **is the same file** as this
+pin's `abcwnt-26jul29.words.json` and silently overwrites it. Banking the
+correct broadcast under an ABCWNT- id would have replaced the wrong-source
+proof with right-source audio under the name this pin cites — a quiet
+substitution of exactly the kind that let the original error stand. Hence
+`scripts/wnt-vod-fetch.sh` uses the `WNTVOD-` prefix, and the evidence above is
+duplicated to an explicit `…ABCNEWSLIVE-WRONGSOURCE…` name. Both files are
+gitignored (`corpus/transcripts/`), so git would not have caught the loss.
+**Confidence:** high (independent ASR over our own recording, plus explicit
+program signatures). **Re-verify:** per session — ABC News Live's schedule is
+not a constant, and a day when it *does* carry WNT would be visible as a
+`"good evening"` cold open plus `world news tonight` inside 22:30–23:00Z.
+
+## Q-WNT-CLOSE — the board does NOT close on first utterance (2026-07-30, live)
+
+**Claim:** `can_close_early: true` / `early_close_condition: "This market will
+close and expire early if the event occurs."` is advertised on every
+`KXWORLDNEWSMENTION` strike, but **it has never been observed to fire**. Across
+all **16 settled sessions** (`26JUL06`…`26JUL29`, 221 markets) the board closes
+in a **single batch**, modally **23:05:4xZ** — ~35 min after air, ~13 min after
+the newscast ends. Decisive discriminator: **YES and NO strikes close in the
+same second.** If utterance triggered the close, YES strikes would close
+scattered across 22:30–22:52Z and NO strikes would all close together at the
+end. Measured `last YES close` vs `first NO close` per session:
+
+| session | last YES | first NO | | session | last YES | first NO |
+|---|---|---|---|---|---|---|
+| 26JUL14 | 23:05:34 | 23:05:32 | | 26JUL23 | 23:10:50 | 23:10:49 |
+| 26JUL22 | 23:05:41 | 23:05:40 | | 26JUL24 | 23:05:44 | 23:05:42 |
+| 26JUL29 | 23:05:44 | 23:05:42 | | 26JUL28 | 23:05:43 | 23:05:42 |
+
+(Four sessions — `26JUL08`, `26JUL16`, `26JUL21`, `26JUL25` — carry stragglers
+closing hours later, up to 15:26Z next day. Those are administrative late
+closes, and they are spread across YES and NO alike, so they are not utterance
+closes either.)
+**Source:** `GET /trade-api/v2/markets?event_ticker=KXWORLDNEWSMENTION-<d>`
+for all 16 settled events, live prod, 2026-07-30.
+**Implication:** ⚠ **supersedes the Q-WNT reading** ("early close on utterance
+is the real mechanism, same as `KXFEDMENTION-26JUL-VOLA`"). The market stays
+open through the whole broadcast. The race is therefore against **other
+traders**, not against an exchange clock — and that race is contested and fast.
+The 26JUL29 public tape shows one taker sweeping each book from ~9¢ to ~99¢:
+`IRAQ` 22:31:15.325→22:31:16.048 (0.72 s), `BLAN` 22:38:16.018→22:38:16.976
+(0.96 s), `MAIN` 22:40:29.432→22:40:30.069 (0.64 s), `MIDT`
+22:43:42.471→22:43:43.462 (0.99 s). Nothing is left after the sweep.
+⚠ **A narrow burst is NOT evidence that the pack is near the broadcast** — it
+shows the leaders agree with each other, which is the same trap as cross-leg
+corroboration in Q-WNT-SRC. The pack's absolute offset is Q-WNT-PACK.
+**Confidence:** high (16/16 sessions read live). **Re-verify:** monthly, and
+immediately if Kalshi changes `early_close_condition` — an actual early close
+would invert the trading model back to what Q-WNT assumed.
+
+## Q-WNT-VOD — the real broadcast IS obtainable, just late (2026-07-30, live)
+
+**Claim:** ABC publishes the actual newscast, free, two ways:
+
+1. **YouTube VOD, same night.** `@ABCNews` posts
+   *"ABC World News Tonight with David Muir Full Broadcast - <Month D, YYYY>"*,
+   ~1170–1220 s. Verified for `26JUL29` = video `4ALcFr5aQYU`, 1206 s.
+   Reachable by dated channel search
+   (`/@ABCNews/search?query=World+News+Tonight+Full+Broadcast+<Month>+<D>`),
+   which ranks the target first — a `/videos` crawl would need hundreds of
+   entries, since ABC posts ~25 videos a day.
+2. **ABC News Live replays.** The same free 24/7 stream that does *not* carry
+   WNT at 22:30Z **does** replay it later: 2026-07-30 listings show WNT at
+   **8:00, 9:30, 10:30 and 11:30 PM ET**. So the wrong-programme feed of
+   Q-WNT-SRC is the right programme 90 minutes later.
+
+**Source:** `yt-dlp --flat-playlist` against the dated channel search
+(2026-07-30); TV Passport listing for ABC News Live, station 36224.
+**Implication:** unblocks everything that is not the live race. Real broadcast
+audio + the settled board = the honest detector-accuracy measurement that
+2026-07-29 was supposed to produce and could not. Banked by
+`scripts/wnt-vod-fetch.sh` into `corpus/wnt/<yyMONdd>/`.
+⚠ **The VOD has advertisements removed** (~1200 s of content in a 22-minute
+slot), so a word's offset is **programme time, not wall clock minus 22:30Z**.
+Anything mapping these offsets to UTC must model the breaks;
+`scripts/wnt-pack-lag.py` does, and refuses to report when it cannot.
+⚠ Neither route is tradeable: both land long after the ~1 s sweep (Q-WNT-CLOSE).
+**Confidence:** high (fetched and decoded). **Re-verify:** the title template
+per session — `26JUL19`'s VOD is titled "July 19**th**, 2026", and YouTube
+surfaces one video under several headline titles, so match on video **id**
+plus duration, never on an exact title string.
+
+## Q-WNT-PACK — ⛔ the WNT pack is AT the broadcast (2026-07-30, 6 sessions)
+
+**Claim:** The traders already in `KXWORLDNEWSMENTION` react to a word within a
+few seconds of it being said. Measured **offset −6.31 s (median)**, range
+**−10.83 s … −2.16 s**, over **6 independently resolvable sessions**. A pack
+watching a 30–90 s delayed live-TV stream would land at **+30…+90 s**. It does
+not. **No obtainable internet feed can win this race.**
+
+| session | offset | spread | slope | strikes | programme span |
+|---|---|---|---|---|---|
+| 26JUL07 | −4.71 s | 5.23 s | 0.986 | 3 | 355 s |
+| 26JUL08 | −7.16 s | 1.85 s | 1.004 | 4 | 241 s |
+| 26JUL09 | −6.70 s | 1.87 s | 1.001 | 5 | 905 s |
+| 26JUL21 | −10.83 s | 16.61 s | 1.014 | 4 | 764 s |
+| 26JUL23 | −2.16 s | 2.46 s | 1.000 | 4 | 912 s |
+| 26JUL29 | −6.31 s | 3.67 s | 1.001 | 5 | 748 s |
+
+**Source:** `scripts/wnt-pack-lag.py`, joining two free public legs — word
+offsets from the broadcast's own YouTube caption track (Q-WNT-VOD) against
+sweep onsets from `GET /trade-api/v2/markets/trades`. Full output in
+`state/wnt-pack-lag.json`. No live capture, no subscription, no hardware.
+**Method:** least-squares fit of `sweep_wall = slope × programme_offset +
+offset` over first-utterance strikes. **Slope is the alignment check** — a
+wrong VOD, a mis-parsed caption track, or news-driven repricing all break it.
+Slopes came out 0.986–1.014 on the six that resolved.
+
+⚠ **`offset` is a SUM, not a lag.** It is the pack's reaction time PLUS however
+far the VOD's `t=0` sits from 22:30:00Z, and this data cannot separate them.
+The consistent negative sign across six sessions says the VOD's first frame
+aired a few seconds *before* 22:30:00Z — not that anyone traded before the
+words. The decision does not depend on splitting them: either way the total is
+single-digit seconds, an order of magnitude below any streaming route.
+
+**Implication — what this closes and what it opens:**
+
+1. ⛔ **The live-race lane on this market is CLOSED to us.** Combined with
+   Q-WNT-CLOSE (the book is swept in under 1 s), a 30–90 s feed does not arrive
+   late, it arrives after the trade no longer exists. **Do not buy a live-TV
+   subscription for this market** — it cannot win, and this pin is the reason.
+2. ✅ What survives needs no speed: the **count strikes** (`-TRUM` 5+, `-IRAN`
+   3+) and **pre-broadcast pricing**. On the latter the tape is emphatic —
+   **26 of 47 strike-notes across the 16 sessions are `pre-priced`**, i.e. the
+   strike already sat ≥85¢ before air. The board is largely decided by the news
+   day, not by the newscast.
+
+**⚠ The pre-registered ad model was REFUTED, and the refutation is the finding.**
+This was designed assuming the VOD had commercials removed, so `delta` would be
+`pack_lag + accumulated ad time` and would climb through each session; the
+estimator was to be `min(delta)`. On 26JUL29 delta came out FLAT
+(−6.75, −6.06, −4.06, −3.70, −7.37 s) instead of climbing. Direct check of the
+caption timeline: **only 8.5 s of inter-word gaps >3 s in 1206 s** — the VOD is
+continuous speech with no ad breaks in it, and wall-clock sweep spacing tracks
+programme spacing **1:1 (0.999 over 748 s)**. The slope fit replaced the
+minimum, and the refuted premise is recorded here rather than quietly dropped.
+
+**Confidence:** medium-high. Six sessions agree to within ±4 s of the median and
+every one carries an independent slope check. **The residual uncertainty is the
+`t=0` conflation above, which cannot flip the verdict** — closing it would need
+an independent anchor on when the VOD's first frame aired.
+**Re-verify:** 10 of 16 sessions REFUSED and the reasons are visible: 6 for
+fewer than 3 first-utterance strikes (most strikes are pre-priced), 4 for a
+slope off 1.0 (`26JUL25` came out −1.491). Re-run monthly; a drift of the median
+toward +30 s would mean the pack moved to a delayed feed and the lane reopened.
+
+## Q-WNT-RECALL — detector accuracy on the REAL broadcast (2026-07-30)
+
+**Claim:** On 20.1 min of the actual 2026-07-29 WNT broadcast, `streaming_ctc`
+at `chunk_ms=80`, Confirmed tier, scores **recall 0.765 (13/17)**,
+**precision 0.650 (13/20)**, **20.9 FA/h**. This **replaces the retracted 33 %**
+figure, which was measured on ABC News Live — the wrong programme (Q-WNT-SRC).
+
+| phrase | tp | miss | fa | recall | precision |
+|---|---|---|---|---|---|
+| `oil` | 4 | 0 | 0 | 1.00 | 1.00 |
+| `fifth` | 5 | 0 | 1 | 1.00 | 0.83 |
+| `blanche` | 3 | 0 | 3 | 1.00 | 0.50 |
+| `maintain` | 1 | 0 | 1 | 1.00 | 0.50 |
+| `iraq` | 0 | 3 | 0 | **0.00** | — |
+| `midterm` | 0 | 1 | 0 | **0.00** | — |
+| `ice` | 0 | 0 | 2 | — | **0.00** |
+
+**Source:** `earshot bench-detector --config
+configs/webcast-abcwnt-26jul29-replay.toml --engines streaming_ctc --chunk-ms 80
+--split dev`, against `corpus/manifests/WNTVOD-26JUL29.toml` built by
+`manifest-from-words.py` from the broadcast's own caption track (Q-WNT-VOD).
+
+**Interleaved against the TTS study — the TTS verdicts held on every word where
+both had evidence:**
+
+| word | TTS verdict (studio speech) | real broadcast | agrees? |
+|---|---|---|---|
+| `iraq` | NO-EVIDENCE — piece `Q` logP −10.46, never emitted, unreachable at any threshold | 0/3 recall | ✅ CONFIRMED |
+| `midterm` | WEAK | 0/1 recall | ✅ CONFIRMED |
+| `blanche` | fires 0.84–0.95, every piece p≈0.99 | 3/3 recall | ✅ CONFIRMED |
+| `ice` | 2-piece word that already false-fires; recall would be bought with errors | 0 true occurrences, **2 FA** | ✅ CONFIRMED |
+| `tariff` | NEAR-MISS, short by 0.026 | **not said** (settled NO) | ⊘ **NOT RESOLVABLE** |
+
+So the studio-TTS screen is predictive of live-broadcast behaviour, and `iraq`
+is dead on real audio exactly as the per-piece autopsy said it would be — the
+one thing the 2026-07-29 session was supposed to establish and could not.
+
+⚠ **Two limits, stated because the number is quotable and small-sample.**
+(1) **n = 1 session, 17 occurrences.** `maintain` and `midterm` rest on a single
+occurrence each; do not quote their per-word recall as a rate. The pooled 0.765
+is the defensible figure and it is still one broadcast.
+(2) **Ground truth is a caption track, not a human transcript.** It carries ASR
+spellings, and `blanche` required an explicit ground-truth-only correction —
+the captions write "Blanch", so without it three real utterances would have been
+scored as three false alarms instead of 3/3 recall. Any future word may need the
+same treatment; a silently-empty phrase in a manifest is the tell.
+**Confidence:** medium (measured, but one session). **Re-verify:** run across
+the remaining 15 banked sessions in `corpus/wnt/` — that needs the audio, which
+`--no-audio` skipped during the 2026-07-30 backfill, and it is CPU-heavy enough
+to keep off an event day.
+
+---
+
+## Q-UNOPENED — pre-open events ARE queryable (2026-07-30)
+
+**Claim:** `GET /trade-api/v2/events?status=unopened` is a valid, distinct
+listing state: it returns events whose markets have not opened yet, including
+Mentions-family events, and an invalid status value is rejected with 400 (so
+`unopened` is a real server-side filter, not silently ignored).
+**Source:** `GET https://api.elections.kalshi.com/trade-api/v2/events?status=unopened&limit=200`
+(live prod, 2026-07-30 15:44Z); `status=bogus` → HTTP 400.
+**Evidence:** 200 events returned; among them `KXDEBATEMENTION-26AUG03` and
+`KXDEBATEMENTION-26AUG03B` ("What will the candidates say during the …
+debate?") — mention events listed before opening.
+**Implication:** the discovery sweep's `status=open`-only queries
+(`scripts/discover-events.py`) are structurally blind to listed-but-unopened
+events; sweeping BOTH statuses closes the class. Both sweeps share this filter
+today, so `sweep_delta` cannot detect the blindness — the fix must change both.
+**Confidence:** high.
+**Re-verify:** if a listed-same-day market is ever missed again, check whether
+Kalshi added further status values (`unopened` was undocumented in our pins
+until today).
+
+---
+
+## Q-CENSUS — Mentions-series taxonomy is inconsistent; prefixes are unsafe (2026-07-30)
+
+**Claim:** The Mentions category (398 series live today) has **two earnings
+families** — `KXEARNINGSMENTION<T>` (current) and `KXMENTIONEARN<T>` (~14
+series) — plus typo series (`KXEARNIGNSMENTIONJPM`, and `KXEARNINGSMENTIONSYUM`
+which has **zero events**), and non-ticker company identifiers
+(`…COINBASE`, `…ALIBABA`, `…DOLLARGENERAL`, `…DEER`, `…ADOBE`, `…DOCUSIGN`).
+The `KXMENTIONEARN*` family is **not dead**: `KXMENTIONEARNDAL-26JUN30` was
+listed while `KXEARNINGSMENTIONDAL` also exists and got `-26JUL10`. Kalshi
+flips families for the same issuer within weeks.
+**Source:** `GET /series?category=Mentions` (full ticker list, 2026-07-30);
+`GET /events?series_ticker=KXMENTIONEARN{MU,NKE,DAL,FDX,LULU}` — latest events
+`26MAR18 / 26MAR31 / 26JUN30 / 26MAR19 / 26MAR17` respectively.
+**Evidence (RACE, the non-miss):** `KXEARNINGSMENTIONRACE-26JUL30` markets all
+carry `open: 2026-07-23T20:22:00Z` — listed a full week early; every nightly
+sweep from 07-23 had it, and the committed slate did too. The 07-30 loss was
+launch-side, not discovery.
+**Implication:** any prefix- or ticker-pattern-based discovery WILL miss
+series. Discovery must sweep the whole category and classify, with delta
+alerts for never-seen series (`NEW-FAMILY`) and out-of-prefix series gaining
+events (`OUT-OF-PREFIX-OPEN`) — `scripts/mentions-census.py`.
+**Confidence:** high.
+**Re-verify:** census baseline diff weekly (automated); this pin's counts go
+stale by design, the mechanism does not.
+
+---
+
+## Q-PM — Polymarket runs the same mention-market class; read APIs are public (2026-07-30)
+
+**Claim:** Polymarket lists the identical event class under tag
+`mention-markets` (21 open events on 2026-07-30), **including the same
+AAPL/AMZN 26JUL30 earnings calls we arm on Kalshi**, at volumes 10–100×
+Kalshi's mention boards (closed comparators: Powell presser mention events
+$0.9–5.5M, NFLX earnings-mention $6.6M, Trump events $1M+; AAPL/AMZN open
+events ~$16–19K pre-call). Keyword overlap on AAPL 26JUL30 ≈ 11/18 of the
+Kalshi board (Siri, Gemini, Liquid Glass, iPhone 18, Tariff, Friday Night
+Baseball, Creator Studio, Streaming, Sport, Widget, Apple Pay). Two market
+shapes: single-mention (our class) and cumulative-count ("say AWS 20+ times"),
+the latter re-pricing on every utterance — a live streaming counter holds edge
+for the whole call, not one race.
+**Source:** `GET https://gamma-api.polymarket.com/events?closed=false&tag_slug=mention-markets`
+· `GET https://gamma-api.polymarket.com/public-search?q=…` (live, 2026-07-30).
+**Claim (transport):** `gamma-api.polymarket.com` and
+`data-api.polymarket.com` accept python/urllib with a browser User-Agent, but
+**`clob.polymarket.com` TLS-fingerprints the client**: python's TLS stack gets
+HTTP 403 regardless of User-Agent while curl with the same UA passes. All CLOB
+market-data reads are public (no auth, no key): `GET /book?token_id=`,
+`GET /midpoint?token_id=`, `GET /prices-history?market=&interval=&fidelity=`
+(~50–90 s granularity), and batched `POST /books` with body
+`[{"token_id":…},…]` (94 tokens in one call verified). Book responses carry a
+**millisecond server `timestamp`** and a `hash` per book (dedupe key), and
+**both sides sort best-price-LAST** (bids ascending, asks descending —
+verified live: best bid 0.943 = `bids[-1]`, best ask 0.998 = `asks[-1]`).
+Trades: `GET https://data-api.polymarket.com/trades?market=<conditionId>[,<conditionId>…]&limit=N`
+is public, second-granularity, accepts a comma-separated market list;
+`eventSlug=` is **silently ignored** (returns the global feed — do not use).
+Token ids come from Gamma `markets[].clobTokenIds` (JSON-encoded string).
+**Evidence:** all endpoints exercised live 2026-07-30 15:4x Z from CDMX;
+`scripts/pm-capture.py` (curl-subprocess transport for exactly this reason)
+ran 15 s locally: 116 book rows + 200 trades, 0 errors; deployed to the box
+(us-east-1) capturing AAPL+AMZN from 15:49Z.
+**Implication:** the measure-only leg needs zero auth, zero wallet, zero src/
+changes. Execution (CLOB orders = EIP-712-signed, USDC on Polygon, separate
+credential world) stays out of scope until the edge report justifies it.
+**Confidence:** high on everything exercised; medium on rate limits (none hit
+at ~1.1 req/s sustained).
+**Re-verify:** TLS-fingerprint behavior on any capture failure (Cloudflare
+rules change without notice); volumes per event at arm time.
+
+---
+
+## Q-EDGAR — SEC full-text search carries earnings dial-ins (2026-07-30)
+
+**Claim:** SEC EDGAR full-text search is unauthenticated, effectively
+unthrottled at our volumes, and returns the earnings press-release exhibit
+carrying BOTH the conference dial-in number(s) AND the passcode. It is the only
+automatable source for the number hunt.
+**Source:** `GET https://efts.sec.gov/LATEST/search-index?q=<phrase>&forms=8-K&ciks=<10-digit>&startdt=&enddt=`
+then `GET https://www.sec.gov/Archives/edgar/data/<cik>/<accession-no-dashes>/<file>`;
+ticker→CIK from `https://www.sec.gov/files/company_tickers.json` (10,429 rows).
+All live prod, 2026-07-30.
+**Evidence (4/4 control cases reproduced verbatim by `scripts/hunt-dial-in.py`):**
+- CMG `888-317-6003` + intl `412-317-6061`, code `3937444` — matches the Q-ADMIT
+  pin exactly (`cmg-20260729xex991.htm`).
+- YUM `800-715-9871` + intl `646-307-1963`, conference ID `8719077` — matches
+  the registry entry exactly (`a8kex9917302026.htm`).
+- WEN `844-200-6205` + `929-526-1599`, **event ID** `280384`.
+- F: **zero** dial-in filings in the scanned window — its last was 2024-04-24,
+  which dates the webcast-only migration rather than leaving it unresolved.
+
+**Wire facts that cost real numbers before they were fixed:**
+- A descriptive `User-Agent` is **mandatory** — empty UA is a hard **403**. The
+  legacy `www.sec.gov/cgi-bin/srqsb` endpoint is dead (404).
+- Numbers match **literally**: `"8883176003"` → **0 hits**; `"888-317-6003"` →
+  3,234. Never query an unformatted number.
+- A bridge number is **not an issuer key** — `888-317-6003` is a generic Chorus
+  Call DID shared across hundreds of filers. Always scope by `ciks` + dates.
+- **The passcode is the high-precision key**: `"3937444"` → 3 hits in all of
+  EDGAR; `"8719077"` → 4. Use it to confirm and dedup.
+- Rate limits: 15 sequential and 20 concurrent requests all returned 200, no
+  429. SEC publishes a 10 req/s ceiling; we pace at 0.25 s on principle.
+
+**Extraction facts (measured on the filings themselves):**
+- Separator vocabulary matters: YUM writes `800/715-9871`. A `[\s.-]` class
+  silently dropped its North America bridge while keeping the international one.
+- **Replay dominates, it does not compete**: *"To access the playback, dial
+  +1/800-770-2030"* puts a bridge cue one char from the number and the replay
+  cue 14 chars out — nearest-cue alone promoted BOTH YUM playback lines to live
+  bridges. A replay cue in the preceding ~140 chars now governs the clause.
+- Label vocabulary matters: WEN writes `event ID`, not `conference ID`. A bridge
+  extracted without its code is an unenterable lane that reports as a success.
+- Media-contact numbers share the paragraph with the bridge (CMG's EX-99.1 has
+  `(949) 524-4035` alongside it), so classification is by NEAREST cue.
+
+**Implication:** the hunt is automatable for 8-K filers. It is NOT automatable
+for issuers who publish only on an IR page (AAPL is the type specimen — its
+8-Ks carry no dial-in), because those pages are Cloudflare bot-challenged
+**identically from the laptop and the box** — a challenge, not a geo-block, so
+relocating the fetcher cannot fix it. Foreign private issuers file 6-K and are
+not yet covered.
+⚠ **A number is still not admission** (THE MSFT RULE) — only a probe dial can
+establish what the bridge does to a silent caller.
+**Confidence:** high (4/4 controls, 32-issuer live sweep).
+**Re-verify:** if SEC changes the FTS endpoint or begins enforcing 10 req/s.

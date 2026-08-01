@@ -356,7 +356,8 @@ measurements) say how far behind the webcast lane actually is.
 
 #### TSLA 2026-07-22 — THE FIRST MEASURED WEBCAST RACE (capture + live observe-arm + tape)
 
-Artifacts: `~/tsla-capture/` (2 WAVs ~43 min + report), observe-arm
+Artifacts: `/Volumes/Vault/earshot-archive/captures/tsla-capture/` (2 WAVs ~43 min +
+report; archived off the boot disk 2026-07-29, was `~/tsla-capture/`), observe-arm
 `state/KXEARNINGSMENTIONTSLA-26JUL22-OBSERVE/report3.json` (29 detections, dry-run) +
 `observe-arm3.log` (wall-clock flags), final tape + settlements (same day). Call 21:30 UTC;
 our arm's audio started 21:35:30 (see RUNBOOK ops post-mortem), joined BEHIND the live edge
@@ -608,3 +609,195 @@ use `ssh -tt` (cost: one silent hour mid-call).
    the their-loop bound from ±250 ms to ±50 ms.
 3. Re-run this analysis on the next event's tape (DPZ/GEV/GOOGL) — one event = one sample of
    the competitor population; wave-2's existence suggests ≥2 fast players.
+
+## Broadcast-TV lane (ABC World News Tonight) — the acquisition tier ledger
+
+New venue class, opened 2026-07-29: `KXWORLDNEWSMENTION`, a **daily** market on
+ABC's 6:30 PM ET newscast (`VERIFICATIONS.md` Q-WNT). 16 strikes, **14 of them
+first-utterance** — i.e. 14 pure races per session, ~250 sessions/yr. This is
+the highest-leverage race surface the program has found.
+
+### ⛔ The RF idea is closed — do not re-litigate from memory
+
+The motivating hypothesis was: put a box near the transmitter and capture ABC
+off **analog AM/FM**, since radio waves are speed-of-light and streams are
+buffered. Each of the following independently kills it, and all four were
+checked on 2026-07-29:
+
+1. **WNT audio is not on AM or FM.** ABC News Radio is a *separate product* —
+   hourly bureau newscasts (NY/DC/LA), top-of-hour, satellite-fed to
+   affiliates. It is not a simulcast of the Muir broadcast. There is no
+   population of AM/FM listeners hearing these words ahead of us, because the
+   words are not on AM/FM.
+2. **No cloud VM can do RF.** No provider, including EC2 bare metal, exposes
+   USB or an antenna. RF capture requires physical hardware at a physical US
+   address. "Spin up an instance near the transmitter" is not a thing that
+   exists.
+3. **"Analog FM = zero latency" is false at HD Radio stations.** They
+   deliberately delay the *analog* signal 8–10 s to time-align it with the
+   digital carrier for seamless blend (the purpose of an Inovonics DAVID IV
+   delay board). Analog FM at an HD station puts you ~8 s **behind**.
+4. **SiriusXM is the worst option, not a shortcut.** ABC News Live launched on
+   SiriusXM ch. 796 (April 2026) and does carry WNT, but the channel is
+   **app-only — explicitly not on the satellite carrier** — and SiriusXM
+   end-to-end latency measures **145–155 s** (Wowza).
+
+**Also closed: geography.** Propagation is not where our loss is. CDMX→box
+already took Kalshi RTT from 54.7 ms to 2.2 ms (`docs/INGRESS-BAKEOFF.md` §2);
+moving a box from Ashburn into Manhattan buys ~5 ms. Every seconds-scale win on
+this program has come from the **acquisition ladder**, not from where the box
+sits (tuned ffmpeg −10.6 s; speculative edge-fetch 12.50 s absolute vs
+16.95–17.18 s streamlink/tuned).
+
+### The tier that IS live, if a US location ever appears
+
+Off-air **ATSC** — not FM — on a mini-PC with a TV antenna in a US market,
+shipping 16 kHz mono PCM (~256 kb/s, trivial) over TCP to the trading box so
+the order path stays next to the matching engine. Published figures put
+over-the-air broadcast around ~10 s end-to-end against ~45 s for
+10-second-segment HLS, with OTT running as much as two minutes behind
+broadcast — so this tier is worth *seconds to tens of seconds*, which is the
+right order of magnitude to matter. It needs no Rust: `SourceConfig::Pipe`
+already accepts any subprocess emitting s16le mono PCM. **Gate: a physical US
+address.** None available as of 2026-07-29 — parked, not refuted.
+
+### Venue facts that constrain the cloud-only ladder
+
+- YouTube (`@ABCNews/live`) is the reachable feed and carries WNT, but it
+  **signs every segment URL**, so `hls-edge-fetch.py` reports
+  `speculative: DISABLED — segment URLs are not predictable` and
+  `prefetch=NONE-SEEN`. Our best-measured acquisition trick — the +1.02 s
+  pre-announcement lead — **does not exist on this venue**.
+- The direct ABC packager is **unreconned**: `streamlink` has no plugin for
+  `abcnews.go.com/Live` and the page yields no `m3u8` on a plain fetch. Finding
+  it is the highest-value open item in this lane.
+- ⚠ YouTube stamps PDT in **Eastern time labelled `+00:00`** (4 h skew).
+  `abs-lag.py` fed this uncorrected reports a ~4-hour lag. See Q-WNT.
+- PDT anchors only the packager output; studio→packager is invisible to us and
+  shared by every internet consumer. **So in this lane the decisive number is
+  Δrace against the Kalshi tape, not absolute lag.**
+
+### Measured venue terms (2026-07-29 capture, laptop, CDMX residential ~29 Mbit/s)
+
+Venue: YouTube ABC News Live (`@ABCNews/live`, id `sct0t74s-zk`), **itag 95** —
+1280×720, 2969 kbps, muxed AV, LC-AAC 44.1 kHz. ⚠ **Chosen by accident**: this
+stream publishes **no audio-only variant** (only muxed 91–95), so
+`-f 233/234/bestaudio/best` fell through to `best`. Every leg downloads 720p
+video and discards it.
+
+| term | p50 | tail | n | source |
+|---|---|---|---|---|
+| segment duration `EXTINF` | 5.005 s | — | — | manifest |
+| publish cadence | 5.14 s | p10 3.87, p90 6.46 | 153 | `pdt.jsonl` |
+| packager announce lag (t_announced − content_end, +4 h corrected) | +0.40 s | −2.90 … +5.39 s | 153 | `pdt.jsonl` |
+| segment download `fetch_secs` | **0.52 s** | p90 0.96, **p99 1.94**, max 2.52 | 172 | `spec_edge.arrival.log` |
+
+### Per-word race budget for a 5 s-segment venue
+
+| term | value | ours to fix? |
+|---|---|---|
+| segmentation wait (word lands uniformly in the segment) | U(0, 5.005), **mean 2.50 s** | no — venue property |
+| announce lag | +0.40 s p50 | no |
+| segment download | 0.52 s p50, 1.94 s p99 (≈0.47 s of it is discarded video) | **yes — itag 91** |
+| burst drain to the word's position (RTF ≈0.07 single-leg) | 0–0.35 s, mean ~0.18 s; **3-leg fanout 0.21 s (sherpa) / 0.46 s (ctc)** | partly |
+| detector onset→emit, **paced** (the honest figure) | p50 **0.93 s**, p95 **1.07 s** (holdout CAT, chunk 80, sherpa) | detector milestone |
+| `capture→decision` pipeline | 0.09–0.12 s p50 (box) | no |
+| `decision` → tape print | **9.9 ms** (us-east box) · 102 ms `send→hdrs` from CDMX | box placement |
+| **total, word-end → our print** | **≈ 4.4 s p50** | acquisition ≈77 % |
+
+### ⚠ The dominant WNT-specific risk is BIMODAL, not the median
+
+`scripts/arrival-profile.py`'s exposure law is **`A/S`**: on a buffered leg the
+p50 wall cost of `A` ms of detector lookahead is ~nothing (3–7 ms), but on an
+`A/S` fraction of words you pay **a whole extra segment**. Armed lookahead is
+`A = 520 ms` (sherpa_kws, measured, byte-identical across chunk_ms 40/80/160) or
+`570 ms` (streaming_ctc — the default in all 07-28/29 arm configs). With
+**S = 5.005 s**:
+
+> **A/S ≈ 10.4 % (sherpa) – 11.4 % (ctc) of words cost an extra ≈5 s.**
+
+So the prediction is not "we are 4.4 s behind on every word". It is: **~89 % of
+words cost ~0 extra beyond the budget above, and ~1 word in 9 loses by a further
+5 s.** This is the worst `A/S` of any venue we have traded (IVS 2 s → 25.8 %
+exposure but only 2 s each; Notified 4 s → 13.2 %); WNT's 5 s segments make each
+spill the most expensive we have seen, at close to the lowest frequency.
+Mitigation is `--stream-body` (converts arrival from buffered ≈0.008 ms/ms to
+streamed ≈1.00 ms/ms — 2000 ms bursts became 154 ms bursts on the IVS demo);
+`spec_edge` already carries it, the other two legs do not.
+
+### Competitor prior — the measured evidence says CO-LISTENER, not TV
+
+The FEED/OURS decomposition is the relevant prior, and it argues *against* the
+TV-watcher fear: across 4 scored races at **two venue classes with edge lags of
+~4 s (IVS) and ~9 s (Notified)** the FEED gap was **+0.754 … +1.241 s and
+venue-INVARIANT**. Pinned conclusion: the competitor is *a co-listener on the
+same feed class with a systematic ~1 s advantage, not on an independent
+low-latency source*. Δrace ledger median is **−1.28 s** (n=4), plus INTC CLI
+−1.02 s from the box.
+
+⚠ But WNT is the first venue where the TV-watcher hypothesis is even *possible*
+— an earnings webcast has no broadcast alternative; a network newscast does.
+So the two hypotheses are:
+
+| hypothesis | predicted Δrace | what it implies |
+|---|---|---|
+| **H1 co-listener** (measured prior, 4 races, 2 venue classes) | −1 to −2.5 s | contestable; the itag-91 and packager-recon wins matter |
+| **H2 TV watcher** (published OTA ~10 s vs 10 s-segment HLS ~45 s; OTT up to ~2 min behind) | −8 to −25 s | unclosable cloud-only; only off-air ATSC competes |
+
+Tonight's tape discriminates them. **H1 is the better-evidenced prior** and the
+earlier write-up over-weighted H2 on published figures rather than our own
+measurements.
+
+**Correction, recorded so it is not repeated:** an earlier draft of this lane
+claimed `[risk] audio_stale_ms = 2000` would refuse every WNT order because
+acquisition lag is ~3.4 s. **That is wrong.** `audio_age` is
+`now − intent.audio_ts`, and `audio_ts = chunk.first_capture_ts`
+(`src/detector/sherpa_kws.rs:205`, `streaming_ctc.rs:343`) — the instant PCM
+bytes arrived from ffmpeg, not the instant the word was spoken. It therefore
+measures `capture→decision` (0.09–0.21 s p50 measured) plus fanout drain
+(≤0.46 s), so it sits an order of magnitude inside the 2 s limit. The guard is
+blind to acquisition lag by construction; do not "fix" it.
+
+### Δrace ledger — WNT
+
+| date | event | best leg | Δrace (sweep − ours) | n | note |
+|---|---|---|---|---|---|
+| 2026-07-29 | `KXWORLDNEWSMENTION-26JUL29` | — | **VOID — wrong program** | 0 | see below |
+
+> ## ⛔ RETRACTION 2026-07-30 — the 2026-07-29 WNT capture recorded the WRONG PROGRAM
+>
+> `VERIFICATIONS.md` §Q-WNT-SRC. **ABC News Live (the free 24/7 stream) did not
+> carry World News Tonight.** Our own faster-whisper transcript shows
+> `"world news tonight"` / `"david muir"` appearing ONLY inside an
+> advertisement at 22:24:34–22:24:45Z, then ABC News Live's own trending-news
+> show (`"top searches"`, `"the spiral"`) running through 22:30–23:00Z. Words
+> that settled YES — `blanche`, `maintain`, `unchanged`, `midterm` — do not
+> occur even once in 8 337 transcribed words.
+>
+> **The "+12.9 s ahead of the pump" result on `FIFT` is RETRACTED.** That
+> detection was "**Fifth** Amendment" in a Fauci segment on a different
+> programme. Both shows covered the same news day, which is why it looked
+> right.
+>
+> ⚠ **The methodological lesson, because it nearly survived review:** the
+> result was corroborated by a second leg agreeing to 0.72 s, and that 0.72 s
+> matched the bake-off's independent cross-delta to 72 ms. All of that was
+> true — and irrelevant. **Cross-leg agreement validates the clock mapping,
+> never the provenance of the audio.** Every leg read the same
+> `~/abcwnt-stream.url`. A source-identity check (does the transcript contain
+> the programme's own signatures inside the window?) is now mandatory before
+> any Δrace is quoted from a broadcast venue.
+>
+> Consequence for this lane: the market needs the **linear ABC network feed**,
+> not a free news stream. The operator's original instinct — that reaching the
+> actual broadcast is the hard part — was closer than the "co-listener on the
+> same feed" prior imported from the earnings lane.
+
+Pre-registered bars (declared before looking, per the standing
+provable-improvements rule; laptop run variance is ~3.5×):
+**leg winner** = median absolute lag ≥1.0 s better AND non-overlapping IQR over
+n≥3 steady-state windows, else NOT RESOLVABLE. **Lane verdict** over 3 sessions:
+Δrace ≥ −2 s ⇒ contestable cloud-only, proceed to a 1¢ non-crossing
+mention-probe; Δrace ≤ −5 s ⇒ the latency lane is **not winnable without
+off-air hardware** — kill it and re-scope to the 2 count strikes (`-TRUM`,
+`-IRAN`), which are a prediction problem, not a race.

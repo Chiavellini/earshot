@@ -5,6 +5,142 @@ an interleaved A/B or a side-by-side measurement on the same hardware — or an 
 `NOT RESOLVABLE ABOVE NOISE` / `INSTRUMENT-ONLY` verdict. Claims that don't survive measurement are
 recorded as such, not dropped.
 
+## Session 2026-07-30 (Q2) — the read quantum is worst at the venues we actually lose at, and the PDT-less ones now have a clock
+
+### The quantum cost is `32768 ÷ bitrate`, so it scales INVERSELY with rendition bitrate
+
+§Q1 measured this at Q4/IVS. Applying the same model to the manifests' declared `BANDWIDTH`
+reorders the whole campaign, because the genuinely webcast-only venues are the **audio-only,
+low-bitrate** ones:
+
+| venue | rendition | legacy quantum | `--chunk-ms 40` recovers | scored outcome |
+|---|---|---|---|---|
+| **Chorus Call — SBUX** | **71 259 bps audio-only** | **3.679 s** | **~3.64 s** | webcast-ONLY; **6 losses, −2.2 … −9.7 s, mean −6.1 s** |
+| Chorus Call — WING | 71 410 bps audio-only | 3.671 s | ~3.63 s | webcast-only (operator-screened bridge) |
+| webinar.net — CMG | 96 000 bps audio-only (`chunklist_b96000`) | 2.731 s | ~2.69 s | −4.73 s, −5.46 s |
+| Q4 / Amazon IVS | ~392 kbps | 0.669 s | ~0.63 s | measured 0.713 s first-byte lag (§Q1) |
+| Apple `events-live` | 4 564 535 bps | 0.057 s | ~0.02 s | quantum is not Apple's problem |
+
+⚠ These are **projections from declared `BANDWIDTH`**, not measurements at those venues. The real
+divisor is bytes ÷ `EXTINF`, which is what the shipped EWMA estimator uses — so the code
+self-corrects, the table does not. What is measured is the *model*, at two independent bitrates
+(§Q1: predicted 1.140 / measured 1.107 s; predicted 0.669 / measured 0.713 s).
+
+**Chorus Call could not have confirmed this**, which is the next entry.
+
+### Apple `events-live.apple.com` — first probe ever, and it closes W3
+
+`#EXT-X-VERSION:3`, `#EXT-X-INDEPENDENT-SEGMENTS`, `#EXTINF:6.00600`, PDT present per segment, and
+**zero** `EXT-X-PART` / `PART-INF` / `SERVER-CONTROL` / `PRELOAD-HINT` / `EXT-X-PREFETCH`. The
+master carries **exactly one rendition** (4 564 535 bps, 1280x720); rendition ids 90/120/150/240/
+300/360/480/720 all 404. So: Apple authored RFC 8216bis and their *event* CDN ships plain HLS.
+**No venue this program trades serves LL-HLS** — `docs/RACE-CHECKLIST.md` W3 is closed, not open.
+Consequence: `pick_variant()` had nothing to choose (the "we were handed a media playlist" latency
+theory is dead — the master is for self-healing only), and the quantum lever is worth ~0.057 s
+here. The surviving Apple lever is speculation: URLs are predictable as
+`180<YYYYMMDDTHHMMSS>_<5-digit seq>.ts`, step **+6.006 s / +1 seq**, verified across four banked
+names spanning 38 min. `scripts/manifest-probe.sh` reproduced every fact above unaided — the
+instrument was never the problem; nothing required anyone to run it.
+
+### PDT-less venues now have a clock — `-synth`, and it is explicitly a LOWER BOUND
+
+Chorus Call and webinar.net publish **no** `EXT-X-PROGRAM-DATE-TIME` (SBUX: 136 wall-clock-only
+rows; CMG: 918; WING: a **0-byte** arrival log). `abs-lag.py` and `physical-bound.py` are both
+structurally uncomputable there, so no change at those venues has ever been provable.
+
+`hls-edge-fetch.py` now synthesises one: a packager announces a segment once it has finished
+writing it, so `pdt_synth = t_first_seen(URI) − EXTINF`. Rows are tagged **`-synth`**, distinct
+from `-nopdt` (no announcement either — column 1 is fetch wall-clock, the degenerate case where
+`t_done == pdt` and any consumer treating column 1 as encoder time measures our own fetch against
+itself). The anchor is biased **late** by the origin's publish+CDN delay, so lags computed against
+it are **lower bounds** on true staleness — never quotable as absolute.
+
+Verified two ways:
+
+| test | result |
+|---|---|
+| local PDT-less fixture (rolling manifest, no PDT, 2 s segments) | 6/6 rows `manifest-synth`, **0** `-nopdt`, first-byte lag 3.778–4.040 s, no degenerate `t_done == pdt` row |
+| live AWS IVS demo channel (PDT present), `--prefetch --stream-body --chunk-ms 40` | **35/35 rows untagged** (`manifest`/`prefetch`) — no regression on venues that do publish a clock; first-byte lag mean 0.347 s, min 0.219 s |
+
+Six new selftest assertions cover `synth_pdt` including the refuse-to-fabricate paths
+(no announcement, no EXTINF, zero and negative duration).
+
+## Session 2026-07-30 (Q1) — OUR OWN 32 KB READ QUANTUM was ~0.67 s of the RDDT feed lag. PASSES at 3.3× its bar.
+
+**The first absolute capture measurement ever taken on a PRODUCTION Q4 Inc channel** — every
+prefetch number in this ledger (§V1/§V3/§V5/§A1/§A2/§V8) came from the AWS IVS *demo* channel, and
+every one of them carried that caveat. RDDT 2026-07-30, `~/rddt-arrival.log`, n=1238 segments,
+armed `--speculative --prefetch --stream-body`:
+
+| | value |
+|---|---|
+| first-byte lag behind segment PDT | **p50 0.713 s** (p10 0.600, p90 0.868) |
+| complete lag behind PDT | 1.948 s |
+| cadence / prefetch share | 2.000 s · **1237 of 1238 via prefetch** |
+| dropped / short / seg_err | 0 / 0 / 0 |
+
+### §A3b's 0.60 s "origin write-completion + CDN propagation" term is REFUTED
+
+A3b decomposed IVS as `2.00 s segment + ~0.60 s origin flush + 0.016 s our fetch`, and flagged the
+0.60 s as *"inferred by subtraction, the loosest number here"*. It is **0.044 s on RDDT** and at
+most 0.17 s on AMZN. Almost all of what A3b attributed to the origin is **ours**.
+
+### LOCATED — `stream_to`'s read size is denominated in BYTES, so it costs `chunk / bitrate` SECONDS
+
+`r.read(chunk)` BLOCKS until `chunk` bytes arrive. An origin still writing a segment dribbles at
+roughly the media rate, so a fixed 32 768-byte read is a latency term that scales inversely with
+bitrate — invisibly. Probed on the AWS IVS demo channel, in-progress (prefetch) segments:
+
+| rendition | origin flush pattern | first bytes | 32 768 B complete | **quantum cost** |
+|---|---|---|---|---|
+| ~1.9 Mbit/s (default) | 13 bursts, median 18 800 B | 0.053 s | 0.054 s | **0.001 s** |
+| **230 kbps (Q4-comparable)** | 17 bursts, **median 2 820 B**, over 1.848 s | 0.133 s | 1.240 s | **1.107 s** |
+
+Same code, same origin, same minute — a 1000× difference decided purely by rendition bitrate.
+Model is `32768 ÷ bitrate`; predicted 1.140 s against a measured 1.107 s. **This is why every
+earlier probe missed it**: the demo channel's default rendition is high-bitrate, where the
+origin's first burst alone exceeds 32 KB.
+
+Applied to production: `32768 / 49000 B/s = 0.669 s` predicted, against RDDT's **measured 0.713 s**
+first-byte lag — i.e. the quantum is nearly the whole of it. ⚠ `t_first` is stamped *after*
+`r.read(chunk)` returns (`scripts/hls-edge-fetch.py:115-119`), so the quantum was always **inside**
+that 0.713 s, not upstream of it.
+
+### A/B — `--chunk-ms 40` vs the legacy constant, interleaved, 75 paired segments
+
+Both legs 150 s on the demo channel's lowest rendition, joined on PDT:
+
+| | legacy (32 768 B) | `--chunk-ms 40` | **lead** |
+|---|---|---|---|
+| first-byte lag vs PDT p50 | 1.278 s | **0.247 s** | **1.005 s** |
+| p10 / p90 | 1.174 / 1.381 | 0.226 / 0.292 | IQR [1.002, 1.105] |
+| complete lag vs PDT p50 | 2.084 s | 2.083 s | **0.000 s** |
+| short / seg_err / dropped | 0 / 0 / 0 | **0 / 0 / 0** | |
+
+**Pre-registered bar ≥0.30 s median first-byte lead → PASS by 3.3×.** The unchanged complete-lag
+is §V3's internal-consistency check (streaming cannot move when the origin finishes writing), so
+the instrument is sound.
+
+### ⚠ What this does NOT establish
+
+1. **The 1.005 s does not transfer.** That rendition is ~10 kB/s against Q4 production's ~49 kB/s.
+   The transferable claim is the **model**, now validated at two bitrates; the Q4 figure is a
+   *prediction* of **~0.63 s** and must be confirmed on a real Q4 channel with the passive
+   `configs/pcm-lead-*.toml` two-leg pattern.
+2. **No drop-safety gate has been run.** 150 s with `short=0` is encouraging; §S7 is why the bar is
+   90 minutes. Default stays `--chunk-ms 0` (byte-identical legacy behaviour) until it clears.
+3. Arrival only. Whether ffmpeg converts earlier bytes into proportionally earlier PCM is what
+   §V5/§A2 established for the streamed tier generally, not re-measured here.
+
+### The latent trap this also defuses
+
+`pick_variant()` deliberately prefers the **cheapest / audio-only** rendition — i.e. the lowest
+bitrate, exactly where a fixed byte quantum is worst. Handing the fetcher a master so
+`pick_variant` can run (which `run-arm.sh` guard 3 forces) while the quantum stayed
+byte-denominated would have traded ~10 ms of transfer saving (§F1c) for ~0.7 s of added latency.
+Two RDDT segments already degenerated to buffered today. **Fix the quantum before switching to
+master URLs.**
+
 ## Session 2026-07-25 (E0) — the OURS term is not a number, it is a LOTTERY on where the word falls in the segment
 
 **Campaign 2, item E0.** Goal was to explain ~200 ms that had never been

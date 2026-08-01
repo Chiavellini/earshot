@@ -84,7 +84,55 @@ def get(url, timeout=4):
     return urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=timeout).read()
 
 
-def stream_to(url, out, timeout=4, chunk=32768):
+TS_PACKET = 188
+CHUNK_BYTES_LEGACY = 32768      # the historical constant; still the default
+CHUNK_BYTES_MIN = 10 * TS_PACKET   # 1880 B — small enough to be ~0 at any bitrate
+CHUNK_BYTES_MAX = CHUNK_BYTES_LEGACY
+
+
+def chunk_bytes_for(chunk_ms, bytes_per_sec):
+    """How many bytes should one read block for, to cost at most `chunk_ms` of media?
+
+    WHY THIS EXISTS (measured 2026-07-30, AWS IVS demo channel). `stream_to`'s
+    read size is denominated in BYTES, and `r.read(chunk)` BLOCKS until `chunk`
+    bytes have arrived. While the origin is still writing a segment it dribbles at
+    roughly the media rate, so a byte-denominated read costs `chunk / bitrate`
+    SECONDS of latency on every word — and that cost silently scales with the
+    rendition:
+
+        demo 230 kbps rendition (Q4-comparable): 17 bursts, median 2820 B, over
+          1.848 s. First bytes at t=0.133 s; our 32768-byte read did not return
+          until t=1.240 s. QUANTUM COST 1.107 s, against a predicted
+          32768/28750 = 1.140 s.
+        demo ~1.9 Mbit/s rendition: the origin's FIRST burst already exceeds
+          32 KB, so the same constant costs ~0.001 s.
+
+    Same code, same origin, same day — a 1000x difference decided purely by
+    bitrate. That is why this is now expressed in MILLISECONDS OF MEDIA.
+
+    It also defuses a latent trap: `pick_variant` deliberately prefers the
+    cheapest / audio-only rendition, which is the LOWEST bitrate available — i.e.
+    exactly the case where a fixed byte quantum is worst. Handing the fetcher a
+    master (so `pick_variant` can run) while the quantum stayed byte-denominated
+    would have quietly traded ~10 ms of transfer saving for ~0.7 s of added
+    latency.
+
+    `chunk_ms = 0` keeps the legacy 32768-byte behaviour exactly, so this is inert
+    until switched on. Reads are floored to whole TS packets because a partial
+    packet is what produces the `short` reads the ledger tracks.
+    """
+    if not chunk_ms:
+        return CHUNK_BYTES_LEGACY
+    if not bytes_per_sec or bytes_per_sec <= 0:
+        # No bitrate estimate yet (first segment of a run). Start small: being
+        # early costs nothing, and the estimate lands after one segment.
+        return CHUNK_BYTES_MIN
+    want = int(bytes_per_sec * chunk_ms / 1000.0)
+    want = max(CHUNK_BYTES_MIN, min(CHUNK_BYTES_MAX, want))
+    return max(TS_PACKET, (want // TS_PACKET) * TS_PACKET)
+
+
+def stream_to(url, out, timeout=4, chunk=CHUNK_BYTES_LEGACY):
     """Stream a SEGMENT body to `out` as bytes arrive. Returns (written, short).
 
     Why not `get()` (measured 2026-07-24): buffering the whole segment before
@@ -139,7 +187,7 @@ def stream_to(url, out, timeout=4, chunk=32768):
     return written, bool(expect and written < expect), t_first
 
 
-def fetch_segment(url, out, timeout, stream_body):
+def fetch_segment(url, out, timeout, stream_body, chunk=CHUNK_BYTES_LEGACY):
     """Emit one segment. Whole-body read by DEFAULT.
 
     Progressive streaming was the obvious-looking win (~0.94 s of body sat in the
@@ -149,7 +197,7 @@ def fetch_segment(url, out, timeout, stream_body):
     the default; the path is kept behind --stream-body for a venue whose segment
     bodies genuinely arrive slowly."""
     if stream_body:
-        return stream_to(url, out, timeout=timeout)
+        return stream_to(url, out, timeout=timeout, chunk=chunk)
     data = get(url, timeout=timeout)
     out.write(data)
     out.flush()
@@ -158,7 +206,56 @@ def fetch_segment(url, out, timeout, stream_body):
     return len(data), False, None
 
 
-def arrival(log, pdt, t_done, t_first, fetch_secs, mode):
+def synth_pdt(first_seen_at, extinf):
+    """Synthesise a segment's media-start instant for a venue that publishes no
+    `EXT-X-PROGRAM-DATE-TIME`.
+
+    A packager announces a segment once it has finished writing it, so the media
+    that segment carries ENDED at ~the announcement instant, and therefore
+    STARTED at `announce - EXTINF`.
+
+    The result is biased LATE by the origin's publish + CDN propagation delay
+    (measured 0.03 s at Q4/IVS, ≤0.17 s at AMZN — LATENCY-PROOF §Q1 — but never
+    measured at a PDT-less venue, which is the point). So a lag computed against
+    it is a **lower bound** on true staleness, never an encoder-referenced
+    absolute. Callers tag these rows `-synth` for exactly that reason.
+
+    Returns None when either input is missing, so the caller can fall back
+    rather than fabricate a number.
+    """
+    if first_seen_at is None or not extinf or extinf <= 0:
+        return None
+    return first_seen_at - extinf
+
+
+def join_key(uri):
+    """A short, session-stable key for pairing the same segment across two legs.
+
+    WHY COLUMN 1 IS NOT ENOUGH. `arrival-lead.py` joins two legs by EXACT STRING
+    equality on field 0. Where the venue publishes PDT that is perfect — two
+    independent sessions share PDTs to the millisecond (verified 75/75 pairs on
+    the 2026-07-30 chunk-ms A/B). But a SYNTHESISED anchor is `t_first_seen -
+    EXTINF`, and `t_first_seen` is *this leg's own poll instant*, so two legs
+    differ by a uniform 0-250 ms and pair with probability ~1/250. The join would
+    have returned under 30 pairs and printed NOT RESOLVABLE — a silent null,
+    which is the worst possible failure for an A/B.
+
+    So PDT-less rows carry the segment's own name as an extra column. It is
+    byte-identical across legs by construction (both parse the same manifest
+    text) and contains no spaces, so the reader can treat it as one field.
+
+    Only the last path component, query stripped: enough to be unique within a
+    stream, and it keeps the log small at venues whose full URLs are ~500-char
+    signed tokens. ⚠ At Amazon IVS those tokens are PER-SESSION — a URL-keyed run
+    there produced 0 paired segments — but IVS publishes real PDT and never takes
+    this path.
+    """
+    if not uri:
+        return "-"
+    return uri.split("?", 1)[0].rstrip("/").rsplit("/", 1)[-1] or "-"
+
+
+def arrival(log, pdt, t_done, t_first, fetch_secs, mode, key=None):
     """Record when a segment's audio became available, keyed by its PDT.
 
     ⚠ The obvious key — the segment URL — DOES NOT WORK ACROSS LEGS on IVS, and
@@ -177,7 +274,12 @@ def arrival(log, pdt, t_done, t_first, fetch_secs, mode):
     """
     if log is None:
         return
-    log.write(f"{pdt:.3f} {t_done:.3f} {fetch_secs:.3f} {mode} {t_first:.3f}\n")
+    # Column 6 is APPENDED, never substituted: column 1 stays a time so every
+    # existing lag computation keeps working, and `arrival-lead.py`'s reader
+    # already tolerates extra fields. Written only when column 1 is NOT a real
+    # encoder PDT — i.e. exactly the rows that cannot otherwise be paired.
+    tail = f" {key}" if key else ""
+    log.write(f"{pdt:.3f} {t_done:.3f} {fetch_secs:.3f} {mode} {t_first:.3f}{tail}\n")
     log.flush()
 
 
@@ -306,6 +408,39 @@ def selftest():
     nobw = "#EXTM3U\n#EXT-X-STREAM-INF:PROGRAM-ID=1\nfirst.m3u8\n#EXT-X-STREAM-INF:PROGRAM-ID=1\nsecond.m3u8\n"
     assert pick_variant(nobw) == "first.m3u8", "unparseable master falls back to first"
     assert pick_variant("#EXTM3U\n#EXT-X-TARGETDURATION:6\nseg1.ts\n") is None, "media playlist: no variant"
+    # Read quantum (2026-07-30). The cost of a BYTE-denominated read is
+    # chunk/bitrate seconds, so the knob is milliseconds of media and the result
+    # must stay TS-aligned, bounded, and exactly inert when unset.
+    assert chunk_bytes_for(0, 49000) == CHUNK_BYTES_LEGACY, "chunk_ms=0 keeps the legacy constant"
+    assert chunk_bytes_for(40, None) == CHUNK_BYTES_MIN, "no estimate yet => start small"
+    assert chunk_bytes_for(40, 0) == CHUNK_BYTES_MIN, "zero bitrate must not divide"
+    assert chunk_bytes_for(40, -1) == CHUNK_BYTES_MIN, "negative bitrate must not underflow"
+    # 40 ms at Q4/IVS production bitrate (~49 000 B/s) = 1960 B, floored to packets.
+    assert chunk_bytes_for(40, 49000) == 1880, "TS-aligned floor"
+    assert chunk_bytes_for(1, 49000) == CHUNK_BYTES_MIN, "never below 10 TS packets"
+    assert chunk_bytes_for(200, 49000) % TS_PACKET == 0, "always whole TS packets"
+    _hi = chunk_bytes_for(10_000, 5_000_000)
+    assert CHUNK_BYTES_MAX - TS_PACKET < _hi <= CHUNK_BYTES_MAX, "clamped to the legacy max"
+    assert _hi % TS_PACKET == 0
+    # Synthetic PDT anchor for PDT-less venues (Chorus Call, webinar.net).
+    # announce - EXTINF == the segment's media start.
+    assert synth_pdt(1000.0, 6.006) == 1000.0 - 6.006
+    assert synth_pdt(None, 6.0) is None, "no announcement => refuse to fabricate"
+    assert synth_pdt(1000.0, None) is None, "no EXTINF => refuse to fabricate"
+    assert synth_pdt(1000.0, 0) is None, "zero duration is not a duration"
+    assert synth_pdt(1000.0, -2.0) is None, "negative duration must not shift forward"
+    # A synthesised anchor must be EARLIER than the announcement it derives from,
+    # by exactly one segment — that is what makes the lag it produces a bound.
+    _a, _d = 1785446675.127, 2.0
+    assert synth_pdt(_a, _d) < _a and abs((_a - synth_pdt(_a, _d)) - _d) < 1e-9
+    # Cross-leg join key for PDT-less venues: last path component, query stripped.
+    assert join_key("media_b96000_175.ts") == "media_b96000_175.ts", "webinar.net shape"
+    assert join_key("media-u3j4zp9qm_435.ts") == "media-u3j4zp9qm_435.ts", "Chorus Call shape"
+    assert join_key("https://h/a/b/seg_41.ts?token=abc123") == "seg_41.ts", "query stripped"
+    assert join_key("/v1/segment/CucCQjX4C-Pa2l0Xm8nl4YThczGSYTr8") == \
+        "CucCQjX4C-Pa2l0Xm8nl4YThczGSYTr8", "IVS token (never used — IVS has PDT)"
+    assert join_key("") == "-" and join_key(None) == "-", "no uri => placeholder, not a crash"
+    assert " " not in join_key("https://h/a/seg 1.ts".replace(" ", "%20")), "must stay one field"
     print("selftest OK")
 
 
@@ -346,6 +481,19 @@ def main():
                          "-0.197 s median against a pre-registered >=0.3 s bar, and it "
                          "introduced 3/32/62 short reads per run where the buffered path "
                          "had zero. Default OFF; kept for venues whose bodies arrive slowly.")
+    ap.add_argument("--chunk-ms", type=float, default=0.0,
+                    help="With --stream-body: size each read block to at most this many "
+                         "MILLISECONDS OF MEDIA instead of a fixed 32768 bytes. 0 (default) "
+                         "keeps the legacy byte constant exactly. WHY: r.read(chunk) blocks "
+                         "until chunk bytes arrive, and an origin still writing a segment "
+                         "dribbles at the media rate, so the fixed constant costs "
+                         "chunk/bitrate SECONDS per word -- measured 1.107 s on a 230 kbps "
+                         "IVS rendition vs ~0.001 s on the same channel's 1.9 Mbit/s "
+                         "rendition (2026-07-30). At Q4/IVS production bitrate it predicts "
+                         "0.669 s against a measured 0.713 s first-byte lag, i.e. nearly all "
+                         "of it. 40 is a sane starting value. UNGATED: needs the 90-minute "
+                         "drop-safety gate before an armed config uses it, because smaller "
+                         "writes are exactly what produced the 3/32/62 short reads on DW.")
     a = ap.parse_args()
     if a.selftest:
         selftest()
@@ -366,6 +514,21 @@ def main():
     last_seg_at = 0.0
     seg_dur = 6.0
     n_spec_hits = 0
+    # Running bitrate estimate, so --chunk-ms can be honoured in BYTES. Seeded
+    # from the first completed segment (bytes / EXTINF) and then EWMA'd, because
+    # a single segment of a VBR rendition is a noisy sample and over-estimating
+    # the bitrate is the direction that costs latency.
+    bps_est = None
+
+    def note_bitrate(written):
+        nonlocal bps_est
+        if not written or seg_dur <= 0:
+            return
+        sample = written / seg_dur
+        bps_est = sample if bps_est is None else 0.7 * bps_est + 0.3 * sample
+
+    def read_chunk():
+        return chunk_bytes_for(a.chunk_ms, bps_est)
     # Health counters. The arm never sees this process's stderr (it is logged at
     # `debug` in src/source/pipe.rs), so the leg cmd redirects stderr to a file
     # and we emit a periodic summary — silent audio loss would otherwise be an
@@ -378,6 +541,10 @@ def main():
     # url -> (t_done, t_first, fetch_secs, mode), flushed to the log the moment
     # the manifest announces that url WITH its PDT (a prefetch fetch has none yet).
     arr_pending: dict[str, tuple] = {}
+    # For the synthetic anchor at PDT-less venues: when a URI was first seen in a
+    # manifest, and the EXTINF that belonged to it. Evicted alongside `seen`.
+    first_seen: dict[str, float] = {}
+    extinf_of: dict[str, float] = {}
     pf_on = a.prefetch          # flips off permanently on 429/403
     n_prefetch_hits = 0
     retry_n: dict[str, int] = {}
@@ -456,7 +623,14 @@ def main():
                 f"reresolve={n_reresolve}{' DEAF-NOW' if deaf_since is not None else ''}"
                 + (_pf_summary(pf_lead) if a.prefetch_report else "")
                 + (f"  prefetch_fetched={n_prefetch_hits} pf={'on' if pf_on else 'OFF'}"
-                   if a.prefetch else "") + "\n")
+                   if a.prefetch else "")
+                # The read quantum is a LATENCY term (chunk/bitrate seconds per
+                # word), so it belongs in the health line next to the counters —
+                # a run whose bitrate estimate drifted is otherwise invisible.
+                + (f"  chunk={read_chunk()}B"
+                   + (f" ({read_chunk() / bps_est * 1000:.0f}ms @ {bps_est / 1000:.0f}kB/s)"
+                      if bps_est else " (no bitrate estimate yet)")
+                   if a.stream_body and a.chunk_ms else "") + "\n")
             sys.stderr.flush()
 
         try:
@@ -506,6 +680,7 @@ def main():
 
         # pair each segment URI with the PDT that precedes it (diagnostics)
         pdt = None; pairs = []; prefetch_lines = []
+        cur_dur = None
         for l in body.splitlines():
             l = l.strip()
             if l.startswith("#EXT-X-PLAYLIST-TYPE:") and "EVENT" in l and not event_type_seen:
@@ -519,12 +694,25 @@ def main():
             elif l.startswith("#EXTINF:"):
                 try:
                     seg_dur = float(l.split(":", 1)[1].rstrip(","))
+                    cur_dur = seg_dur
                 except Exception:
                     pass
             elif l.startswith("#EXT-X-PREFETCH:"):
                 prefetch_lines.append(l.split(":", 1)[1].strip())
             elif l and not l.startswith("#"):
                 pairs.append((l, pdt)); pdt = None
+                # Per-URI duration, for the synthetic anchor below. `seg_dur` is
+                # a running global (it is what the speculation budget uses); this
+                # pins the value that belonged to THIS segment, because the last
+                # segment of a winding-down stream is routinely short (Apple
+                # 2026-07-30: 6.006, 6.006, 6.006, 2.736).
+                if l not in extinf_of:
+                    extinf_of[l] = cur_dur if cur_dur else seg_dur
+                cur_dur = None
+                # Announcement instant — the wall clock at which this URI first
+                # appeared in a manifest we parsed. Only ever set once.
+                if l not in first_seen:
+                    first_seen[l] = t0
 
         # OBSERVE-ONLY prefetch accounting. Zero HTTP requests: a prefetch URL is
         # string-identical to the URL later announced as a normal segment (75 of
@@ -557,10 +745,28 @@ def main():
             sys.stderr.flush()
 
         # Emit any parked arrival record now that this poll carries its PDT.
-        # A manifest with no per-segment PDT must NOT discard the record (WING
-        # 2026-07-29: zero arrival writes for the whole call, watchdog paged
-        # false stalls all morning) — fall back to fetch wall-clock and tag the
-        # mode "-nopdt" so analysis can tell wall-clock-only rows apart.
+        #
+        # Three tiers, and the distinction between them is load-bearing:
+        #
+        #   (no suffix) the venue published EXT-X-PROGRAM-DATE-TIME. Column 1 is
+        #               the ENCODER's timestamp for the media. Absolute.
+        #   "-synth"    the venue published none, but we saw the URI appear.
+        #               A packager announces a segment once it has finished
+        #               writing it, so the media it carries ENDED at about the
+        #               announcement instant ⇒ it STARTED at announce - EXTINF.
+        #               Biased LATE by the origin's own publish+CDN delay, so
+        #               every lag computed against it is a LOWER BOUND on true
+        #               staleness. That is still the only clock Chorus Call and
+        #               webinar.net have ever had (both are PDT-less: SBUX wrote
+        #               136 wall-clock-only rows, CMG 918, WING a 0-byte file).
+        #   "-nopdt"    no PDT and no announcement either (we got here purely by
+        #               prefetch/speculation). Column 1 is fetch wall-clock.
+        #
+        # ⚠ WHY THE TIERS MUST STAY DISTINGUISHABLE. The "-nopdt" fallback writes
+        # t_done into the PDT column, so any consumer that treats column 1 as
+        # encoder time is measuring our own fetch against itself and will report
+        # a lag of ~0 forever. Tagging is what stops a synthetic anchor from
+        # being quoted as an absolute one.
         if arr_log is not None and arr_pending:
             for _u, _p in pairs:
                 rec = arr_pending.pop(_u, None)
@@ -568,8 +774,14 @@ def main():
                     continue
                 if _p is not None:
                     arrival(arr_log, _p, rec[0], rec[1], rec[2], rec[3])
+                    continue
+                _synth = synth_pdt(first_seen.get(_u), extinf_of.get(_u, seg_dur))
+                if _synth is not None:
+                    arrival(arr_log, _synth, rec[0], rec[1], rec[2], rec[3] + "-synth",
+                            key=join_key(_u))
                 else:
-                    arrival(arr_log, rec[0], rec[0], rec[1], rec[2], rec[3] + "-nopdt")
+                    arrival(arr_log, rec[0], rec[0], rec[1], rec[2], rec[3] + "-nopdt",
+                            key=join_key(_u))
             if len(arr_pending) > 200:      # never grow without bound
                 arr_pending.clear()
 
@@ -590,6 +802,10 @@ def main():
             for u in seen_order[:-keep]:
                 seen.discard(u)
                 retry_n.pop(u, None)
+                # Same bound, same reason (Ford bug 4): these two must never
+                # outlive `seen`, or an EVENT playlist leaks them without limit.
+                first_seen.pop(u, None)
+                extinf_of.pop(u, None)
             seen_order = seen_order[-keep:]
 
         if first:
@@ -608,7 +824,9 @@ def main():
         for u, p in new:
             try:
                 _t0 = time.time()
-                _, short, _tfb = fetch_segment(urllib.parse.urljoin(base, u), out, poll + 3, a.stream_body)
+                _wr, short, _tfb = fetch_segment(urllib.parse.urljoin(base, u), out, poll + 3,
+                                                 a.stream_body, read_chunk())
+                note_bitrate(_wr)
                 _td = time.time()
                 arr_pending[u] = (_td, _tfb if _tfb is not None else _td, _td - _t0, "manifest")
                 retry_n.pop(u, None)
@@ -670,8 +888,9 @@ def main():
                 seen.add(target); seen_order.append(target)
                 try:
                     _t0 = time.time()
-                    _, short, _tfb = fetch_segment(urllib.parse.urljoin(base, target), out,
-                                             poll + 6, a.stream_body)
+                    _wr, short, _tfb = fetch_segment(urllib.parse.urljoin(base, target), out,
+                                             poll + 6, a.stream_body, read_chunk())
+                    note_bitrate(_wr)
                     _td = time.time()
                     arr_pending[target] = (_td, _tfb if _tfb is not None else _td, _td - _t0, "prefetch")
                     n_prefetch_hits += 1
@@ -721,7 +940,9 @@ def main():
             # that segment forever.
             seen.add(probing); seen_order.append(probing)
             try:
-                _, short, _ = fetch_segment(urllib.parse.urljoin(base, probing), out, poll + 3, a.stream_body)
+                _wr, short, _ = fetch_segment(urllib.parse.urljoin(base, probing), out, poll + 3,
+                                              a.stream_body, read_chunk())
+                note_bitrate(_wr)
                 n_spec_hits += 1
                 n_segs += 1
                 last_seg_at = time.time()

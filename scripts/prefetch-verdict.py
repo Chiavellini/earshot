@@ -28,6 +28,13 @@ BPS = 32000.0          # 16 kHz mono s16le
 DEFICIT_S = -0.5       # pre-registered bar: zero audio deficit
 SURPLUS_S = 20.0       # beyond a plausible lead+stagger ⇒ duplication
 MIN_SAMPLES = 10
+# Second-half drift bar. This value was COMPUTED and PRINTED but never gated on,
+# so a steady leak that never crossed DEFICIT_S passed silently: at -0.4 s over
+# 90 min the run reported PASS while losing audio the whole way. The bar is set
+# below DEFICIT_S because a TREND is the thing that extrapolates — a run that
+# leaks 0.25 s in 90 minutes fails a 4-hour event even though no single sample
+# ever breached -0.5 s. Sign: negative drift = the candidate is falling behind.
+DRIFT_S = -0.25
 
 path = sys.argv[1] if len(sys.argv) > 1 else "samples.log"
 deltas, skipped = [], 0
@@ -71,4 +78,9 @@ if hi / BPS > SURPLUS_S:
     print(f"GATE: FAIL — prefetch ran {hi/BPS:.2f} s AHEAD; at that size it is "
           f"duplicated audio, not lead")
     raise SystemExit(1)
-print("GATE: PASS — no audio deficit and no duplication")
+if drift < DRIFT_S:
+    print(f"GATE: FAIL — second-half drift {drift:+.2f} s is a LEAK, not jitter "
+          f"(bar {DRIFT_S:+.2f} s). No single sample breached the deficit bar, which "
+          f"is exactly how this used to pass: a trend extrapolates and a min does not.")
+    raise SystemExit(1)
+print("GATE: PASS — no audio deficit, no duplication, no second-half leak")
