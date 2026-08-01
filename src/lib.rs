@@ -1,5 +1,5 @@
-//! Earshot — audio-signal latency trader for Kalshi mention markets.
-//! M0: replay → pipeline → stub detection → decision intents + latency report.
+//! Earshot — modular audio-signal runtime for Kalshi mention markets.
+//! Stable node boundaries and contracts are indexed in `docs/NODES.md`.
 
 pub mod bench;
 pub mod capture_bakeoff;

@@ -1541,16 +1541,40 @@ the `&&` that gates the run on it.
      primary + tuned-ffmpeg backstop) staged via `scripts/stage-webcast-arm.sh`.
      Tests: `tests/e2e_fanout.rs`.
 
-> ⚠ **BOX ADDRESS — re-read this before every event.** Instance
-> `i-04c50d76572aa092e` has **NO Elastic IP** (verified 2026-07-27 via
-> `NetworkInterfaces[0].Association.IpOwnerId == "amazon"`, i.e. an
-> auto-assigned public IP). **The address changes on every stop/start.** It
-> went `44.197.147.18` → `3.239.237.41` on the 07-27 resize, and every doc
-> line below that names the old address was stale within minutes. Resolve it
-> live, never from a doc:
+> ✅ **BOX ADDRESS — Elastic IP attached 2026-07-29 15:57Z.** Instance
+> `i-04c50d76572aa092e` now carries EIP `eipalloc-0d0f5d3654883fb68` =
+> **`3.212.174.94`**, so the address is **stable across stop/start** and the
+> "re-read this before every event" drill is retired.
+>
+> History, because three days of stale hardcodes came out of it: the IP was
+> auto-assigned (`Association.IpOwnerId == "amazon"`) until 07-29 and moved on
+> every stop/start — `44.197.147.18` → `3.239.237.41` (07-27 resize) →
+> `44.195.78.182` (07-29 c6a resize) → the EIP. The 07-29 hop happened
+> *mid-session*: the resize IP was hardcoded into `scripts/deploy-box.sh` and
+> was dead ~7 minutes later when the EIP was associated. `deploy-box.sh` now
+> **resolves the address live from the instance id** and treats its hardcoded
+> value as a fallback only — do the same in anything new.
+>
+> ⚠ Cost note against the $60/mo cap: AWS bills every public IPv4 at
+> $0.005/h whether auto-assigned or Elastic, so an *attached* EIP is cost-
+> neutral. The new charge is only while the instance is **stopped** (the EIP
+> stays allocated) — ≈$3.60/mo worst case. Release it if the box goes idle for
+> a long stretch.
+>
+> Resolve it live anyway if anything looks wrong:
 > `aws ec2 describe-instances --instance-ids i-04c50d76572aa092e --query 'Reservations[].Instances[].PublicIpAddress' --output text`
-> Instance type is **t3a.xlarge** since 2026-07-27 (4 vCPU / **2 physical
-> cores**; it was t3a.large = 2 vCPU / 1 physical core before).
+> Instance type is **`c6a.4xlarge` since 2026-07-29** — 16 vCPU / **8 physical
+> cores**, AMD EPYC 7R13 (Zen 3), 30 GiB RAM. It was `t3a.xlarge`
+> (4 vCPU / 2 physical cores, EPYC 7571) from 07-27, and `t3a.large`
+> (2 vCPU / 1 physical core) before that.
+>
+> ⚠ **`t3a` cannot reach 16 vCPU** — the family stops at `t3a.2xlarge`
+> (8 vCPU / 4 physical cores). The "resize to 16 vCPU" line in the 07-29
+> runsheet is therefore a **family change**, not a size bump, which is why the
+> IP moved and why `scripts/deploy-box.sh` had to be re-pointed. Side effects
+> of leaving `t3a`: no more burstable CPU credits (one whole failure class
+> gone) and sustained clock 2.2 → ~3.6 GHz. Still x86-64, so the vendored
+> `libonnxruntime*.so` is unaffected.
 
 **Monitor staging (all validated 2026-07-20 evening, box `44.197.147.18`
 — address now stale, see the box-address note above; instance
@@ -1852,7 +1876,7 @@ the exact production mechanism*):
 | **Detection-triggered mention FILL** | **ASSERTED** | **has NEVER happened.** One real fill ever = M2 plumbing 07-10 (non-mention 1¢). DPZ is this test |
 | **DPZ dial-in number** | **ASSERTED** | TBD — event is NO-GO without it (Track A above; deadline 07-19) |
 | Competitive fill at tight caps | **ASSERTED (evidence against)** | Q-MSPM: best competitor's whole loop beat our *audio arrival* by ~400 ms on MS-RECE. Until audio transport + detector chunking shrink, expect to lose sub-50¢ races on contested words. ⚠ 2026-07-27: **RECE settled NO** — the latency deficit is real but that race had **negative EV** (−26¢ at our cap), so this row evidences *lateness*, not *forgone profit* |
-| Mid-call stream recovery | ASSERTED | follow-up 1 open: a 30 s stall ends the run; recovery = full redial re-paying ~30 s warmup |
+| Mid-call stream recovery | BUILT, NOT PROD-REHEARSED | in-process re-accept + redial supervisor landed 2026-07-29 (opt-in `max_reconnects`, default 0 = old behavior); rehearse via launch-event + TTS + induced hangup + SIGTERM before first live use — see follow-up 1 |
 | Post-STOP arm SIGTERM immunity | KNOWN BUG (covered) | follow-up 5: TERM→KILL escalation covers it, fired for real 07-15 |
 | Book freshness at decision | INSTRUMENTED, UNPROVEN | `book_age` added 07-16 after the MS RECE 20¢-vs-98¢ discrepancy; first data next live run |
 
@@ -1979,9 +2003,20 @@ Evidence in `state/KXEARNINGSMENTIONNFLX-26JUL02/autorun.log`:
   `EARSHOT_AUTORUN_TEST_DIAL=1` restores the full dial rehearsal.
 
 Deferred follow-ups from the same audit (tracked, deliberately NOT done yet):
-1. Mid-call stream recovery: a 30 s audio stall or socket close ends the whole
+1. ~~Mid-call stream recovery: a 30 s audio stall or socket close ends the whole
    run (`twilio_ws.rs` idle/EndOfStream); recovery is a full shell redial that
-   re-pays ~30 s of warmup. Consider in-process re-accept within a call window.
+   re-pays ~30 s of warmup. Consider in-process re-accept within a call window.~~
+   **BUILT 2026-07-29** (phone-lane robustification WS3): opt-in via
+   `twilio_stream.max_reconnects > 0` — the source re-enters its accept loop on
+   a recoverable end (seq continuity + stale-callSid gating,
+   `docs/layers/source.md`), writes `state/<id>/redial.request`, and
+   `scripts/redial-supervisor.sh` (started by `launch-event.sh`) re-dials with
+   backoff; the armed pipeline and warm detector never restart. Default stays 0
+   (one-shot) — ⚠ NOT yet PROD-REHEARSED: flip a config's `max_reconnects` only
+   after a launch-event.sh rehearsal vs the TTS number with an induced mid-call
+   hangup (twilio-hangup.sh) and a real SIGTERM passes on the box. Protocol
+   tests: `tests/twilio_source.rs` (drop→redial re-attach, stale zombie
+   rejected, budgets).
 2. ~~Warm-path order latency: connection/presign reuse is a LOST_RACE lever~~
    **POST-MORTEM COMPLETE 2026-07-16 — the premise was wrong on every count.**
    Evidence: `state/KXEARNINGSMENTIONMS-26JUL15/report.json` + the public

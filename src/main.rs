@@ -277,6 +277,25 @@ enum Command {
         #[arg(long, default_value = "capture-bakeoff.json")]
         out: PathBuf,
     },
+    /// Bridge-entry admission probe (VERIFICATIONS Q-ADMIT): record the first
+    /// N seconds of a bridge's own audio on ONE Twilio leg — no detector, no
+    /// config, no [event] — so the recording can be transcribed and the
+    /// venue's `admission` field pinned in configs/dial-ins.toml. Signature
+    /// material comes from TWILIO_AUTH_TOKEN / TWILIO_STREAM_URL env. Dial
+    /// AFTER this binds (scripts/bridge-probe.sh sequences both).
+    BridgeProbe {
+        /// WS bind address for the Twilio media stream.
+        #[arg(long, default_value = "127.0.0.1:8099")]
+        bind: String,
+        /// Capture wall-time cap; the far end hanging up ends it sooner.
+        #[arg(long, default_value_t = 120)]
+        secs: u64,
+        /// Artifact basename: <label>.wav / .jsonl / .json under --out-dir.
+        #[arg(long)]
+        label: String,
+        #[arg(long, default_value = "corpus/bridge-probes")]
+        out_dir: PathBuf,
+    },
 }
 
 fn main() -> ExitCode {
@@ -302,7 +321,9 @@ fn run(command: Command) -> Result<(), AnyErr> {
         }
         Command::Replay { config, report, speed } => {
             let cfg = config::load(&config)?;
-            let built = build_pipeline_input(&cfg, &config, speed)?;
+            // Replay never writes listener.ready — the token is a dial gate
+            // for live phone events only (arm path).
+            let (built, _twilio_port) = build_pipeline_input(&cfg, &config, speed)?;
             let table = DecisionTable::from_keywords(&cfg.keywords);
             let preproc_cfg = PreprocCfg { resample_to_hz: cfg.pipeline.resample_to_hz };
             let out = match built {
@@ -522,6 +543,7 @@ fn run(command: Command) -> Result<(), AnyErr> {
                 blank_id: sc.blank_id,
                 default_threshold: sc.default_threshold,
                 refractory_ms: sc.refractory_ms,
+                precision: sc.precision.clone(),
             };
             let mut det = earshot::detector::streaming_ctc::StreamingCtcDetector::new(
                 &scfg,
@@ -657,7 +679,7 @@ fn run(command: Command) -> Result<(), AnyErr> {
             let mut labels = Vec::with_capacity(cfg.sources.len());
             let twilio_auth = resolve_twilio_auth(&cfg, &config)?;
             for (i, s) in cfg.sources.iter().enumerate() {
-                legs.push(build_leg(s, &config, None, SourceId(i as u16), twilio_auth.as_ref(), jitter_buffer_ms.map(|v| v as u32))?);
+                legs.push(build_leg(s, &config, None, SourceId(i as u16), twilio_auth.as_ref(), jitter_buffer_ms.map(|v| v as u32), &mut None)?);
                 labels.push(source_label(s));
             }
             let report = earshot::capture_bakeoff::run_capture_bakeoff(
@@ -671,6 +693,30 @@ fn run(command: Command) -> Result<(), AnyErr> {
             print!("\n{}", report.render_table());
             std::fs::write(&out, serde_json::to_string_pretty(&report)?)?;
             println!("\nreport written to {}", out.display());
+            Ok(())
+        }
+        Command::BridgeProbe { bind, secs, label, out_dir } => {
+            let src = TwilioWsSource::bind(&bind, SourceId(0))?;
+            tracing::info!(addr = %src.local_addr()?, "bridge probe listening — dial now");
+            let report = earshot::capture_bakeoff::run_bridge_probe(
+                earshot::capture_bakeoff::BridgeProbeArgs {
+                    leg: Box::new(src),
+                    label: label.clone(),
+                    max_secs: secs,
+                    out_dir: out_dir.clone(),
+                },
+            )?;
+            let json_path = std::path::Path::new(&report.wav_path).with_extension("json");
+            earshot::fsio::write_atomic(&json_path, serde_json::to_string_pretty(&report)?.as_bytes())?;
+            println!(
+                "bridge probe {}: held {:.1}s ({} frames, {} stalls)\n  wav:  {}\n  json: {}",
+                report.label,
+                report.held_ms as f64 / 1000.0,
+                report.frames,
+                report.stalls_over_100ms,
+                report.wav_path,
+                json_path.display(),
+            );
             Ok(())
         }
         Command::Orders { ticker } => rt()?.block_on(async {
@@ -713,6 +759,7 @@ fn build_source(
     cfg: &config::EventConfig,
     config_path: &Path,
     speed_override: Option<f32>,
+    twilio_port: &mut Option<u16>,
 ) -> Result<Box<dyn earshot::source::AudioSource>, AnyErr> {
     if cfg.sources.is_empty() {
         return Err("config has no sources".into());
@@ -721,13 +768,13 @@ fn build_source(
     // stream URL) so every Twilio leg is bound to THIS config's account.
     let twilio_auth = resolve_twilio_auth(cfg, config_path)?;
     if cfg.sources.len() == 1 {
-        return build_leg(&cfg.sources[0], config_path, speed_override, SourceId(0), twilio_auth.as_ref(), None);
+        return build_leg(&cfg.sources[0], config_path, speed_override, SourceId(0), twilio_auth.as_ref(), None, twilio_port);
     }
     // Dual dial-in: each configured source becomes an arbiter leg. Distinct
     // SourceIds so per-leg sequence/gap logging stays attributable.
     let mut legs = Vec::with_capacity(cfg.sources.len());
     for (i, s) in cfg.sources.iter().enumerate() {
-        legs.push(build_leg(s, config_path, speed_override, SourceId(i as u16), twilio_auth.as_ref(), None)?);
+        legs.push(build_leg(s, config_path, speed_override, SourceId(i as u16), twilio_auth.as_ref(), None, twilio_port)?);
     }
     let params = earshot::source::arbiter::ArbiterParams {
         mode: match cfg.arbiter.mode {
@@ -771,6 +818,9 @@ fn resolve_twilio_auth(
 
 /// Build one concrete leg (used directly for a single source, or per-leg by
 /// the arbiter). `twilio_auth` is this config's per-account signature material.
+/// `twilio_port` surfaces the first Twilio leg's actually-bound listener port
+/// (an ephemeral `:0` bind resolves here) for the arm-path `listener.ready`
+/// token; non-Twilio legs leave it untouched.
 fn build_leg(
     src: &SourceConfig,
     config_path: &Path,
@@ -778,6 +828,7 @@ fn build_leg(
     source_id: SourceId,
     twilio_auth: Option<&(String, String)>,
     jitter_buffer_ms: Option<u32>,
+    twilio_port: &mut Option<u16>,
 ) -> Result<Box<dyn earshot::source::AudioSource>, AnyErr> {
     match src {
         SourceConfig::Replay { path, speed } => {
@@ -788,8 +839,29 @@ fn build_leg(
                 source_id,
             )?))
         }
-        SourceConfig::TwilioStream { bind } => {
+        SourceConfig::TwilioStream {
+            bind,
+            idle_timeout_secs,
+            accept_timeout_secs,
+            reaccept_window_secs,
+            max_reconnects,
+        } => {
             let mut src = TwilioWsSource::bind(bind, source_id)?;
+            if twilio_port.is_none() {
+                *twilio_port = Some(src.local_addr()?.port());
+            }
+            if let Some(v) = idle_timeout_secs {
+                src.idle_timeout = std::time::Duration::from_secs(*v);
+            }
+            if let Some(v) = accept_timeout_secs {
+                src.accept_timeout = std::time::Duration::from_secs(*v);
+            }
+            if let Some(v) = reaccept_window_secs {
+                src.reaccept_window = std::time::Duration::from_secs(*v);
+            }
+            if let Some(v) = max_reconnects {
+                src.max_reconnects = *v;
+            }
             if let Some((token, url)) = twilio_auth {
                 // Config-bound account: pin signature material so a stream signed
                 // by the wrong account's token is rejected (403), and the signed
@@ -844,30 +916,55 @@ enum BuiltPipeline {
 
 /// Single construction point for the audio+detector side of `replay` and
 /// `arm`, so replay validates the exact production path in both modes.
+/// Alongside the graph it returns the bound Twilio listener port (first
+/// Twilio leg; `None` when the config has no Twilio source) — the arm path's
+/// `listener.ready` token reports it so the launcher dials the right door.
 fn build_pipeline_input(
     cfg: &config::EventConfig,
     config_path: &Path,
     speed_override: Option<f32>,
-) -> Result<BuiltPipeline, AnyErr> {
+) -> Result<(BuiltPipeline, Option<u16>), AnyErr> {
+    let mut twilio_port = None;
     if cfg.arbiter.mode != config::ArbiterMode::Fanout {
-        return Ok(BuiltPipeline::Single {
-            source: build_source(cfg, config_path, speed_override)?,
-            detector: detector_factory::build_detector(cfg)?,
-        });
+        let source = build_source(cfg, config_path, speed_override, &mut twilio_port)?;
+        let detector = detector_factory::build_detector(cfg)?;
+        return Ok((BuiltPipeline::Single { source, detector }, twilio_port));
     }
     let twilio_auth = resolve_twilio_auth(cfg, config_path)?;
     let mut legs = Vec::with_capacity(cfg.sources.len());
     for (i, s) in cfg.sources.iter().enumerate() {
         legs.push(earshot::pipeline::PipelineLeg {
             label: source_label(s),
-            source: build_leg(s, config_path, speed_override, SourceId(i as u16), twilio_auth.as_ref(), None)?,
+            source: build_leg(s, config_path, speed_override, SourceId(i as u16), twilio_auth.as_ref(), None, &mut twilio_port)?,
             // One detector instance per leg: model memory is deliberately
             // duplicated (docs/layers/detector.md).
             detector: detector_factory::build_detector(cfg)?,
         });
     }
     tracing::info!(legs = legs.len(), "fanout: per-leg detect chains, OR at decision");
-    Ok(BuiltPipeline::Fanout { legs })
+    Ok((BuiltPipeline::Fanout { legs }, twilio_port))
+}
+
+/// Arm-path readiness token consumed by `scripts/launch-event.sh` (contract:
+/// `runtime.source.twilio.listener_ready` in `architecture/nodes.toml`).
+const LISTENER_READY_FILE: &str = "listener.ready";
+
+/// Atomically write `<state_dir>/listener.ready` —
+/// `{"port":<u16>,"pid":<u32>,"unix_ts":<int-seconds>}`. `port` is the bound
+/// Twilio listener port, or 0 for configs without a Twilio source. Fatal on
+/// failure: a run whose token can't be written would never be dialed, the
+/// same silent-death class the token exists to prevent.
+fn write_listener_ready(state_dir: &Path, port: u16) -> Result<(), AnyErr> {
+    let unix_ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let body = format!("{{\"port\":{port},\"pid\":{},\"unix_ts\":{unix_ts}}}\n", std::process::id());
+    let path = state_dir.join(LISTENER_READY_FILE);
+    earshot::fsio::write_atomic(&path, body.as_bytes())
+        .map_err(|e| format!("write {}: {e}", path.display()))?;
+    tracing::info!(path = %path.display(), port, "listener.ready written (detector built, pipeline spawned) — dial may proceed");
+    Ok(())
 }
 
 /// Shared bring-up tail: wrap a built signer in a REST client and run the signed
@@ -978,6 +1075,9 @@ async fn arm(
         );
     }
     let state_dir = state_dir.as_path();
+    // Stale-token hazard: a listener.ready left by a previous run in this
+    // state dir must never green-light a dial before THIS run is ready.
+    let _ = std::fs::remove_file(state_dir.join(LISTENER_READY_FILE));
     let (signer, rest) = connect_live_for(&cfg, &config_path).await?;
 
     // Arm-time market validation (rules stored for audit; refuse on any miss).
@@ -1143,7 +1243,7 @@ async fn arm(
 
     // Audio pipeline runs on its own OS threads (it owns a current-thread
     // runtime for the source, so it must not run inside this runtime).
-    let built = build_pipeline_input(&cfg, &config_path, speed)?;
+    let (built, twilio_port) = build_pipeline_input(&cfg, &config_path, speed)?;
     let table = DecisionTable::from_keywords(&cfg.keywords);
     let event_id = cfg.event.id.clone();
     let chunk_ms = cfg.pipeline.chunk_ms;
@@ -1161,15 +1261,24 @@ async fn arm(
         Ok(Some(_)) => tracing::warn!("warm-fire id unexpectedly matched an order — ignoring"),
         Err(e) => tracing::warn!("warm-fire query failed (non-fatal): {e}"),
     }
-    let mut report = tokio::task::spawn_blocking(move || match built {
+    let pipeline_task = tokio::task::spawn_blocking(move || match built {
         BuiltPipeline::Single { source, detector } => {
             run_pipeline(&event_id, chunk_ms, preproc_cfg, source, detector, table, Some(intent_tx), perf)
         }
         BuiltPipeline::Fanout { legs } => {
             run_pipeline_fanout(&event_id, chunk_ms, preproc_cfg, legs, table, Some(intent_tx), perf)
         }
-    })
-    .await??;
+    });
+    // Readiness token (phone lane's dial gate): written ONLY here — after
+    // build_pipeline_input returned (detector fully constructed, past the
+    // exact point where the 2026-07-29 ORT hang lived) AND the pipeline
+    // thread is spawned. The Twilio listener binds long before the detector
+    // is built, so an open port (`nc -z`) proves nothing; launch-event.sh
+    // gates the dial on THIS file instead. Written unconditionally (port 0
+    // when the config has no Twilio source — the launcher only consumes it
+    // for phone events); never written by the replay path.
+    write_listener_ready(state_dir, twilio_port.unwrap_or(0))?;
+    let mut report = pipeline_task.await??;
 
     // Pipeline done → intent_tx dropped → executor drains and returns.
     let exec_report = exec_task.await?;

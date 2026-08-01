@@ -16,7 +16,8 @@ bridge (PSTN) ── Twilio outbound call ── <Start><Stream>
   with inline TwiML: `<Start><Stream url track="inbound_track"/></Start>`
   (async fork of the caller-side audio — listen-only), `<Play digits>` for
   the bridge passcode via DTMF (`w` = 0.5 s wait), `<Pause length="5400"/>`
-  to hold the line.
+  to hold the line (`--pause-secs` shortens it for bridge-entry probes;
+  bounded 1..5400).
 - `scripts/twilio-hangup.sh <CallSid>` sets `Status=completed` — the
   audio-side kill switch (orders side is `state/STOP`).
 
@@ -62,6 +63,42 @@ dialed) → dense `media` frames (1280/3585/2674 per call, 0 drops) → clean
 - `{"event":"stop",…}` — clean end; a socket close without it is warned but
   treated as end-of-stream.
 - `mark` events exist only for outbound audio — ignored.
+
+## Mid-call persistence wire contracts (2026-07-29)
+
+Two file contracts couple the source/arm runtime to the shell side
+(`scripts/launch-event.sh`, `scripts/redial-supervisor.sh`):
+
+- **Redial marker** — `$EARSHOT_REDIAL_DIR/redial.request`, atomically
+  (re)written by `TwilioWsSource` on every recoverable stream end when
+  `max_reconnects > 0` (the watch signal is the file's mtime):
+  `{"unix_ts":<int-seconds>,"old_call_sid":"<sid-or-empty>","attempt":<int>,
+  "reason":"stop"|"idle"|"socket_closed"|"close_frame"|"ws_error"}`.
+  `reason` is exactly the `StreamEnd` variant that ended the stream;
+  `old_call_sid` is always a string (empty when no start was ever seen).
+  A supersede (below) writes NO marker.
+- **Readiness token** — `<state_dir>/listener.ready`, written by
+  `main.rs::arm` (never replay) ONLY after the detector is fully constructed
+  and the pipeline thread is spawned:
+  `{"port":<u16>,"pid":<u32>,"unix_ts":<int-seconds>}`. `port` is the bound
+  Twilio listener port (`0` when the config has no Twilio source — the token
+  is unconditional on the arm path, but only phone events consume it). Any
+  stale token is deleted at arm start. Rationale: the WS listener binds
+  BEFORE the detector is built, so `nc -z` passed all day on 2026-07-29 while
+  an ORT hang left three Twilio connections rotting in the kernel backlog
+  (`Recv-Q 3`) — dial only on this token, never on an open port.
+
+**Supersede (redial landing on a half-open stream).** With
+`max_reconnects > 0` the read loop selects on the listener while a stream is
+live: a new connection is handshake- and signature-validated (bounded: 2 s
+handshake + 2 s waiting for its `start`; the live stream is briefly unread
+during those steps), and a `start` with a DIFFERENT callSid supersedes the
+current stream immediately — no waiting for the old socket's `idle_timeout`,
+no burst of stale frames stamped at drain time, no reconnect attempt
+consumed. Same callSid = stale zombie, dropped; any candidate failure drops
+only the candidate. With `max_reconnects = 0` the listener is never polled
+mid-stream (one-shot behavior unchanged). Every accepted TCP stream gets
+`TCP_NODELAY` before its WS handshake.
 
 ## Latency expectations (research 2026-07-11, unmeasured on our path)
 
@@ -121,8 +158,13 @@ each enforced — not just documented (tests: `tests/twilio_listen_only.rs`):
   BLOCKED (Twilio error code). `--watch` polls until the hold lifts.
 - Listen-only, real-identity registration where a bridge requires it, and
   NO audio recording anywhere in the pipeline (frames are in-memory only).
-  The one exception is `earshot capture-bakeoff --record-dir` — an explicit,
-  opt-in ingress diagnostic (docs/INGRESS-BAKEOFF.md), never part of the
-  serving path; do not point it at a production trading run.
+  Two explicit, opt-in diagnostic exceptions, never part of the serving path
+  and never pointed at a production trading run:
+  `earshot capture-bakeoff --record-dir` (ingress bake-off,
+  docs/INGRESS-BAKEOFF.md) and `earshot bridge-probe` / `scripts/bridge-probe.sh`
+  (bridge-entry admission probe, VERIFICATIONS Q-ADMIT — records the BRIDGE's
+  own entry prompts to `corpus/bridge-probes/`, gitignored, so `admission` in
+  `configs/dial-ins.toml` is set by evidence; it refuses to run while an armed
+  event is live).
 - ngrok free-tier hostnames rotate per session; grab the current one before
   each dial. Reserved domain (or a VPS) if the rehearsal shows instability.

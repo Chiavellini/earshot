@@ -74,6 +74,40 @@ fn twiml_is_one_way_start_stream_never_bidirectional() {
 }
 
 #[test]
+fn pause_secs_changes_only_the_hold_time() {
+    // The bridge-probe path shortens <Pause>; nothing else in the TwiML may
+    // move, and out-of-range values fail closed.
+    let run = |pause: &str| {
+        let out = Command::new("bash")
+            .arg("scripts/twilio-dial.sh")
+            .arg("--to").arg("+18005551234")
+            .arg("--stream-url").arg("wss://example.test/media")
+            .arg("--pause-secs").arg(pause)
+            .arg("--dry-run")
+            .current_dir(repo_root())
+            .output()
+            .expect("run twilio-dial.sh");
+        (out.status.code().unwrap_or(-1), String::from_utf8_lossy(&out.stdout).into_owned())
+    };
+    let (code, twiml) = run("150");
+    assert_eq!(code, 0);
+    assert!(twiml.contains("<Pause length=\"150\"/>"), "TwiML: {twiml}");
+    assert!(twiml.contains("<Start><Stream"), "one-way fork must survive: {twiml}");
+    assert!(twiml.contains("track=\"inbound_track\""), "inbound-only: {twiml}");
+    for forbidden in ["<Connect", "<Dial", "<Number", "<Sip"] {
+        assert!(!twiml.contains(forbidden), "TwiML must never contain {forbidden}: {twiml}");
+    }
+    for bad in ["0", "5401", "-5", "abc"] {
+        let (code, _) = run(bad);
+        assert_eq!(code, 2, "--pause-secs {bad:?} must be refused");
+    }
+    // Default (no flag) stays the pre-existing 90-min hold, byte-for-byte.
+    let (code, twiml) = dial_dry_run(None);
+    assert_eq!(code, 0);
+    assert!(twiml.contains("<Pause length=\"5400\"/>"), "default hold changed: {twiml}");
+}
+
+#[test]
 fn ws_handler_only_ever_sends_pong() {
     // Structural regression guard: the Twilio WS source is receive-only. The
     // only `ws.send(` in the handler must be `Message::Pong` (keepalive). A

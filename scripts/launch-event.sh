@@ -27,16 +27,33 @@
 set -euo pipefail
 
 CONFIG="" ACCOUNT="" BIND_PORT="" TO="" DTMF="" LIVE="" ALLOW_MENTION="" FILLABLE="" NGROK_CONFIG=""
-BIN="${EARSHOT_BIN:-}" NO_DIAL="" STREAM_URL_OVERRIDE=""
+DIGIT_DELAY="" DTMF_REPEAT=""   # empty => twilio-dial.sh defaults (4 s, play once)
+BIN="${EARSHOT_BIN:-}" NO_DIAL="" STREAM_URL_OVERRIDE="" TLS_HOST="" OPERATOR_HANDLER=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    # Operator-screened (Class B) venues: page the configured human cell into a
+    # conference FIRST, then place the bridge call with the gated operator TwiML
+    # (scripts/twilio-operator-dial.sh). Requires [operator_handler] enabled=true
+    # in the config; the default listen-only dial path is untouched otherwise.
+    --operator-handler) OPERATOR_HANDLER=1; shift ;;
     --config)        CONFIG="$2"; shift 2 ;;
     --account)       ACCOUNT="$2"; shift 2 ;;
     --bind-port)     BIND_PORT="$2"; shift 2 ;;
     --to)            TO="$2"; shift 2 ;;
     --dtmf)          DTMF="$2"; shift 2 ;;
+    # Per-venue DTMF timing, passed straight through to twilio-dial.sh. Added
+    # 2026-07-29: the 4 s / play-once default fits CMG (held 4572 s) but not
+    # MSFT or CVNA, whose bridges answered and hung up at 21-73 s because the
+    # code landed while their IVR was still prompting. Omit both to keep the
+    # historical TwiML byte-for-byte.
+    --digit-delay)   DIGIT_DELAY="$2"; shift 2 ;;
+    --dtmf-repeat)   DTMF_REPEAT="$2"; shift 2 ;;
     --ngrok-config)  NGROK_CONFIG="$2"; shift 2 ;;
     --stream-url)    STREAM_URL_OVERRIDE="$2"; shift 2 ;;  # tunnel-free: skip ngrok, endpoint terminates on the box
+    # TLS-on-box shorthand (docs/INGRESS-BAKEOFF.md, deploy/caddy/Caddyfile):
+    # composes wss://<host>/e/<bind-port> — the per-event path caddy proxies to
+    # this bind port. Q-TLS must be pinned before an event rides this.
+    --tls-host)      TLS_HOST="$2"; shift 2 ;;
     --bin)           BIN="$2"; shift 2 ;;
     --no-dial)       NO_DIAL=1; shift ;;
     --i-am-live)     LIVE="--i-am-live"; shift ;;
@@ -63,6 +80,10 @@ fi
 [[ "$BIND_PORT" =~ ^[0-9]+$ && "$BIND_PORT" -ge 8080 ]] || {
   echo "--bind-port must be an integer >= 8080 (got ${BIND_PORT})" >&2; exit 2
 }
+if [[ -n "$TLS_HOST" ]]; then
+  [[ -z "$STREAM_URL_OVERRIDE" ]] || { echo "--tls-host and --stream-url are mutually exclusive" >&2; exit 2; }
+  STREAM_URL_OVERRIDE="wss://${TLS_HOST}/e/${BIND_PORT}"
+fi
 
 # This event's own secrets, into THIS process only.
 # shellcheck disable=SC1090
@@ -104,6 +125,14 @@ EVENT_ID=$(sed -n '/^\[event\]/,/^\[/s/^id[[:space:]]*=[[:space:]]*"\([^"]*\)".*
 STATE_DIR="state/${EVENT_ID}"
 mkdir -p "$STATE_DIR"
 echo "event=${EVENT_ID}  account=${ACCOUNT}  port=${BIND_PORT}  state=${STATE_DIR}"
+
+# --operator-handler double-gate half 1: the config must opt in explicitly.
+# (Half 2 is --operator-i-am-paged, passed only after the page leg is live.)
+if [[ -n "$OPERATOR_HANDLER" ]]; then
+  OP_ENABLED=$(sed -n '/^\[operator_handler\]/,/^\[/s/^enabled[[:space:]]*=[[:space:]]*\(true\|false\).*/\1/p' "$CONFIG" | head -1)
+  [[ "$OP_ENABLED" == "true" ]] || { echo "--operator-handler but [operator_handler] enabled=true not set in ${CONFIG}" >&2; exit 2; }
+  [[ -x scripts/operator-page.sh && -x scripts/twilio-operator-dial.sh ]] || { echo "operator scripts missing/not executable" >&2; exit 2; }
+fi
 
 # Tunnel-free path (Linux/VPS production — docs/INGRESS-BAKEOFF.md §5 "No
 # tunnels in production"): --stream-url wss://host/media skips ngrok entirely;
@@ -164,9 +193,23 @@ fi  # end ngrok path (--stream-url skips it)
 # account's token (the config's [twilio] section should point stream_url here).
 export TWILIO_STREAM_URL="$STREAM_URL"
 
+# Mid-call persistence (docs/layers/source.md): with twilio_stream.max_reconnects
+# > 0 the source survives a drop by re-accepting; it asks for the redial by
+# rewriting ${STATE_DIR}/redial.request, which scripts/redial-supervisor.sh
+# (started after the dial below) watches. The env var only names the marker
+# path — with max_reconnects unset/0 the source never writes it.
+export EARSHOT_REDIAL_DIR="$STATE_DIR"
+MAX_RECONNECTS=$(sed -n 's/^[[:space:]]*max_reconnects[[:space:]]*=[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$CONFIG" | head -1)
+
 # Arm the pipeline (blocks, waiting for the dial). Dial from a second shell, or
 # background this and dial below.
 REPORT="${STATE_DIR}/report.json"
+# Readiness token contract: `earshot arm` writes ${STATE_DIR}/listener.ready
+# ({"port":…,"pid":…,"unix_ts":…}) only AFTER the detector is built and the
+# pipeline is running. A stale token from a previous run would let the wait
+# below pass instantly against a dead arm — delete it before starting.
+READY_FILE="${STATE_DIR}/listener.ready"
+rm -f "$READY_FILE"
 # Pinned binary (--bin / EARSHOT_BIN, produced by scripts/preflight-event.sh)
 # runs EXACTLY what was drilled and skips the fire-time compile — `cargo run`
 # from the live checkout can hit a dirty tree, a cold rebuild racing the
@@ -184,24 +227,65 @@ fi
 ARM_PID=$!
 echo "$ARM_PID" > "${STATE_DIR}/arm.pid"
 trap 'kill "$ARM_PID" "$NGROK_PID" 2>/dev/null || true' EXIT
-# Wait for the WS listener to actually bind before dialing — arm validates every
+# Wait for the arm's readiness token before dialing — arm validates every
 # market and waits for book snapshots first, which takes ~30 s on a 14-market
 # config. Dialing early hands Twilio a dead tunnel and the stream is lost.
-for _ in $(seq 1 120); do
-  nc -z 127.0.0.1 "$BIND_PORT" 2>/dev/null && break
-  kill -0 "$ARM_PID" 2>/dev/null || { echo "arm exited before binding :${BIND_PORT} — see log above" >&2; exit 1; }
-  sleep 1
+# NOT `nc -z`: the port is bound BEFORE the detector build, so on 2026-07-29
+# the port answered all day while an ORT-less detector build hung and the
+# media socket sat unaccepted in the kernel backlog (header comment above).
+# `earshot arm` writes ${STATE_DIR}/listener.ready only once the pipeline is
+# actually running and accept()ing — that token is the only "safe to dial".
+for _ in $(seq 1 240); do
+  [[ -f "$READY_FILE" ]] && break
+  kill -0 "$ARM_PID" 2>/dev/null || { echo "arm exited before writing ${READY_FILE} — see log above" >&2; exit 1; }
+  sleep 0.5
 done
-nc -z 127.0.0.1 "$BIND_PORT" 2>/dev/null || { echo "arm never bound :${BIND_PORT} within 120 s" >&2; exit 1; }
-echo "WS listener up on :${BIND_PORT} — dialing"
+[[ -f "$READY_FILE" ]] || { echo "arm never wrote ${READY_FILE} within 120 s" >&2; exit 1; }
+echo "listener ready ($(tr -d '\n' < "$READY_FILE" 2>/dev/null || echo '?')) — dialing"
 
 # Dial this event's call, forking its inbound audio to THIS event's stream URL.
 # The CallSid lands in the state dir so a supervisor can hang up mid-call (STOP).
 if [[ -n "$NO_DIAL" ]]; then
   echo "--no-dial: skipping twilio-dial (rehearsal without a real call)"
+elif [[ -n "$OPERATOR_HANDLER" ]]; then
+  # Operator flow: human FIRST, bridge second — never present an unmanned
+  # silent leg to a live operator (that is exactly the 21-73 s drop class).
+  echo "operator handler: paging the configured cell into the conference"
+  scripts/operator-page.sh --config "$CONFIG" --operator-i-am-paged \
+    --sid-file "${STATE_DIR}/page.sid" --wait-joined 60 || {
+    echo "page leg not answered/joined within 60 s — REFUSING to dial the bridge unmanned" >&2
+    exit 1
+  }
+  scripts/twilio-operator-dial.sh --to "$TO" --config "$CONFIG" --operator-i-am-paged \
+    ${DTMF:+--dtmf "$DTMF"} --stream-url "$STREAM_URL" \
+    ${DIGIT_DELAY:+--digit-delay "$DIGIT_DELAY"} ${DTMF_REPEAT:+--dtmf-repeat "$DTMF_REPEAT"} \
+    --sid-file "${STATE_DIR}/call.sid"
+
+  if [[ -n "${MAX_RECONNECTS:-}" && "$MAX_RECONNECTS" -gt 0 ]]; then
+    EARSHOT_OPERATOR_CONFIG="$CONFIG" scripts/redial-supervisor.sh --state-dir "$STATE_DIR" --to "$TO" --stream-url "$STREAM_URL" \
+      ${DTMF:+--dtmf "$DTMF"} ${DIGIT_DELAY:+--digit-delay "$DIGIT_DELAY"} \
+      ${DTMF_REPEAT:+--dtmf-repeat "$DTMF_REPEAT"} --max-redials "$MAX_RECONNECTS" \
+      --dial-script scripts/operator-redial.sh &
+    REDIAL_PID=$!
+    echo "$REDIAL_PID" > "${STATE_DIR}/redial-supervisor.pid"
+    trap 'kill "$ARM_PID" "$NGROK_PID" "$REDIAL_PID" 2>/dev/null || true' EXIT
+    echo "redial supervisor up (pid ${REDIAL_PID}, operator redial wrapper, max ${MAX_RECONNECTS} redials)"
+  fi
 else
   scripts/twilio-dial.sh --to "$TO" ${DTMF:+--dtmf "$DTMF"} --stream-url "$STREAM_URL" \
+    ${DIGIT_DELAY:+--digit-delay "$DIGIT_DELAY"} ${DTMF_REPEAT:+--dtmf-repeat "$DTMF_REPEAT"} \
     --sid-file "${STATE_DIR}/call.sid"
+
+  # Redial supervisor: only when the config opts into mid-call persistence.
+  if [[ -n "${MAX_RECONNECTS:-}" && "$MAX_RECONNECTS" -gt 0 ]]; then
+    scripts/redial-supervisor.sh --state-dir "$STATE_DIR" --to "$TO" --stream-url "$STREAM_URL" \
+      ${DTMF:+--dtmf "$DTMF"} ${DIGIT_DELAY:+--digit-delay "$DIGIT_DELAY"} \
+      ${DTMF_REPEAT:+--dtmf-repeat "$DTMF_REPEAT"} --max-redials "$MAX_RECONNECTS" &
+    REDIAL_PID=$!
+    echo "$REDIAL_PID" > "${STATE_DIR}/redial-supervisor.pid"
+    trap 'kill "$ARM_PID" "$NGROK_PID" "$REDIAL_PID" 2>/dev/null || true' EXIT
+    echo "redial supervisor up (pid ${REDIAL_PID}, max ${MAX_RECONNECTS} redials)"
+  fi
 fi
 
 echo "event ${EVENT_ID} live. kill with: touch ${STATE_DIR}/STOP"

@@ -260,8 +260,11 @@ and `arm` refuses to start on any inconsistency.
 One invocation = one isolated event. It sources that event's `--account` env file (the
 single source of truth for its Kalshi + Twilio secrets) into its own process env, starts
 that event's own ngrok tunnel on its `--bind-port`, exports the matching
-`TWILIO_STREAM_URL`, arms with `--state-dir state/<event-id>`, then dials via
-`scripts/twilio-dial.sh`. Run it twice (two configs, two account files, two ports) for
+`TWILIO_STREAM_URL`, arms with `--state-dir state/<event-id>`, waits for the arm's
+readiness token `state/<event-id>/listener.ready` (written only once the detector is
+built and the pipeline is accepting — a bare `nc -z` port check lies here, because the
+WS listener binds before the detector build; cost the whole phone lane on 2026-07-29),
+then dials via `scripts/twilio-dial.sh`. Run it twice (two configs, two account files, two ports) for
 two isolated events. Because each process sources a *different* account file and the
 config binds the Kalshi key + Twilio token to that account, the human glue cannot
 misalign env, port, tunnel, and stream URL across events.
@@ -297,8 +300,15 @@ per process (raising it lets one event grab multiple cores and oversubscribe), a
       `FROM_NUMBER`) + config `[twilio]` (`auth_token_path`, `stream_url`).
 - [ ] Two configs with **distinct** `[[sources]] bind` port, `[event] id`, and
       `[kalshi] series`.
-- [ ] Two ngrok accounts (free tier = one agent each) → pass each event's auth file via
-      `launch-event.sh --ngrok-config <acctX.yml>`.
+- [ ] ~~Two ngrok accounts (free tier = one agent each) → pass each event's auth file via
+      `launch-event.sh --ngrok-config <acctX.yml>`.~~ **REFUTED 2026-07-29
+      (VERIFICATIONS Q-NGROK):** the free plan serves ONE static endpoint per
+      account regardless of config, so concurrent phone events on one account are
+      impossible, and a second free account is a policy risk. The supported path is
+      TLS-on-box: `launch-event.sh --tls-host media.<domain>` gives each event its
+      own `wss://media.<domain>/e/<bind-port>` through the caddy ingress
+      (`deploy/caddy/Caddyfile`) — no tunnels, no per-account cap. Each event still
+      pins its exact `stream_url` (the signature base) via its `[twilio]` section.
 - [ ] Both Twilio accounts off the fraud hold + past trial; both Kalshi accounts ideally
       Advanced tier (§4). **Live run still gated on M3** (§7).
 - Report/state isolation and the ngrok per-event web-API port are handled by

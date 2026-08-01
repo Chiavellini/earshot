@@ -12,27 +12,52 @@
 # TwiML notes (docs/TWILIO.md):
 #   <Start><Stream>  forks inbound audio asynchronously — listen-only, the
 #                    call keeps running while media flows to us.
-#   <Play digits>    sends the passcode via DTMF. Each 'w' waits 0.5 s; the
-#                    padding below assumes the bridge prompts within ~4 s of
-#                    answer — tune during the loopback rehearsal.
+#   <Play digits>    sends the passcode via DTMF. Each 'w' waits 0.5 s.
 #   <Pause>          holds the line for the call (90 min).
+#
+# ⚠ DTMF TIMING WAS A HARDCODED 4 s AND IT COST US TWO EVENTS (2026-07-29).
+# The padding used to be a literal `wwwwwwww` (8 × 0.5 s) with the code played
+# exactly ONCE, on the assumption that every bridge prompts within ~4 s. CMG's
+# does — that call held for 4572 s. MSFT (+18774070666) and CVNA
+# (+16463071963) do not: all four attempts were ANSWERED and then dropped by
+# the far end at 23 / 42 / 42 / 73 s, `status=completed`, i.e. the digits went
+# into dead air and the bridge hung up on an input timeout. A fixed constant
+# cannot fit every venue, so it is now a knob:
+#
+#   --digit-delay <n>   n × 0.5 s of 'w' padding before the digits (default 8 = 4 s)
+#   --dtmf-repeat <n>   send the code n times, 2 s apart (default 1)
+#
+# Defaults reproduce the old TwiML byte-for-byte, so every existing caller is
+# unaffected. Tune per venue in `configs/dial-ins.toml` and pin what worked.
 #
 # Listen-only + no recording anywhere. Kill the audio leg with
 # scripts/twilio-hangup.sh <CallSid> (printed below) or state/STOP for orders.
 set -euo pipefail
 
 TO="" DTMF="" STREAM_URL="" SID_FILE="" DRY_RUN=0
+DIGIT_DELAY=8 DTMF_REPEAT=1     # defaults reproduce the pre-2026-07-29 TwiML exactly
+PAUSE_SECS=5400                 # hold the line 90 min (a full call); probes pass less
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --to)         TO="$2"; shift 2 ;;
-    --dtmf)       DTMF="$2"; shift 2 ;;
-    --stream-url) STREAM_URL="$2"; shift 2 ;;
-    --sid-file)   SID_FILE="$2"; shift 2 ;;
-    --dry-run)    DRY_RUN=1; shift ;;   # build+print TwiML, place NO call (testing)
+    --to)          TO="$2"; shift 2 ;;
+    --dtmf)        DTMF="$2"; shift 2 ;;
+    --stream-url)  STREAM_URL="$2"; shift 2 ;;
+    --sid-file)    SID_FILE="$2"; shift 2 ;;
+    --digit-delay) DIGIT_DELAY="$2"; shift 2 ;;   # n × 0.5 s before the code
+    --dtmf-repeat) DTMF_REPEAT="$2"; shift 2 ;;   # send the code n times, 2 s apart
+    --pause-secs)  PAUSE_SECS="$2"; shift 2 ;;    # <Pause> hold time (bridge-probe uses ~150)
+    --dry-run)     DRY_RUN=1; shift ;;   # build+print TwiML, place NO call (testing)
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
-[[ -n "$TO" && -n "$STREAM_URL" ]] || { echo "usage: $0 --to +1... [--dtmf 1234#] --stream-url wss://host/media [--sid-file <path>] [--dry-run]" >&2; exit 2; }
+[[ -n "$TO" && -n "$STREAM_URL" ]] || { echo "usage: $0 --to +1... [--dtmf 1234#] --stream-url wss://host/media [--sid-file <path>] [--digit-delay 8] [--dtmf-repeat 1] [--dry-run]" >&2; exit 2; }
+# Numeric + sane-bound the timing knobs. An unbounded delay would silently hold
+# a live bridge without ever sending the code; 120 (=60 s) is far past any
+# observed prompt and still finite.
+[[ "$DIGIT_DELAY" =~ ^[0-9]+$ && "$DIGIT_DELAY" -le 120 ]] || { echo "REFUSING: --digit-delay must be an integer 0..120 (0.5 s units)" >&2; exit 2; }
+[[ "$DTMF_REPEAT" =~ ^[1-9][0-9]*$ && "$DTMF_REPEAT" -le 5 ]] || { echo "REFUSING: --dtmf-repeat must be an integer 1..5" >&2; exit 2; }
+# 5400 (90 min) covers any earnings call; more would hold a line for no reason.
+[[ "$PAUSE_SECS" =~ ^[1-9][0-9]*$ && "$PAUSE_SECS" -le 5400 ]] || { echo "REFUSING: --pause-secs must be an integer 1..5400" >&2; exit 2; }
 
 # LISTEN-ONLY CAPTURE INVARIANT (docs/TWILIO.md): DTMF is passcode-entry ONLY.
 # Allowed charset is digits, '#', and 'w' (0.5 s wait). '*' is HARD-REJECTED
@@ -56,12 +81,20 @@ fi
 : "${TWILIO_ACCOUNT_SID:?}" "${TWILIO_AUTH_TOKEN:?}" "${TWILIO_FROM_NUMBER:?}"
 
 PLAY_DIGITS=""
-[[ -n "$DTMF" ]] && PLAY_DIGITS="<Play digits=\"wwwwwwww${DTMF}\"/>"
+if [[ -n "$DTMF" ]]; then
+  # Build the 'w' padding from --digit-delay rather than a literal constant.
+  PAD=""; for ((_i = 0; _i < DIGIT_DELAY; _i++)); do PAD+="w"; done
+  # Repeats are separated by 4 × 'w' (2 s) so a bridge that re-prompts, or that
+  # swallowed the first entry, gets another chance on the same call.
+  SEQ="${PAD}${DTMF}"
+  for ((_r = 1; _r < DTMF_REPEAT; _r++)); do SEQ+="wwww${DTMF}"; done
+  PLAY_DIGITS="<Play digits=\"${SEQ}\"/>"
+fi
 
 # One-way capture by construction: <Start><Stream> forks inbound audio to us
 # and has NO return-audio path (unlike <Connect><Stream>). Never emit <Connect>,
 # <Dial>, or <Number> here — that would make audio-injection possible.
-TWIML="<Response><Start><Stream url=\"${STREAM_URL}\" track=\"inbound_track\"/></Start>${PLAY_DIGITS}<Pause length=\"5400\"/></Response>"
+TWIML="<Response><Start><Stream url=\"${STREAM_URL}\" track=\"inbound_track\"/></Start>${PLAY_DIGITS}<Pause length=\"${PAUSE_SECS}\"/></Response>"
 
 # Dry run: emit the TwiML for inspection/tests and place NO call (no creds needed).
 if [[ "$DRY_RUN" == "1" ]]; then

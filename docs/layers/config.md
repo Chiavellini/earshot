@@ -14,21 +14,36 @@ risk gate).
   local validation (≥1 source, ≥1 keyword, chunk_ms 1..=1000, unique
   tickers, non-empty variants, cap 1..=99, budget > 0,
   `resample_to_hz` = 16000 only, `engine = "sherpa_kws"` requires its
-  `[detector.sherpa_kws]` section, each `fast_prefixes` entry is a strict
+  `[detector.sherpa_kws]` section, `engine = "streaming_ctc"` requires its
+  `[detector.streaming_ctc]` section whose `precision` must be `"int8"`
+  (default) or `"fp32"` — exact strings, anything else refuses to load,
+  each `fast_prefixes` entry is a strict
   case-insensitive prefix of some variant, thresholds in (0, 1],
   `min_confidence_*` in [0, 1], `[kalshi]` `key_id`/`private_key_path`
   all-or-nothing with `expected_key_id` == `key_id` when set and
   `expected_key_id` requiring that pair, `[twilio]` `stream_url` is a
-  `wss://` URL, and `[arbiter] mode = "fanout"` requires ≥ 2 sources with
+  `wss://` URL, an ENABLED `[operator_handler]` requires `cell_number` in
+  strict E.164 (`^\+[1-9][0-9]{7,14}$`) and `conference_prefix` matching
+  `[a-z0-9-]{1,24}` (a disabled/absent section is inert),
+  and `[arbiter] mode = "fanout"` requires ≥ 2 sources with
   pairwise-distinct `SourceConfig::label()`s AND a fully-default `[perf]`
   section — the core pin maps are single-chain, so fanout + tuning refuses
   to arm instead of silently stacking N pinned threads per core).
 
 ## Exit door
 - **Type:** `EventConfig { event, pipeline, detector: DetectorSection,
-  sources: Vec<SourceConfig>, kalshi: KalshiSection,
+  sources: Vec<SourceConfig>, arbiter: ArbiterConfig, kalshi: KalshiSection,
   twilio: Option<TwilioSection>, risk: risk::RiskConfig,
-  keywords: Vec<KeywordConfig> }`. `KalshiSection` carries optional
+  perf: perf::PerfSection,
+  operator_handler: Option<OperatorHandlerSection>,
+  keywords: Vec<KeywordConfig> }`.
+  `OperatorHandlerSection { enabled (default false), cell_number,
+  conference_prefix (default "earshot") }` is the config HALF of the operator
+  double gate (docs/OPERATOR-HANDLER.md): it is consumed by
+  `scripts/twilio-operator-dial.sh` / `scripts/operator-page.sh` (which also
+  require `--operator-i-am-paged`), never by the binary's audio path, and the
+  behavior it gates is owned by `control.operator`.
+  `KalshiSection` carries optional
   per-account credential binding (`key_id`, `private_key_path`,
   `expected_key_id`) and `TwilioSection` the per-account Twilio binding
   (`auth_token_path`, `stream_url`, `account_sid`, `from_number` — the last two
@@ -37,7 +52,12 @@ risk gate).
   credential-source *behavior* (from_pem vs from_env) is owned by
   `docs/layers/auth.md`.
   `DetectorSection { engine: EngineKind
-  (stub | sherpa_kws, default stub), sherpa_kws: Option<SherpaKwsConfig> }`;
+  (stub | sherpa_kws | streaming_ctc, default stub),
+  sherpa_kws: Option<SherpaKwsConfig>,
+  streaming_ctc: Option<StreamingCtcConfig> }`;
+  `StreamingCtcConfig` carries `precision: String` (`"int8"` default |
+  `"fp32"`), the CTC counterpart of `SherpaKwsConfig.fp32`, consumed by
+  `detector::streaming_ctc::Precision::parse` for encoder-export selection;
   `PipelineSection` carries `resample_to_hz: Option<u32>` (preproc upsample
   target, absent = passthrough); `KeywordConfig` carries the M1 detector
   tuning fields (`fast_prefixes`, `fast_threshold`, `confirmed_threshold`,
@@ -71,6 +91,16 @@ risk gate).
   `--i-am-live`'s emptiness check passes, the arm comes up clean, and then
   **every** order is refused `NotAllowlisted` at fire time. All three configs
   staged for 2026-07-28/29 shipped in exactly that state.
+- **Keyword `boost` is a sherpa_kws-only knob.** The CTC scorer implements no
+  acoustic boost (`streaming_ctc` compiles with a hardcoded 1.0), so under
+  `engine = "streaming_ctc"` any keyword carrying `boost` triggers a loud
+  `tracing::warn!` from `validate` (`config::ctc_ignored_boost_warning` builds
+  the text; tested by `ctc_engine_warns_on_ignored_keyword_boost`) naming the
+  affected keywords and stating the values are IGNORED. Warned, never
+  rejected: configs keep a dormant sherpa block for one-line engine reverts,
+  and per-keyword boosts must survive that flip. The incident this kills:
+  sherpa-scale `tuned_library` boosts pasted into a CTC config looked applied
+  but did nothing.
 - Secrets NEVER appear here — the config carries only *paths* to key material
   (`[kalshi].private_key_path`, `[twilio].auth_token_path`, resolved relative
   to the config) or, when those are absent, credentials come from env
@@ -94,3 +124,12 @@ risk gate).
   `kalshi_key_id_without_key_path_rejected`, `kalshi_expected_key_id_mismatch_rejected`,
   `kalshi_expected_key_id_without_binding_rejected`, `twilio_section_parses_and_requires_wss`,
   and `parses_checked_in_twilio_live_config_verbatim`.
+- Streaming-CTC knobs: `ctc_precision_defaults_to_int8`,
+  `ctc_precision_fp32_accepted_others_rejected`, and
+  `ctc_engine_warns_on_ignored_keyword_boost`.
+- Operator gate: `operator_handler_absent_by_default`,
+  `operator_handler_enabled_parses_and_validates`,
+  `operator_handler_disabled_section_is_inert`,
+  `operator_handler_enabled_rejects_bad_cell_numbers`,
+  `operator_handler_enabled_rejects_bad_conference_prefix`, and
+  `operator_handler_rejects_unknown_fields`.

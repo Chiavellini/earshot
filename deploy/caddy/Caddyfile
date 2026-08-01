@@ -1,0 +1,76 @@
+# EARSHOT TLS ingress — Twilio Media Streams terminate on the box, no ngrok
+# (docs/INGRESS-BAKEOFF.md "no tunnels in production"; Q-NGROK is why: the free
+# ngrok plan caps the PHONE lane at one concurrent event).
+#
+# Install: scripts/install-tls-ingress.sh (idempotent; substitutes the domain).
+# Cert: Let's Encrypt via Caddy's automatic HTTPS — needs the A record
+#   media.{$EARSHOT_DOMAIN} → the box's Elastic IP (3.212.174.94) and :80/:443
+#   open in the security group.
+#
+# Per-event routing: /e/<bind-port> reverse-proxies to 127.0.0.1:<bind-port>,
+# one path per event (docs/MULTI-EVENT.md §8 — distinct [[sources]] bind ports).
+# Twilio signs the EXACT stream URL (VERIFICATIONS Q-M3), so each event pins
+#   TWILIO_STREAM_URL = wss://media.<domain>/e/<port>
+# and this proxy must never rewrite Host or the path — `reverse_proxy` keeps
+# both; do not add `uri strip_prefix` or `header_up Host` here (the signature
+# base would silently change and every handshake would 403 — Q-TLS pins this).
+#
+# The upstream is plain HTTP/WS on loopback: TwilioWsSource stays a TCP
+# listener; TLS lives entirely here.
+
+media.{$EARSHOT_DOMAIN} {
+	@e8080 path /e/8080 /e/8080/*
+	handle @e8080 {
+		reverse_proxy 127.0.0.1:8080
+	}
+	@e8081 path /e/8081 /e/8081/*
+	handle @e8081 {
+		reverse_proxy 127.0.0.1:8081
+	}
+	@e8082 path /e/8082 /e/8082/*
+	handle @e8082 {
+		reverse_proxy 127.0.0.1:8082
+	}
+	@e8083 path /e/8083 /e/8083/*
+	handle @e8083 {
+		reverse_proxy 127.0.0.1:8083
+	}
+	@e8084 path /e/8084 /e/8084/*
+	handle @e8084 {
+		reverse_proxy 127.0.0.1:8084
+	}
+	@e8085 path /e/8085 /e/8085/*
+	handle @e8085 {
+		reverse_proxy 127.0.0.1:8085
+	}
+	# bridge-probe's default bind (scripts/bridge-probe.sh) — probes ride the
+	# same ingress so a probe also exercises the production TLS path.
+	@e8099 path /e/8099 /e/8099/*
+	handle @e8099 {
+		reverse_proxy 127.0.0.1:8099
+	}
+
+	# Fake-operator rehearsal webhook (scripts/fake-operator/server.py on
+	# :8100, run with --base-path /fake-operator) — plain HTTP TwiML webhooks
+	# for the rehearsal number, NOT media. No path rewriting here (same
+	# no-rewrite rule as the media routes); the server strips the prefix
+	# itself. Rehearsal-only surface; never point a production number here.
+	@fakeop path /fake-operator /fake-operator/*
+	handle @fakeop {
+		reverse_proxy 127.0.0.1:8100
+	}
+
+	# Anything else (scanners hit public TLS endpoints constantly): close
+	# fast, log nothing sensitive. The WS source additionally rejects any
+	# stream with a bad X-Twilio-Signature, so routing is not the auth layer.
+	handle {
+		respond 404
+	}
+
+	log {
+		output file /var/log/caddy/earshot-media.log {
+			roll_size 20MiB
+			roll_keep 5
+		}
+	}
+}

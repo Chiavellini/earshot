@@ -37,6 +37,60 @@ keeps waiting — a garbage TCP connect must never deny service while armed
 on a public tunnel URL (live-found 2026-07-14; regression:
 `tests/twilio_source.rs::stray_connection_does_not_kill_the_listener`).
 
+**Mid-call persistence (2026-07-29).** With `twilio_stream.max_reconnects > 0`
+(config; default 0 = one-shot), a recoverable stream end mid-call — Twilio
+`stop`, socket close, WS close frame, WS read error, or `idle_timeout` — does
+NOT end the run: the source atomically rewrites
+`$EARSHOT_REDIAL_DIR/redial.request`
+(`{"unix_ts":<int-seconds>,"old_call_sid":"<sid-or-empty>","attempt":<int>,
+"reason":"stop"|"idle"|"socket_closed"|"close_frame"|"ws_error"}` — `reason`
+is the `StreamEnd` variant that triggered the redial; the watch signal is the
+file's MTIME) and re-enters its accept loop for `reaccept_window` (default
+120 s; the FIRST accept still uses `accept_timeout`). The redial itself is
+out-of-process: `scripts/redial-supervisor.sh` (started by `launch-event.sh`
+when the config opts in) watches the marker, hangs up the previous CallSid,
+and re-dials with backoff. Obligations the re-accept keeps:
+- frame `seq` stays strictly increasing ACROSS re-accepts (dedup/timing
+  downstream rely on dense per-source seq);
+- a re-attached stream carrying the PREVIOUS call's `callSid` is a stale
+  half-open zombie — dropped without consuming a reconnect attempt;
+- with the budget exhausted (`attempt >= max_reconnects`), every end maps to
+  its historical return (stop/close → `EndOfStream`, idle/read error →
+  `SourceError`), so `max_reconnects = 0` is byte-for-byte the old contract;
+- a `reaccept_window` that expires with no redial is a CLEAN
+  `EndOfStream` (the supervisor owns "the call is actually over" via its
+  `--max-minutes`/STOP hard stops), never an error.
+
+**Supersede (redial vs half-open stream, 2026-07-29).** With
+`max_reconnects > 0` the read loop `tokio::select!`s between the live
+stream's `.next()` and `listener.accept()`: the redialed call must never rot
+in the kernel backlog behind a half-open socket until `idle_timeout` (the
+2026-07-29 incident tell was `Recv-Q 3` on the listener while `nc -z` stayed
+green, then a burst drain with every buffered frame stamped at drain time). A
+mid-stream connection is validated exactly like a first accept (signature-
+checked handshake), then read up to its `start` — both steps bounded at 2 s
+each, during which the live stream is briefly unread. A DIFFERENT callSid is
+the redial landing (`StreamEnd::Superseded`): the source swaps to the new
+stream immediately, drops the old socket, consumes NO reconnect attempt and
+writes NO marker. The SAME callSid is a stale zombie — dropped, live stream
+untouched; any candidate failure drops only the candidate. With
+`max_reconnects = 0` the listener is never polled mid-stream (one-shot
+behavior unchanged). Every accepted TCP stream (first accept, re-accept,
+supersede candidate) gets `TCP_NODELAY` before its WS handshake.
+
+All four knobs (`idle_timeout_secs`, `accept_timeout_secs`,
+`reaccept_window_secs`, `max_reconnects`) are per-source config, validated in
+`config::validate`, plumbed by `build_leg` (which also surfaces the bound
+listener port to `main.rs::arm` for the `<state_dir>/listener.ready` dial
+gate — see `docs/nodes/runtime-assembly.md`). Regressions:
+`tests/twilio_source.rs::drop_then_redial_reattaches_with_seq_continuity`,
+`::stale_same_callsid_reattach_is_dropped_not_adopted`,
+`::default_one_shot_drop_still_fails_loud_immediately`,
+`::exhausted_budget_expires_reaccept_window_as_end_of_stream`,
+`::redial_marker_carries_schema_with_reason`,
+`::live_stream_superseded_by_new_callsid_without_burning_an_attempt`,
+`::one_shot_second_connection_does_not_disturb_live_stream`.
+
 `X-Twilio-Signature` is validated during the WS handshake (`accept_hdr_async`
 callback → `valid_twilio_signature`, HMAC-SHA1 over the stream URL): a spoofed
 dialer never becomes an audio source. The auth token comes from the config's
@@ -148,6 +202,10 @@ pipeline wiring, not a source concern.
 - Unreadable/malformed media → error from the constructor, before any frame
   flows (fail cheap). Twilio: a taken bind port refuses at construction.
 - Mid-stream I/O error → return `Err(SourceError)`; the pipeline tears down.
+  Exception (opt-in): Twilio with `max_reconnects > 0` treats recoverable
+  stream ends as a redial request + re-accept instead — see the mid-call
+  persistence block above. Protocol violations (bad JSON, wrong mediaFormat,
+  media-before-start) still fail loud immediately, budget or not.
 - Never silently resample or downmix: wrong format = error (replay:
   constructor; Twilio: `SourceError::Protocol` on any `start.mediaFormat`
   other than audio/x-mulaw 8 kHz mono).

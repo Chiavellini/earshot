@@ -33,6 +33,13 @@ pub struct EventConfig {
     /// default; only meaningful on the tuned Linux event box (docs/OS-TUNING.md).
     #[serde(default)]
     pub perf: crate::perf::PerfSection,
+    /// `[operator_handler]` — gated operator-screen conference path
+    /// (docs/OPERATOR-HANDLER.md). Optional; absent = disabled. Consumed by
+    /// `scripts/twilio-operator-dial.sh` / `scripts/operator-page.sh` (which
+    /// additionally require the `--operator-i-am-paged` CLI flag — the double
+    /// gate), never by the binary's audio path.
+    #[serde(default)]
+    pub operator_handler: Option<OperatorHandlerSection>,
     pub keywords: Vec<KeywordConfig>,
 }
 
@@ -154,10 +161,22 @@ pub struct StreamingCtcConfig {
     /// Duplicate suppression per (keyword, tier), in stream-time ms.
     #[serde(default = "default_refractory_ms")]
     pub refractory_ms: u64,
+    /// Which encoder ONNX export to load from `model_dir`: `"int8"` (default —
+    /// prefer the int8 export when several exist, exactly the pre-knob
+    /// behavior) or `"fp32"` (require a non-int8 export; the detector refuses
+    /// to build when only int8 exists). Counterpart of
+    /// `[detector.sherpa_kws].fp32`, where fp32 measurably recovered recall at
+    /// zero precision cost (docs/BAKEOFF.md §Miss-autopsy cell 1).
+    #[serde(default = "default_ctc_precision")]
+    pub precision: String,
 }
 
 fn default_ctc_threshold() -> f32 {
     0.5
+}
+
+fn default_ctc_precision() -> String {
+    "int8".into()
 }
 
 #[derive(Debug, Deserialize)]
@@ -172,7 +191,27 @@ pub enum SourceConfig {
     /// Earnings-call dial-in via Twilio Media Streams (M3): we run the WS
     /// server, Twilio's <Stream> connects to it (docs/TWILIO.md). The dial
     /// itself happens out-of-band (scripts/twilio-dial.sh).
-    TwilioStream { bind: String },
+    TwilioStream {
+        bind: String,
+        /// Max silence between WS messages once connected (default 30 s).
+        /// Twilio streams silence as frames, so a stall is a dead call.
+        #[serde(default)]
+        idle_timeout_secs: Option<u64>,
+        /// How long the FIRST accept waits for the call to land (default 900 s).
+        #[serde(default)]
+        accept_timeout_secs: Option<u64>,
+        /// After a mid-call drop, how long a re-accept waits for the redial's
+        /// stream before giving up as end-of-stream (default 120 s). Only
+        /// meaningful with `max_reconnects > 0`.
+        #[serde(default)]
+        reaccept_window_secs: Option<u64>,
+        /// How many mid-call drops the source survives by re-entering its
+        /// accept loop (the redial itself is out-of-process —
+        /// scripts/redial-supervisor.sh). Default 0 = one-shot, the
+        /// pre-2026-07-29 behavior.
+        #[serde(default)]
+        max_reconnects: Option<u32>,
+    },
     /// Raw SIP/RTP dial-in via a low-latency carrier (Telnyx/Bandwidth) or a
     /// bridge SIP URI directly (Option C). The adapter is GATED behind the
     /// live ingress bake-off (docs/INGRESS-BAKEOFF.md): the config parses and
@@ -391,6 +430,45 @@ pub struct TwilioSection {
     pub from_number: Option<String>,
 }
 
+/// `[operator_handler]` — the gated human-first operator path for Class B
+/// (live-operator-screened) bridges (docs/OPERATOR-HANDLER.md, VERIFICATIONS
+/// Q-ADMIT). `enabled = true` is only HALF the gate: the operator scripts also
+/// require `--operator-i-am-paged` at dial time. The default listen-only dial
+/// (`scripts/twilio-dial.sh`) never reads this section.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OperatorHandlerSection {
+    /// Off by default; a config without this section (or with `enabled =
+    /// false`) can never produce an operator-capable leg.
+    #[serde(default)]
+    pub enabled: bool,
+    /// The ONLY number the pager leg may dial (the user's own cell). E.164,
+    /// validated when `enabled`.
+    #[serde(default)]
+    pub cell_number: String,
+    /// Namespace for Twilio `<Conference>` names so two events can never
+    /// collide on a conference room. `[a-z0-9-]{1,24}`, validated when
+    /// `enabled`.
+    #[serde(default = "default_conference_prefix")]
+    pub conference_prefix: String,
+}
+
+fn default_conference_prefix() -> String {
+    "earshot".into()
+}
+
+/// Strict E.164: `^\+[1-9][0-9]{7,14}$` (a `+`, a non-zero digit, then 7..=14
+/// more digits). Hand-rolled so config validation adds no regex dependency.
+fn is_e164(s: &str) -> bool {
+    let Some(rest) = s.strip_prefix('+') else {
+        return false;
+    };
+    let b = rest.as_bytes();
+    (8..=15).contains(&b.len())
+        && b[0] != b'0'
+        && b.iter().all(|c| c.is_ascii_digit())
+}
+
 fn default_env() -> String {
     "prod".into()
 }
@@ -499,6 +577,37 @@ pub fn allowlist_covers_keywords(cfg: &EventConfig) -> Result<(), ConfigError> {
     )))
 }
 
+/// The CTC scorer implements NO acoustic boost — `detector::streaming_ctc`
+/// compiles keywords with a fixed boost of 1.0 and never reads the per-entry
+/// value — so keyword `boost` values are dead config under that engine. They
+/// are sherpa_kws-scale numbers (e.g. from `prepare`'s `tuned_library`), and
+/// silently discarding them has already caused a real tuning confusion:
+/// sherpa-tuned boosts pasted into a streaming_ctc config looked applied but
+/// did nothing. Returns the warning text so `validate` can shout it (and tests
+/// can assert it) without changing any scoring behavior.
+fn ctc_ignored_boost_warning(cfg: &EventConfig) -> Option<String> {
+    if cfg.detector.engine != EngineKind::StreamingCtc {
+        return None;
+    }
+    let boosted: Vec<&str> = cfg
+        .keywords
+        .iter()
+        .filter(|k| k.boost.is_some())
+        .map(|k| k.phrase.as_str())
+        .collect();
+    if boosted.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "detector.engine = \"streaming_ctc\": keyword `boost` is NOT implemented by the \
+         CTC scorer and is IGNORED for {} keyword(s) {:?} — boost is a sherpa_kws-scale \
+         knob (e.g. prepare's tuned_library values); on this engine tune \
+         `confirmed_threshold`/`fast_threshold`/`default_threshold` instead",
+        boosted.len(),
+        boosted
+    ))
+}
+
 fn validate(cfg: &EventConfig) -> Result<(), ConfigError> {
     let fail = |msg: String| Err(ConfigError::Invalid(msg));
 
@@ -522,11 +631,42 @@ fn validate(cfg: &EventConfig) -> Result<(), ConfigError> {
             }
             _ => {}
         }
-        if let SourceConfig::TwilioStream { bind } = s {
+        if let SourceConfig::TwilioStream {
+            bind,
+            idle_timeout_secs,
+            accept_timeout_secs,
+            reaccept_window_secs,
+            max_reconnects,
+        } = s
+        {
             if bind.parse::<std::net::SocketAddr>().is_err() {
                 return fail(format!(
                     "twilio_stream.bind {bind:?} is not a socket address (e.g. \"127.0.0.1:8080\")"
                 ));
+            }
+            // Bounds keep a typo from silently disabling the dead-call guard
+            // (idle=0 would spin; idle=30000 would never notice a dead call).
+            if let Some(v) = idle_timeout_secs {
+                if !(5..=300).contains(v) {
+                    return fail(format!("twilio_stream.idle_timeout_secs {v} outside 5..=300"));
+                }
+            }
+            if let Some(v) = accept_timeout_secs {
+                if !(10..=7200).contains(v) {
+                    return fail(format!("twilio_stream.accept_timeout_secs {v} outside 10..=7200"));
+                }
+            }
+            if let Some(v) = reaccept_window_secs {
+                if !(10..=900).contains(v) {
+                    return fail(format!("twilio_stream.reaccept_window_secs {v} outside 10..=900"));
+                }
+            }
+            if let Some(v) = max_reconnects {
+                if *v > 20 {
+                    return fail(format!(
+                        "twilio_stream.max_reconnects {v} > 20 — a bridge that drops us that often needs a different fix"
+                    ));
+                }
             }
         }
     }
@@ -613,6 +753,31 @@ fn validate(cfg: &EventConfig) -> Result<(), ConfigError> {
             ));
         }
     }
+    // Operator handler (docs/OPERATOR-HANDLER.md): only an ENABLED section is
+    // held to the field rules — a disabled/absent section is inert and the
+    // operator scripts refuse on it regardless of field contents.
+    if let Some(op) = &cfg.operator_handler {
+        if op.enabled {
+            if !is_e164(&op.cell_number) {
+                return fail(format!(
+                    "[operator_handler] enabled = true requires cell_number in strict E.164 \
+                     (^\\+[1-9][0-9]{{7,14}}$), got {:?} — this is the ONLY number the pager \
+                     leg may dial",
+                    op.cell_number
+                ));
+            }
+            let p = &op.conference_prefix;
+            let prefix_ok = !p.is_empty()
+                && p.len() <= 24
+                && p.bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+            if !prefix_ok {
+                return fail(format!(
+                    "[operator_handler] conference_prefix must match [a-z0-9-]{{1,24}}, got {p:?}"
+                ));
+            }
+        }
+    }
     if cfg.keywords.is_empty() {
         return fail("at least one keyword is required".into());
     }
@@ -696,6 +861,15 @@ fn validate(cfg: &EventConfig) -> Result<(), ConfigError> {
         if sc.num_threads == 0 {
             return fail("detector.streaming_ctc.num_threads must be > 0".into());
         }
+        if sc.precision != "int8" && sc.precision != "fp32" {
+            return fail(format!(
+                "detector.streaming_ctc.precision must be \"int8\" or \"fp32\", got {:?}",
+                sc.precision
+            ));
+        }
+    }
+    if let Some(msg) = ctc_ignored_boost_warning(cfg) {
+        tracing::warn!("{msg}");
     }
 
     let mut seen = std::collections::HashSet::new();
@@ -891,6 +1065,55 @@ mod tests {
         std::fs::read_to_string(example_path()).unwrap()
     }
 
+    /// base_toml with its replay source swapped for a twilio_stream source
+    /// carrying the given extra lines.
+    fn twilio_toml(extra: &str) -> String {
+        base_toml().replace(
+            "kind  = \"replay\"\npath  = \"fixture.wav\"\nspeed = 1.0                       # 0 = as fast as possible (tests)",
+            &format!("kind = \"twilio_stream\"\nbind = \"127.0.0.1:8080\"\n{extra}"),
+        )
+    }
+
+    #[test]
+    fn twilio_persistence_knobs_parse_and_bound() {
+        // Absent knobs (every existing config) must keep parsing.
+        let cfg: EventConfig = toml::from_str(&twilio_toml("")).unwrap();
+        assert!(super::validate(&cfg).is_ok());
+        assert!(matches!(
+            cfg.sources[0],
+            SourceConfig::TwilioStream { max_reconnects: None, reaccept_window_secs: None, .. }
+        ));
+
+        let cfg: EventConfig = toml::from_str(&twilio_toml(
+            "idle_timeout_secs = 45\naccept_timeout_secs = 1200\nreaccept_window_secs = 90\nmax_reconnects = 3",
+        ))
+        .unwrap();
+        assert!(super::validate(&cfg).is_ok());
+        assert!(matches!(
+            cfg.sources[0],
+            SourceConfig::TwilioStream {
+                idle_timeout_secs: Some(45),
+                accept_timeout_secs: Some(1200),
+                reaccept_window_secs: Some(90),
+                max_reconnects: Some(3),
+                ..
+            }
+        ));
+
+        // Out-of-bounds values fail validation loudly, per knob.
+        for bad in [
+            "idle_timeout_secs = 3",
+            "idle_timeout_secs = 301",
+            "accept_timeout_secs = 5",
+            "reaccept_window_secs = 5",
+            "reaccept_window_secs = 901",
+            "max_reconnects = 21",
+        ] {
+            let cfg: EventConfig = toml::from_str(&twilio_toml(bad)).unwrap();
+            assert!(super::validate(&cfg).is_err(), "{bad:?} must be rejected");
+        }
+    }
+
     #[test]
     fn rejects_unknown_source_kind() {
         let text = base_toml().replace("kind  = \"replay\"", "kind  = \"carrier_pigeon\"");
@@ -1009,6 +1232,65 @@ mod tests {
         assert_eq!(sk.default_threshold, 0.25);
         assert_eq!(sk.default_boost, 2.0);
         assert_eq!(sk.refractory_ms, 2000);
+    }
+
+    // --- [detector.streaming_ctc] precision knob + ignored-boost warning ---
+
+    /// base_toml with a streaming_ctc detector section carrying `extra` lines.
+    fn ctc_toml(extra: &str) -> String {
+        base_toml()
+            + "\n[detector]\nengine = \"streaming_ctc\"\n\n[detector.streaming_ctc]\nmodel_dir = \"models/ctc\"\n"
+            + extra
+    }
+
+    #[test]
+    fn ctc_precision_defaults_to_int8() {
+        let cfg: EventConfig = toml::from_str(&ctc_toml("")).unwrap();
+        validate(&cfg).unwrap();
+        assert_eq!(cfg.detector.streaming_ctc.unwrap().precision, "int8");
+    }
+
+    #[test]
+    fn ctc_precision_fp32_accepted_others_rejected() {
+        let cfg: EventConfig = toml::from_str(&ctc_toml("precision = \"fp32\"\n")).unwrap();
+        validate(&cfg).unwrap();
+        assert_eq!(cfg.detector.streaming_ctc.unwrap().precision, "fp32");
+        // Exact strings only — a case/typo variant silently defaulting would
+        // void an A/B, so it must refuse loudly.
+        for bad in ["fp16", "INT8", "Fp32", "", "int-8"] {
+            let cfg: EventConfig =
+                toml::from_str(&ctc_toml(&format!("precision = \"{bad}\"\n"))).unwrap();
+            let err = validate(&cfg).unwrap_err().to_string();
+            assert!(err.contains("precision"), "{bad:?}: {err}");
+        }
+    }
+
+    #[test]
+    fn ctc_engine_warns_on_ignored_keyword_boost() {
+        // No keyword boost → no warning.
+        let cfg: EventConfig = toml::from_str(&ctc_toml("")).unwrap();
+        assert!(ctc_ignored_boost_warning(&cfg).is_none());
+
+        // A keyword `boost` under streaming_ctc → warning names the keyword
+        // and says IGNORED (the CTC scorer implements no boost).
+        let text = ctc_toml("").replace(
+            "policy                  = \"two_tier\"",
+            "policy                  = \"two_tier\"\nboost                   = 3.0",
+        );
+        let cfg: EventConfig = toml::from_str(&text).unwrap();
+        assert!(validate(&cfg).is_ok()); // warns, never rejects
+        let msg = ctc_ignored_boost_warning(&cfg).unwrap();
+        assert!(msg.contains("IGNORED"), "{msg}");
+        assert!(msg.contains("artificial intelligence"), "{msg}");
+
+        // The same boost under a non-CTC engine (base_toml defaults to stub;
+        // sherpa_kws implements boost for real) → silent.
+        let text = base_toml().replace(
+            "policy                  = \"two_tier\"",
+            "policy                  = \"two_tier\"\nboost                   = 3.0",
+        );
+        let cfg: EventConfig = toml::from_str(&text).unwrap();
+        assert!(ctc_ignored_boost_warning(&cfg).is_none());
     }
 
     #[test]
@@ -1135,6 +1417,87 @@ mod tests {
         let cfg = with_kalshi("expected_key_id = \"acct-A\"");
         let err = validate(&cfg).unwrap_err().to_string();
         assert!(err.contains("expected_key_id requires"), "{err}");
+    }
+
+    // --- [operator_handler] (docs/OPERATOR-HANDLER.md, gated) ---
+
+    /// base_toml with an [operator_handler] section appended.
+    fn with_operator(extra: &str) -> EventConfig {
+        let text = base_toml() + "\n[operator_handler]\n" + extra + "\n";
+        toml::from_str(&text).unwrap()
+    }
+
+    #[test]
+    fn operator_handler_absent_by_default() {
+        // Every existing config carries no section — must stay None and valid.
+        let cfg = load(&example_path()).unwrap();
+        assert!(cfg.operator_handler.is_none());
+    }
+
+    #[test]
+    fn operator_handler_enabled_parses_and_validates() {
+        let cfg = with_operator("enabled = true\ncell_number = \"+525545436717\"");
+        validate(&cfg).unwrap();
+        let op = cfg.operator_handler.unwrap();
+        assert!(op.enabled);
+        assert_eq!(op.cell_number, "+525545436717");
+        assert_eq!(op.conference_prefix, "earshot"); // default
+    }
+
+    #[test]
+    fn operator_handler_disabled_section_is_inert() {
+        // enabled = false (or defaulted): field rules are not enforced — the
+        // section is inert and the scripts refuse on the enabled gate anyway.
+        for extra in ["enabled = false", "", "cell_number = \"not-a-number\""] {
+            let cfg = with_operator(extra);
+            validate(&cfg).unwrap();
+            assert!(!cfg.operator_handler.as_ref().unwrap().enabled);
+        }
+    }
+
+    #[test]
+    fn operator_handler_enabled_rejects_bad_cell_numbers() {
+        for bad in [
+            "",                      // empty
+            "5545436717",            // no +
+            "+05545436717",          // leading zero
+            "+52 55 4543 6717",      // spaces
+            "+521234",               // too short (< 8 digits)
+            "+5255454367171234567",  // too long (> 15 digits)
+            "+52554543671a",         // non-digit
+        ] {
+            let cfg = with_operator(&format!("enabled = true\ncell_number = \"{bad}\""));
+            let err = validate(&cfg).unwrap_err().to_string();
+            assert!(err.contains("cell_number"), "{bad:?}: {err}");
+        }
+    }
+
+    #[test]
+    fn operator_handler_enabled_rejects_bad_conference_prefix() {
+        for bad in [
+            "",
+            "Earshot",                     // uppercase
+            "ear shot",                    // space
+            "ear_shot",                    // underscore
+            "abcdefghijklmnopqrstuvwxy",   // 25 chars
+        ] {
+            let cfg = with_operator(&format!(
+                "enabled = true\ncell_number = \"+525545436717\"\nconference_prefix = \"{bad}\""
+            ));
+            let err = validate(&cfg).unwrap_err().to_string();
+            assert!(err.contains("conference_prefix"), "{bad:?}: {err}");
+        }
+        // Boundary: 24 chars of the allowed charset passes.
+        let cfg = with_operator(
+            "enabled = true\ncell_number = \"+525545436717\"\nconference_prefix = \"abcdefghijklmnopqrst-123\"",
+        );
+        validate(&cfg).unwrap();
+    }
+
+    #[test]
+    fn operator_handler_rejects_unknown_fields() {
+        let text = base_toml() + "\n[operator_handler]\nenabled = true\nclips_dir = \"x\"\n";
+        assert!(toml::from_str::<EventConfig>(&text).is_err());
     }
 
     #[test]
