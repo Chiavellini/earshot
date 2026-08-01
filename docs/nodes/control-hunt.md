@@ -38,6 +38,36 @@ and file date that produced them, and a tier verdict of `published`,
 the committed half carries provenance and is what fills the previously empty
 "start from" column in `slate/worklist.md`.
 
+`control.bridge.numbers` — the dialable projection of the same record, written
+by `--emit-numbers` to a gitignored file (default `state/hunt/numbers.env`,
+mode 0600) in the one format `scripts/bridge-probe-batch.sh --numbers`
+consumes:
+
+```
+# KEY=E.164[,passcode#]        one issuer per line, comments and blanks ignored
+YUM=+18007159871,8719077#
+```
+
+Rules the producer guarantees, so the consumer can dial without re-deciding:
+
+- **E.164, always.** `800/715-9871` in a filing becomes `+18007159871`. A
+  number the dialer has to reformat is a number that gets misdialed.
+- **Toll-free preferred.** When a filing publishes both a North American
+  toll-free and an international direct line, the toll-free wins; the direct
+  line is a fallback, not a peer.
+- **`bridge` only.** `replay` and `contact` classifications never appear here.
+  The classifier's replay-dominance rule exists precisely so an auto-prober is
+  never handed a playback line.
+- **Passcode carries its terminator.** The `#` is appended once, here, rather
+  than in each caller.
+- **A key with no passcode still emits.** Some bridges take a number alone;
+  omitting the line would look like "no bridge found", which is a different
+  and wrong verdict.
+
+This is a projection, not a new source of truth: it is regenerated from
+`state/hunt/**` and may be deleted at any time. It confers no admission —
+every consumer still owes a probe dial.
+
 ## Side effects and exclusive resources
 
 Read-only HTTPS to `efts.sec.gov` and `www.sec.gov`, paced below SEC's
@@ -80,6 +110,10 @@ no dial-in — are not yet covered, because those pages are Cloudflare
 bot-challenged identically from the laptop and the box; the Wayback CDX lane
 and a browser-assisted path are the next extraction. Non-issuer venues
 (FOMC, hearings, pressers) have no CIK and need both a different source set and
-a registry schema that is not issuer-keyed. The candidate record is written as
-JSON but is not yet consumed programmatically by `bridge-probe-batch.sh`, whose
-`--numbers` format still differs from the one file on disk that feeds it.
+a registry schema that is not issuer-keyed.
+
+The candidate-to-prober seam is closed: `--emit-numbers` writes
+`control.bridge.numbers` and `bridge-probe-batch.sh` reads that path by
+default. What remains manual on purpose is the registry write — a found number
+becomes a `configs/dial-ins.toml` row only after a human reviews the proposal,
+because `control.qualify` owns that file and admission is still probe-only.
