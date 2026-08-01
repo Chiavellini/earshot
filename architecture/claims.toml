@@ -198,10 +198,12 @@ paths = [
   "docs/MULTI-EVENT.md",
   "docs/nodes/control-launch.md",
   "scripts/launch-event.sh",
+  "tests/launch_event_posture.rs",
 ]
 verification = [
   "bash -n scripts/launch-event.sh",
   "cargo test --test launch_webcast_posture",
+  "cargo test --test launch_event_posture",
 ]
 evidence = ["docs/MULTI-EVENT.md"]
 

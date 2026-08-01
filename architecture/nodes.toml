@@ -703,6 +703,7 @@ owns = [
   "scripts/launch-webcast.sh",
   "scripts/ms-morning.sh",
   "scripts/run-arm.sh",
+  "tests/launch_event_posture.rs",
   "tests/launch_webcast_posture.rs",
 ]
 inputs = [

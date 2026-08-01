@@ -224,7 +224,11 @@ MAX_RECONNECTS=$(sed -n 's/^[[:space:]]*max_reconnects[[:space:]]*=[[:space:]]*\
 # supervisor keeps its historical defaults.
 CALL_GRACE_MIN=40
 SUPERVISE_TO_MIN=150
-read -r DERIVED_GRACE DERIVED_MAXMIN < <(
+# Command substitution, NOT `read < <(...)`: bash 3.2 cannot parse a heredoc
+# inside a process substitution ("bad substitution: no closing `)'"), and this
+# script is invoked as `bash launch-event.sh` by tests and by /bin/bash on the
+# laptop even though the box runs bash 5.
+DERIVED_BUDGETS=$(
   CONFIG="$CONFIG" GRACE_MIN="$CALL_GRACE_MIN" TO_MIN="$SUPERVISE_TO_MIN" python3 - <<'PY' 2>/dev/null || echo ""
 import datetime, os, tomllib
 starts = tomllib.load(open(os.environ["CONFIG"], "rb")).get("event", {}).get("starts_at")
@@ -240,6 +244,8 @@ maxmin = int((lead + int(os.environ["TO_MIN"]) * 60) // 60)
 print(grace if grace > 0 else "", maxmin if maxmin > 0 else "")
 PY
 )
+DERIVED_GRACE=$(echo "$DERIVED_BUDGETS" | awk '{print $1}')
+DERIVED_MAXMIN=$(echo "$DERIVED_BUDGETS" | awk '{print $2}')
 [[ -n "$MAX_MINUTES_OVERRIDE" ]] && DERIVED_MAXMIN="$MAX_MINUTES_OVERRIDE"
 [[ -n "$CALL_END_GRACE_OVERRIDE" ]] && DERIVED_GRACE="$CALL_END_GRACE_OVERRIDE"
 # A plain string, not an array: the box runs bash 5 but this laptop is bash 3.2,

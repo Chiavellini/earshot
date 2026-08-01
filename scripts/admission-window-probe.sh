@@ -45,7 +45,9 @@ done
 
 # Derive the venue key and call time from the event config itself, so the probe
 # can never drift from the arm it is meant to clear.
-read -r KEY STARTS_AT < <(CONFIG="$CONFIG" python3 - <<'PY'
+# Command substitution, NOT `read < <(...)`: bash 3.2 cannot parse a heredoc
+# inside a process substitution, and this may be run under /bin/bash.
+VENUE_LINE=$(CONFIG="$CONFIG" python3 - <<'PY'
 import os, re, sys, tomllib
 try:
     with open(os.environ["CONFIG"], "rb") as f:
@@ -62,10 +64,12 @@ if not starts:
 print(m.group(1), starts)
 PY
 ) || { echo "cannot derive venue/time from $CONFIG" >&2; exit 2; }
+KEY=$(echo "$VENUE_LINE" | awk '{print $1}')
+STARTS_AT=$(echo "$VENUE_LINE" | awk '{print $2}')
 
 # Window arithmetic in Python: `date -d` is GNU-only and this script has to run
 # on the macOS laptop and the Linux box alike.
-read -r OPEN_UTC CLOSE_UTC NOW_UTC STATE < <(
+WINDOW_LINE=$(
   STARTS_AT="$STARTS_AT" OPEN_MIN="$LEAD_OPEN_MIN" CLOSE_MIN="$LEAD_CLOSE_MIN" python3 - <<'PY'
 import datetime, os, sys
 try:
@@ -82,6 +86,10 @@ fmt = lambda d: d.strftime("%Y-%m-%dT%H:%M:%SZ")
 print(fmt(opens), fmt(closes), fmt(now), state)
 PY
 ) || exit 2
+OPEN_UTC=$(echo "$WINDOW_LINE"  | awk '{print $1}')
+CLOSE_UTC=$(echo "$WINDOW_LINE" | awk '{print $2}')
+NOW_UTC=$(echo "$WINDOW_LINE"   | awk '{print $3}')
+STATE=$(echo "$WINDOW_LINE"     | awk '{print $4}')
 
 echo "venue:  $KEY"
 echo "call:   $STARTS_AT"
