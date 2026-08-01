@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Daily bridge hunt (scripts/hunt-daily.sh).
+
+     20:30 local, deliberately 30 minutes AFTER com.earshot.slate-daily (20:00):
+     this job reads slate/latest.json, so it must run against the slate the
+     nightly sweep just committed, not yesterday's. If you move slate-daily,
+     move this with it.
+
+     WHY DAILY AT ALL. Earnings events list 4-7 days ahead (measured
+     2026-07-30: 11 of the then-open events landed in that window). A daily
+     hunt therefore has days of lead time to find a number, which leaves the
+     probe — the only thing that can establish `admission` — running days
+     before the call instead of at T-20. On 2026-07-30 the alternative was
+     visible: 39 of 47 issuers had no registry entry and we could phone-arm
+     none of them.
+
+     Timezone: the box and this laptop disagree, and this unit is the LAPTOP
+     one. CDMX is UTC-6 year-round with no DST, so 20:30 local = 02:30Z. The
+     hunt reads SEC only and places no calls, so the hour is not
+     latency-sensitive; it is chosen purely to follow slate-daily.
+
+     launchd replays a missed StartCalendarInterval firing on wake, but a
+     powered-off laptop skips it silently — which is why hunt-daily alerts on
+     every failure path rather than assuming it ran.
+
+     NOTE: this job places NO telephone calls and touches no Twilio or Kalshi
+     credential. It performs read-only HTTPS GETs against efts.sec.gov and
+     www.sec.gov, paced below SEC's published 10 req/s ceiling.
+
+     Install:
+       cp configs/launchd/com.earshot.hunt-daily.plist ~/Library/LaunchAgents/
+       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.earshot.hunt-daily.plist
+     Verify:
+       launchctl print gui/$(id -u)/com.earshot.hunt-daily
+     Fire once by hand (the production mechanism, not a manual run):
+       launchctl kickstart -p gui/$(id -u)/com.earshot.hunt-daily
+     Remove:
+       launchctl bootout gui/$(id -u)/com.earshot.hunt-daily -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.earshot.hunt-daily</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/bernardodelrio/Code/ear/scripts/hunt-daily.sh</string>
+  </array>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>20</integer>
+    <key>Minute</key>
+    <integer>30</integer>
+  </dict>
+
+  <!-- A non-interactive launchd shell does not inherit the user's PATH. The
+       script exports its own, but git must also resolve for the auto-commit;
+       this is the documented failure class that broke preflight on the box. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/bernardodelrio/Code/ear</string>
+
+  <key>StandardOutPath</key>
+  <string>/Users/bernardodelrio/Library/Logs/earshot/hunt-daily.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/bernardodelrio/Library/Logs/earshot/hunt-daily.log</string>
+
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>

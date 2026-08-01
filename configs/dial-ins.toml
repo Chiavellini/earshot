@@ -28,6 +28,8 @@
 #                                 nothing) and from `dtmf_star` (would claim a mechanism
 #                                 the text never showed).
 #                 webcast_hand  — webcast platform raise-hand/unmute, no phone
+#                 say_typed     — Say Technologies typed retail Q&A read aloud by
+#                                 management; no dial-in queue exists (HOOD)
 #                 unknown       — not researched / nothing found
 #
 #               Derive this with scripts/mine-dial-in.py, never by hand.
@@ -36,8 +38,16 @@
 #               QCOM ("star THEN the number one") and GOOGL ("press *1" — the GLYPH,
 #               on the largest near-term event).
 #
-# listen_access can WE dial in and listen? "yes" | "no" | "unknown"
+# listen_access can WE dial in and listen?
+#               "yes" | "no" | "operator_screened" | "unknown"
 #               (string enum, never a bool — "unknown" must be representable)
+#                 operator_screened — a number exists and answers, but a LIVE HUMAN
+#                                     screens callers (asks name/company/conference)
+#                                     and disconnects silent lines in <90 s. NOT
+#                                     phone-automatable until the gated operator-
+#                                     responder path ships (VERIFICATIONS Q-OPS,
+#                                     Q-ADMIT). Set ONLY by a live dial, like
+#                                     `admission` below.
 #
 # ⚠ THE APPLE RULE — the single most important invariant in this file:
 #   `qa_mechanism` and `listen_access` are INDEPENDENT. A curated Q&A queue does NOT
@@ -47,6 +57,35 @@
 #   that was made and caught on 2026-07-16. A transcript can only ever establish
 #   `qa_mechanism`. `listen_access` is established ONLY by an IR page / press release
 #   / 8-K. Never mark an issuer `none` on transcript evidence alone.
+#
+# ⚠ THE MSFT RULE — the admission mirror of the APPLE RULE:
+#   `admission` is established ONLY by a probe dial (scripts/bridge-probe.sh), NEVER
+#   by an IR page / PR / 8-K / transcript. Paper sources can establish the NUMBER but
+#   not what the bridge does to a silent listen-only caller. MSFT proves it: the PR
+#   says "no password required", the registry said listen_access="yes", and the live
+#   bridge is an INCOM operator screen that drops us in 42 s (2026-07-29, Q-ADMIT).
+#
+# admission        what the bridge did to our silent listen-only probe caller:
+#                    held              — admitted and held (record duration in detail)
+#                    dropped           — connected, then far end hung up on us
+#                    operator_screened — live human asked who we are, then dropped us
+#                    untested          — no probe yet. Preflight FAILs a phone arm on
+#                                        anything but `held` (a `held` older than
+#                                        30 days WARNs — re-probe, it's ~$0.02).
+# admission_detail  free text: "held 76min", "dropped 42s after operator mute-check"
+# admission_probed  date of the probe dial, "YYYY-MM-DD". Stale after 30 days.
+# probe_artifact    recording + transcript path, corpus/bridge-probes/<label>.wav
+#                   (gitignored; laptop/box-local — the transcript excerpt that matters
+#                   gets pinned in VERIFICATIONS.md Q-ADMIT)
+#
+# operator_handler  "rehearsed-YYYY-MM-DD" — set ONLY after a full fake-operator
+#                   ladder rehearsal of the gated human-first handler
+#                   (docs/OPERATOR-HANDLER.md v1, tests/twilio_operator_gated.rs).
+#                   With this field present AND the event config carrying
+#                   [operator_handler] enabled=true, preflight downgrades an
+#                   admission="operator_screened" FAIL to PASS-with-note
+#                   (scripts/preflight-event.sh). Never set it by hand without
+#                   the rehearsal date it names.
 #
 # EVIDENCE ORDER (strongest first):
 #   IR events page / earnings PR  →  8-K exhibit  →  official transcript operator preamble
@@ -111,7 +150,11 @@ notes         = "Kalshi series key is C, not CITI."
 [MSFT]
 tier          = "published"
 qa_mechanism  = "dtmf_star"
-listen_access = "yes"    
+listen_access = "operator_screened"   # ⚠ DOWNGRADED 2026-07-29 by live probe — VERIFICATIONS Q-ADMIT (was "yes" from the PR's 'no password required')
+admission        = "operator_screened"
+admission_detail = "INCOM conference center; 'provide your full name with spelling, an operator will assist you'; dropped silent caller at 42/73/42/48 s across 4 calls, independent of dial timing"
+admission_probed = "2026-07-29"
+probe_artifact   = "corpus/bridge-probes/msft-2026-07-29-bridge-entry.wav"
 evidence      = "IR earnings page publishes a toll-free + international dial-in, explicitly 'no password required'. Operator preamble: 'all participants are in a listen-only mode… press star zero on your telephone keypad'; Q&A: 'press star one on your telephone keypad and a confirmation tone will indicate your line is in the question queue'. The analyst Q&A runs on the SAME open bridge."
 evidence_src  = "https://www.microsoft.com/en-us/investor/earnings/fy-2026-q3/press-release-webcast"
 number_src    = "https://www.microsoft.com/en-us/investor/earnings"
@@ -126,9 +169,13 @@ listen_access = "yes"
 evidence      = "IR earnings-call page publishes a toll-free + direct number and a confirmation code as the fallback for browsers that cannot stream. It is a LIVE listen-in line (the replay state is separate text on the same page). The press release itself is webcast-only. Q&A is curated: IR asks 'Operator, may we have the first question, please?' and the operator reads pre-arranged analysts by name — no star-1 anywhere."
 evidence_src  = "https://www.apple.com/investor/earnings-call/"
 number_src    = "https://www.apple.com/investor/earnings-call/"
-confidence    = "medium"
-last_verified = "2026-07-16"
-notes         = "⚠ THE APPLE RULE CASE. Our ASR transcript (corpus/transcripts/aapl-q2-2026.txt) has ZERO star/keypad/listen-only hits and starts at the literal top of the call ('Good afternoon and welcome to the Apple Q2 Fiscal Year 2026 earnings conference call') — so the absence is real, not a podcast-trim artifact. It was still WRONG to read that as 'no phone access': the curated queue only means we cannot ASK, and we never wanted to (INGRESS-BAKEOFF.md:133 'Listen-only, always'). MEDIUM confidence because the confirmation code could not be date-stamped — the page renders all states at once and the code appears static. RE-VERIFY the code at call time before arming."
+admission        = "untested"
+admission_detail = "off-hours probe 2026-07-30 03:40 UTC: the published toll-free number (see number_src) rang 55s, status=no-answer, zero media — the standing reservation is NOT active outside the event window. Admission must be probed in the pre-call window (T-90..T-30 min before 21:00 UTC) on event day."
+admission_probed = "2026-07-30"
+probe_artifact   = "no audio captured (call never answered); CallSid CAdf6b601752f28876b7db0c3536773e83"
+confidence    = "high"
+last_verified = "2026-07-30"
+notes         = "⚠ THE APPLE RULE CASE. Our ASR transcript (corpus/transcripts/aapl-q2-2026.txt) has ZERO star/keypad/listen-only hits and starts at the literal top of the call ('Good afternoon and welcome to the Apple Q2 Fiscal Year 2026 earnings conference call') — so the absence is real, not a podcast-trim artifact. It was still WRONG to read that as 'no phone access': the curated queue only means we cannot ASK, and we never wanted to (INGRESS-BAKEOFF.md:133 'Listen-only, always'). Confidence upgraded medium→high 2026-07-30: Wayback snapshots 2024-02-01, 2026-03-20, 2026-05-19, 2026-07-02 all carry the identical numbers + confirmation code — a standing reservation spanning ≥9 calls, and the dial-in block sits in the unsupported-browser LIVE state (replay states carry no number). Static-string caveat stands: only an event-window probe proves it is provisioned for THIS call. RE-VERIFY at call time before arming."
 
 [OKLO]
 tier          = "published"
@@ -140,6 +187,22 @@ number_src    = "https://oklo.com/newsroom"
 confidence    = "medium"
 last_verified = "2026-07-16"
 notes         = "Evidence is the 2026-03-17 FY25 call; next call ~2026-08-10, outside the July window. Pattern consistent but the Q2 number is not yet published."
+
+[YUM]
+tier          = "published"
+qa_mechanism  = "dtmf_star"
+listen_access = "operator_screened"
+admission        = "operator_screened"
+admission_detail = "off-hours probe 2026-07-30 03:44 UTC: answered immediately, INCOM-style queue — 'Welcome to the conference center. Please wait for the next available operator.' Held 118.7s in queue (no operator picked up overnight; WE hung up). On event day a live operator screens callers → route through the gated operator handler."
+admission_probed = "2026-07-30"
+operator_handler = "rehearsed-2026-07-30"
+probe_artifact   = "corpus/bridge-probes/yum_2026_07_30_bridge_entry.wav + corpus/transcripts/yum-2026-07-30-bridge-entry.txt; CallSid CA79973ec7ad974d27e56d10162304f1d6"
+evidence      = "IR release publishes a NA toll-free number, an international direct number, and a conference ID (digits in evidence_src) — SAME numbers and ID as Q1 2026 (standing reservation, two quarters). Q1'26 operator preamble: 'Thank you for standing by. My name is Kayla… All lines have been placed on mute.' Q&A star-1 (analysts only, irrelevant to listen-only)."
+evidence_src  = "https://investors.yum.com/news-events/financial-releases/news-details/2026/Yum-Brands-Announces-Q2-2026-Earnings-and-Conference-Call-Details/default.aspx"
+number_src    = "https://investors.yum.com/news-events/financial-releases/"
+confidence    = "high"
+last_verified = "2026-07-30"
+notes         = "OPEN EVENT KXEARNINGSMENTIONYUM-26JUL30 — MORNING call: results 07:00 ET, call 08:15 ET = 12:15 UTC, ~60 min. THE MSFT RULE vindicated again: published digits + 'lines on mute' transcript looked automatable, live dial found an operator screen. First real target for operator handler v1 (human must be pageable ~12:00 UTC = 06:00 CDMX). Webcast fallback: https://investors.yum.com/events-and-presentations"
 
 # ══════════════════════════════════════════════════════════════════════════════════
 # TIER: bridge_unpublished — a real PSTN bridge exists; no number published.
@@ -161,11 +224,34 @@ notes         = "OPEN EVENT KXEARNINGSMENTIONGOOGL-26JUL22 — largest near-term
 tier          = "bridge_unpublished"
 qa_mechanism  = "dtmf_star"
 listen_access = "unknown"
-evidence      = "Operator: 'If you would like to ask a question, please press star 1 on your keypad. We ask that when you pose your question, you pick up your handsets to provide optimum sound quality.' IR release is webcast-only."
+evidence      = "Operator: 'If you would like to ask a question, please press star 1 on your keypad. We ask that when you pose your question, you pick up your handsets to provide optimum sound quality.' IR release is webcast-only. POSITIVE read 2026-07-30: the Q4 Inc event REST record (attendees.events.q4inc.com/rest/v1/event/915225528) for the Q2-26 call exposes configuration.dialIn={speaker:true} and registrationFields=[] — the dial-in leg is provisioned for SPEAKERS ONLY, no attendee phone leg exists, and the webcast is ungated (open 15 min early)."
 evidence_src  = "https://ir.aboutamazon.com/news-release/news-release-details/2026/Amazon-com-to-Webcast-First-Quarter-2026-Financial-Results-Conference-Call-57c6bd583/"
 number_src    = "https://ir.aboutamazon.com/"
 confidence    = "high"
-last_verified = "2026-07-16"
+last_verified = "2026-07-30"
+notes         = "OPEN EVENT KXEARNINGSMENTIONAMZN-26JUL30 21:00 UTC (60 min, same minute as AAPL). Webcast lane: https://events.q4inc.com/attendee/915225528 (Q4 Inc → IVS, same platform as PYPL/AXP/BA). Do NOT hunt a number for this event — the Q4 record is a positive proof of absence for attendees."
+
+[RDDT]
+tier          = "bridge_unpublished"
+qa_mechanism  = "dtmf_star"
+listen_access = "unknown"
+evidence      = "Reddit's own Q1'26 transcript PDF has a live operator ('Krista') running a phone queue: 'Your next question comes from the line of Josh Beck with Raymond James.' Investing.com transcript quotes 'simply press star then 1 on your telephone keypad.' The Q1'26 8-K (EDGAR, full 244KB) contains ZERO phone digits — webcast + r/RDDT only — so the bridge is real but unpublished."
+evidence_src  = "https://s203.q4cdn.com/380862485/files/doc_financials/2026/q1/Reddit-Q1-26-Earnings-Call-Transcript.pdf"
+number_src    = "https://investor.redditinc.com"
+confidence    = "high"
+last_verified = "2026-07-30"
+notes         = "OPEN EVENT KXEARNINGSMENTIONRDDT-26JUL30 20:30 UTC (30 min before AAPL/AMZN). Webcast lane; investor.redditinc.com Cloudflare-403s curl — browser-read the player URL before 20:30 UTC. Also runs typed retail Q&A via r/RDDT (HOOD-style say_typed) alongside the analyst phone queue."
+
+[RACE]
+tier          = "bridge_unpublished"
+qa_mechanism  = "unknown"
+listen_access = "unknown"
+evidence      = "REGISTRATION-GATED, not merely unpublished: Ferrari's own instruction PDFs (FY25, Q1'26, Q3'25, Q2'25 — cdn.ferrari.com pattern, all 200) say identically: 'conference call participants must register in advance… Upon registering, each participant will be provided with Participant Dial-In Numbers and Personal Passcode.' Vendor = Notified (register-conf.media-server.com per-event BI… ids; webcast edge.media-server.com/mmc/p/<id>). Q2'26 PDF/links NOT yet published as of 2026-07-30 03:30 UTC (13 slug variants 404)."
+evidence_src  = "https://cdn.ferrari.com/cms/network/media/pdf/Ferrari%20Q1%202026%20Conference%20Call%20instructions.pdf"
+number_src    = "https://www.ferrari.com/en-EN/corporate/investors"
+confidence    = "high"
+last_verified = "2026-07-30"
+notes         = "OPEN EVENT KXEARNINGSMENTIONRACE-26JUL30 — 14:30 CEST = 13:30 UTC (⚠ ONE HOUR LATER than FY25/Q1'26 pattern of 13:00 UTC; do not reuse the old slot). PHONE PATH EXISTS if we pre-register (standing identity bdelriom@actinver.com.mx) once Ferrari publishes the Q2'26 link — Notified pre-registration typically returns dial-in + personal PIN by email. ferrari.com is client-rendered AEM: curl reads nothing (the BA lesson) — browser-read the investors page tomorrow AM for the registration link AND the webcast id."
 
 [META]
 tier          = "bridge_unpublished"
@@ -243,13 +329,17 @@ evidence_src  = "https://s205.q4cdn.com/882619693/files/doc_events/2026/Jul/28/F
 number_src    = "https://shareholder.ford.com"
 confidence    = "high"
 last_verified = "2026-07-28"
-notes         = "OPEN EVENT KXEARNINGSMENTIONF-26JUL28, results 16:05 ET, call Tue 17:00 ET (21:00 UTC). ⚠ THIS IS A DROP, NOT A STANDING POLICY: Ford published a participant number (1-844-282-4573) in earlier quarters and moved to OpenExchange — the exact 'tiers decay' case docs/DIAL-INS.md warns about, and the reason last_verified must be re-checked against the CURRENT quarter's PR. Venue = ford-motor-company-q2-2026-earnings-call.open-exchange.net, login-gated, and the player is EMPTY until 17:00 ET so the m3u8 cannot be probed in advance — plan for a tokenized manifest surfaced on the logged-in laptop and handed to the box. Registration accepts 'Individual investor', so it is not analyst-gated."
+notes         = "OPEN EVENT KXEARNINGSMENTIONF-26JUL28, results 16:05 ET, call Tue 17:00 ET (21:00 UTC). ⚠ THIS IS A DROP, NOT A STANDING POLICY: Ford published a participant number in earlier quarters and moved to OpenExchange — the exact 'tiers decay' case docs/DIAL-INS.md warns about, and the reason last_verified must be re-checked against the CURRENT quarter's PR. Venue = ford-motor-company-q2-2026-earnings-call.open-exchange.net, login-gated, and the player is EMPTY until 17:00 ET so the m3u8 cannot be probed in advance — plan for a tokenized manifest surfaced on the logged-in laptop and handed to the box. Registration accepts 'Individual investor', so it is not analyst-gated."
 
 [CMG]
 tier          = "published"
 qa_mechanism  = "unknown"
 listen_access = "yes"
-evidence      = "Company newsroom PR (2026-06-02): 'Participants can join the conference call by dialing 1-888-317-6003 ... code 3937444. International callers can dial 1-412-317-6061 ... code 3937444.' Call Wed 2026-07-29 4:30 p.m. ET (20:30 UTC); results release ~4:10 p.m. ET (20:10 UTC). Source says 'ET' (no EST misprint)."
+admission        = "held"
+admission_detail = "held 4572s (76min) live event capture with 4 detections until we hung up ourselves; automated passcode bridge (passcode in evidence_src)"
+admission_probed = "2026-07-29"
+probe_artifact   = "state/KXEARNINGSMENTIONCMG-26JUL29 arm logs (live event, CallSid CAeb4f8bbaa252ebb41dbbb2b7532c4eaf); no probe wav needed"
+evidence      = "Company newsroom PR (2026-06-02): 'Participants can join the conference call by dialing [toll-free] ... code [redacted]. International callers can dial [direct] ... code [redacted].' (digits in evidence_src) Call Wed 2026-07-29 4:30 p.m. ET (20:30 UTC); results release ~4:10 p.m. ET (20:10 UTC). Source says 'ET' (no EST misprint)."
 evidence_src  = "https://newsroom.chipotle.com/2026-06-02-CHIPOTLE-MEXICAN-GRILL-TO-ANNOUNCE-SECOND-QUARTER-2026-RESULTS-ON-JULY-29,-2026"
 number_src    = "https://newsroom.chipotle.com/2026-06-02-CHIPOTLE-MEXICAN-GRILL-TO-ANNOUNCE-SECOND-QUARTER-2026-RESULTS-ON-JULY-29,-2026"
 confidence    = "high"
@@ -270,8 +360,12 @@ notes         = "OPEN EVENT KXEARNINGSMENTIONSBUX-26JUL29. ⚠ Call at 20:15 UTC
 [CVNA]
 tier          = "published"
 qa_mechanism  = "unknown"
-listen_access = "yes"
-evidence      = "Q2'26 PR (Businesswire 2026-07-01, verified via StockTitan mirror): 'Live Call: (800) 715-9871 or (646) 307-1963, Conference ID 3609424.' Call Wed 2026-07-29 5:30 p.m. ET — the PR quotes '5:30 p.m. ET (2:30 p.m. PT)', the dual zone proving EDT ⇒ 21:30 UTC. Results 'after the market closes'."
+listen_access = "operator_screened"   # ⚠ DOWNGRADED 2026-07-29 by live probe — VERIFICATIONS Q-ADMIT (was "yes"; the published Conference ID is irrelevant — a human answers before any code prompt)
+admission        = "operator_screened"
+admission_detail = "Chorus-style operator: 'may I have the name of your conference?' then 'due to no response I will now disconnect'; dropped at 23/31/21 s, with and without digits"
+admission_probed = "2026-07-29"
+probe_artifact   = "corpus/bridge-probes/cvna-2026-07-29-bridge-entry.wav"
+evidence      = "Q2'26 PR (Businesswire 2026-07-01, verified via StockTitan mirror): 'Live Call: [toll-free] or [direct], Conference ID [redacted].' (digits in evidence_src) Call Wed 2026-07-29 5:30 p.m. ET — the PR quotes '5:30 p.m. ET (2:30 p.m. PT)', the dual zone proving EDT ⇒ 21:30 UTC. Results 'after the market closes'."
 evidence_src  = "https://www.stocktitan.net/news/CVNA/carvana-to-report-second-quarter-2026-results-and-host-quarterly-5vi7vu9ceotk.html"
 number_src    = "https://investors.carvana.com/events-and-presentations"
 confidence    = "high"
@@ -282,7 +376,11 @@ notes         = "OPEN EVENT KXEARNINGSMENTIONCVNA-26JUL29. ⚠ TIMEZONE MISPRINT
 tier          = "published"
 qa_mechanism  = "unknown"
 listen_access = "operator_screened"   # ⚠ DOWNGRADED 2026-07-29 by live probe — VERIFICATIONS Q-OPS
-evidence      = "IR PR: call Wed 2026-07-29 10:00 a.m. ET — MORNING call, results released before market open. 'dialing 1-877-259-5243 or 1-412-317-5176 (international)' (no live participant code quoted; replay 1-855-669-9658 / 1-412-317-0088 code 4572027). Chorus Call webcast page itself renders 'Wed Jul 29 10:00:00 EDT 2026' — explicit EDT ⇒ 14:00 UTC."
+admission        = "operator_screened"
+admission_detail = "Chorus Call: announcement + hold music + 'how can I help?' live specialist; dropped silent caller at 33 s"
+admission_probed = "2026-07-29"
+probe_artifact   = "corpus/bridge-probes/wing-2026-07-29-bridge-entry.wav"
+evidence      = "IR PR: call Wed 2026-07-29 10:00 a.m. ET — MORNING call, results released before market open. 'dialing [toll-free] or [direct] (international)' (no live participant code quoted; a separate REPLAY number pair + code is also published — digits in evidence_src). Chorus Call webcast page itself renders 'Wed Jul 29 10:00:00 EDT 2026' — explicit EDT ⇒ 14:00 UTC."
 evidence_src  = "https://ir.wingstop.com/wingstop-inc-to-announce-fiscal-second-quarter-2026-financial-results-on-july-29-2026/"
 number_src    = "https://ir.wingstop.com/wingstop-inc-to-announce-fiscal-second-quarter-2026-financial-results-on-july-29-2026/"
 confidence    = "high"
