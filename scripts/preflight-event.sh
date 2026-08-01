@@ -12,24 +12,35 @@
 #   2. Verifies every environment assumption the 06:05 launchd context makes:
 #      disk headroom, credentials (Kalshi + Twilio live probes), ngrok agent,
 #      required tools, timezone, scheduled wake, mailer.
+#   3. Enforces the BLOCKING keyword-readiness gate (2026-07-29): refuses to
+#      pass unless configs/.readiness/<basename>.json exists, hash-matches the
+#      config's [[keywords]], is ≤7 days old, and confirms every keyword ≥1.
+#      `--only-readiness` runs just that gate (dev/fixture testing; no build,
+#      no probes, no mail, no state dir).
 # Exit nonzero on any FAIL; a PREFLIGHT email reports the full checklist.
 set -uo pipefail
 
-CONFIG="" ACCOUNT="" FIRE_HHMM="" EVENT_ENV=""
+CONFIG="" ACCOUNT="" FIRE_HHMM="" EVENT_ENV="" ONLY_READINESS=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --config)    CONFIG="$2"; shift 2 ;;
     --account)   ACCOUNT="$2"; shift 2 ;;
     --fire-hhmm) FIRE_HHMM="$2"; shift 2 ;;
     --event-env) EVENT_ENV="$2"; shift 2 ;;
+    --only-readiness) ONLY_READINESS=1; shift ;;  # dev: run ONLY the keyword-readiness gate (no build/probes/mail)
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
-[[ -n "$CONFIG" && -n "$ACCOUNT" ]] || {
-  echo "usage: $0 --config <cfg.toml> --account <env-file> [--fire-hhmm 0605]" >&2
-  echo "          [--event-env configs/<event>-autorun.env]   # dial-in go/no-go gate" >&2
-  exit 2
-}
+if [[ "$ONLY_READINESS" == 1 ]]; then
+  [[ -n "$CONFIG" ]] || { echo "usage: $0 --config <cfg.toml> --only-readiness" >&2; exit 2; }
+else
+  [[ -n "$CONFIG" && -n "$ACCOUNT" ]] || {
+    echo "usage: $0 --config <cfg.toml> --account <env-file> [--fire-hhmm 0605]" >&2
+    echo "          [--event-env configs/<event>-autorun.env]   # dial-in go/no-go gate" >&2
+    echo "          [--only-readiness]   # dev: keyword-readiness gate only, nothing else" >&2
+    exit 2
+  }
+fi
 
 FAILS=0
 REPORT_LINES=()
@@ -54,6 +65,83 @@ check() {  # check <PASS|FAIL|WARN> <message>
   [[ "$verdict" == FAIL ]] && FAILS=$((FAILS+1))
   return 0
 }
+
+# ── Keyword readiness gate (STANDING policy 2026-07-29, made BLOCKING here) ─
+# WING lost two live races (CITR, AI) to keyword gaps that were FLAGGED in the
+# config ("corpus-UNVALIDATED", "⚠ review variants") — and nothing refused to
+# arm. The study already existed (scripts/variant-study.sh: TTS through the
+# REAL detector); this gate makes it load-bearing: no arm without a fresh,
+# hash-matching, all-confirmed study artifact in configs/.readiness/.
+# keywords_sha256 is computed by scripts/keywords-extract.py on BOTH sides
+# (artifact writer and this gate), so the two extractions can never drift.
+# Defined as a function so `--only-readiness` can exercise it in isolation.
+readiness_gate() {
+  local ready n_kw kw_sha
+  ready="configs/.readiness/$(basename "$CONFIG" .toml).json"
+  kw_sha=$(python3 "$(dirname "$0")/keywords-extract.py" "$CONFIG" --sha256 2>/dev/null)
+  n_kw=$(python3 "$(dirname "$0")/keywords-extract.py" "$CONFIG" 2>/dev/null | grep -c . || true)
+  if [[ -z "$kw_sha" ]]; then
+    check FAIL "keyword-readiness gate could not extract [[keywords]] from $CONFIG (scripts/keywords-extract.py failed)"
+    return
+  fi
+  if [[ "${n_kw:-0}" -eq 0 ]]; then
+    check WARN "no [[keywords]] in config — keyword-readiness gate not applicable (capture-only config?)"
+    return
+  fi
+  if [[ ! -f "$ready" ]]; then
+    check FAIL "keyword readiness study MISSING: $ready — every armed word must pass the TTS→detector study (WING 2026-07-29 lost CITR+AI to flagged-but-unenforced gaps). Fix: scripts/variant-study.sh $CONFIG   (needs macOS 'say' — run it on the laptop, NOT the box)"
+    return
+  fi
+  local verdict
+  verdict=$(READY="$ready" KW_SHA="$kw_sha" CFG="$CONFIG" python3 - <<'PY'
+import json, os, sys
+from datetime import date, datetime
+
+path, want_sha, cfg = os.environ["READY"], os.environ["KW_SHA"], os.environ["CFG"]
+fix = f"re-run: scripts/variant-study.sh {cfg} (macOS 'say' — laptop, not the box)"
+try:
+    a = json.load(open(path))
+except Exception as e:
+    print(f"FAIL readiness artifact unreadable ({e}) — {fix}")
+    sys.exit(0)
+got_sha = str(a.get("keywords_sha256", ""))
+if got_sha != want_sha:
+    print(f"FAIL keywords CHANGED since the study (config sha {want_sha[:12]}… != studied {got_sha[:12]}…) — the study proves nothing about the new set; {fix}")
+    sys.exit(0)
+try:
+    age = (date.today() - datetime.strptime(a.get("date", ""), "%Y-%m-%d").date()).days
+except ValueError:
+    age = 9999
+if age > 7:
+    print(f"FAIL readiness study STALE (dated {a.get('date', '?')}, {age}d ago > 7d) — {fix}")
+    sys.exit(0)
+dead = [k.get("ticker", "?").split("-")[-1] for k in a.get("keywords", []) if not k.get("confirmed")]
+if dead:
+    print(f"FAIL {len(dead)} keyword(s) scored ZERO Confirmed in the study: {' '.join(dead)} — a word that fails clean studio TTS will NOT fire live; diagnose (scripts/dead-word-autopsy.sh), fix variants, then {fix}")
+    sys.exit(0)
+n = len(a.get("keywords", []))
+print(f"PASS keyword readiness: {n} keywords, all confirmed (study {a.get('date')}, engine {a.get('engine', '?')}, voices {'+'.join(a.get('voices', []))})")
+PY
+  )
+  case "$verdict" in
+    PASS*) check PASS "${verdict#PASS }" ;;
+    FAIL*) check FAIL "${verdict#FAIL }" ;;
+    *)     check FAIL "keyword-readiness gate could not run: ${verdict:-empty verdict}" ;;
+  esac
+}
+
+# Dev short-circuit: gate-only run for fixture testing / quick iteration.
+# Deliberately BEFORE the event-identity block so it creates no state dirs,
+# builds nothing, probes nothing, and mails nothing.
+if [[ "$ONLY_READINESS" == 1 ]]; then
+  if [[ ! -f "$CONFIG" ]]; then
+    check FAIL "config not found: $CONFIG"
+  else
+    readiness_gate
+  fi
+  [[ "$FAILS" -eq 0 ]] || exit 1
+  exit 0
+fi
 
 # ── Event identity ─────────────────────────────────────────────────────────
 if [[ -f "$CONFIG" ]]; then
@@ -230,6 +318,27 @@ else
   case $? in
     1) check FAIL "live board has markets this config does not arm: $(grep LIVE-NOT-ARMED <<<"$DIFF_OUT" | tr '\n' ' ')" ;;
     *) check WARN "allowlist-vs-live diff could not run: $(head -1 <<<"$DIFF_OUT")" ;;
+  esac
+fi
+
+# ── Armed variants vs the market's OWN resolution phrase ───────────────────
+# The readiness study proves the detector can HEAR our variants. It cannot
+# notice they are the WRONG WORDS — a perfectly-heard wrong word scores a
+# clean 16/16. AAPL 2026-07-30 armed "iphone" against the market "iPhone 18"
+# and fired a Confirmed intent at 21:02:20Z while the market sat at 6c all
+# night, because `prepare`'s sanitize_variant() alphabet is letters+spaces and
+# silently STRIPS DIGITS. The same generator shipped "windows" for
+# "Windows 11" (MSFT 07-29, live), "ultra" for "Ultra 3", "formula" for
+# "Formula 1". prepare flags these (`compound = ...is_ascii_digit()...`) and
+# only writes a review comment — a comment is not a gate, and nobody reviews
+# at T-20. This re-derives the requirement from the LIVE board, so it holds
+# however prepare evolves.
+if PHRASE_OUT=$(python3 "$(dirname "$0")/market-phrase-screen.py" "$CONFIG" 2>&1); then
+  check PASS "armed variants can resolve their markets ($(head -1 <<<"$PHRASE_OUT"))"
+else
+  case $? in
+    1) check FAIL "variants cannot resolve their market: $(grep 'PHRASE-MISMATCH' <<<"$PHRASE_OUT" | sed 's/ *PHRASE-MISMATCH: //' | tr '\n' ' ')" ;;
+    *) check WARN "market-phrase screen could not run: $(head -1 <<<"$PHRASE_OUT")" ;;
   esac
 fi
 
@@ -458,7 +567,7 @@ fi
 # in configs/dial-ins.toml for this venue (scripts/bridge-probe.sh sets it).
 # Twilio-source configs only — a webcast arm dials nothing (don't cry wolf).
 if grep -q 'kind = "twilio' "$CONFIG" 2>/dev/null; then
-  ADMIT_OUT=$(EVENT_ID="$EVENT_ID" python3 - <<'PY'
+  ADMIT_OUT=$(EVENT_ID="$EVENT_ID" CONFIG="$CONFIG" python3 - <<'PY'
 import os, re, sys, tomllib
 
 event_id = os.environ.get("EVENT_ID", "")
@@ -491,7 +600,32 @@ if admission == "held":
     else:
         print(f"WARN {key} admission=held but STALE (probed {probed}, {age}d ago) — re-probe: scripts/bridge-probe.sh (~$0.02)")
 elif admission == "operator_screened":
-    print(f"FAIL {key} admission=operator_screened ({detail}) — a live human drops silent callers; unattended-infeasible until the gated operator path ships. NO-GO for a phone arm.")
+    # Default: NO-GO. Downgrade to PASS-with-note ONLY when BOTH sides of the
+    # gated operator path are in place (docs/OPERATOR-HANDLER.md §Registry
+    # interaction): (a) THIS config opts in via [operator_handler] enabled=true,
+    # and (b) the venue's registry entry carries operator_handler =
+    # "rehearsed-<date>" — a field written ONLY after a successful end-to-end
+    # rehearsal against the fake operator (never pre-filled by hand).
+    cfg_text = ""
+    try:
+        cfg_text = open(os.environ.get("CONFIG", "")).read()
+    except OSError:
+        pass
+    oh_block = re.search(r'^\[operator_handler\]\s*$(.*?)(?=^\[|\Z)',
+                         cfg_text, re.S | re.M)
+    handler_enabled = bool(oh_block and re.search(
+        r'^\s*enabled\s*=\s*true\b', oh_block.group(1), re.M))
+    rehearsed = re.fullmatch(r"rehearsed-(\d{4}-\d{2}-\d{2})",
+                             str(entry.get("operator_handler", "")))
+    if handler_enabled and rehearsed:
+        print(f"PASS {key} operator-screened venue armed via gated human-first handler (rehearsed {rehearsed.group(1)}) — {detail}")
+    else:
+        missing = []
+        if not handler_enabled:
+            missing.append("config lacks [operator_handler] enabled=true")
+        if not rehearsed:
+            missing.append(f'venue lacks operator_handler="rehearsed-<date>" in configs/dial-ins.toml (set only by a passed rehearsal)')
+        print(f"FAIL {key} admission=operator_screened ({detail}) — a live human drops silent callers; unattended-infeasible on the pure listen-only posture. NO-GO for a phone arm. Gated operator path not ready: {'; '.join(missing)}.")
 elif admission == "dropped":
     print(f"FAIL {key} admission=dropped ({detail}) — the bridge hangs up on us. NO-GO until the drop cause is understood.")
 else:
@@ -505,6 +639,11 @@ PY
     *)     check FAIL "${ADMIT_OUT#FAIL }" ;;
   esac
 fi
+
+# ── Keyword readiness gate ─────────────────────────────────────────────────
+# Every config being preflighted, every lane (phone AND webcast — WING's lost
+# words would have lost on either). Function defined above with the rationale.
+readiness_gate
 
 # ── Mailer live test ───────────────────────────────────────────────────────
 BODY=$(printf '%s\n' "${REPORT_LINES[@]}")

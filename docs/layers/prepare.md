@@ -23,15 +23,28 @@ listen line). A transcript can never establish `listen_access`, and a `curated`/
 verdict is never a no-go.
 
 ## Entry door
+- **Stable node contract:** `control.event.qualified` supplies the read-only
+  event and market facts needed to generate the configuration: event identity,
+  ticker, rule text, strike subtitle, early-close posture, and observed ask.
+  Preparation consumes those facts; it does not consume the live
+  `runtime.order.api` contract.
+- **Keyword capability:** `runtime.detector.keyword_compiler` supplies
+  `TokenTable::from_bpe_model` and model-aligned `encode` validation. Prepare
+  may reject variants that the configured tokenizer cannot represent, but it
+  does not construct or run an acoustic engine.
 - **CLI:** `earshot prepare --event-ticker <EVENT> [--out <path>] [--fillable]`
-  (`src/main.rs`, `Command::Prepare`). Connects via `connect_live()` (read-only
-  creds), loads the detector vocab (`kws_compile::TokenTable::from_bpe_model`
-  from `prepare::KWS_MODEL_DIR`; missing model ⇒ `None` + loud warning), and
-  calls `prepare::run_prepare(&rest, event_ticker, fillable, fill_all, table)`.
-- **Data:** `RestClient::event_markets(event_ticker)` (`src/kalshi/rest.rs`) —
-  paginated `GET /markets?event_ticker=`, each object carrying `ticker`,
-  `yes_sub_title` (the WORD), `yes_ask_dollars`, `can_close_early`,
-  `rules_primary`/`rules_secondary`.
+  (`src/main.rs`, `Command::Prepare`). It loads the detector vocab
+  (`kws_compile::TokenTable::from_bpe_model` from `prepare::KWS_MODEL_DIR`;
+  missing model ⇒ `None` + loud warning) and emits the reviewed config.
+- **Migration debt — current implementation only:** the compatibility CLI
+  still calls `connect_live()` and passes a `RestClient` directly to
+  `prepare::run_prepare`; `RestClient::event_markets(event_ticker)` performs
+  paginated `GET /markets?event_ticker=` and supplies `ticker`,
+  `yes_sub_title`, `yes_ask_dollars`, `can_close_early`,
+  `rules_primary`/`rules_secondary`. This is a legacy internal reach that must
+  move into qualification. It is not a stable dependency on the order-transport
+  node and must not be used to justify a `runtime.order.api → control.prepare`
+  architecture edge.
 
 ## Exit door
 - **Type:** a config TOML string (written to `--out`, default
@@ -47,6 +60,23 @@ verdict is never a no-go.
   possessive; `A / B` subtitles yield alternates). "Said N times" strikes are
   detected (count phrasing) and SKIPPED — the one-shot decision table cannot
   trade them.
+- **Letter-spelling for acronym-shaped alternates** (2026-07-29, after WING's
+  AI market lost its live race): when a subtitle alternate is a standalone
+  2–4 letter ALL-CAPS token in the ORIGINAL market phrase ("AI", "EV", "QE"),
+  `prep_market` emits an ADDITIONAL letter-spelled variant ("AI" → `"a i"`).
+  Deliberately conservative — mixed-case words ("Chipotle") and anything
+  longer never spell; the caps form is the signal that speakers say letters.
+  The joined 2-char form still dies at the `MIN_VARIANT_CHARS = 3` floor
+  (that guard is MEASURED: 38 FA/event on 2-char variants — see
+  `strip_short_variants`); the letter-spelled form is 3+ chars with the
+  spaces and survives it, which is the whole point.
+  **COUNTERWEIGHT — generation is not validation:** an auto-generated
+  letter-spelling helps recall only if the readiness study
+  (`scripts/variant-study.sh`) confirms the model can hear it, and the WING
+  post-mortem warns an untested variant can false-fire and consume the
+  one-shot. That is exactly why the blocking keyword-readiness gate in
+  `scripts/preflight-event.sh` refuses to arm unstudied or zero-confirmed
+  keywords — this generator only feeds the study, never bypasses it.
 - **Never emit a variant the detector cannot match** (follow-up 6, closed
   2026-07-16). Raw subtitles fail in TWO ways: LOUD — a symbol not in the
   vocab ("Warner Bros." → "BROS.") makes `arm` refuse the ENTIRE config; and
@@ -79,14 +109,18 @@ verdict is never a no-go.
 
 ## Failure policy
 - Empty market list (bad ticker / closed event) → error, no file written.
-- A Kalshi fetch error propagates (KalshiError); nothing is emitted partially.
+- While the legacy direct lookup remains, a Kalshi fetch error propagates
+  (`KalshiError`); nothing is emitted partially. At the stable boundary, an
+  incomplete `control.event.qualified` input is refused before emission.
 
 ## How to replace or edit this layer
 - All logic in `src/prepare.rs`; the REST wrapper in `src/kalshi/rest.rs`
-  (`event_markets`); the CLI seam in `src/main.rs`. The tuned-threshold library
-  is `prepare::tuned_library` — keep it in sync with the frozen `bakeoff.toml`
-  values (the recall sweep updates both). Emitted floats use `{:?}` so they are
-  valid TOML literals (`2.0`, not `2`).
+  (`event_markets`) and the CLI seam in `src/main.rs` are the legacy reach
+  described above, not part of this node's target contract. Migrate that fetch
+  into `control.qualify` and pass the resulting read-only facts into prepare.
+  The tuned-threshold library is `prepare::tuned_library` — keep it in sync
+  with the frozen `bakeoff.toml` values (the recall sweep updates both).
+  Emitted floats use `{:?}` so they are valid TOML literals (`2.0`, not `2`).
 
 ## Promotion loop (shrink the unvalidated set, no recording)
 Unvalidated words ship at 1¢ observe but still LOG every fire (the decision stage

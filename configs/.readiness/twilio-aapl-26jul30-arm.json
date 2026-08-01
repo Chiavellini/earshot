@@ -1,0 +1,175 @@
+{
+ "config": "twilio-aapl-26jul30-arm",
+ "keywords_sha256": "772b69098850d2e005d8d44c679aa761e156f2b1304b3d1a2cc9922b63e749a9",
+ "date": "2026-07-30",
+ "engine": "streaming_ctc",
+ "voices": [
+  "Samantha",
+  "Daniel",
+  "Albert"
+ ],
+ "keywords": [
+  {
+   "ticker": "KXEARNINGSMENTIONAAPL-26JUL30-APPL",
+   "phrase": "apple pay",
+   "variants": [
+    "apple pay"
+   ],
+   "clips": 3,
+   "confirmed": 2
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAAPL-26JUL30-BROA",
+   "phrase": "broadcom",
+   "variants": [
+    "broadcom",
+    "broadcoms"
+   ],
+   "clips": 6,
+   "confirmed": 15
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAAPL-26JUL30-CREA",
+   "phrase": "creator studio",
+   "variants": [
+    "creator studio"
+   ],
+   "clips": 3,
+   "confirmed": 4
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAAPL-26JUL30-F1",
+   "phrase": "formula",
+   "variants": [
+    "formula",
+    "formulas"
+   ],
+   "clips": 6,
+   "confirmed": 8
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAAPL-26JUL30-FOLD",
+   "phrase": "fold",
+   "variants": [
+    "fold",
+    "folds",
+    "folding",
+    "foldings",
+    "foldable",
+    "foldables"
+   ],
+   "clips": 18,
+   "confirmed": 26
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAAPL-26JUL30-FRID",
+   "phrase": "friday night baseball",
+   "variants": [
+    "friday night baseball"
+   ],
+   "clips": 3,
+   "confirmed": 4
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAAPL-26JUL30-GEMI",
+   "phrase": "gemini",
+   "variants": [
+    "gemini",
+    "geminis"
+   ],
+   "clips": 6,
+   "confirmed": 2
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAAPL-26JUL30-IPHO",
+   "phrase": "iphone",
+   "variants": [
+    "iphone",
+    "iphones",
+    "i fone"
+   ],
+   "clips": 9,
+   "confirmed": 3
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAAPL-26JUL30-LIQU",
+   "phrase": "liquid glass",
+   "variants": [
+    "liquid glass"
+   ],
+   "clips": 3,
+   "confirmed": 4
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAAPL-26JUL30-MANU",
+   "phrase": "manufacturing",
+   "variants": [
+    "manufacturing",
+    "manufacturings"
+   ],
+   "clips": 6,
+   "confirmed": 16
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAAPL-26JUL30-MODE",
+   "phrase": "modem",
+   "variants": [
+    "modem",
+    "modems"
+   ],
+   "clips": 6,
+   "confirmed": 1
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAAPL-26JUL30-SIRI",
+   "phrase": "siri",
+   "variants": [
+    "siri",
+    "siris"
+   ],
+   "clips": 6,
+   "confirmed": 1
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAAPL-26JUL30-SPOR",
+   "phrase": "sport",
+   "variants": [
+    "sport",
+    "sports"
+   ],
+   "clips": 6,
+   "confirmed": 8
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAAPL-26JUL30-STRE",
+   "phrase": "streaming",
+   "variants": [
+    "streaming",
+    "streamings"
+   ],
+   "clips": 6,
+   "confirmed": 12
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAAPL-26JUL30-TARI",
+   "phrase": "tariff",
+   "variants": [
+    "tariff",
+    "tariffs"
+   ],
+   "clips": 6,
+   "confirmed": 1
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAAPL-26JUL30-WIDG",
+   "phrase": "widget",
+   "variants": [
+    "widget",
+    "widgets"
+   ],
+   "clips": 6,
+   "confirmed": 5
+  }
+ ],
+ "voice_note": "no Spanish voice installed \u2014 third voice is English (Albert); Spanish-accent coverage NOT exercised"
+}

@@ -1,0 +1,263 @@
+# TWILIO PHONE-LANE ARM — AAPL 2026-07-30 21:00Z. Generated from
+# webcast-aapl-26jul30-arm-wc.toml: keywords/allowlist/risk IDENTICAL; only
+# [[sources]] differs (twilio_stream :8081; no [arbiter] — single source).
+# Runs CONCURRENTLY with the -WEBCAST lane (distinct [event].id ⇒ distinct
+# state dir, so run-arm guard 8 sees two different events —
+# PHONE-LANE-HANDOFF.md §7.3).
+#
+# Bind-port plan (MULTI-EVENT §8): YUM phone 8080, AAPL phone 8081 — this event owns :8081.
+# The two phone events do not overlap in time but ports stay distinct anyway.
+# max_reconnects=2 / idle_timeout_secs=8 are the Q-REDIAL production values
+# (pinned 2026-07-29 night).
+#
+# ⚠ streaming_ctc dlopens onnxruntime: the launcher MUST export
+# ORT_DYLIB_PATH or the detector build hangs AFTER the WS bind (Recv-Q on the
+# listener is the tell — PHONE-LANE-HANDOFF.md §2.1; launch-event.sh exports
+# it since commit 0e0e2bd).
+
+[event]
+id        = "KXEARNINGSMENTIONAAPL-26JUL30"
+starts_at = "2026-07-30T21:00:00Z"
+
+[pipeline]
+chunk_ms       = 80
+resample_to_hz = 16000
+
+[detector]
+engine = "streaming_ctc"
+
+[detector.streaming_ctc]
+model_dir         = "models/sherpa-onnx-streaming-zipformer-ctc-small-2024-03-18"
+num_threads       = 1
+default_threshold = 0.15
+refractory_ms     = 2000
+
+# sherpa_kws block kept so the engine can be reverted with a one-line change to
+# `engine =` above, without re-deriving thresholds under time pressure.
+[detector.sherpa_kws]
+model_dir         = "models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
+num_threads       = 1
+max_active_paths  = 4
+default_threshold = 0.20
+default_boost     = 2.0
+refractory_ms     = 2000
+fp32              = true
+
+[[sources]]
+kind = "twilio_stream"
+bind = "127.0.0.1:8081"
+max_reconnects    = 2
+idle_timeout_secs = 8
+
+[kalshi]
+series = "KXEARNINGSMENTIONAAPL"
+env = "prod"
+
+[risk]
+max_order_notional_cents = 100
+max_event_notional_cents = 100
+book_stale_ms            = 2000
+audio_stale_ms           = 2000
+allowlist_tickers = [
+  "KXEARNINGSMENTIONAAPL-26JUL30-APPL",
+  "KXEARNINGSMENTIONAAPL-26JUL30-BROA",
+  "KXEARNINGSMENTIONAAPL-26JUL30-CREA",
+  "KXEARNINGSMENTIONAAPL-26JUL30-F1",
+  "KXEARNINGSMENTIONAAPL-26JUL30-FOLD",
+  "KXEARNINGSMENTIONAAPL-26JUL30-FRID",
+  "KXEARNINGSMENTIONAAPL-26JUL30-GEMI",
+  "KXEARNINGSMENTIONAAPL-26JUL30-IPHO",
+  "KXEARNINGSMENTIONAAPL-26JUL30-LIQU",
+  # M3 has no keyword block (no variant survives the detector vocab), so it
+  # can never fire. It is allowlisted anyway because allowlist-diff.sh compares the
+  # ALLOWLIST against the live board: leaving a live market out makes it exit 1
+  # (LIVE-NOT-ARMED, the WING-INDI class) and FAILs preflight, which cannot tell a
+  # deliberate exclusion from an oversight. Allowlisted-but-keywordless reports
+  # ARMED-NO-KEYWORD and exits 0 — same posture as -OPEN above.
+  "KXEARNINGSMENTIONAAPL-26JUL30-M3",
+  "KXEARNINGSMENTIONAAPL-26JUL30-MANU",
+  "KXEARNINGSMENTIONAAPL-26JUL30-MODE",
+  "KXEARNINGSMENTIONAAPL-26JUL30-OPEN",
+  "KXEARNINGSMENTIONAAPL-26JUL30-SIRI",
+  "KXEARNINGSMENTIONAAPL-26JUL30-SPOR",
+  "KXEARNINGSMENTIONAAPL-26JUL30-STRE",
+  "KXEARNINGSMENTIONAAPL-26JUL30-TARI",
+  "KXEARNINGSMENTIONAAPL-26JUL30-WIDG",
+]
+
+# Apple Pay (KXEARNINGSMENTIONAAPL-26JUL30-APPL) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAAPL-26JUL30-APPL"
+phrase           = "apple pay"
+variants         = ["apple pay"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+confirmed_threshold = 0.086
+# READINESS FIX 2026-07-30: autopsy NEAR-MISS with clean margin (peak
+# 0.1224 vs default 0.15, all pieces emitted). confirmed_threshold at
+# 0.7 × measured peak = 0.086.
+
+# Broadcom (KXEARNINGSMENTIONAAPL-26JUL30-BROA) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAAPL-26JUL30-BROA"
+phrase           = "broadcom"
+variants         = ["broadcom", "broadcoms"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Creator Studio (KXEARNINGSMENTIONAAPL-26JUL30-CREA) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAAPL-26JUL30-CREA"
+phrase           = "creator studio"
+variants         = ["creator studio"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Formula 1 / F1 (KXEARNINGSMENTIONAAPL-26JUL30-F1) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+# DROPPED ultra-short variant "f" — <3 chars matches a syllable, not a word (measured: 38 FA in one event set). Re-add deliberately if this phrasing matters, and own the precision cost.
+# DROPPED ultra-short variant "fs" — <3 chars matches a syllable, not a word (measured: 38 FA in one event set). Re-add deliberately if this phrasing matters, and own the precision cost.
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAAPL-26JUL30-F1"
+phrase           = "formula"
+variants         = ["formula", "formulas"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Fold / Folding / Foldable (KXEARNINGSMENTIONAAPL-26JUL30-FOLD) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAAPL-26JUL30-FOLD"
+phrase           = "fold"
+variants         = ["fold", "folds", "folding", "foldings", "foldable", "foldables"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Friday Night Baseball (KXEARNINGSMENTIONAAPL-26JUL30-FRID) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAAPL-26JUL30-FRID"
+phrase           = "friday night baseball"
+variants         = ["friday night baseball"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Gemini (KXEARNINGSMENTIONAAPL-26JUL30-GEMI) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAAPL-26JUL30-GEMI"
+phrase           = "gemini"
+variants         = ["gemini", "geminis"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# iPhone 18 (KXEARNINGSMENTIONAAPL-26JUL30-IPHO) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAAPL-26JUL30-IPHO"
+phrase           = "iphone"
+variants         = ["iphone", "iphones", "i fone"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+confirmed_threshold = 0.071
+# READINESS FIX 2026-07-30: original WEAK (peak 0.0355; P/HO/NE pieces
+# p=0.01/0.03/0.04). 9 respellings measured; best "i fone" NEAR-MISS
+# 0.1014 (all pieces emitted). Added + confirmed_threshold at 0.7 ×
+# 0.1014 = 0.071.
+
+# Liquid Glass (KXEARNINGSMENTIONAAPL-26JUL30-LIQU) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAAPL-26JUL30-LIQU"
+phrase           = "liquid glass"
+variants         = ["liquid glass"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Manufacturing (KXEARNINGSMENTIONAAPL-26JUL30-MANU) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAAPL-26JUL30-MANU"
+phrase           = "manufacturing"
+variants         = ["manufacturing", "manufacturings"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Modem (KXEARNINGSMENTIONAAPL-26JUL30-MODE) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAAPL-26JUL30-MODE"
+phrase           = "modem"
+variants         = ["modem", "modems"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# OpenAI (KXEARNINGSMENTIONAAPL-26JUL30-OPEN) — KEYWORD REMOVED 2026-07-30 (operator decision).
+# The word is UNDETECTABLE by this model, not merely under-tuned: autopsy
+# peak 0.0108 (openai) / 0.0327 (chatgpt) against a 0.15 threshold, piece
+# ▁OPEN p=0.006, 13 respellings over 3 rounds all <= 0.028 — below the 0.02
+# threshold floor, so it is dead at EVERY permitted threshold and no
+# threshold/variant fix is sanctioned. Kept in [risk].allowlist_tickers
+# (allowlist-diff then reports ARMED-NO-KEYWORD, exit 0, and the live-board
+# INDI check still passes); it simply never fires. Removing the block is
+# what clears the BLOCKING readiness gate for the other keywords — leaving
+# it in blocked preflight for this whole event. Re-add the block (git
+# history) if a future model scores it.
+
+# Siri (KXEARNINGSMENTIONAAPL-26JUL30-SIRI) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAAPL-26JUL30-SIRI"
+phrase           = "siri"
+variants         = ["siri", "siris"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Sport (KXEARNINGSMENTIONAAPL-26JUL30-SPOR) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAAPL-26JUL30-SPOR"
+phrase           = "sport"
+variants         = ["sport", "sports"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Streaming (KXEARNINGSMENTIONAAPL-26JUL30-STRE) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAAPL-26JUL30-STRE"
+phrase           = "streaming"
+variants         = ["streaming", "streamings"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Tariff (KXEARNINGSMENTIONAAPL-26JUL30-TARI) — corpus-tuned; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAAPL-26JUL30-TARI"
+phrase           = "tariff"
+variants         = ["tariff", "tariffs"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+# REMOVED 2026-07-30 (regeneration): prepare emitted sherpa-scale tuned values
+# (confirmed_threshold=0.1, boost=3.0) into a streaming_ctc config — boost is
+# silently discarded (streaming_ctc.rs:273) and 0.1 runs ~33% looser than the
+# 0.15 CTC default. Ford 07-27 precedent; do not re-add on regeneration.
+
+# Widget (KXEARNINGSMENTIONAAPL-26JUL30-WIDG) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAAPL-26JUL30-WIDG"
+phrase           = "widget"
+variants         = ["widget", "widgets"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+confirmed_threshold = 0.065
+# READINESS FIX 2026-07-30: autopsy NEAR-MISS with clean margin (peak
+# 0.0935). confirmed_threshold at 0.7 × measured peak = 0.065.
+
+# --- prepare summary: 17 tradeable, 0 skipped (said-N-times), 1 skipped (unencodable), 0 variants dropped of 18 markets ---
+#   SKIPPED M3 (KXEARNINGSMENTIONAAPL-26JUL30-M3) — no variant survives the detector vocab (excluded from allowlist)

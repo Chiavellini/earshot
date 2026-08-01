@@ -1216,3 +1216,64 @@ from a manifest does not mean absence from the audio.
 **Reproduce:** `scripts/dead-word-autopsy.sh` (controls + buckets + per-piece
 detail), or one word at a time:
 `earshot detect-explain --config <cfg> --wav <clip> [--phrase matcha]`.
+
+## ⛔ WNT RECALL GATE + AUTOPSY — 2026-07-30 (ABC World News Tonight, daily market)
+
+Venue: `KXWORLDNEWSMENTION-26JUL29`, 16 strikes. Engine **`streaming_ctc`**
+(`default_threshold = 0.15`) — the production engine, not `sherpa_kws`. This
+matters: `prepare` emits `engine = "sherpa_kws"`, so the first pass at this
+market benched an engine production no longer uses (19 of 30 arm configs are
+`streaming_ctc`). `scripts/wnt-daily.sh` now pins the production engine.
+
+Two tooling fixes were required before the gate could run at all, both recorded
+because each silently disabled a gate that existed:
+
+- `scripts/variant-study.sh` extracted the `[detector]` block with
+  `sed -n '/^\[detector\]/,/^\[arbiter\]/p'`. **`earshot prepare` output has no
+  `[arbiter]` section**, so the range ran to EOF and the generated mini-config
+  inherited `[[sources]]`/`[kalshi]`/`[[keywords]]` — invalid under
+  `deny_unknown_fields`. The readiness gate therefore could not be run on a
+  freshly prepared config, i.e. exactly when it is needed. Now an `awk` range
+  that stops at the first non-`[detector...]` top-level section.
+- `scripts/dead-word-autopsy.sh` hardcoded the 12 dead words and 5 controls from
+  the 07-29 sbux/cmg/meta study, and assumed the per-slug
+  `$STUDY/vs-<slug>/…` layout. Added `--auto`: derive dead words from the study
+  dir's own `report.tsv` FAIL rows and **controls from that same run's
+  top-5 OK rows by hit count** — a stronger control than a remembered list,
+  since it is measured on the same clips by the same binary. Also supports the
+  flat single-config layout.
+
+### Readiness gate — 4 of 14 words DEAD on clean studio TTS
+
+`ice`, `iraq`, `midterm`, `tariff` scored 0/4. (`tariff` was already dead in the
+CMG study — same word, second venue, still unfixed.) Over-firing is the other
+tail: `maintain` 19/8, `oil` 17/10, `circular` 12/4, `blanche` 11/4.
+
+### Autopsy — all 5 controls FIRED, so the verdicts below are readable
+
+| word | verdict | measured evidence | the fix, and only this fix |
+|---|---|---|---|
+| `iraq` | **NO-EVIDENCE** | piece `Q` best logP **−10.46** (p≈0.0000), `▁I` −6.15 — neither is emitted | **Unreachable at any threshold** (confidence is a geometric mean over k pieces). Needs a respelling whose pieces the model demonstrably emits, then re-gated. |
+| `tariff` | NEAR-MISS | peak 0.1242 vs 0.150 — **short by 0.0258**; every piece emitted (0.09–0.46) | per-keyword `confirmed_threshold`, from the measured margin |
+| `midterm` | WEAK | peak 0.0552; `TER` −3.72, `M` −2.92. Variant `midterms` reaches 0.0867 | threshold, but the margin is 0.063 — marginal |
+| `ice` | NEAR-MISS | k=2, `CE` p=0.4352 → peak 0.1090 | ⚠ **do NOT lower this threshold.** `ice` produced 2 detections on 2026-07-29 on a strike that settled NO. A 2-piece word with a weak second piece is inherently ambiguous; dropping its threshold buys recall by buying false fires. Treat as not armable as spelled. |
+
+### The finding that is NOT a vocabulary problem
+
+`blanche` fires **strongly** on clean TTS — peak 0.836 and 0.949, every piece
+`▁B LA N CH E` at p≈0.99 — and got **zero detections across all three legs** of
+the live broadcast. So this is not reachability and not the operating point: it
+is live audio. The likely cause is pronunciation (the broadcast says the
+surname *Todd Blanche*; `say` reads the English word), which is the same class
+as WING losing `CITR` to a Spanish pronunciation. It is also a **recurring**
+word — 3 of 10 sampled days — so it is worth fixing rather than dropping.
+
+### Standing consequence for this venue
+
+Recall and precision, not latency, bound this market. On 2026-07-29 the latency
+race was won by **+12.9 s** on the one pairable word while 4 of 6 tradeable
+said-words went undetected, and 352¢ of board edge yielded 5¢ — the only strike
+we'd have taken was already priced at 94¢. A threshold change must be validated
+against **false alarms on real audio**, not just recall on TTS: the banked
+2026-07-29 capture is a natural precision set, because 8 strikes settled NO and
+any in-window detection of those words is a measured false alarm.

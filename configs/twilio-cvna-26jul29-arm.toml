@@ -1,7 +1,9 @@
-# TWILIO PHONE-LANE ARM — CVNA 2026-07-29 21:30Z. Generated 2026-07-29 from
-# webcast-cvna-26jul29-arm.toml: keywords/allowlist/risk IDENTICAL, only
-# [[sources]] differs (twilio_stream on :8080). Dial-in: (800) 715-9871 /
-# (646) 307-1963, Conference ID 3609424 (dial-ins.toml [CVNA]).
+# TWILIO PHONE-LANE ARM — CVNA 2026-07-29 21:30Z. Generated from
+# webcast-cvna-26jul29-arm.toml: keywords/allowlist/risk IDENTICAL; only
+# [[sources]] differs (twilio_stream :8081; no [arbiter] — single source).
+# Runs CONCURRENTLY with the -WEBCAST lane (distinct [event].id ⇒ distinct
+# state dir, so run-arm guard 8 sees two different events). Phone lane
+# restored 2026-07-29 20:11Z (launch-event.sh ORT_DYLIB_PATH fix).
 # WEBCAST FANOUT ARM — SPECULATIVE POSTURE + streaming_ctc DETECTOR.
 #
 # Differs from configs/webcast-fanout-arm-spec.toml ONLY in the detector engine.
@@ -141,7 +143,7 @@ fp32              = true
 
 [[sources]]
 kind = "twilio_stream"
-bind = "127.0.0.1:8080"
+bind = "127.0.0.1:8081"
 
 [kalshi]
 series = "KXEARNINGSMENTIONCVNA"

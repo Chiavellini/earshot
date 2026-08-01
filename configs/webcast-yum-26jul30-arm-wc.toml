@@ -1,0 +1,372 @@
+# YUM 2026-07-30 12:15Z — WEBCAST LANE.
+# Generated 2026-07-30 from `earshot prepare --event-ticker KXEARNINGSMENTIONYUM-26JUL30`
+# (live Kalshi API), keywords/allowlist/risk verbatim; sources/detector follow
+# the 07-29 speculative 2-leg fanout pattern below.
+# Lane pairing: PHONE twin configs/twilio-yum-26jul30-arm.toml runs
+# CONCURRENTLY on bind-port 8080 (this file's [event].id carries the
+# -WEBCAST suffix so run-arm guard 8 sees two different events —
+# PHONE-LANE-HANDOFF.md §7.3). Bind-port plan (MULTI-EVENT §8): YUM phone
+# 8080, AAPL phone 8081.
+#
+# WEBCAST FANOUT ARM — SPECULATIVE POSTURE + streaming_ctc DETECTOR.
+#
+# Differs from configs/webcast-fanout-arm-spec.toml ONLY in the detector engine.
+# Legs, flags and politeness budget are identical, so everything the speculative
+# template says below still applies verbatim.
+#
+# ── WHY streaming_ctc (docs/LATENCY-PROOF.md D1b/D1c/D1d/D1e, 2026-07-25) ──
+# Holdout (AAL, 1.51 h, unseen, run ONCE with the config frozen):
+#
+#                     sherpa_kws   streaming_ctc
+#   true positives            15              15     identical
+#   misses                     3               3     identical
+#   recall                 0.833           0.833     identical
+#   total fired               41              23     -18
+#   FA/h                   17.21            5.30     -69 %
+#   consumed_lag p50        540 ms         540 ms     no regression
+#
+# It catches exactly the same words and fires 18 fewer times. ZERO recall cost.
+# Dev agreed in direction (-38 % FA/h); the holdout is larger. A false alarm buys
+# YES on a market that settles NO, so this is the axis that costs money.
+#
+# ── WHAT IT COSTS, stated plainly ─────────────────────────────────────────
+# RTF 0.1518 vs 0.0689 = 2.2x, and `build_detector` runs PER LEG
+# (src/main.rs:627,638), so with 2 legs on 2 vCPU each leg owns a core:
+#
+#   burst drain (2 s AXP-class burst)   sherpa_kws 138 ms   streaming_ctc 304 ms
+#
+# That +166 ms lands on the CRITICAL PATH, and specifically in the ~25 % of words
+# that E0 showed already pay a whole segment — the worst case gets worse. This is
+# a deliberate accuracy-for-latency trade, not a free win. Revert = one line.
+#
+# The earlier "-300 ms CTC is faster" reading was an INSTRUMENT ARTIFACT (D1c):
+# the engines reported different quantities under one field name. Race on
+# `consumed_lag`, never on `emit_lag`.
+#
+# ── ⚠ HARD REQUIREMENT: ORT_DYLIB_PATH ────────────────────────────────────
+# streaming_ctc loads onnxruntime dynamically. If ORT_DYLIB_PATH is unset the
+# detector FAILS TO BUILD and the arm dies at startup — with launchd's minimal
+# env this is exactly the class of failure CLAUDE.md warns about. The launcher
+# MUST export it:
+#
+#   export ORT_DYLIB_PATH="$HOME/ear/$(cd $HOME/ear && find vendor -name 'libonnxruntime*.so*' | head -1)"
+#
+# Verify BEFORE the call, not during it: a dry-run arm must reach "source
+# finished" and not "streaming_ctc: ..." in the error path.
+#
+# Same as configs/webcast-fanout-arm.toml except leg 1: the speculative
+# edge-fetcher REPLACES the streamlink leg (leg count stays 2, so CPU on the
+# 2-vCPU box is unchanged).
+#
+#   leg 1 "spec_edge"   — scripts/hls-edge-fetch.py --speculative: fetches the
+#                         NEXT segment by predicted URL instead of waiting for
+#                         the manifest to announce it, and streams the body
+#                         progressively rather than buffering it whole.
+#   leg 2 "pipe_tuned"  — tuned-ffmpeg backstop, unchanged. NOT a "reliable"
+#                         fallback: pooled over 11 runs its absolute lag spans
+#                         12.0-19.2 s (7.22 s of join lottery — the LARGEST of
+#                         the three legs; an early 2-sample reading of 0.13 s was
+#                         retracted). It is a diversity/failure backstop only.
+#                         What protects the race is the fanout OR-at-decision,
+#                         and only while spec_edge is actually working — hence
+#                         the per-venue GO/NO-GO probe before arming.
+#
+# WHY (docs/LATENCY-PROOF.md 2026-07-24, parts 1-3). The race gap is NOT decode:
+# on AXP NFL it decomposed to 1.241 s FEED + 0.289 s OURS. A segment is
+# fetchable by predicted URL ~1.0-1.4 s BEFORE the manifest announces it
+# (+1.02 s at 6 s segments, +1.40 s at 1.92 s segments — a fixed origin
+# property, most likely manifest CDN cache TTL). Measured over 6 interleaved
+# runs: spec_edge 12.50 s median absolute lag vs prod_tuned 16.95 s, and — the
+# bigger win for racing — a 0.91 s run-to-run spread vs 4.9-6.5 s. The join
+# lottery costs up to 6.5 s FOR A WHOLE EVENT; this removes it.
+#
+# streamlink is dropped: it measured worst on both axes (17.18 s median,
+# 4.94 s spread) and is the erratic joiner. Trade-off accepted knowingly — a
+# leg is also a source of recall diversity (07-22 TARI: different legs hear
+# different audio), and we are down to two draws instead of three.
+#
+# ⚠ MORE AGGRESSIVE than a normal HLS client: it spends 404s to buy latency.
+# The politeness budget is in the script (probe from 80% of a segment, <=15
+# probes/segment, ANY 429/403 permanently disables speculation and falls back
+# to manifest-driven). A rate-limit would hit EVERY leg on the box, which is
+# why FOMC 2026-07-29 deliberately runs the non-speculative template instead.
+#
+# The fetcher's stderr is redirected per-leg because the arm logs pipe stderr at
+# `debug` (src/source/pipe.rs) and would otherwise hide catch-up drops — the
+# fetcher DROPS AUDIO to catch up, and silent loss is a recall bug. Check
+# ~/<lc>_spec_edge.err (SUMMARY lines) after every run. The stderr path is
+# per-event (2026-07-28): a shared ~/spec_edge.err interleaved two events'
+# diagnostics the day PYPL and F both ran. The arrival log is on by default —
+# it is the boundable-race artifact (first PDT→first-byte) and costs nothing.
+#
+# ⚠ probesize=200000 / analyzeduration=3000000 — robustness, keep it.
+# Some streams do not give ffmpeg enough to identify the AAC track inside
+# 65536/1000000 and it exits during startup with "Could not find codec
+# parameters ... unspecified sample rate/format", killing the leg before a
+# single sample. Reproduced 2026-07-25 on a 1.92 s-segment stream, where it
+# killed BOTH this leg and a direct-URL ffmpeg leg (so it is NOT a pipe-vs-URL
+# effect — an earlier note here claiming that was wrong). streamlink survived it,
+# because it demuxes before ffmpeg sees the bytes.
+#
+# NOT a general short-segment law: AXP/IVS at 2 s segments captured 488,306
+# frames with 0 drops at 65536. It is stream-specific AAC signalling. The bump
+# is free insurance — these flags measured ~0 ms in steady state, so the only
+# cost is a slightly longer startup probe, and 200000 (~1.5 segments here) stays
+# well under the pipeline's 30 s idle guard.
+#
+# Instantiate with:  scripts/stage-webcast-arm.sh --speculative <lc> <EV> <ISO>
+# then follow the same steps as the base template.
+
+[event]
+id        = "KXEARNINGSMENTIONYUM-26JUL30-WEBCAST"
+starts_at = "2026-07-30T12:15:00Z"
+
+[pipeline]
+chunk_ms       = 80
+resample_to_hz = 16000
+
+[detector]
+engine = "streaming_ctc"
+
+[detector.streaming_ctc]
+model_dir         = "models/sherpa-onnx-streaming-zipformer-ctc-small-2024-03-18"
+num_threads       = 1
+default_threshold = 0.15
+refractory_ms     = 2000
+
+# sherpa_kws block kept so the engine can be reverted with a one-line change to
+# `engine =` above, without re-deriving thresholds under time pressure.
+[detector.sherpa_kws]
+model_dir         = "models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
+num_threads       = 1
+max_active_paths  = 4
+default_threshold = 0.20
+default_boost     = 2.0
+refractory_ms     = 2000
+fp32              = true
+
+[arbiter]
+mode = "fanout"
+
+[[sources]]
+kind = "pipe"
+label = "spec_edge"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "python3 $HOME/ear/scripts/hls-edge-fetch.py \"$(cat $HOME/yum-stream.url)\" 250 2 --speculative --prefetch --stream-body --prefetch-report --arrival-log $HOME/yum-arrival.log 2>>$HOME/yum_spec_edge.err | ffmpeg -loglevel warning -fflags +discardcorrupt+nobuffer -flags low_delay -probesize 200000 -analyzeduration 3000000 -i - -vn -f s16le -ac 1 -ar 16000 -",
+]
+
+[[sources]]
+kind = "pipe"
+label = "pipe_tuned"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 2000000 -analyzeduration 5000000 -live_start_index -1 -http_persistent 1 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2 -i \"$(cat $HOME/yum-stream.url)\" -vn -f s16le -ac 1 -ar 16000 -",
+]
+
+[kalshi]
+series = "KXEARNINGSMENTIONYUM"
+env = "prod"
+
+[risk]
+max_order_notional_cents = 100
+max_event_notional_cents = 100
+book_stale_ms            = 2000
+audio_stale_ms           = 2000
+allowlist_tickers = [
+  "KXEARNINGSMENTIONYUM-26JUL30-AI",
+  "KXEARNINGSMENTIONYUM-26JUL30-BEEF",
+  "KXEARNINGSMENTIONYUM-26JUL30-BUYB",
+  "KXEARNINGSMENTIONYUM-26JUL30-BYTE",
+  "KXEARNINGSMENTIONYUM-26JUL30-CRISP",
+  "KXEARNINGSMENTIONYUM-26JUL30-CYCL",
+  "KXEARNINGSMENTIONYUM-26JUL30-FOOD",
+  "KXEARNINGSMENTIONYUM-26JUL30-LETT",
+  "KXEARNINGSMENTIONYUM-26JUL30-LONG",
+  "KXEARNINGSMENTIONYUM-26JUL30-LOWI",
+  "KXEARNINGSMENTIONYUM-26JUL30-LUXE",
+  "KXEARNINGSMENTIONYUM-26JUL30-OUTB",
+  "KXEARNINGSMENTIONYUM-26JUL30-RECA",
+  "KXEARNINGSMENTIONYUM-26JUL30-SAUC",
+  "KXEARNINGSMENTIONYUM-26JUL30-TAYL",
+  "KXEARNINGSMENTIONYUM-26JUL30-TRAF",
+  "KXEARNINGSMENTIONYUM-26JUL30-VALU",
+  "KXEARNINGSMENTIONYUM-26JUL30-YUMC",
+]
+
+# AI / Artificial Intelligence (KXEARNINGSMENTIONYUM-26JUL30-AI) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+# DROPPED ultra-short variant "ai" — <3 chars matches a syllable, not a word (measured: 38 FA in one event set). Re-add deliberately if this phrasing matters, and own the precision cost.
+# DROPPED ultra-short variant "ais" — <3 chars matches a syllable, not a word (measured: 38 FA in one event set). Re-add deliberately if this phrasing matters, and own the precision cost.
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONYUM-26JUL30-AI"
+phrase           = "a i"
+variants         = ["a i", "artificial intelligence"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Beef (KXEARNINGSMENTIONYUM-26JUL30-BEEF) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONYUM-26JUL30-BEEF"
+phrase           = "beef"
+variants         = ["beef", "beefs"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Buyback / Share Repurchase (KXEARNINGSMENTIONYUM-26JUL30-BUYB) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONYUM-26JUL30-BUYB"
+phrase           = "buyback"
+variants         = ["buyback", "buybacks", "share repurchase"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Byte (KXEARNINGSMENTIONYUM-26JUL30-BYTE) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONYUM-26JUL30-BYTE"
+phrase           = "byte"
+variants         = ["byte", "bytes", "bite", "bites"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+# READINESS FIX 2026-07-30: study 0/6 (WEAK peak 0.0128, piece TE p=0.02).
+# Measured homophone respellings on the study clips: "bite" 0.3855 FIRED,
+# "bites" 0.4265 FIRED. Fires on spoken bite(s) too — acceptable at the
+# 1¢ observe posture; revisit before any fill promotion.
+
+# Crispy Chicken (KXEARNINGSMENTIONYUM-26JUL30-CRISP) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONYUM-26JUL30-CRISP"
+phrase           = "crispy chicken"
+variants         = ["crispy chicken"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Cyclospora / Cyclosporiasis (KXEARNINGSMENTIONYUM-26JUL30-CYCL) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONYUM-26JUL30-CYCL"
+phrase           = "cyclospora"
+variants         = ["cyclospora", "cyclosporas", "cyclosporiasis"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Food Safety (KXEARNINGSMENTIONYUM-26JUL30-FOOD) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONYUM-26JUL30-FOOD"
+phrase           = "food safety"
+variants         = ["food safety"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Lettuce (KXEARNINGSMENTIONYUM-26JUL30-LETT) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONYUM-26JUL30-LETT"
+phrase           = "lettuce"
+variants         = ["lettuce", "lettuces", "letus", "let us"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+# READINESS FIX 2026-07-30: study 0/6 (WEAK peak 0.0243; piece U p=0.008
+# is the killer in the ▁LET T U CE cut). Measured: "let us" 0.8481 FIRED,
+# "letus" 0.1712 FIRED. ⚠ FA risk: "let us" is a common spoken phrase —
+# acceptable at 1¢ observe; must NOT be fill-promoted without live
+# precision evidence (validate-from-log).
+
+# LongRange Capital (KXEARNINGSMENTIONYUM-26JUL30-LONG) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONYUM-26JUL30-LONG"
+phrase           = "longrange capital"
+variants         = ["longrange capital"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Low-Income / Lower-Income (KXEARNINGSMENTIONYUM-26JUL30-LOWI) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONYUM-26JUL30-LOWI"
+phrase           = "low income"
+variants         = ["low income", "lower income"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Luxe / Luxe Value Menu (KXEARNINGSMENTIONYUM-26JUL30-LUXE) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONYUM-26JUL30-LUXE"
+phrase           = "luxe"
+variants         = ["luxe", "luxes", "luxe value menu"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Outbreak / Illness (KXEARNINGSMENTIONYUM-26JUL30-OUTB) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONYUM-26JUL30-OUTB"
+phrase           = "outbreak"
+variants         = ["outbreak", "outbreaks", "illness"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Recall / Recalled (KXEARNINGSMENTIONYUM-26JUL30-RECA) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONYUM-26JUL30-RECA"
+phrase           = "recall"
+variants         = ["recall", "recalls", "recalled", "recalleds"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Saucy / Sauce (KXEARNINGSMENTIONYUM-26JUL30-SAUC) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONYUM-26JUL30-SAUC"
+phrase           = "saucy"
+variants         = ["saucy", "saucys", "sauce", "sauces"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Taylor Farms (KXEARNINGSMENTIONYUM-26JUL30-TAYL) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONYUM-26JUL30-TAYL"
+phrase           = "taylor farms"
+variants         = ["taylor farms"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Traffic (KXEARNINGSMENTIONYUM-26JUL30-TRAF) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONYUM-26JUL30-TRAF"
+phrase           = "traffic"
+variants         = ["traffic", "traffics"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Value (KXEARNINGSMENTIONYUM-26JUL30-VALU) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONYUM-26JUL30-VALU"
+phrase           = "value"
+variants         = ["value", "values"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Yum China (KXEARNINGSMENTIONYUM-26JUL30-YUMC) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONYUM-26JUL30-YUMC"
+phrase           = "yum china"
+variants         = ["yum china"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# --- prepare summary: 18 tradeable, 0 skipped (said-N-times), 0 skipped (unencodable), 0 variants dropped of 18 markets ---

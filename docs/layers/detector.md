@@ -20,10 +20,12 @@ sizing — a `Detection` is a pure acoustic event.
 - **Type:** `types::Detection` — `keyword: KeywordId` (index into the
   config keyword table), `confidence: f32`, `tier: Tier` (`Fast`/`Confirmed`),
   `audio_ts` (= `chunk.first_capture_ts` of the triggering audio),
-  `emit_ts: MonotonicNs` (stamped by the detector at emission), and
-  `audio_pos_ms: u64` — the triggering audio's position on the stream
-  timeline (ms since first sample), wall-clock-free so bench scoring works
-  in lossless speed=0 replays.
+  `emit_ts: MonotonicNs` (stamped by the detector at emission),
+  `source: SourceId` (winning ingress leg), `audio_pos_ms: u64` (the
+  triggering position on the stream timeline), and
+  `audio_consumed_ms: u64` (engine-independent audio fed before emission).
+  The two audio-position fields are wall-clock-free so bench scoring works in
+  lossless speed=0 replays.
 - **Mechanism:** function return value; the detect-thread loop feeds each
   `Detection` straight into the decision layer.
 
@@ -50,7 +52,8 @@ sizing — a `Detection` is a pure acoustic event.
   constant 1.0), so the decision layer's `min_confidence_*` gates are INERT
   on the production engine — per-keyword `fast_threshold` /
   `confirmed_threshold` / `boost` (compiled into the spotter) are the real
-  precision knobs.
+  precision knobs. `boost` is sherpa_kws-ONLY: the streaming_ctc scorer
+  ignores it (config validation warns; see that engine's section below).
 
 ## Failure policy
 - An engine failure (FFI error, model crash) must surface as a loud log +
@@ -132,6 +135,23 @@ KWS C API does not expose. Two wins over sherpa_kws: real per-hit `confidence`
   logic) for piece strings, then maps them to this model's `tokens.txt` ids.
   Thresholds come from `[detector.streaming_ctc]` / per-keyword overrides
   (CTC-confidence scale, tuned in Phase 4 — NOT sherpa's threshold scale).
+  ⚠ **Keyword `boost` is IGNORED here**: the CTC scorer implements no acoustic
+  boost — `compile` is called with a hardcoded `default_boost = 1.0` and the
+  per-entry value is never read. `config::validate` warns loudly when a
+  streaming_ctc config carries keyword boosts (they are sherpa-scale numbers,
+  e.g. prepare's tuned_library), so they can no longer be mistaken for applied
+  tuning.
+- **Encoder precision** (`[detector.streaming_ctc].precision`, default
+  `"int8"`): picks which `*.onnx` export in `model_dir` is loaded
+  (`Precision` + the pure `select_encoder_onnx` — unit-tested on synthetic
+  file lists). `"int8"` prefers the int8 export and falls back to whatever
+  single export exists; `"fp32"` requires a non-int8 export and refuses to
+  build when only int8 is present (naming what was found). Counterpart of
+  `sherpa_kws.fp32` — but NOT the same result: the 2026-07-29 A/B (dev,
+  chunk 80) measured fp32 as a WASH on this engine (+1 TP / +8 FA wideband,
+  bit-identical tariff on telephony, consumed_lag flat), unlike sherpa_kws
+  where fp32 won recall for free. Default stays int8; full table in
+  `docs/nodes/detector-streaming-ctc.md` §Evidence.
 - **`audio_pos_ms`** = output-frame index × (fbank shift × subsampling), the
   subsampling measured from the first inference (`out_per_chunk`). Refractory
   (`refractory_ms`) converted to frames.

@@ -150,6 +150,75 @@ pub fn run_capture_bakeoff(args: CaptureArgs) -> Result<CaptureReport, AnyErr> {
     Ok(CaptureReport { legs, cross, recommendation })
 }
 
+pub struct BridgeProbeArgs {
+    /// The single Twilio leg to capture (bound before the dial, same ordering
+    /// rule as `arm`).
+    pub leg: Box<dyn AudioSource>,
+    /// Artifact basename: `<label>.wav` / `<label>.jsonl` under `out_dir`.
+    pub label: String,
+    pub max_secs: u64,
+    pub out_dir: PathBuf,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BridgeProbeReport {
+    pub label: String,
+    pub frames: u64,
+    pub samples: u64,
+    pub sample_rate_hz: u32,
+    /// Audio content duration (samples / rate).
+    pub duration_ms: u64,
+    /// Wall time from first to last captured frame — the bridge's observed
+    /// hold time, the number the `admission` registry field records.
+    pub held_ms: u64,
+    pub stalls_over_100ms: u64,
+    pub wav_path: String,
+    pub jsonl_path: String,
+}
+
+/// Bridge-entry admission probe (VERIFICATIONS Q-ADMIT): record what a bridge
+/// says to a silent listen-only caller. One leg, no detector, no bake-off
+/// analytics — the artifact is the point. Refuses to pass silently: a probe
+/// that captured no audio is an error, not an empty report.
+pub fn run_bridge_probe(args: BridgeProbeArgs) -> Result<BridgeProbeReport, AnyErr> {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+    let labels = [args.label.clone()];
+    let mut captures = rt.block_on(capture_all(vec![args.leg], &labels, args.max_secs));
+    let cap = captures.remove(0);
+    if cap.frames.is_empty() {
+        return Err(
+            "bridge probe captured no audio — call never landed on the listener \
+             (check the tunnel/stream URL, and that the dial happened after bind)"
+                .into(),
+        );
+    }
+
+    std::fs::create_dir_all(&args.out_dir)?;
+    let wav_path = write_leg(&args.out_dir, &cap)?;
+    let safe: String = cap.label.chars().map(|c| if c.is_alphanumeric() { c } else { '_' }).collect();
+    let jsonl_path = args.out_dir.join(format!("{safe}.jsonl")).display().to_string();
+
+    let held_ms = cap
+        .frames
+        .last()
+        .map(|last| last.capture_ts.saturating_since(cap.frames[0].capture_ts) / 1_000_000)
+        .unwrap_or(0);
+    let analyzed = analyze_leg(&cap, Some(wav_path.clone()));
+    Ok(BridgeProbeReport {
+        label: cap.label.clone(),
+        frames: analyzed.frames,
+        samples: analyzed.samples,
+        sample_rate_hz: analyzed.sample_rate_hz,
+        duration_ms: analyzed.duration_ms,
+        held_ms,
+        stalls_over_100ms: analyzed.stalls_over_100ms,
+        wav_path,
+        jsonl_path,
+    })
+}
+
 /// Spawn every leg into its own ring and drain concurrently until all legs end
 /// or `max_secs` elapses.
 async fn capture_all(
@@ -539,6 +608,42 @@ mod tests {
         })
         .unwrap_err();
         assert!(err.to_string().contains("collide"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn bridge_probe_records_single_leg() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.wav");
+        noise_wav(&a, 16000, 0);
+        let out = dir.path().join("probes");
+        let report = run_bridge_probe(BridgeProbeArgs {
+            leg: Box::new(ReplaySource::from_wav(&a, 0.0, SourceId(0)).unwrap()),
+            label: "msft-test".into(),
+            max_secs: 10,
+            out_dir: out.clone(),
+        })
+        .unwrap();
+        assert_eq!(report.sample_rate_hz, 8000);
+        assert_eq!(report.samples, 16000);
+        assert_eq!(report.duration_ms, 2000);
+        // Label is sanitized the same way as bake-off recordings.
+        assert!(out.join("msft_test.wav").exists());
+        assert!(out.join("msft_test.jsonl").exists());
+    }
+
+    #[test]
+    fn bridge_probe_with_no_audio_is_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("empty.wav");
+        noise_wav(&a, 0, 0);
+        let err = run_bridge_probe(BridgeProbeArgs {
+            leg: Box::new(ReplaySource::from_wav(&a, 0.0, SourceId(0)).unwrap()),
+            label: "dead".into(),
+            max_secs: 5,
+            out_dir: dir.path().join("probes"),
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains("no audio"), "unexpected error: {err}");
     }
 
     #[test]

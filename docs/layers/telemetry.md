@@ -34,6 +34,9 @@ layer — it never sits between two stages.
   record (the MS RECE analysis was reconstructed from decision wall-times in
   the logs) outweighs the residual µs. Revisit only with a flush-on-signal
   guarantee.
+- Phone lifecycle: `control.phone.attached` is an observation input for
+  correlating the CallSid/attachment phase with runtime health. Telemetry does
+  not use it to construct or gate the Twilio adapter.
 
 ## Exit door
 - **Type:** `PipelineReport` — event id, frame/chunk counts,
@@ -62,6 +65,14 @@ layer — it never sits between two stages.
   saturates loudly at max rather than wrapping.
 - Drop counters are part of the report contract: every bounded ring/channel
   that can drop must surface its counter here.
+
+## Failure policy
+- Recording must not panic on the hot path. Values outside the histogram
+  range saturate so a stall remains visible instead of dropping a sample.
+- An undeclared edge is currently ignored; tests and `EDGES` are therefore
+  the contract guard until edge identifiers become typed.
+- Report serialization or file I/O errors propagate at teardown. They are
+  never converted into a successful run.
 
 ## How to replace or edit this layer
 - Everything is `src/telemetry.rs`. Contract: edge names already emitted

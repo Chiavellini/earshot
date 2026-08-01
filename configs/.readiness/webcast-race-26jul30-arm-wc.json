@@ -1,0 +1,162 @@
+{
+ "config": "webcast-race-26jul30-arm-wc",
+ "keywords_sha256": "9c36231486cddef5e7f83c4f4569fb275d3868e28082d805f96ad2a97a4b23ab",
+ "date": "2026-07-29",
+ "engine": "streaming_ctc",
+ "voices": [
+  "Samantha",
+  "Daniel",
+  "Albert"
+ ],
+ "keywords": [
+  {
+   "ticker": "KXEARNINGSMENTIONRACE-26JUL30-AMAL",
+   "phrase": "amalfi",
+   "variants": [
+    "amalfi",
+    "amalfis"
+   ],
+   "clips": 6,
+   "confirmed": 6
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONRACE-26JUL30-BACK",
+   "phrase": "backlog",
+   "variants": [
+    "backlog",
+    "backlogs"
+   ],
+   "clips": 6,
+   "confirmed": 8
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONRACE-26JUL30-BATT",
+   "phrase": "battery",
+   "variants": [
+    "battery",
+    "batterys"
+   ],
+   "clips": 6,
+   "confirmed": 9
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONRACE-26JUL30-CADIL",
+   "phrase": "cadillac",
+   "variants": [
+    "cadillac",
+    "cadillacs",
+    "cadelac"
+   ],
+   "clips": 9,
+   "confirmed": 3
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONRACE-26JUL30-CHIN",
+   "phrase": "china",
+   "variants": [
+    "china",
+    "chinas"
+   ],
+   "clips": 6,
+   "confirmed": 12
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONRACE-26JUL30-CURR",
+   "phrase": "currency",
+   "variants": [
+    "currency",
+    "currencys"
+   ],
+   "clips": 6,
+   "confirmed": 14
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONRACE-26JUL30-HEAD",
+   "phrase": "headwind",
+   "variants": [
+    "headwind",
+    "headwinds",
+    "head wind",
+    "head winds"
+   ],
+   "clips": 12,
+   "confirmed": 16
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONRACE-26JUL30-HYPE",
+   "phrase": "hypersail",
+   "variants": [
+    "hypersail",
+    "hypersails",
+    "high per sail",
+    "high per sale"
+   ],
+   "clips": 12,
+   "confirmed": 15
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONRACE-26JUL30-LUCE",
+   "phrase": "luce",
+   "variants": [
+    "luce",
+    "luces"
+   ],
+   "clips": 6,
+   "confirmed": 3
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONRACE-26JUL30-MIDD",
+   "phrase": "middle east",
+   "variants": [
+    "middle east"
+   ],
+   "clips": 3,
+   "confirmed": 4
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONRACE-26JUL30-POWE",
+   "phrase": "powertrain",
+   "variants": [
+    "powertrain",
+    "powertrains",
+    "power train",
+    "power trains"
+   ],
+   "clips": 12,
+   "confirmed": 19
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONRACE-26JUL30-TAIL",
+   "phrase": "tailwind",
+   "variants": [
+    "tailwind",
+    "tailwinds",
+    "tail wind",
+    "tail winds"
+   ],
+   "clips": 12,
+   "confirmed": 13
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONRACE-26JUL30-TARI",
+   "phrase": "tariff",
+   "variants": [
+    "tariff",
+    "tariffs"
+   ],
+   "clips": 6,
+   "confirmed": 1
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONRACE-26JUL30-UNIT",
+   "phrase": "united states",
+   "variants": [
+    "united states",
+    "americas"
+   ],
+   "clips": 6,
+   "confirmed": 8
+  }
+ ],
+ "voice_note": "no Spanish voice installed \u2014 third voice is English (Albert); Spanish-accent coverage NOT exercised"
+}

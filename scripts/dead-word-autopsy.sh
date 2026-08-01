@@ -36,6 +36,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --study-dir) STUDY="$2"; shift 2 ;;
     --out)       OUT="$2"; shift 2 ;;
+    --auto)      AUTO=1; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -50,7 +51,8 @@ if [[ -z "${ORT_DYLIB_PATH:-}" ]]; then
   export ORT_DYLIB_PATH
 fi
 
-# The 12 dead words, and the controls that must fire. Keyed slug:SUFFIX.
+# The 12 dead words from the 2026-07-29 study, and the controls that must fire.
+# Keyed slug:SUFFIX, matching that run's per-slug layout ($STUDY/vs-<slug>/...).
 DEAD=(
   "sbux:MATC" "sbux:PROT" "sbux:FRAP" "sbux:HORC"
   "cmg:TARI" "cmg:HEAD" "cmg:TAIL" "cmg:AUTO" "cmg:CHIP" "cmg:CHIPL"
@@ -58,11 +60,40 @@ DEAD=(
 )
 CONTROL=( "meta:ORIO" "meta:HYPE" "meta:ADVE" "cmg:INFL" "sbux:LOYA" )
 
+# --auto (2026-07-30): derive both lists from the study dir's OWN report.tsv
+# instead of the hardcoded 07-29 sets, so the autopsy works on any later study
+# (e.g. the daily WNT gate). Controls become the words that DID fire in this
+# same run, ranked by hit count — a stronger control than a remembered list,
+# because it is measured on the same clips by the same binary.
+# A single-config study (scripts/variant-study.sh <cfg> <out>) writes a FLAT
+# layout, so slug is empty and run_one falls back to $STUDY/cfg|clips.
+if [[ "${AUTO:-0}" == 1 ]]; then
+  RT="$STUDY/report.tsv"
+  [[ -f "$RT" ]] || { echo "REFUSING: --auto needs $RT" >&2; exit 2; }
+  DEAD=(); CONTROL=()
+  while IFS=$'\t' read -r ticker phrase hits verdict; do
+    [[ -n "${ticker:-}" ]] || continue
+    suf="${ticker##*-}"
+    [[ "$verdict" == FAIL ]] && DEAD+=(":$suf")
+  done < "$RT"
+  # top-5 firing words by hit count as controls
+  while read -r suf; do
+    [[ -n "$suf" ]] && CONTROL+=(":$suf")
+  done < <(awk -F'\t' '$4=="OK"{split($3,h,"/"); n=$1; sub(/.*-/,"",n); print h[1]"\t"n}' "$RT" \
+             | sort -rn | head -5 | cut -f2)
+  echo "# --auto: ${#DEAD[@]} dead, ${#CONTROL[@]} controls from $RT" >&2
+fi
+
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 run_one() {  # run_one <slug> <SUF> -> prints "verdict<TAB>detail"
   local slug="$1" suf="$2"
   local cfg="$STUDY/vs-$slug/cfg/$suf.toml" wav="$STUDY/vs-$slug/clips/$suf.wav"
-  [[ -f "$cfg" && -f "$wav" ]] || { printf 'MISSING\tno cfg/clip for %s:%s\n' "$slug" "$suf"; return; }
+  # Flat layout: a single-config study (variant-study.sh <cfg> <out>) writes
+  # $STUDY/cfg/<SUF>.toml directly, with no per-slug subdir.
+  if [[ ! -f "$cfg" || ! -f "$wav" ]]; then
+    cfg="$STUDY/cfg/$suf.toml"; wav="$STUDY/clips/$suf.wav"
+  fi
+  [[ -f "$cfg" && -f "$wav" ]] || { printf 'MISSING\tno cfg/clip for %s:%s\n' "${slug:-flat}" "$suf"; return; }
   # The mini-config's [[sources]] path points at the original /tmp location and
   # is irrelevant here — detect-explain takes the wav explicitly.
   local log="$TMP/$slug-$suf.txt"

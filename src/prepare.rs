@@ -136,6 +136,34 @@ fn prep_market(m: &Value) -> Option<PreppedKeyword> {
                 variants.push(plural);
             }
         }
+        // Letter-spelling for acronym-shaped alternates (WING 2026-07-29: the
+        // "AI" market lost its live race after the bare 2-char form was
+        // dropped by the short-variant floor and nothing covered speakers
+        // saying "A.I." as letters). Conservative on purpose: only when the
+        // ORIGINAL subtitle alternate is a standalone 2–4 letter ALL-CAPS
+        // token ("AI", "EV", "QE") — mixed case ("Chipotle") never spells.
+        // The joined form stays subject to MIN_VARIANT_CHARS (measured 38
+        // FA/event on 2-char variants); the letter-spelled form ("a i", 3
+        // chars with the space) passes the floor and encodes as real
+        // letter-piece tokens.
+        //
+        // ⚠ COUNTERWEIGHT: generation is NOT validation. A letter-spelling
+        // helps recall only if the readiness study (scripts/variant-study.sh)
+        // confirms the model can hear it; the WING post-mortem warns an
+        // untested variant can false-fire and consume the one-shot. That is
+        // why preflight's keyword-readiness gate blocks arming on unstudied
+        // or zero-confirmed keywords — this generator only feeds the study.
+        let raw = alt.trim();
+        if (2..=4).contains(&raw.len()) && raw.chars().all(|c| c.is_ascii_uppercase()) {
+            let spelled = a
+                .chars()
+                .map(|c| c.to_string())
+                .collect::<Vec<_>>()
+                .join(" ");
+            if !variants.contains(&spelled) {
+                variants.push(spelled);
+            }
+        }
     }
     let phrase = variants.first().cloned().unwrap_or_else(|| word.to_lowercase());
 
@@ -512,6 +540,83 @@ mod tests {
         assert!(k.variants.contains(&"electric vehicle".to_string()), "the real phrase must survive");
         assert!(k.dropped_short.contains(&"ev".to_string()), "the drop must be recorded, not silent");
         assert_eq!(k.phrase, "electric vehicle", "phrase must stay a kept variant");
+    }
+
+    #[test]
+    fn acronym_alternates_gain_letter_spelled_variants() {
+        // "AI" is the load-bearing case: WING 2026-07-29 lost the AI market
+        // live after "ai"/"ais" died at the short-variant floor and nothing
+        // covered the letters-spoken form. The letter-spelled "a i" is 3
+        // chars WITH the space, so it survives the floor the joined form
+        // rightly dies at.
+        let m = json!({
+            "ticker": "KX-T-AI",
+            "yes_sub_title": "AI",
+            "rules_primary": "resolves yes if said",
+            "can_close_early": true,
+        });
+        let mut preps = vec![prep_market(&m).expect("prepped")];
+        assert!(
+            preps[0].variants.contains(&"a i".to_string()),
+            "all-caps acronym must gain a letter-spelled variant, got {:?}",
+            preps[0].variants
+        );
+        strip_short_variants(&mut preps);
+        let k = &preps[0];
+        assert!(!k.variants.iter().any(|v| v == "ai" || v == "ais"), "joined 2-char forms still die at the floor");
+        assert!(k.variants.contains(&"a i".to_string()), "letter form must survive the floor");
+        assert_eq!(k.phrase, "a i", "phrase must stay a kept variant");
+    }
+
+    #[test]
+    fn letter_spelling_requires_all_caps_in_the_source_subtitle() {
+        // Not-all-caps words never spell, whatever their length: the
+        // heuristic is "written as an acronym", not "short". "Chipotle" is
+        // the regression case; lowercase "ai" (hypothetical) must not spell
+        // either — only the caps form signals letters-spoken.
+        let m = json!({
+            "ticker": "KX-T-CHIP",
+            "yes_sub_title": "Chipotle",
+            "rules_primary": "resolves yes if said",
+            "can_close_early": true,
+        });
+        let k = prep_market(&m).expect("prepped");
+        assert_eq!(k.variants, vec!["chipotle", "chipotles"], "no letter form for a normal word");
+
+        let m = json!({
+            "ticker": "KX-T-EVLC",
+            "yes_sub_title": "ev",
+            "rules_primary": "resolves yes if said",
+            "can_close_early": true,
+        });
+        let k = prep_market(&m).expect("prepped");
+        assert!(
+            !k.variants.iter().any(|v| v == "e v"),
+            "lowercase source token must not gain a letter form, got {:?}",
+            k.variants
+        );
+    }
+
+    #[test]
+    fn letter_spelling_applies_per_caps_alternate_and_leaves_others_unchanged() {
+        // Real 2026-07-28 Ford shape: "Electric vehicle / EV". Only the EV
+        // alternate spells; the phrase and plural generation are untouched.
+        let m = json!({
+            "ticker": "KX-T-EV",
+            "yes_sub_title": "Electric vehicle / EV",
+            "rules_primary": "resolves yes if said",
+            "can_close_early": true,
+        });
+        let mut preps = vec![prep_market(&m).expect("prepped")];
+        assert_eq!(
+            preps[0].variants,
+            vec!["electric vehicle", "ev", "evs", "e v"],
+            "multi-word phrases take no plural; only the caps alternate spells"
+        );
+        strip_short_variants(&mut preps);
+        let k = &preps[0];
+        assert_eq!(k.variants, vec!["electric vehicle", "e v"]);
+        assert_eq!(k.phrase, "electric vehicle", "phrase stays the real first variant");
     }
 
     #[test]

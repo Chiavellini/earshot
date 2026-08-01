@@ -1,0 +1,201 @@
+{
+ "config": "twilio-yum-26jul30-arm",
+ "keywords_sha256": "0060dc606b464d163f4d20909f4e082128b44bf7b647623aebc23d717c733215",
+ "date": "2026-07-29",
+ "engine": "streaming_ctc",
+ "voices": [
+  "Samantha",
+  "Daniel",
+  "Albert"
+ ],
+ "keywords": [
+  {
+   "ticker": "KXEARNINGSMENTIONYUM-26JUL30-AI",
+   "phrase": "a i",
+   "variants": [
+    "a i",
+    "artificial intelligence"
+   ],
+   "clips": 6,
+   "confirmed": 4
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONYUM-26JUL30-BEEF",
+   "phrase": "beef",
+   "variants": [
+    "beef",
+    "beefs"
+   ],
+   "clips": 6,
+   "confirmed": 6
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONYUM-26JUL30-BUYB",
+   "phrase": "buyback",
+   "variants": [
+    "buyback",
+    "buybacks",
+    "share repurchase"
+   ],
+   "clips": 9,
+   "confirmed": 4
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONYUM-26JUL30-BYTE",
+   "phrase": "byte",
+   "variants": [
+    "byte",
+    "bytes",
+    "bite",
+    "bites"
+   ],
+   "clips": 12,
+   "confirmed": 15
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONYUM-26JUL30-CRISP",
+   "phrase": "crispy chicken",
+   "variants": [
+    "crispy chicken"
+   ],
+   "clips": 3,
+   "confirmed": 2
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONYUM-26JUL30-CYCL",
+   "phrase": "cyclospora",
+   "variants": [
+    "cyclospora",
+    "cyclosporas",
+    "cyclosporiasis"
+   ],
+   "clips": 9,
+   "confirmed": 6
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONYUM-26JUL30-FOOD",
+   "phrase": "food safety",
+   "variants": [
+    "food safety"
+   ],
+   "clips": 3,
+   "confirmed": 4
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONYUM-26JUL30-LETT",
+   "phrase": "lettuce",
+   "variants": [
+    "lettuce",
+    "lettuces",
+    "letus",
+    "let us"
+   ],
+   "clips": 12,
+   "confirmed": 10
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONYUM-26JUL30-LONG",
+   "phrase": "longrange capital",
+   "variants": [
+    "longrange capital"
+   ],
+   "clips": 3,
+   "confirmed": 4
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONYUM-26JUL30-LOWI",
+   "phrase": "low income",
+   "variants": [
+    "low income",
+    "lower income"
+   ],
+   "clips": 6,
+   "confirmed": 2
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONYUM-26JUL30-LUXE",
+   "phrase": "luxe",
+   "variants": [
+    "luxe",
+    "luxes",
+    "luxe value menu"
+   ],
+   "clips": 9,
+   "confirmed": 2
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONYUM-26JUL30-OUTB",
+   "phrase": "outbreak",
+   "variants": [
+    "outbreak",
+    "outbreaks",
+    "illness"
+   ],
+   "clips": 9,
+   "confirmed": 2
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONYUM-26JUL30-RECA",
+   "phrase": "recall",
+   "variants": [
+    "recall",
+    "recalls",
+    "recalled",
+    "recalleds"
+   ],
+   "clips": 12,
+   "confirmed": 28
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONYUM-26JUL30-SAUC",
+   "phrase": "saucy",
+   "variants": [
+    "saucy",
+    "saucys",
+    "sauce",
+    "sauces"
+   ],
+   "clips": 12,
+   "confirmed": 32
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONYUM-26JUL30-TAYL",
+   "phrase": "taylor farms",
+   "variants": [
+    "taylor farms"
+   ],
+   "clips": 3,
+   "confirmed": 2
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONYUM-26JUL30-TRAF",
+   "phrase": "traffic",
+   "variants": [
+    "traffic",
+    "traffics"
+   ],
+   "clips": 6,
+   "confirmed": 6
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONYUM-26JUL30-VALU",
+   "phrase": "value",
+   "variants": [
+    "value",
+    "values"
+   ],
+   "clips": 6,
+   "confirmed": 9
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONYUM-26JUL30-YUMC",
+   "phrase": "yum china",
+   "variants": [
+    "yum china"
+   ],
+   "clips": 3,
+   "confirmed": 2
+  }
+ ],
+ "voice_note": "no Spanish voice installed \u2014 third voice is English (Albert); Spanish-accent coverage NOT exercised"
+}

@@ -1,0 +1,236 @@
+{
+ "config": "webcast-amzn-26jul30-arm-wc",
+ "keywords_sha256": "62ad84c076956188875e266c427e2b9713b07557963595120194d29afdfe9cca",
+ "date": "2026-07-30",
+ "engine": "streaming_ctc",
+ "voices": [
+  "Samantha",
+  "Daniel",
+  "Albert"
+ ],
+ "keywords": [
+  {
+   "ticker": "KXEARNINGSMENTIONAMZN-26JUL30-ALEX",
+   "phrase": "alexa",
+   "variants": [
+    "alexa",
+    "alexas",
+    "alexa plus"
+   ],
+   "clips": 9,
+   "confirmed": 3
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMZN-26JUL30-ANTH",
+   "phrase": "anthropic",
+   "variants": [
+    "anthropic",
+    "anthropics"
+   ],
+   "clips": 6,
+   "confirmed": 2
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMZN-26JUL30-CHIN",
+   "phrase": "china",
+   "variants": [
+    "china",
+    "chinas"
+   ],
+   "clips": 6,
+   "confirmed": 12
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMZN-26JUL30-DATA",
+   "phrase": "data center",
+   "variants": [
+    "data center"
+   ],
+   "clips": 3,
+   "confirmed": 2
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMZN-26JUL30-DRON",
+   "phrase": "drone",
+   "variants": [
+    "drone",
+    "drones"
+   ],
+   "clips": 6,
+   "confirmed": 3
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMZN-26JUL30-GEN",
+   "phrase": "gen ai",
+   "variants": [
+    "gen ai",
+    "generative ai"
+   ],
+   "clips": 6,
+   "confirmed": 3
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMZN-26JUL30-IRAN",
+   "phrase": "iran",
+   "variants": [
+    "iran",
+    "irans",
+    "middle east"
+   ],
+   "clips": 9,
+   "confirmed": 2
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMZN-26JUL30-LAYO",
+   "phrase": "layoff",
+   "variants": [
+    "layoff",
+    "layoffs",
+    "job cuts"
+   ],
+   "clips": 9,
+   "confirmed": 2
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMZN-26JUL30-LIVE",
+   "phrase": "live sports",
+   "variants": [
+    "live sports"
+   ],
+   "clips": 3,
+   "confirmed": 4
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMZN-26JUL30-PINT",
+   "phrase": "pinterest",
+   "variants": [
+    "pinterest",
+    "pinterests"
+   ],
+   "clips": 6,
+   "confirmed": 8
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMZN-26JUL30-PRIM",
+   "phrase": "prime day",
+   "variants": [
+    "prime day"
+   ],
+   "clips": 3,
+   "confirmed": 2
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMZN-26JUL30-PROJ",
+   "phrase": "amazon leo",
+   "variants": [
+    "amazon leo",
+    "project kuiper"
+   ],
+   "clips": 6,
+   "confirmed": 6
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMZN-26JUL30-ROBO",
+   "phrase": "robotic",
+   "variants": [
+    "robotic",
+    "robotics"
+   ],
+   "clips": 6,
+   "confirmed": 8
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMZN-26JUL30-RUFU",
+   "phrase": "rufus",
+   "variants": [
+    "rufus"
+   ],
+   "clips": 3,
+   "confirmed": 5
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMZN-26JUL30-SNOW",
+   "phrase": "snowflake",
+   "variants": [
+    "snowflake",
+    "snowflakes"
+   ],
+   "clips": 6,
+   "confirmed": 14
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMZN-26JUL30-SPON",
+   "phrase": "sponsored products",
+   "variants": [
+    "sponsored products"
+   ],
+   "clips": 3,
+   "confirmed": 4
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMZN-26JUL30-SUPP",
+   "phrase": "supply chain",
+   "variants": [
+    "supply chain"
+   ],
+   "clips": 3,
+   "confirmed": 4
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMZN-26JUL30-TARI",
+   "phrase": "tariff",
+   "variants": [
+    "tariff",
+    "tariffs"
+   ],
+   "clips": 6,
+   "confirmed": 1
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMZN-26JUL30-THIR",
+   "phrase": "third party seller",
+   "variants": [
+    "third party seller"
+   ],
+   "clips": 3,
+   "confirmed": 4
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMZN-26JUL30-TRAI",
+   "phrase": "trainium",
+   "variants": [
+    "trainium",
+    "trainiums"
+   ],
+   "clips": 6,
+   "confirmed": 4
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMZN-26JUL30-WORL",
+   "phrase": "world cup",
+   "variants": [
+    "world cup",
+    "world cop",
+    "world coup"
+   ],
+   "clips": 9,
+   "confirmed": 5
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMZN-26JUL30-ZOOX",
+   "phrase": "zoox",
+   "variants": [
+    "zoox",
+    "zooxs",
+    "robotaxi",
+    "robotaxis",
+    "zooks",
+    "robo taxi",
+    "robo taxis"
+   ],
+   "clips": 21,
+   "confirmed": 12
+  }
+ ],
+ "voice_note": "no Spanish voice installed \u2014 third voice is English (Albert); Spanish-accent coverage NOT exercised"
+}

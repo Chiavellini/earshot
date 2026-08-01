@@ -43,6 +43,32 @@ fn build_err(msg: impl std::fmt::Display) -> DetectorBuildError {
     DetectorBuildError::StreamingCtc(msg.to_string())
 }
 
+/// Encoder ONNX export choice within `model_dir`
+/// (config `[detector.streaming_ctc].precision`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Precision {
+    /// Prefer the int8 export when several exist; a dir holding only a
+    /// non-int8 export still loads (the pre-knob behavior, exactly).
+    Int8,
+    /// Require a non-int8 export; refuse to build when only int8 exists.
+    Fp32,
+}
+
+impl Precision {
+    /// Parse the config string. `config::validate` already rejects unknown
+    /// values at load time; this re-check keeps hand-built configs (tests,
+    /// tools like detect-explain) honest instead of silently defaulting.
+    pub fn parse(s: &str) -> Result<Precision, DetectorBuildError> {
+        match s {
+            "int8" => Ok(Precision::Int8),
+            "fp32" => Ok(Precision::Fp32),
+            other => Err(build_err(format!(
+                "unknown precision {other:?} (expected \"int8\" or \"fp32\")"
+            ))),
+        }
+    }
+}
+
 /// A streaming cache tensor carried across chunks (`new_X` output → `X` input).
 enum State {
     F32(Vec<usize>, Vec<f32>),
@@ -71,8 +97,12 @@ pub struct StreamingCtcModel {
 }
 
 impl StreamingCtcModel {
-    pub fn new(model_dir: &Path, num_threads: u32) -> Result<StreamingCtcModel, DetectorBuildError> {
-        let onnx = find_encoder_onnx(model_dir)?;
+    pub fn new(
+        model_dir: &Path,
+        num_threads: u32,
+        precision: Precision,
+    ) -> Result<StreamingCtcModel, DetectorBuildError> {
+        let onnx = find_encoder_onnx(model_dir, precision)?;
         let session = Session::builder()
             .map_err(build_err)?
             .with_intra_threads(num_threads as usize)
@@ -233,19 +263,61 @@ fn new_fbank() -> OnlineFeature {
     ))
 }
 
-fn find_encoder_onnx(dir: &Path) -> Result<std::path::PathBuf, DetectorBuildError> {
+fn find_encoder_onnx(
+    dir: &Path,
+    precision: Precision,
+) -> Result<std::path::PathBuf, DetectorBuildError> {
     let rd = std::fs::read_dir(dir).map_err(|e| build_err(format!("read {}: {e}", dir.display())))?;
-    let mut candidates: Vec<std::path::PathBuf> = rd
+    let candidates: Vec<std::path::PathBuf> = rd
         .flatten()
         .map(|e| e.path())
         .filter(|p| p.extension().map(|x| x == "onnx").unwrap_or(false))
         .collect();
-    // Prefer an int8 export (smaller/faster) when several exist.
-    candidates.sort_by_key(|p| !p.to_string_lossy().contains("int8"));
-    candidates
-        .into_iter()
-        .next()
-        .ok_or_else(|| build_err(format!("no *.onnx in {} — run scripts/fetch-models.sh", dir.display())))
+    select_encoder_onnx(candidates, precision, &dir.display().to_string()).map_err(build_err)
+}
+
+/// Filename carries the export precision by convention (`….int8.onnx`).
+/// Classified on the file NAME only, so a model dir whose path happens to
+/// contain "int8" cannot poison every candidate.
+fn is_int8_export(p: &Path) -> bool {
+    p.file_name().map(|n| n.to_string_lossy().contains("int8")).unwrap_or(false)
+}
+
+/// Pure model-file selection over the `*.onnx` candidates found in a model
+/// dir (`dir_label` is display-only, for error messages). Split out of
+/// `find_encoder_onnx` so the policy is unit-testable on synthetic lists.
+fn select_encoder_onnx(
+    mut candidates: Vec<std::path::PathBuf>,
+    precision: Precision,
+    dir_label: &str,
+) -> Result<std::path::PathBuf, String> {
+    if candidates.is_empty() {
+        return Err(format!("no *.onnx in {dir_label} — run scripts/fetch-models.sh"));
+    }
+    match precision {
+        // Prefer an int8 export (smaller/faster) when several exist; a dir
+        // with only a non-int8 export still loads (pre-`precision` behavior).
+        Precision::Int8 => {
+            candidates.sort_by_key(|p| !is_int8_export(p));
+            Ok(candidates.remove(0))
+        }
+        // fp32 is an explicit request — loading a quantized encoder instead
+        // would silently void an int8-vs-fp32 comparison, so refuse loudly
+        // and name what WAS found.
+        Precision::Fp32 => {
+            let found: Vec<String> = candidates
+                .iter()
+                .map(|p| p.file_name().unwrap_or_default().to_string_lossy().into_owned())
+                .collect();
+            candidates.retain(|p| !is_int8_export(p));
+            candidates.into_iter().next().ok_or_else(|| {
+                format!(
+                    "precision = \"fp32\" but {dir_label} has no non-int8 *.onnx — found \
+                     {found:?}; fetch the fp32 encoder export or set precision = \"int8\""
+                )
+            })
+        }
+    }
 }
 
 pub struct StreamingCtcDetector {
@@ -264,10 +336,16 @@ impl StreamingCtcDetector {
         cfg: &StreamingCtcConfig,
         keywords: &[KeywordConfig],
     ) -> Result<StreamingCtcDetector, DetectorBuildError> {
-        let model = StreamingCtcModel::new(&cfg.model_dir, cfg.num_threads)?;
+        let precision = Precision::parse(&cfg.precision)?;
+        let model = StreamingCtcModel::new(&cfg.model_dir, cfg.num_threads, precision)?;
 
         // Reuse the sherpa engine's tier/prefix token compilation, then map the
         // piece strings to THIS model's vocab ids via tokens.txt.
+        //
+        // NOTE default_boost = 1.0 is HARDCODED: the CTC scorer implements no
+        // acoustic boost, so per-keyword `boost` values are ignored under this
+        // engine (config validation warns loudly — see
+        // `config::ctc_ignored_boost_warning`).
         let table = TokenTable::from_bpe_model(&cfg.model_dir.join("bpe.model"))
             .map_err(|e| build_err(e.to_string()))?;
         let entries = compile(keywords, &table, cfg.default_threshold, 1.0)
@@ -405,6 +483,70 @@ mod tests {
         }
     }
 
+    // --- encoder .onnx selection (pure, no model / no fs needed) ---
+
+    fn pb(s: &str) -> std::path::PathBuf {
+        std::path::PathBuf::from(s)
+    }
+
+    #[test]
+    fn encoder_selection_int8_prefers_int8_and_falls_back() {
+        // int8 preferred when both exist, whatever the read_dir order.
+        let both = vec![pb("m/enc.onnx"), pb("m/enc.int8.onnx")];
+        assert_eq!(
+            select_encoder_onnx(both.clone(), Precision::Int8, "m").unwrap(),
+            pb("m/enc.int8.onnx")
+        );
+        let rev: Vec<_> = both.into_iter().rev().collect();
+        assert_eq!(
+            select_encoder_onnx(rev, Precision::Int8, "m").unwrap(),
+            pb("m/enc.int8.onnx")
+        );
+        // A dir with only a non-int8 export still loads (pre-knob fallback).
+        assert_eq!(
+            select_encoder_onnx(vec![pb("m/enc.onnx")], Precision::Int8, "m").unwrap(),
+            pb("m/enc.onnx")
+        );
+        // Empty dir errors with the fetch hint.
+        let err = select_encoder_onnx(vec![], Precision::Int8, "m").unwrap_err();
+        assert!(err.contains("no *.onnx"), "{err}");
+        assert!(err.contains("fetch-models"), "{err}");
+    }
+
+    #[test]
+    fn encoder_selection_fp32_requires_non_int8() {
+        // Picks the non-int8 export when both exist.
+        assert_eq!(
+            select_encoder_onnx(
+                vec![pb("m/enc.int8.onnx"), pb("m/enc.onnx")],
+                Precision::Fp32,
+                "m"
+            )
+            .unwrap(),
+            pb("m/enc.onnx")
+        );
+        // int8-only dir must refuse and NAME what was found.
+        let err =
+            select_encoder_onnx(vec![pb("m/enc.int8.onnx")], Precision::Fp32, "m").unwrap_err();
+        assert!(err.contains("fp32"), "{err}");
+        assert!(err.contains("enc.int8.onnx"), "{err}");
+        // Classification is on the file NAME: a dir path containing "int8"
+        // must not poison the fp32 candidate.
+        assert_eq!(
+            select_encoder_onnx(vec![pb("models/int8-lab/enc.onnx")], Precision::Fp32, "models/int8-lab")
+                .unwrap(),
+            pb("models/int8-lab/enc.onnx")
+        );
+    }
+
+    #[test]
+    fn precision_parses_exact_strings_only() {
+        assert_eq!(Precision::parse("int8").unwrap(), Precision::Int8);
+        assert_eq!(Precision::parse("fp32").unwrap(), Precision::Fp32);
+        assert!(Precision::parse("fp16").is_err());
+        assert!(Precision::parse("INT8").is_err());
+    }
+
     /// End-to-end: real model streams posteriors, and a known token subsequence
     /// present in 0.wav fires the scorer. Validates fbank + ort + cache + scorer.
     #[test]
@@ -413,7 +555,7 @@ mod tests {
             eprintln!("SKIP: set EARSHOT_CTC_MODEL_DIR to a streaming-CTC model dir");
             return;
         };
-        let mut model = StreamingCtcModel::new(&dir, 1).unwrap();
+        let mut model = StreamingCtcModel::new(&dir, 1, Precision::Int8).unwrap();
         let pcm = read_wav_i16(&dir.join("test_wavs/0.wav"));
         let frames = model.accept_pcm(&pcm).unwrap();
         assert!(!frames.is_empty(), "model produced no posterior frames");
@@ -460,7 +602,7 @@ mod tests {
             return;
         };
         // First pass: discover a present subsequence.
-        let mut m0 = StreamingCtcModel::new(&dir, 1).unwrap();
+        let mut m0 = StreamingCtcModel::new(&dir, 1, Precision::Int8).unwrap();
         let pcm = read_wav_i16(&dir.join("test_wavs/0.wav"));
         let frames = m0.accept_pcm(&pcm).unwrap();
         let mut prev = usize::MAX;
@@ -480,7 +622,7 @@ mod tests {
         };
 
         // Fresh model, driven through the Detector trait in 100 ms chunks.
-        let model = StreamingCtcModel::new(&dir, 1).unwrap();
+        let model = StreamingCtcModel::new(&dir, 1, Precision::Int8).unwrap();
         let mut det = StreamingCtcDetector::from_targets(model, &[target], 0, 2000);
         let chunk_samples = (EXPECTED_RATE_HZ / 10) as usize; // 100 ms
         let mut detections = 0;
