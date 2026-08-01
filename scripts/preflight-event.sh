@@ -388,6 +388,77 @@ else
   check PASS "tunnel-free host (Linux) — direct WS endpoint; ngrok not used"
 fi
 
+# ── TLS ingress (Q-TLS): the phone lane's PRODUCTION front door ─────────────
+# Preflight used to say "tunnel-free host (Linux)" and PASS unconditionally,
+# which was true and useless: since Q-TLS the media path is Caddy terminating
+# TLS on the box at wss://<host>/e/<port>, and NOTHING in preflight ever touched
+# it. A dead Caddy, an expired cert, or a bind port with no Caddyfile route
+# reads exactly like a healthy night until Twilio cannot connect and the event
+# is gone.
+#
+# Runs on any OS, not just the box: if an ingress is named, it gets probed. Only
+# meaningful for a phone arm — a webcast arm dials nothing.
+if grep -q 'kind = "twilio' "$CONFIG" 2>/dev/null; then
+    # The ingress is a LAUNCH argument, not a config field, so preflight has to
+    # be told. Accept it the same ways the launcher can receive it.
+    TLS_URL="${EARSHOT_STREAM_URL:-}"
+    if [[ -z "$TLS_URL" && -n "${EARSHOT_TLS_HOST:-}" ]]; then
+      TLS_PORT=$(sed -n 's/^[[:space:]]*bind[[:space:]]*=[[:space:]]*"[^:]*:\([0-9][0-9]*\)".*/\1/p' "$CONFIG" | head -1)
+      [[ -n "$TLS_PORT" ]] && TLS_URL="wss://${EARSHOT_TLS_HOST}/e/${TLS_PORT}"
+    fi
+    if [[ -z "$TLS_URL" ]]; then
+      check WARN "TLS ingress UNVERIFIED — set EARSHOT_STREAM_URL (or EARSHOT_TLS_HOST) so preflight can probe the wss endpoint this event will actually use. Q-TLS is the phone lane's front door and nothing else checks it."
+    else
+      TLS_HOSTNAME="${TLS_URL#*://}"; TLS_HOSTNAME="${TLS_HOSTNAME%%/*}"
+      TLS_PATH="/${TLS_URL#*://*/}"
+      # 1. Cert: valid, and not expiring inside the event horizon. Let's Encrypt
+      #    renews at 30 d; under 10 d left means renewal is already failing.
+      CERT_END=$(echo | openssl s_client -servername "$TLS_HOSTNAME" -connect "${TLS_HOSTNAME}:443" 2>/dev/null \
+                 | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
+      if [[ -z "$CERT_END" ]]; then
+        check FAIL "TLS handshake to ${TLS_HOSTNAME}:443 FAILED — Twilio cannot reach this event's media endpoint. Check caddy is running and the A record still points at this box."
+      else
+        CERT_DAYS=$(CERT_END="$CERT_END" python3 - <<'PY' 2>/dev/null || echo -1
+import datetime, os
+end = datetime.datetime.strptime(os.environ["CERT_END"].strip(), "%b %d %H:%M:%S %Y %Z")
+print(int((end.replace(tzinfo=datetime.timezone.utc) - datetime.datetime.now(datetime.timezone.utc)).days))
+PY
+)
+        if [[ "$CERT_DAYS" -lt 0 ]]; then
+          check FAIL "TLS cert for $TLS_HOSTNAME expired or unparsable (enddate '$CERT_END')"
+        elif [[ "$CERT_DAYS" -lt 10 ]]; then
+          check WARN "TLS cert for $TLS_HOSTNAME expires in ${CERT_DAYS}d — Let's Encrypt renews at 30d, so under 10 means renewal is already failing"
+        else
+          check PASS "TLS ingress cert valid for $TLS_HOSTNAME (${CERT_DAYS}d left)"
+        fi
+        # 2. Route: the per-event path must be MATCHED by the Caddyfile. An
+        #    unrouted port falls through to `respond 404` — indistinguishable
+        #    from a healthy host until the call. A matched WS path answers a
+        #    plain GET with 400/426/502 (upgrade required / upstream not yet
+        #    listening), never 404.
+        ING_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "https://${TLS_HOSTNAME}${TLS_PATH}" 2>/dev/null || echo 000)
+        case "$ING_CODE" in
+          404) check FAIL "TLS ingress ${TLS_PATH} returns 404 — this bind port has NO route in deploy/caddy/Caddyfile. Twilio would be refused. Add the @e<port> block and reload caddy." ;;
+          000) check FAIL "TLS ingress ${TLS_HOSTNAME}${TLS_PATH} unreachable (no HTTP response)" ;;
+          *)   check PASS "TLS ingress route ${TLS_PATH} live (HTTP $ING_CODE — a matched WS path, not the 404 catch-all)" ;;
+        esac
+      fi
+    fi
+fi
+
+# ── Caddyfile no-rewrite invariant (Q-M3 signature base) ───────────────────
+# Twilio signs the EXACT stream URL. A `uri strip_prefix` or `header_up Host`
+# in the media site block changes what the box sees, so every handshake 403s
+# with nothing in the Twilio console explaining why. deploy/caddy/Caddyfile
+# warns about this in a comment; a comment is not a check.
+if [[ -f deploy/caddy/Caddyfile ]]; then
+  if grep -nE '^[^#]*(uri[[:space:]]+strip_prefix|header_up[[:space:]]+Host)' deploy/caddy/Caddyfile >/dev/null; then
+    check FAIL "deploy/caddy/Caddyfile rewrites the path or Host — that changes the Q-M3 signature base and EVERY Twilio handshake will 403. Remove the strip_prefix/header_up directive."
+  else
+    check PASS "Caddyfile preserves path and Host (Q-M3 signature base intact)"
+  fi
+fi
+
 # ── Timezone + scheduled wake ──────────────────────────────────────────────
 tz=$(readlink /etc/localtime | sed 's|.*/zoneinfo/||')
 [[ "$tz" == "America/Mexico_City" ]] && check PASS "timezone: $tz" \

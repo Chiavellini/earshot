@@ -39,6 +39,17 @@ Two evidence inputs are consumed by name, never produced here:
   venues, the `operator_handler = "rehearsed-<YYYY-MM-DD>"` rehearsal pin
   (written only by a passed operator-handler rehearsal, per
   `docs/OPERATOR-HANDLER.md` §Registry interaction).
+- **TLS ingress identity**, supplied as `EARSHOT_STREAM_URL` or
+  `EARSHOT_TLS_HOST` (+ the config's `bind` port). The ingress is a *launch*
+  argument, not a config field, so preflight must be told which endpoint this
+  event will actually use. Given one, it probes the live front door for a phone
+  arm: certificate validity and remaining days, and whether the per-event
+  `/e/<port>` path is routed at all. An unrouted port falls through the
+  Caddyfile's catch-all to `respond 404`, which is indistinguishable from a
+  healthy host until Twilio is refused mid-event — so 404 is a FAIL and any
+  other response (400/426/502) is the PASS. Given neither, it WARNs rather than
+  passing silently, which is what it did before: the phone lane's production
+  ingress had no preflight check of any kind.
 
 ## Output contracts
 
