@@ -6,6 +6,27 @@ authority = "open-collaboration-claims"
 # remains open until its paths are committed or explicitly handed off.
 
 [[claim]]
+id = "root.architecture"
+node = "project.architecture"
+worker = "/root"
+branch = "webcast-lane"
+state = "active"
+contract_change = true
+# The registry and this file are edited by every lane that adds a node, an
+# owner, or a claim. The claim stays open while that is happening and is
+# retired once the governance surface settles.
+paths = [
+  "architecture/claims.toml",
+  "architecture/nodes.toml",
+  "docs/nodes/project-architecture.md",
+]
+verification = [
+  "python3 scripts/doc-lint.py --self-test",
+  "scripts/doc-lint.sh",
+]
+evidence = ["architecture/nodes.toml"]
+
+[[claim]]
 id = "phone.runtime_assembly"
 node = "runtime.assembly"
 worker = "phone-lane"
@@ -194,8 +215,14 @@ contract_change = true
 paths = [
   "configs/dial-ins.toml",
   "docs/nodes/control-qualify.md",
+  "scripts/recon-worklist.py",
+  "scripts/registry-propose.py",
 ]
-verification = ["python3 scripts/mine-dial-in.py --help"]
+verification = [
+  "python3 scripts/mine-dial-in.py --help",
+  "python3 scripts/recon-worklist.py --check",
+  "python3 scripts/registry-propose.py --check",
+]
 evidence = ["configs/dial-ins.toml"]
 
 [[claim]]
