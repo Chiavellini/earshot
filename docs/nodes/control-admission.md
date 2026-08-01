@@ -8,9 +8,27 @@ evidence-backed admission classification.
 ## Owns
 
 Probe sequencing and classification guidance in `scripts/bridge-probe.sh`,
-staleness/batch planning in `scripts/bridge-probe-batch.sh`, and the
+staleness/batch planning in `scripts/bridge-probe-batch.sh`, event-window
+probing in `scripts/admission-window-probe.sh`, and the
 `AdmissionObservation` semantics handed to the qualification registry. The
 registry file itself remains owned by `control.qualify`.
+
+Two venue classes need different probes, and treating them alike produces
+false verdicts:
+
+- **Always-on bridges** answer whenever dialled. `bridge-probe-batch.sh` plans
+  these; any quiet hour will do.
+- **Reservation-window bridges** exist only near their call. AAPL's rang 55 s
+  to `status=no-answer` with zero media at 03:40 UTC while its published digits
+  had been stable in Wayback since 2024 — the bridge was not dead, it was not
+  provisioned. `admission-window-probe.sh` derives the venue and call time from
+  the event config, computes T-90..T-30, and **refuses to dial outside it**:
+  a no-answer collected off-hours is not evidence, and recording it as
+  `dropped` would poison the registry with a verdict no probe supports. Venues
+  in this class carry `reservation_window = true` in `configs/dial-ins.toml`.
+
+Numbers for both come from `control.bridge.numbers`, never from the registry —
+digits rotate and stay gitignored. Neither tool prints them.
 
 ## Does not own
 
@@ -63,3 +81,10 @@ The probe creates structured capture artifacts, but classification is printed
 as a snippet and copied by hand, while the `BridgeProbe` command lives in the
 `src/main.rs` hub. Add an auditable `AdmissionObservation` artifact and a
 separate registry-accept step so preflight can consume the accepted result.
+
+The candidate-number seam is closed (`control.bridge.numbers`), and the
+event-window class now has a tool rather than a paragraph. What is still
+scheduled by hand is the window probe itself: `--install-timer` prints its
+scheduler line and never installs it, because a cron entry that places a real
+phone call to a company's bridge is a human decision, not a side effect of a
+nightly job.

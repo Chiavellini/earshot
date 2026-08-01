@@ -84,6 +84,15 @@ preflighted config carries `[operator_handler]` with `enabled = true`, and
 "rehearsed-<YYYY-MM-DD>"` (exact format; anything else does not downgrade).
 Either side missing keeps the FAIL and names the missing side.
 
+**Reservation-window admission downgrade.** `admission = "untested"` is a hard
+FAIL — one ~$0.02 call decides it — *unless* the venue carries
+`reservation_window = true`, in which case it is a WARN naming the T-90..T-30
+window and the exact `admission-window-probe.sh` command. The distinction is
+not leniency: for that class the bridge does not exist off-hours, so the probe
+the FAIL demands cannot be run yet, and a gate that instructs the operator to
+do something impossible is a gate that gets waved through. The WARN says what
+is possible and when. Every other `untested` venue still FAILs.
+
 ## Parallel work boundary
 
 Checks and report semantics stay in the two scripts above. Preparation,

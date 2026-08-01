@@ -226,6 +226,26 @@ verification = [
 evidence = ["configs/dial-ins.toml"]
 
 [[claim]]
+id = "preflight.admission_gate"
+node = "control.preflight"
+worker = "admission-evidence-lane"
+branch = "webcast-lane"
+state = "active"
+contract_change = true
+# The Q-ADMIT gate learns the reservation-window venue class: "untested"
+# becomes a WARN naming the window, because a bare FAIL tells the operator to
+# do something that is not yet possible.
+paths = [
+  "docs/nodes/control-preflight.md",
+  "scripts/preflight-event.sh",
+]
+verification = [
+  "bash -n scripts/preflight-event.sh",
+  "scripts/preflight-event.sh --help",
+]
+evidence = ["VERIFICATIONS.md"]
+
+[[claim]]
 id = "admission.probe"
 node = "control.admission"
 worker = "admission-evidence-lane"
@@ -234,12 +254,15 @@ state = "active"
 contract_change = true
 paths = [
   "docs/nodes/control-admission.md",
+  "scripts/admission-window-probe.sh",
   "scripts/bridge-probe-batch.sh",
   "scripts/bridge-probe.sh",
 ]
 verification = [
   "bash -n scripts/bridge-probe.sh",
   "bash -n scripts/bridge-probe-batch.sh",
+  "bash -n scripts/admission-window-probe.sh",
+  "scripts/admission-window-probe.sh --config configs/twilio-yum-26jul30-arm.toml",
 ]
 evidence = ["docs/nodes/control-admission.md"]
 

@@ -628,6 +628,34 @@ elif admission == "operator_screened":
         print(f"FAIL {key} admission=operator_screened ({detail}) — a live human drops silent callers; unattended-infeasible on the pure listen-only posture. NO-GO for a phone arm. Gated operator path not ready: {'; '.join(missing)}.")
 elif admission == "dropped":
     print(f"FAIL {key} admission=dropped ({detail}) — the bridge hangs up on us. NO-GO until the drop cause is understood.")
+elif entry.get("reservation_window"):
+    # Q-ADMIT addendum: this venue's bridge does not EXIST outside its event
+    # window, so "untested" here does not mean nobody bothered — it means the
+    # only probe that could decide it has not become possible yet. A bare FAIL
+    # tells the operator to do something they cannot do, which is how a gate
+    # gets ignored. Name the window and the command instead.
+    import datetime as _dt
+    starts = ""
+    try:
+        with open(os.environ.get("CONFIG", ""), "rb") as f:
+            starts = str(tomllib.load(f).get("event", {}).get("starts_at", ""))
+    except Exception:
+        pass
+    window = ""
+    try:
+        call = _dt.datetime.fromisoformat(starts.replace("Z", "+00:00"))
+        if call.tzinfo is None:
+            call = call.replace(tzinfo=_dt.timezone.utc)
+        fmt = lambda d: d.strftime("%H:%MZ")
+        window = (f" Window {fmt(call - _dt.timedelta(minutes=90))}.."
+                  f"{fmt(call - _dt.timedelta(minutes=30))} on "
+                  f"{(call - _dt.timedelta(minutes=90)).date()}.")
+    except ValueError:
+        pass
+    print(f"WARN {key} admission untested and the bridge is reservation-window "
+          f"only — an off-hours probe returns a no-answer that classifies "
+          f"nothing (Q-ADMIT addendum).{window} Probe in-window: "
+          f"scripts/admission-window-probe.sh --config {os.environ.get('CONFIG','<cfg>')} --run")
 else:
     print(f"FAIL {key} admission untested — one ~$0.02 call decides this: scripts/bridge-probe.sh --to <number> --label {key.lower()}-<date>")
 PY

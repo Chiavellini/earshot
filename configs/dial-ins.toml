@@ -78,6 +78,19 @@
 #                   (gitignored; laptop/box-local — the transcript excerpt that matters
 #                   gets pinned in VERIFICATIONS.md Q-ADMIT)
 #
+# reservation_window  true when the bridge EXISTS ONLY in its event window, so an
+#                   off-hours probe cannot classify it (VERIFICATIONS Q-ADMIT
+#                   addendum 2026-07-30). AAPL is the type specimen: rang 55 s,
+#                   status=no-answer, ZERO media at 03:40 UTC, with numbers and
+#                   code byte-identical in Wayback since 2024 — the bridge was
+#                   not dead, it was not yet provisioned. For these venues a
+#                   no-answer is NOT evidence, and admission="untested" means
+#                   "not yet probeable" rather than "nobody bothered".
+#                   scripts/preflight-event.sh downgrades the untested FAIL to a
+#                   WARN naming the T-90..T-30 window and the exact command;
+#                   scripts/admission-window-probe.sh is that command and
+#                   REFUSES to dial outside the window.
+#
 # operator_handler  "rehearsed-YYYY-MM-DD" — set ONLY after a full fake-operator
 #                   ladder rehearsal of the gated human-first handler
 #                   (docs/OPERATOR-HANDLER.md v1, tests/twilio_operator_gated.rs).
@@ -172,6 +185,7 @@ number_src    = "https://www.apple.com/investor/earnings-call/"
 admission        = "untested"
 admission_detail = "off-hours probe 2026-07-30 03:40 UTC: the published toll-free number (see number_src) rang 55s, status=no-answer, zero media — the standing reservation is NOT active outside the event window. Admission must be probed in the pre-call window (T-90..T-30 min before 21:00 UTC) on event day."
 admission_probed = "2026-07-30"
+reservation_window = true
 probe_artifact   = "no audio captured (call never answered); CallSid CAdf6b601752f28876b7db0c3536773e83"
 confidence    = "high"
 last_verified = "2026-07-30"

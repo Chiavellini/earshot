@@ -586,7 +586,7 @@ owns = [
   "docs/SAY-QA-PRIOR.md",
   "slate/worklist.md",
 ]
-inputs = ["control.events.discovered"]
+inputs = ["control.events.discovered", "control.bridge.candidates"]
 outputs = ["control.event.qualified"]
 
 [[node]]
@@ -651,7 +651,7 @@ inputs = [
   "control.events.discovered",
   "platform.notification",
 ]
-outputs = ["control.bridge.candidates"]
+outputs = ["control.bridge.candidates", "control.bridge.numbers"]
 
 [[node]]
 id = "control.admission"
@@ -660,12 +660,15 @@ status = "active"
 doc = "docs/nodes/control-admission.md"
 doc_style = "node"
 owns = [
+  # the reservation-window venue class: probeable only at T-90..T-30
+  "scripts/admission-window-probe.sh",
   "scripts/bridge-probe-batch.sh",
   "scripts/bridge-probe.sh",
 ]
 inputs = [
   "control.event.qualified",
   "control.bridge.candidates",
+  "control.bridge.numbers",
 ]
 outputs = ["control.event.admitted"]
 
@@ -1353,6 +1356,14 @@ id = "control.bridge.candidates"
 kind = "artifact"
 maturity = "implemented"
 door = "per-issuer candidate record: classified numbers and labelled passcodes in gitignored state/hunt/, digits-free tier verdict and provenance in slate/hunt-status.json"
+producer = "control.hunt"
+consumers = ["control.admission", "control.qualify"]
+
+[[contract]]
+id = "control.bridge.numbers"
+kind = "artifact"
+maturity = "implemented"
+door = "gitignored 0600 KEY=E.164[,passcode#] file (default state/hunt/numbers.env) written by hunt-dial-in.py --emit-numbers; E.164 always, toll-free preferred, bridge-classified numbers only"
 producer = "control.hunt"
 consumers = ["control.admission"]
 
