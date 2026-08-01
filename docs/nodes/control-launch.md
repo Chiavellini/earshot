@@ -62,6 +62,18 @@ by preflight, acquisition, or runtime nodes are consumed rather than
 duplicated; phone dialing requires the ready token, and retry loops begin only
 after the handle crosses to supervision.
 
+Redial *policy* stays with `control.supervise`; what launch owns is the event's
+**time frame**, because only launch knows the call this run is for. It derives
+the supervisor's two budgets from `[event].starts_at` and passes them through:
+`--call-end-grace` so a clean far-end stop counts as the end after 40 minutes
+of real call, and `--max-minutes` so supervision runs to 150 minutes past the
+call start — the same redial-window close `slate-stage.sh` already stages
+against. Both anchor on the CALL, not on launch: the supervisor's own defaults
+count from its own start, which is 10–20 minutes earlier, so its 2700 s grace
+actually expired ~25 minutes into the call. `--max-minutes` and
+`--call-end-grace` override the derivation; a config with no `starts_at` passes
+neither and the supervisor keeps its historical defaults.
+
 ## Verification
 
 Run `bash -n` on the owned launch scripts,

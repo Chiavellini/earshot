@@ -29,6 +29,7 @@ set -euo pipefail
 CONFIG="" ACCOUNT="" BIND_PORT="" TO="" DTMF="" LIVE="" ALLOW_MENTION="" FILLABLE="" NGROK_CONFIG=""
 DIGIT_DELAY="" DTMF_REPEAT=""   # empty => twilio-dial.sh defaults (4 s, play once)
 BIN="${EARSHOT_BIN:-}" NO_DIAL="" STREAM_URL_OVERRIDE="" TLS_HOST="" OPERATOR_HANDLER=""
+MAX_MINUTES_OVERRIDE="" CALL_END_GRACE_OVERRIDE=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     # Operator-screened (Class B) venues: page the configured human cell into a
@@ -54,6 +55,11 @@ while [[ $# -gt 0 ]]; do
     # composes wss://<host>/e/<bind-port> — the per-event path caddy proxies to
     # this bind port. Q-TLS must be pinned before an event rides this.
     --tls-host)      TLS_HOST="$2"; shift 2 ;;
+    # Redial-supervisor time budgets. Both were previously unreachable: the
+    # launcher passed only --max-redials, so the supervisor kept its own
+    # defaults regardless of when this event's call actually starts or ends.
+    --max-minutes)     MAX_MINUTES_OVERRIDE="$2"; shift 2 ;;
+    --call-end-grace)  CALL_END_GRACE_OVERRIDE="$2"; shift 2 ;;
     --bin)           BIN="$2"; shift 2 ;;
     --no-dial)       NO_DIAL=1; shift ;;
     --i-am-live)     LIVE="--i-am-live"; shift ;;
@@ -201,6 +207,48 @@ export TWILIO_STREAM_URL="$STREAM_URL"
 export EARSHOT_REDIAL_DIR="$STATE_DIR"
 MAX_RECONNECTS=$(sed -n 's/^[[:space:]]*max_reconnects[[:space:]]*=[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$CONFIG" | head -1)
 
+# Supervisor time budgets, derived from THIS event's call time.
+#
+# Both of the supervisor's own defaults are anchored on when the SUPERVISOR
+# started, which is launch time — not on when the call starts. Launch runs
+# 10-20 min early, so its 2700 s "call has genuinely ended" grace actually
+# expires ~25-35 min into the call, and its 120-minute lifetime ends 2 h after
+# launch rather than 2 h after the call. Neither number was reachable from
+# here: the launcher passed --max-redials and nothing else.
+#
+# Anchoring on [event].starts_at fixes both. CALL_END_GRACE becomes "40 min of
+# real call have happened", so a clean far-end stop before that is treated as a
+# drop worth redialing and after it as the end. MAX_MINUTES runs to 150 min
+# past the call start — the same redial-window close slate-stage.sh already
+# stages against (END_HHMM_LIVE). With no starts_at, both stay empty and the
+# supervisor keeps its historical defaults.
+CALL_GRACE_MIN=40
+SUPERVISE_TO_MIN=150
+read -r DERIVED_GRACE DERIVED_MAXMIN < <(
+  CONFIG="$CONFIG" GRACE_MIN="$CALL_GRACE_MIN" TO_MIN="$SUPERVISE_TO_MIN" python3 - <<'PY' 2>/dev/null || echo ""
+import datetime, os, tomllib
+starts = tomllib.load(open(os.environ["CONFIG"], "rb")).get("event", {}).get("starts_at")
+call = datetime.datetime.fromisoformat(str(starts).replace("Z", "+00:00"))
+if call.tzinfo is None:
+    call = call.replace(tzinfo=datetime.timezone.utc)
+now = datetime.datetime.now(datetime.timezone.utc)
+lead = (call - now).total_seconds()
+grace = int(lead + int(os.environ["GRACE_MIN"]) * 60)
+maxmin = int((lead + int(os.environ["TO_MIN"]) * 60) // 60)
+# A call already past these points leaves nothing sane to derive; fall through
+# to the supervisor's defaults rather than passing a negative budget.
+print(grace if grace > 0 else "", maxmin if maxmin > 0 else "")
+PY
+)
+[[ -n "$MAX_MINUTES_OVERRIDE" ]] && DERIVED_MAXMIN="$MAX_MINUTES_OVERRIDE"
+[[ -n "$CALL_END_GRACE_OVERRIDE" ]] && DERIVED_GRACE="$CALL_END_GRACE_OVERRIDE"
+# A plain string, not an array: the box runs bash 5 but this laptop is bash 3.2,
+# where "${arr[@]}" on an EMPTY array trips `set -u` and aborts the launcher.
+# Both values are bare integers, so word-splitting them is safe and intended.
+SUPERVISOR_BUDGETS=""
+[[ -n "${DERIVED_MAXMIN:-}" ]] && SUPERVISOR_BUDGETS="--max-minutes $DERIVED_MAXMIN"
+[[ -n "${DERIVED_GRACE:-}" ]] && SUPERVISOR_BUDGETS="$SUPERVISOR_BUDGETS --call-end-grace $DERIVED_GRACE"
+
 # Arm the pipeline (blocks, waiting for the dial). Dial from a second shell, or
 # background this and dial below.
 REPORT="${STATE_DIR}/report.json"
@@ -265,11 +313,12 @@ elif [[ -n "$OPERATOR_HANDLER" ]]; then
     EARSHOT_OPERATOR_CONFIG="$CONFIG" scripts/redial-supervisor.sh --state-dir "$STATE_DIR" --to "$TO" --stream-url "$STREAM_URL" \
       ${DTMF:+--dtmf "$DTMF"} ${DIGIT_DELAY:+--digit-delay "$DIGIT_DELAY"} \
       ${DTMF_REPEAT:+--dtmf-repeat "$DTMF_REPEAT"} --max-redials "$MAX_RECONNECTS" \
+      $SUPERVISOR_BUDGETS \
       --dial-script scripts/operator-redial.sh &
     REDIAL_PID=$!
     echo "$REDIAL_PID" > "${STATE_DIR}/redial-supervisor.pid"
     trap 'kill "$ARM_PID" "$NGROK_PID" "$REDIAL_PID" 2>/dev/null || true' EXIT
-    echo "redial supervisor up (pid ${REDIAL_PID}, operator redial wrapper, max ${MAX_RECONNECTS} redials)"
+    echo "redial supervisor up (pid ${REDIAL_PID}, operator redial wrapper, max ${MAX_RECONNECTS} redials${SUPERVISOR_BUDGETS:+,$SUPERVISOR_BUDGETS})"
   fi
 else
   scripts/twilio-dial.sh --to "$TO" ${DTMF:+--dtmf "$DTMF"} --stream-url "$STREAM_URL" \
@@ -280,11 +329,12 @@ else
   if [[ -n "${MAX_RECONNECTS:-}" && "$MAX_RECONNECTS" -gt 0 ]]; then
     scripts/redial-supervisor.sh --state-dir "$STATE_DIR" --to "$TO" --stream-url "$STREAM_URL" \
       ${DTMF:+--dtmf "$DTMF"} ${DIGIT_DELAY:+--digit-delay "$DIGIT_DELAY"} \
-      ${DTMF_REPEAT:+--dtmf-repeat "$DTMF_REPEAT"} --max-redials "$MAX_RECONNECTS" &
+      ${DTMF_REPEAT:+--dtmf-repeat "$DTMF_REPEAT"} --max-redials "$MAX_RECONNECTS" \
+      $SUPERVISOR_BUDGETS &
     REDIAL_PID=$!
     echo "$REDIAL_PID" > "${STATE_DIR}/redial-supervisor.pid"
     trap 'kill "$ARM_PID" "$NGROK_PID" "$REDIAL_PID" 2>/dev/null || true' EXIT
-    echo "redial supervisor up (pid ${REDIAL_PID}, max ${MAX_RECONNECTS} redials)"
+    echo "redial supervisor up (pid ${REDIAL_PID}, max ${MAX_RECONNECTS} redials${SUPERVISOR_BUDGETS:+,$SUPERVISOR_BUDGETS})"
   fi
 fi
 
