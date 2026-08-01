@@ -50,12 +50,38 @@ echo "=== hunt-daily $(date -u +%FT%TZ) dry_run=$DRY ==="
 python3 scripts/hunt-dial-in.py --self-test \
   || fail "hunt-dial-in.py --self-test FAILED — classifier regression; refusing to sweep"
 
+# 1b. The slate is this sweep's horizon. A stale one silently narrows what we
+#     hunt to whatever was listed days ago, and the failure is invisible: the
+#     sweep succeeds, reports issuers, and simply never mentions the events it
+#     could not see. This is not hypothetical — slate-daily failed on a Kalshi
+#     read timeout on 2026-07-31 and the machine was off on 07-30, leaving
+#     slate/latest.json two days behind while looking perfectly well-formed.
+SLATE="slate/latest.json"
+[ -f "$SLATE" ] || fail "$SLATE missing — run scripts/slate-daily.sh first"
+SLATE_AGE_H="$(SLATE="$SLATE" python3 - <<'PY'
+import datetime, json, os, sys
+try:
+    stamp = json.load(open(os.environ["SLATE"]))["generated_utc"]
+    gen = datetime.datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+except Exception:
+    print(9999); sys.exit(0)
+now = datetime.datetime.now(datetime.timezone.utc)
+print(int((now - gen).total_seconds() // 3600))
+PY
+)"
+if [ "$SLATE_AGE_H" -gt "${MAX_SLATE_AGE_H:-30}" ]; then
+  fail "$SLATE is ${SLATE_AGE_H}h old (bar ${MAX_SLATE_AGE_H:-30}h) — refusing to \
+sweep a stale horizon. Run scripts/slate-daily.sh, then re-run. Override with \
+MAX_SLATE_AGE_H=<hours> only if you know why the slate is old."
+fi
+echo "slate age: ${SLATE_AGE_H}h (bar ${MAX_SLATE_AGE_H:-30}h)"
+
 # 2. Baseline from git, not from disk, so a hand-edited file cannot fake a
 #    no-change day (the slate-daily pattern).
 PREV="$(mktemp)"; trap 'rm -f "$PREV"' EXIT
 git show "HEAD:$STATUS" > "$PREV" 2>/dev/null || echo '{"issuers":{}}' > "$PREV"
 
-OUT="$(python3 scripts/hunt-dial-in.py --from-slate slate/latest.json --days 12 \
+OUT="$(python3 scripts/hunt-dial-in.py --from-slate "$SLATE" --days 12 \
         --state-dir state/hunt --out "$STATUS" 2>&1)" \
   || fail "hunt sweep exited nonzero — see the launchd log"
 echo "$OUT"
