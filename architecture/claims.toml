@@ -18,7 +18,9 @@ contract_change = true
 paths = [
   "architecture/claims.toml",
   "architecture/nodes.toml",
+  "docs/STATUS.md",
   "docs/nodes/project-architecture.md",
+  "docs/work/ACTIVE.md",
 ]
 verification = [
   "python3 scripts/doc-lint.py --self-test",

@@ -1,5 +1,5 @@
 ---
-as_of: 2026-07-29
+as_of: 2026-08-01
 authority: architecture/claims.toml
 ---
 
@@ -13,16 +13,29 @@ a second registry. If this page and the TOML disagree, stop and fix the TOML.
 
 | Lane | Nodes | State |
 |---|---|---|
+| `/root` | project.architecture — the node registry and this claim file | active |
 | `phone-lane` | runtime assembly/config/source port/Twilio; prepare, phone session, operator handler, supervision | active |
-| `phone-lane + tls-box-lane` | launch integration | active |
+| `phone-lane + tls-box-lane` | launch integration (incl. the supervisor time budgets) | active |
 | `tls-box-lane` | acquisition and deployment | active |
-| `admission-evidence-lane` | qualification, admission probes, capture, and measurement | active |
-| `expansion-lane` | evidence.expansion (PM measure-only capture, EXPANSION.md); census/staging/autorun files folded into the open discover/preflight/prepare/supervise claims until the pending commit closes them | active |
-| `/root` | architecture/build and remaining focused contract documents | complete pending commit; still collision-protected |
+| `admission-evidence-lane` | qualification, admission probes, preflight's admission gate, capture, and measurement | active |
+| `hunt-lane` | control.hunt — the SEC dial-in sweep and its two artifacts | active |
+| `expansion-lane` | evidence.expansion (PM measure-only capture, EXPANSION.md) | active |
 
-The detector implementation from commit `15d4ddb` is not an open claim. Its
-new focused contract documents remain protected in `/root`'s
-`complete_pending_commit` claims.
+The 20 `complete_pending_commit` claims are gone: their paths were committed on
+2026-08-01, which is the terminal transition that retires a claim. What remains
+is 20 open claims, all `active`, all describing work that is genuinely
+unfinished.
+
+Two of those deserve a note, because "active" understates how differently they
+are unfinished:
+
+- `evidence.measure` additionally carries the **read-quantum lane**, cut
+  mid-edit by the 2026-07-30 power loss. Its four known defects are recorded in
+  the claim itself. Do not run `scripts/prefetch-gate.sh` and trust the result
+  until they are fixed.
+- `runtime.source.pipe` carries `scripts/hls-edge-fetch.py` from that same
+  lane. The code is finished and `--selftest`-clean; what is unfinished is the
+  gate that would let its default change.
 
 ## Claim workflow
 

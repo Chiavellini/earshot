@@ -1,5 +1,5 @@
 ---
-as_of: 2026-07-29
+as_of: 2026-08-01
 authority: current-project-state
 ---
 
@@ -34,11 +34,41 @@ not merely a placeholder.
   not current-state authorities.
 - A completed performance sweep exists on
   `sweep/overnight-2026-07-29`; it is not silently part of this branch.
+- The 2026-07-30 session ended in a power loss with 109 uncommitted paths. That
+  work is now committed. One lane was cut mid-edit and is PARKED, not finished:
+  the HLS read-quantum work in `docs/LATENCY-PROOF.md` §Q1. Its 90-minute
+  drop-safety gate has never run, `scripts/prefetch-gate.sh` carries four
+  recorded defects, and `--chunk-ms` therefore still defaults to 0. Do not read
+  §Q1 as settled. The defects are listed in that lane's claim.
+
+## Pre-event access: what we know before a call
+
+This is the question the phone lane starts with, and it now has an end-to-end
+answer rather than a human with a browser:
+
+- `control.hunt` sweeps SEC 8-K exhibits nightly and produces a per-issuer
+  verdict. `tier = "unknown"` means the hunt COULD NOT LOOK (no 8-K matched, or
+  a foreign private issuer filing 6-K) and is deliberately distinct from
+  `bridge_unpublished`, which is a real negative across a scanned window.
+- Found numbers reach the prober automatically through
+  `control.bridge.numbers` (gitignored, 0600); `bridge-probe-batch.sh` unions
+  registry and hunt candidates, so a newly found bridge is visible the same
+  night. `registry-propose.py` turns verdicts into paste-ready registry rows.
+- Admission remains probe-only (THE MSFT RULE) and the registry stays
+  human-audited. Reservation-window venues — whose bridge does not exist
+  off-hours — are marked as such and probed at T-90..T-30 by
+  `admission-window-probe.sh`, which refuses to dial outside that window.
+
+The binding constraint is now coverage, not plumbing: `admission` is set on 6
+of 58 registry venues and exactly one is `held`, so `slate-stage.sh` stages
+webcast-only for almost everything by construction. Growing `held` coverage is
+the highest-value phone-lane work available.
 
 ## Immediate outcomes
 
-1. Finish the exactly claimed phone/TLS reliability work and preserve its
-   evidence without crossing node boundaries.
+1. Grow probed `admission` coverage — the gate is correct and starving.
+   Four hunted bridges (MELI, YOU, WEN, HIMS) are one probe each from a phone
+   lane; the AAPL-class venues need an in-window probe on event day.
 2. Introduce a compiled run plan and structured config inspection so shell
    scripts stop parsing TOML independently.
 3. Introduce run-scoped identity/artifacts and converge attended/scheduled

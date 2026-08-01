@@ -1,5 +1,25 @@
 # HANDOFF — Robustify the phone lane: acquisition, admission, persistence
 
+> ## ⚠ HISTORICAL as of 2026-08-01 — its work list is DONE, its state is WRONG
+>
+> This file was written 2026-07-29 ~21:45 UTC. Most of what it asks for was
+> built the following night, so reading its §4 as a to-do list — or its §3 as a
+> description of the code — will actively mislead you. Superseded items:
+>
+> | This file says | Actually |
+> |---|---|
+> | §4.1 build a bridge-entry probe | BUILT — `scripts/bridge-probe.sh`, four venues classified (Q-ADMIT) |
+> | §4.2 `idle_timeout` is 30 s hardcoded, unreachable from config | FALSE — four per-source knobs in `src/config.rs`, validated |
+> | §4.2 build an auto-redial supervisor | BUILT and live-pinned (Q-REDIAL): drop→audio 4.03 s |
+> | §4.4 remove the one-event concurrency cap | DONE — TLS terminates on the box, Q-NGROK cap lifted (Q-TLS) |
+> | §4.5 operator handler is design-only, needs sign-off | BUILT v1 and live-pinned (Q-OPERATOR-V1), fail-closed proven |
+>
+> **Current state lives in `docs/STATUS.md`. Current facts live in
+> `VERIFICATIONS.md` (Q-TLS, Q-REDIAL, Q-OPERATOR-V1, Q-CONF, Q-UPDATE,
+> Q-ADMIT).** What remains valuable here is the *reasoning* — why the phone
+> lane is worth 4–8 s, and what the 07-29 failures actually were. Read it as
+> the argument that motivated the work, not as the status of it.
+
 **Written 2026-07-29 ~21:45 UTC, after a 6-event day. Read this whole file before touching anything.**
 
 You are picking up EARSHOT (see `CLAUDE.md`, then `docs/ARCHITECTURE.md`). Your mission is
