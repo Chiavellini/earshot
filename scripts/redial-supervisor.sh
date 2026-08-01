@@ -40,6 +40,11 @@ cd "$(dirname "$0")/.."
 
 STATE_DIR="" TO="" DTMF="" STREAM_URL="" DIGIT_DELAY="" DTMF_REPEAT=""
 MAX_REDIALS=3 MAX_MINUTES=120 CALL_END_GRACE=2700
+# A redial that lands and produces no audio shows up as a fresh idle marker
+# almost immediately. 30 s comfortably covers the production idle_timeout_secs=8
+# plus dial setup, without flagging a genuine second drop minutes later.
+MEDIA_CONFIRM_SECS=30
+LAST_DIAL_TS=0
 DIAL_SCRIPT="scripts/twilio-dial.sh"
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -52,6 +57,7 @@ while [[ $# -gt 0 ]]; do
     --max-redials)    MAX_REDIALS="$2"; shift 2 ;;
     --max-minutes)    MAX_MINUTES="$2"; shift 2 ;;
     --call-end-grace) CALL_END_GRACE="$2"; shift 2 ;;
+    --media-confirm-secs) MEDIA_CONFIRM_SECS="$2"; shift 2 ;;
     # Future operator-venue redials pass a different (gated) dial script; the
     # pass-through args are identical, only the invoked path changes.
     --dial-script)    DIAL_SCRIPT="$2"; shift 2 ;;
@@ -158,6 +164,21 @@ while :; do
     continue
   fi
   LAST_CONTENT="$CONTENT"
+
+  # Did the PREVIOUS redial actually produce audio? The dial script's exit code
+  # only says Twilio accepted the call-creation request; it cannot say the
+  # bridge admitted us or that a single frame arrived. The in-band answer is
+  # this very marker: the source rewrites it when it goes idle, so a fresh
+  # request arriving within a hair of the last dial means that dial landed and
+  # produced nothing.
+  #
+  # Worth naming because the budget is small — production runs max_reconnects=2
+  # — and a bridge that admits and instantly re-drops would otherwise eat both
+  # attempts with two cheerful "redialed OK" lines and no explanation.
+  if (( LAST_DIAL_TS > 0 && NOW - LAST_DIAL_TS <= MEDIA_CONFIRM_SECS )); then
+    log "REDIAL-NO-MEDIA: redial #${REDIALS} produced no audio — the source went idle again after $((NOW - LAST_DIAL_TS))s (bar ${MEDIA_CONFIRM_SECS}s). The call connected but the leg is silent or was dropped again; a further redial will likely do the same."
+  fi
+
   REDIALS=$((REDIALS + 1))
   log "redial request #${REDIALS} (reason=${REASON:-?}): $CONTENT"
 
@@ -179,7 +200,11 @@ while :; do
   [[ -n "$DIGIT_DELAY" ]] && DIAL_ARGS+=(--digit-delay "$DIGIT_DELAY")
   [[ -n "$DTMF_REPEAT" ]] && DIAL_ARGS+=(--dtmf-repeat "$DTMF_REPEAT")
   if "$DIAL_SCRIPT" "${DIAL_ARGS[@]}" >>"$LOG" 2>&1; then
-    log "redialed OK (#${REDIALS}): new CallSid $(head -1 "$SID_FILE" 2>/dev/null || echo '?')"
+    # "dialed", not "capturing": media is confirmed only by the ABSENCE of a
+    # fresh idle marker over the next MEDIA_CONFIRM_SECS, checked at the top of
+    # the loop.
+    LAST_DIAL_TS=$(date +%s)
+    log "redialed OK (#${REDIALS}): new CallSid $(head -1 "$SID_FILE" 2>/dev/null || echo '?') — media unconfirmed for ${MEDIA_CONFIRM_SECS}s"
     BACKOFF=0
   else
     BACKOFF=$(( BACKOFF == 0 ? 1 : (BACKOFF * 2 > 30 ? 30 : BACKOFF * 2) ))

@@ -67,6 +67,22 @@ retries each 0.25 s poll; a dial into a pipeline that cannot accept is the
 CallSid runs concurrently with the new dial (the source rejects zombie
 streams by callSid, so ordering is safe).
 
+**A dial is not a capture.** The dial script's exit code says Twilio accepted
+the call-creation request; it cannot say the bridge admitted us or that a
+single audio frame arrived. The in-band answer is the marker itself: the source
+rewrites `redial.request` when it goes idle, so a fresh request arriving within
+`--media-confirm-secs` (default 30 s, comfortably above the production
+`idle_timeout_secs = 8` plus dial setup) means the previous redial landed and
+produced nothing. That case logs `REDIAL-NO-MEDIA:` naming the attempt and the
+elapsed time. It matters because the budget is small — production runs
+`max_reconnects = 2` — so a bridge that admits and instantly re-drops would
+otherwise consume every attempt behind two cheerful "redialed OK" lines. A
+genuine second drop minutes later is not flagged.
+
+Time budgets are supplied by `control.launch`, which derives them from the
+event's call time; the defaults here are the fallback for a config with no
+`starts_at` (see `control-launch.md`).
+
 ## Parallel work boundary
 
 Recovery policy and lifecycle events stay here. Launch creates the handle,
