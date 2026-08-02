@@ -1,11 +1,11 @@
 {
-  "generated_utc": "2026-08-01T06:31:37.500000+00:00",
+  "generated_utc": "2026-08-02T02:02:44.020383+00:00",
   "horizon_days": 21,
   "series_count": 156,
   "counts": {
-    "paginated": 48,
-    "per_series": 48,
-    "union": 48
+    "paginated": 47,
+    "per_series": 47,
+    "union": 47
   },
   "sweep_delta": {
     "per_series_only": [],
@@ -43,18 +43,6 @@
       "ir_page_date": null,
       "call_time_utc": null,
       "call_date_evidence": "unconfirmable (none)"
-    },
-    {
-      "event_ticker": "KXWORLDNEWSMENTION-26AUG01",
-      "series_ticker": "KXWORLDNEWSMENTION",
-      "issuer": "WORLDNEWS",
-      "sub_title": "any host or reporter - ABC World News Tonight with David Muir",
-      "call_date": "2026-08-01",
-      "call_date_source": "ticker_daily",
-      "found_by": "both",
-      "ticker_date_misleading": null,
-      "air_time_utc": "22:30Z",
-      "daily_label": "ABC World News Tonight"
     },
     {
       "event_ticker": "KXEARNINGSMENTIONGRAB-26AUG03",
