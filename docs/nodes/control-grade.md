@@ -31,6 +31,22 @@ Existed-nowhere on 2026-08-04: Spotify and Progressive both produced zero
 orders on traded boards and the system said nothing, so the question had to be
 asked by a human hours later.
 
+**The scheduled leg** (`scripts/missed-arm-daily.sh` +
+`configs/launchd/com.earshot.missed-arm.plist`, added 2026-08-04): launchd
+fires the wrapper daily at 17:30 local (23:30Z) — after the last US afternoon
+calls end, before the UTC date rolls, so `date -u +%F` still names the event
+day being reconciled. The checker writes and alerts nothing by design; the
+wrapper owns alerting via `scripts/notify.sh` (`--quiet`) on any non-zero
+exit — MISSED-ARM (1) and UNDETERMINED (≥2) both page; a clean 0 only logs.
+
+**Known gap — box-side state.** Events launched on the us-east-1 box leave
+`state/<event>/report.json` on the box. Until that state is rsynced down, a
+laptop-side capture with box-side orders reads as a false MISSED-ARM and
+box-side captures are invisible to the checker. After box event days, sync
+first (`rsync ubuntu@<box>:~/ear/state/KXEARNINGSMENTION\* state/`), then
+trust the check; the scheduled 17:30 firing on such days is expected-incomplete
+and the post-sync manual run is authoritative.
+
 ## Does not own
 
 It does not supervise/relaunch the run, capture missing evidence after the
@@ -78,6 +94,13 @@ notification delivery remains platform-owned.
 Run `scripts/run-verdict.sh --check` and focused fixture runs for
 `scripts/validate-from-log.py`. Deeper model miss autopsy belongs to
 `evidence.benchmark`.
+
+The scheduled leg counts as validated only per the CLAUDE.md unattended rule:
+launchd-fired (`launchctl kickstart gui/$(id -u)/com.earshot.missed-arm`, not
+a manual run), killed with a real SIGTERM mid-run (the checker is read-only —
+it must die clean with no partial state), under launchd's minimal env.
+Rehearsed 2026-08-04: see the log excerpt in `missed-arm.log` and the
+VERIFICATIONS.md pin.
 
 ## Migration status
 

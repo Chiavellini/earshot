@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Daily missed-arm reconciliation (scripts/missed-arm-daily.sh). 17:30
+     local = 23:30Z, chosen so the check runs after the last US afternoon
+     calls end but BEFORE the UTC date rolls — firing later would reconcile
+     the wrong UTC day. launchd runs a missed StartCalendarInterval firing on
+     wake-from-sleep; a powered-off laptop still skips it (same caveat as
+     slate-daily). Findings for box-launched events are expected-incomplete
+     until the box's state/ is rsynced down — see the wrapper's KNOWN GAP.
+     Install:
+       cp configs/launchd/com.earshot.missed-arm.plist ~/Library/LaunchAgents/
+       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.earshot.missed-arm.plist
+     Remove:
+       launchctl bootout gui/$(id -u)/com.earshot.missed-arm -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.earshot.missed-arm</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/bernardodelrio/Code/ear/scripts/missed-arm-daily.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>17</integer>
+    <key>Minute</key>
+    <integer>30</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/Users/bernardodelrio/Library/Logs/earshot/missed-arm.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/bernardodelrio/Library/Logs/earshot/missed-arm.log</string>
+</dict>
+</plist>
