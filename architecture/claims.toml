@@ -16,6 +16,9 @@ contract_change = true
 # owner, or a claim. The claim stays open while that is happening and is
 # retired once the governance surface settles.
 paths = [
+  # 2026-08-04: CLAUDE.md gains the never-point-a-recorder-at-a-tradeable-call
+  # convention and the new commands; STATUS.md's `held` count goes 1 -> 3.
+  "CLAUDE.md",
   "architecture/claims.toml",
   "architecture/nodes.toml",
   "docs/STATUS.md",
@@ -98,6 +101,9 @@ branch = "webcast-lane"
 state = "active"
 contract_change = true
 paths = [
+  "configs/grab-26aug03-raw.toml",
+  "configs/pltr-26aug03-raw.toml",
+  "configs/snap-26aug03-raw.toml",
   "configs/twilio-aapl-26jul30-arm.toml",
   "configs/twilio-cmg-26jul29-arm.toml",
   "configs/twilio-cvna-26jul29-arm.toml",
@@ -110,9 +116,21 @@ paths = [
   "configs/webcast-cmg-26jul29-arm-wc.toml",
   "scripts/slate-stage.sh",
   "configs/webcast-cvna-26jul29-arm-wc.toml",
+  "configs/webcast-grab-26aug03-arm-wc.toml",
+  # GRAB 26AUG03: the webcast file above is a deliberate fail-closed stub (both
+  # legs exit 64). These two carry the same VALIDATED keyword set — identical
+  # keywords-extract sha256 — and differ from it only in [[sources]].
+  "configs/acoustic-grab-26aug03-arm.toml",
+  "configs/phone-grab-26aug03-arm.toml",
+  # AMD 26AUG04. `prepare` output, then hand-corrected: it had stripped the digits
+  # from "MI450 / MI455X" down to the word "mix", and emitted sherpa_kws while
+  # every armed config runs streaming_ctc.
+  "configs/amd-26aug04-raw.toml",
   "configs/webcast-msft-26jul29-arm-wc.toml",
+  "configs/webcast-pltr-26aug03-arm-wc.toml",
   "configs/webcast-race-26jul30-arm-wc.toml",
   "configs/webcast-rddt-26jul30-arm-wc.toml",
+  "configs/webcast-snap-26aug03-arm-wc.toml",
   "configs/webcast-yum-26jul30-arm-wc.toml",
   "docs/layers/prepare.md",
   "docs/work/PLAN-26JUL30.md",
@@ -120,6 +138,24 @@ paths = [
   # read-quantum-lane 2026-07-30: pre-registered two-leg A/B (q32k vs q40ms)
   # asking whether earlier bytes become earlier PCM. Bar is written; NEVER RUN.
   "configs/pcm-lead-chunkms.toml",
+  # 26AUG04 afternoon slate (AMD/SPCX/TOST/ZETA) + the two morning raws that
+  # were never promoted to phone arms. spot-26aug04-raw.toml is the artifact
+  # the SPOT miss stopped at: prepare output, no [twilio] binding, no reconnect
+  # budget, because admission was never `held` so slate-stage never derived it.
+  "configs/mcd-26aug04-raw.toml",
+  "configs/spot-26aug04-raw.toml",
+  "configs/twilio-live-spcx.toml",
+  "configs/twilio-live-tost.toml",
+  "configs/twilio-live-zeta.toml",
+  # 26AUG04: STALE-TICKERED ON PURPOSE (26JUL15 — the ticker whose board
+  # actually traded on Aug 4). Replay input for counterfactual-26aug04.sh
+  # ONLY; never arm it.
+  "configs/twilio-live-pgr.toml",
+  "configs/webcast-amd-26aug04-arm-wc.toml",
+  "configs/webcast-spcx-26aug04-arm-wc.toml",
+  "configs/webcast-tost-26aug04-arm-wc.toml",
+  "configs/webcast-zeta-26aug04-arm-wc.toml",
+  "scripts/stage-afternoon-26aug04.py",
 ]
 verification = [
   "cargo test --lib prepare",
@@ -180,6 +216,9 @@ state = "active"
 contract_change = true
 paths = [
   "PHONE-LANE-HANDOFF.md",
+  "configs/grab-26aug03-autorun.env",
+  "configs/pltr-26aug03-autorun.env",
+  "configs/snap-26aug03-autorun.env",
   "docs/RUNBOOK.md",
   "docs/nodes/control-supervise.md",
   "scripts/redial-supervisor.sh",
@@ -201,9 +240,21 @@ paths = [
   "docs/nodes/control-launch.md",
   "scripts/launch-event.sh",
   "tests/launch_event_posture.rs",
+  # 2026-08-03 (webcast-lane, PLTR/SNAP): extended rather than opened as a second
+  # claim, since doc-lint permits only one open claim per node. Fixes the
+  # ORT_DYLIB_PATH dSYM resolution that HUNG detector-smoke >90 s on the arm path
+  # (docs/POSTMORTEM-26AUG03.md §Bugs), plus the two new launch-path gates.
+  "scripts/launch-webcast.sh",
+  "scripts/run-arm.sh",
+  "scripts/pcm-gate.sh",
+  "scripts/arm-on-url.sh",
 ]
 verification = [
   "bash -n scripts/launch-event.sh",
+  "bash -n scripts/launch-webcast.sh",
+  "bash -n scripts/run-arm.sh",
+  "bash -n scripts/pcm-gate.sh",
+  "bash -n scripts/arm-on-url.sh",
   "cargo test --test launch_webcast_posture",
   "cargo test --test launch_event_posture",
 ]
@@ -217,13 +268,20 @@ branch = "webcast-lane"
 state = "active"
 contract_change = true
 paths = [
+  # 2026-08-04: [SPOT] and [PGR] backfilled from the morning's own probes —
+  # `held` coverage goes 1 -> 3 venues, the constraint docs/STATUS.md names as
+  # binding on the whole phone lane. recon-worklist.py gains the STALE-DATE
+  # rescue so an open board with a passed date cannot fall off the worklist.
   "configs/dial-ins.toml",
   "docs/nodes/control-qualify.md",
+  "scripts/board-open.py",
   "scripts/recon-worklist.py",
   "scripts/registry-propose.py",
+  "slate/worklist.md",
 ]
 verification = [
   "python3 scripts/mine-dial-in.py --help",
+  "python3 scripts/board-open.py --check",
   "python3 scripts/recon-worklist.py --check",
   "python3 scripts/registry-propose.py --check",
 ]
@@ -261,6 +319,10 @@ paths = [
   "scripts/admission-window-probe.sh",
   "scripts/bridge-probe-batch.sh",
   "scripts/bridge-probe.sh",
+  # 2026-08-04: the probe now writes its own verdict (--promote) instead of
+  # printing a snippet nobody pasted, and refuses a long capture against an
+  # open board. Both close the SPOT miss.
+  "scripts/registry-admit.py",
 ]
 verification = [
   "bash -n scripts/bridge-probe.sh",
@@ -278,6 +340,60 @@ branch = "webcast-lane"
 state = "active"
 contract_change = true
 paths = [
+  # 2026-08-04 SPOT/PGR: the calls this node recorded while the arm
+  # path stayed idle. Banked as corpus; the misuse is fixed upstream by
+  # chain-capture.sh's refuse-to-record guard.
+  "scripts/chain-capture.sh",
+  "corpus/bridge-probes/pgr_2026_08_04_leg01.json",
+  "corpus/bridge-probes/pgr_2026_08_04_leg01.jsonl",
+  "corpus/bridge-probes/pgr_2026_08_04_leg02.json",
+  "corpus/bridge-probes/pgr_2026_08_04_leg02.jsonl",
+  "corpus/bridge-probes/pgr_2026_08_04_leg03.json",
+  "corpus/bridge-probes/pgr_2026_08_04_leg03.jsonl",
+  "corpus/bridge-probes/pgr_2026_08_04_leg04.json",
+  "corpus/bridge-probes/pgr_2026_08_04_leg04.jsonl",
+  "corpus/bridge-probes/pgr_2026_08_04_leg05.json",
+  "corpus/bridge-probes/pgr_2026_08_04_leg05.jsonl",
+  "corpus/bridge-probes/pgr_2026_08_04_leg06.json",
+  "corpus/bridge-probes/pgr_2026_08_04_leg06.jsonl",
+  "corpus/bridge-probes/pgr_2026_08_04_leg07.json",
+  "corpus/bridge-probes/pgr_2026_08_04_leg07.jsonl",
+  "corpus/bridge-probes/pgr_2026_08_04_leg08.json",
+  "corpus/bridge-probes/pgr_2026_08_04_leg08.jsonl",
+  "corpus/bridge-probes/pgr_2026_08_04_leg09.json",
+  "corpus/bridge-probes/pgr_2026_08_04_leg09.jsonl",
+  "corpus/bridge-probes/pgr_2026_08_04_leg10.json",
+  "corpus/bridge-probes/pgr_2026_08_04_leg10.jsonl",
+  "corpus/bridge-probes/pgr_2026_08_04_leg11.json",
+  "corpus/bridge-probes/pgr_2026_08_04_leg11.jsonl",
+  "corpus/bridge-probes/pgr_2026_08_04_leg12.json",
+  "corpus/bridge-probes/pgr_2026_08_04_leg12.jsonl",
+  "corpus/bridge-probes/pgr_2026_08_04_leg13.json",
+  "corpus/bridge-probes/pgr_2026_08_04_leg13.jsonl",
+  "corpus/bridge-probes/pgr_2026_08_04_leg14.json",
+  "corpus/bridge-probes/pgr_2026_08_04_leg14.jsonl",
+  "corpus/bridge-probes/pgr_2026_08_04_leg15.json",
+  "corpus/bridge-probes/pgr_2026_08_04_leg15.jsonl",
+  "corpus/bridge-probes/pgr_2026_08_04_leg16.json",
+  "corpus/bridge-probes/pgr_2026_08_04_leg16.jsonl",
+  "corpus/bridge-probes/pgr_2026_08_04_leg17.json",
+  "corpus/bridge-probes/pgr_2026_08_04_leg17.jsonl",
+  "corpus/bridge-probes/pgr_2026_08_04_leg18.json",
+  "corpus/bridge-probes/pgr_2026_08_04_leg18.jsonl",
+  "corpus/bridge-probes/pgr_2026_08_04_leg19.json",
+  "corpus/bridge-probes/pgr_2026_08_04_leg19.jsonl",
+  "corpus/bridge-probes/pgr_2026_08_04_leg20.json",
+  "corpus/bridge-probes/pgr_2026_08_04_leg20.jsonl",
+  "corpus/bridge-probes/pgr_2026_08_04_leg21.json",
+  "corpus/bridge-probes/pgr_2026_08_04_leg21.jsonl",
+  "corpus/bridge-probes/pgr_2026_08_04_leg22.json",
+  "corpus/bridge-probes/pgr_2026_08_04_leg22.jsonl",
+  "corpus/bridge-probes/pgr_2026_08_04_leg23.json",
+  "corpus/bridge-probes/pgr_2026_08_04_leg23.jsonl",
+  "corpus/bridge-probes/pgr_2026_08_04b.json",
+  "corpus/bridge-probes/pgr_2026_08_04b.jsonl",
+  "corpus/bridge-probes/spot_2026_08_04.json",
+  "corpus/bridge-probes/spot_2026_08_04.jsonl",
   "corpus/bridge-probes/tts_rehearsal_2026_07_29.json",
   "corpus/bridge-probes/tts_rehearsal_2026_07_29.jsonl",
   "corpus/bridge-probes/qconf_2026_07_30.json",
@@ -290,6 +406,11 @@ paths = [
   "corpus/bridge-probes/tts_tls_2026_07_30.jsonl",
   "corpus/bridge-probes/yum_2026_07_30_bridge_entry.json",
   "corpus/bridge-probes/yum_2026_07_30_bridge_entry.jsonl",
+  # GRAB 2026-08-03: first contact with the Zoom-webinar PSTN legs. Held 35.6 s
+  # and was stopped by a numeric telephone passcode, not by an operator —
+  # dial-ins.toml [GRAB].admission = "passcode_required".
+  "corpus/bridge-probes/grab_2026_08_03.json",
+  "corpus/bridge-probes/grab_2026_08_03.jsonl",
   "docs/nodes/evidence-capture.md",
   "scripts/wnt-daily.sh",
   # wnt-source-lane: bank the real WNT broadcast (Q-WNT-SRC retargeting).
@@ -311,8 +432,19 @@ paths = [
   "VERIFICATIONS.md",
   "docs/COMPETITOR-ANATOMY.md",
   "docs/INGRESS-BAKEOFF.md",
+  # 2026-08-03 (webcast-lane): PLTR/SNAP measurements — Δrace on the three
+  # genuine races, recall decomposed by coverage window, and the Kalshi-vs-PM
+  # venue-scale result. Added to this claim because doc-lint permits one open
+  # claim per node and admission-evidence-lane already holds evidence.measure.
+  "docs/POSTMORTEM-26AUG03.md",
+  "docs/POSTMORTEM-26AUG04.md",
+  "HANDOFF-26AUG04-MISSED-ARM.md",
   "docs/nodes/evidence-measure.md",
   "scripts/abs-lag.py",
+  # 26AUG04: replay the SPOT/PGR captures through the real keyword sets to
+  # quantify what WOULD have fired had the events been armed instead of
+  # recorded. Post-mortem quantification tooling, same lane as the postmortem.
+  "scripts/counterfactual-26aug04.sh",
   "scripts/drace-wallclock.py",
   # wnt-source-lane: is the WNT pack reachable from a delayed feed at all?
   "scripts/wnt-pack-lag.py",
@@ -411,8 +543,19 @@ paths = [
   "docs/nodes/evidence-expansion.md",
   "scripts/pm-capture.py",
   "configs/pm-map-26jul30.json",
+  # 2026-08-03: the map generator the Q-PM pin described as a recipe but never
+  # shipped, and the cross-venue join. First run: PLTR 26AUG03 word-overlap +
+  # GRAB release-clock (docs/POSTMORTEM-26AUG03.md §Polymarket).
+  "configs/pm-map-26aug03.json",
+  "scripts/pm-map-build.py",
+  "scripts/pm-edge-report.py",
 ]
-verification = ["python3 -m py_compile scripts/pm-capture.py", "scripts/doc-lint.sh"]
+verification = [
+  "python3 -m py_compile scripts/pm-capture.py",
+  "python3 -m py_compile scripts/pm-map-build.py",
+  "python3 -m py_compile scripts/pm-edge-report.py",
+  "scripts/doc-lint.sh",
+]
 evidence = ["VERIFICATIONS.md#q-pm"]
 
 [[claim]]
@@ -435,3 +578,79 @@ verification = [
   "scripts/doc-lint.sh",
 ]
 evidence = ["slate/hunt-status.json", "docs/HUNT.md"]
+
+[[claim]]
+id = "readiness.today_discovery"
+node = "control.discover"
+worker = "readiness-lane"
+branch = "webcast-lane"
+state = "complete_pending_commit"
+contract_change = true
+# 2026-08-04 (PGR): extended rather than opened as a second claim — doc-lint
+# permits one open claim per node. Adds the STALE-DATE detector: an event
+# returned by the status=open sweep whose sub_title date has passed is
+# misdated, not over. PGR's board traded ~170,000 contracts through a call
+# that `today <= call_date` had already filtered off the slate.
+# contract_change flipped to true: the JSON gains a `stale_open_event` field
+# and control-discover.md's contract changes with it.
+paths = [
+  "slate/latest.json",
+  "scripts/discover-events.py",
+  "docs/nodes/control-discover.md",
+]
+verification = ["python3 scripts/discover-events.py --self-test"]
+evidence = [
+  "https://investors.grab.com/news-and-events/news-details/2026/Grab-to-Announce-Second-Quarter-2026-Results-on-3-August-2026-2026-0nRL6bYnpf/default.aspx",
+  "https://investors.palantir.com/news-details/2026/Palantir-Announces-Date-of-Second-Quarter-2026-Earnings-Release-and-Webcast/",
+  "https://investor.snap.com/news/news-details/2026/Snap-Inc--Announces-Date-of-Second-Quarter-2026-Results-Conference-Call/default.aspx",
+]
+
+[[claim]]
+id = "readiness.variant_study_log_count"
+node = "evidence.benchmark"
+worker = "readiness-lane"
+branch = "webcast-lane"
+state = "complete_pending_commit"
+contract_change = false
+paths = [
+  "scripts/variant-study.sh",
+  "scripts/study-afternoon-26aug04.sh",
+  # 26AUG04: targeted re-runs (spcx/zeta/tost) into /tmp/variant-study-*-v2
+  # after the keyword-set corrections; same study machinery, same lane.
+  "scripts/restudy-26aug04.sh",
+]
+verification = [
+  "bash -n scripts/variant-study.sh",
+  "scripts/variant-study.sh configs/webcast-grab-26aug03-arm-wc.toml /tmp/variant-study-grab-26aug03-real",
+]
+evidence = [
+  "configs/.readiness/webcast-grab-26aug03-arm-wc.json",
+  "configs/.readiness/webcast-pltr-26aug03-arm-wc.json",
+  "configs/.readiness/webcast-snap-26aug03-arm-wc.json",
+]
+
+[[claim]]
+id = "missed_arm.reconcile"
+node = "control.grade"
+worker = "admission-evidence-lane"
+branch = "webcast-lane"
+state = "active"
+contract_change = true
+# 2026-08-04. SPOT and PGR were both captured cleanly and both produced zero
+# orders, and nothing in the system said so — the question had to be asked by a
+# human hours later. This claim adds the standing answer: after any capture, if
+# the issuer's board traded and we placed nothing, say MISSED-ARM. It is
+# independent of which upstream node broke, which is the point.
+paths = [
+  "docs/nodes/control-grade.md",
+  "scripts/missed-arm-check.py",
+]
+verification = [
+  "python3 scripts/missed-arm-check.py --check",
+  "python3 scripts/missed-arm-check.py --date 2026-08-04",
+  "python3 scripts/missed-arm-check.py --date 2026-08-03",
+]
+evidence = [
+  "corpus/bridge-probes/spot_2026_08_04.json",
+  "corpus/bridge-probes/pgr_2026_08_04_leg01.json",
+]

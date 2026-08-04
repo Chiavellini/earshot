@@ -73,6 +73,10 @@ excluded_globs = [
   # keyword-readiness artifacts written by scripts/variant-study.sh and read
   # by preflight's readiness gate — generated per study run, never claimed.
   "configs/.readiness/**",
+  # short-token acknowledgements written per config by preflight-event.sh:366.
+  # Same class as .readiness: a per-event operator decision record, generated
+  # not authored, so it has no owning node and is never claimed.
+  "configs/.acks/**",
   "scripts/__pycache__/**",
   # nested bytecode caches too (e.g. scripts/fake-operator/__pycache__/)
   "scripts/**/__pycache__/**",
@@ -575,6 +579,11 @@ status = "active"
 doc = "docs/nodes/control-qualify.md"
 doc_style = "node"
 owns = [
+  # "does this issuer have an OPEN mention board right now" — one public,
+  # unauthenticated GET. Read-only market fact, which is this node's job.
+  # Two consumers: evidence.capture's refuse-to-record guard and
+  # control.grade's missed-arm reconciliation.
+  "scripts/board-open.py",
   "configs/dial-ins.toml",
   "docs/DIAL-INS.md",
   "scripts/mine-dial-in.py",
@@ -599,6 +608,7 @@ owns = [
   "configs/[!d]*.toml",
   "docs/work/PLAN-26JUL30.md",
   "src/prepare.rs",
+  "scripts/stage-afternoon-26aug04.py",
   "scripts/stage-webcast-arm.sh",
   "scripts/stage-webcast-capture.sh",
   "scripts/slate-stage.sh",
@@ -664,6 +674,16 @@ owns = [
   "scripts/admission-window-probe.sh",
   "scripts/bridge-probe-batch.sh",
   "scripts/bridge-probe.sh",
+  # Writes this node's own verdict into control.qualify's registry
+  # (configs/dial-ins.toml) and the proven digits into control.bridge.numbers.
+  # Owned HERE, not by control.qualify, on purpose: qualify already feeds
+  # admission (control.event.qualified), so having qualify own the consumer of
+  # control.event.admitted would close a qualify->admission->qualify dependency
+  # cycle, which doc-lint rejects. Writing another node's artifact is a data
+  # flow, not co-ownership. THE MSFT RULE is unchanged — admission is still set
+  # only by a probe dial; this just stops the answer dying on a terminal, which
+  # is how SPOT's proven bridge went unregistered on 2026-08-04.
+  "scripts/registry-admit.py",
 ]
 inputs = [
   "control.event.qualified",
@@ -699,9 +719,11 @@ doc = "docs/nodes/control-launch.md"
 doc_style = "node"
 owns = [
   "docs/MULTI-EVENT.md",
+  "scripts/arm-on-url.sh",
   "scripts/launch-event.sh",
   "scripts/launch-webcast.sh",
   "scripts/ms-morning.sh",
+  "scripts/pcm-gate.sh",
   "scripts/run-arm.sh",
   "tests/launch_event_posture.rs",
   "tests/launch_webcast_posture.rs",
@@ -792,6 +814,13 @@ status = "active"
 doc = "docs/nodes/control-grade.md"
 doc_style = "node"
 owns = [
+  # "we captured a call whose board traded, and placed nothing." The detector
+  # for the 2026-08-04 class, deliberately independent of WHICH upstream node
+  # broke — it reads only the evidence on disk, so it fires whether discover
+  # lost the event, qualify lost the bridge, or the wrong tool was pointed at
+  # the call. An execution verdict on a run that never happened is still an
+  # execution verdict, which is why it lives here.
+  "scripts/missed-arm-check.py",
   "scripts/run-verdict.sh",
   "scripts/validate-from-log.py",
 ]
@@ -864,6 +893,14 @@ owns = [
   "state/KXEARNINGSMENTIONINTC-26JUL23/report-box.json",
   "state/KXEARNINGSMENTIONLMT-26JUL23/box/capture-report.json",
   "src/capture_bakeoff/*.rs",
+  # Chained multi-leg bridge recorder. Owned HERE and not by control.admission
+  # (which owns bridge-probe.sh) because it banks corpus, never classifies
+  # admission. It was unowned until 2026-08-04, when it recorded two live
+  # earnings calls that should have been armed — the fault could not be
+  # localized to a node precisely because the runtime path had no node.
+  # Its refuse-to-record guard enforces this node's own contract line:
+  # evidence.capture does not launch a traded arm.
+  "scripts/chain-capture.sh",
   "scripts/fetch-tape.sh",
   "scripts/pdt-log.py",
   "scripts/wnt-captions-parse.py",
@@ -915,6 +952,8 @@ owns = [
   "scripts/keywords-extract.py",
   "scripts/miss-autopsy.py",
   "scripts/prefix-gate-score.py",
+  "scripts/restudy-26aug04.sh",
+  "scripts/study-afternoon-26aug04.sh",
   "scripts/variant-audit.py",
   "scripts/variant-study.sh",
   "scripts/verify-occurrences.py",
@@ -935,11 +974,14 @@ status = "active"
 doc = "docs/nodes/evidence-measure.md"
 doc_style = "node"
 owns = [
+  "HANDOFF-26AUG04-MISSED-ARM.md",
   "HANDOFF-RACE-PROGRAM.md",
   "VERIFICATIONS.md",
   "docs/COMPETITOR-ANATOMY.md",
   "docs/INGRESS-BAKEOFF.md",
   "docs/LATENCY-PROOF.md",
+  "docs/POSTMORTEM-26AUG03.md",
+  "docs/POSTMORTEM-26AUG04.md",
   "docs/RACE-STRATEGY.md",
   "src/latprobe/*.rs",
   "scripts/abs-lag.py",
@@ -949,6 +991,7 @@ owns = [
   # writes the clock_anchor.json that drace-wallclock.py and wnt-score.py have
   # always read and that had no writer until 2026-07-30
   "scripts/clock-anchor.py",
+  "scripts/counterfactual-26aug04.sh",
   "scripts/drace-wallclock.py",
   "scripts/experimental/**",
   "scripts/f2-probe.py",
@@ -980,6 +1023,8 @@ doc_style = "node"
 owns = [
   "docs/EXPANSION.md",
   "scripts/pm-capture.py",
+  "scripts/pm-edge-report.py",
+  "scripts/pm-map-build.py",
   "configs/pm-map-*.json",
 ]
 inputs = [

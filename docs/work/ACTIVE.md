@@ -17,14 +17,19 @@ a second registry. If this page and the TOML disagree, stop and fix the TOML.
 | `phone-lane` | runtime assembly/config/source port/Twilio; prepare, phone session, operator handler, supervision | active |
 | `phone-lane + tls-box-lane` | launch integration (incl. the supervisor time budgets) | active |
 | `tls-box-lane` | acquisition and deployment | active |
-| `admission-evidence-lane` | qualification, admission probes, preflight's admission gate, capture, and measurement | active |
+| `admission-evidence-lane` | qualification, admission probes, preflight's admission gate, capture, measurement, and missed-arm grading | active |
 | `hunt-lane` | control.hunt — the SEC dial-in sweep and its two artifacts | active |
+| `readiness-lane` | control.discover (STALE-DATE) and evidence.benchmark | complete_pending_commit |
 | `expansion-lane` | evidence.expansion (PM measure-only capture, EXPANSION.md) | active |
 
 The 20 `complete_pending_commit` claims are gone: their paths were committed on
 2026-08-01, which is the terminal transition that retires a claim. What remains
-is 20 open claims, all `active`, all describing work that is genuinely
-unfinished.
+is 23 open claims, all describing work that is genuinely unfinished.
+
+The 2026-08-04 SPOT/PGR work extended four existing claims rather than opening
+new ones (doc-lint permits one open claim per node) and opened exactly one new
+claim, `missed_arm.reconcile` on `control.grade`. See
+`docs/POSTMORTEM-26AUG04.md`.
 
 Two of those deserve a note, because "active" understates how differently they
 are unfinished:
