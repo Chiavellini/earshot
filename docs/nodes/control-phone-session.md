@@ -53,6 +53,28 @@ never retried or reordered. Invalid DTMF, missing credentials, call creation
 failure, status failure, or hangup failure is loud and preserves the known
 CallSid for reconciliation; ambiguous creation is not blindly repeated.
 
+`twilio-dial.sh` returns a CLASSIFIED exit so `control.launch` can retry
+safely (2026-08-04, Gap A):
+
+| exit | meaning | caller action |
+|------|---------|---------------|
+| 0 | call created (sid printed / written) | proceed |
+| 1 | HTTP 2xx but no parseable sid | may retry |
+| 2 | usage error | fix invocation |
+| 3 | DTMF charset (`*` etc.) | permanent |
+| 4 | definite rejection (HTTP 4xx: bad To/From, auth) | permanent, do not retry |
+| 5 | transient (HTTP 5xx, or a curl failure the recovery lookup PROVED created no call) | safe to retry |
+| 6 | ambiguous: transport failed AND the recovery lookup could neither adopt an in-flight call nor prove none | page, never blind-retry |
+
+The origination `curl` is bounded (`--max-time 15`). On a transport failure
+the script does ONE bounded `Calls.json?To=` lookup for a call to this number
+created in the last ~120 s with status queued/ringing/in-progress: exactly one
+match is adopted (its sid printed, exit 0); none proves a transient no-call
+(exit 5); a failed/unparseable lookup or multiple matches is ambiguous (exit
+6). Ambiguous creation is resolved by that lookup, never by a blind re-POST.
+A `--hangup-script` override exists on the supervisor for the same
+test-isolation reason the dial script is injectable.
+
 ## Parallel work boundary
 
 Twilio call-control scripts and the phone-session artifact live here. Runtime

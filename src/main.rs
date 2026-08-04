@@ -1067,6 +1067,9 @@ async fn arm(
     }
     let cfg = config::load(&config_path)?;
     config::allowlist_covers_keywords(&cfg).map_err(|e| -> AnyErr { e.into() })?;
+    let redial_dir = std::env::var("EARSHOT_REDIAL_DIR").ok();
+    config::check_redial_dir_for_persistence(&cfg, redial_dir.as_deref())
+        .map_err(|e| -> AnyErr { e.into() })?;
     if !i_am_live && cfg.risk.allowlist_tickers.is_empty() {
         tracing::warn!(
             "dry-run with an EMPTY [risk].allowlist_tickers — every order would be \

@@ -245,7 +245,7 @@ inputs = [
   "runtime.core",
   "runtime.source.interface",
 ]
-outputs = ["runtime.source.twilio.frames"]
+outputs = ["runtime.source.twilio.frames", "runtime.source.twilio.stream_connected"]
 
 [[node]]
 id = "runtime.source.sip"
@@ -733,6 +733,7 @@ inputs = [
   "control.endpoint.resolved",
   "runtime.config.loaded",
   "runtime.market.plan",
+  "runtime.source.twilio.stream_connected",
   "platform.deploy.artifact",
   "platform.runtime.profile",
 ]
@@ -797,12 +798,14 @@ owns = [
   "scripts/url-escalate.sh",
   "scripts/webcast-autorun.sh",
   "scripts/wing-autorun.sh",
+  "tests/redial_supervisor.rs",
 ]
 inputs = [
   "control.session.launched",
   "control.phone.attached",
   "runtime.pipeline.lifecycle",
   "runtime.telemetry.report",
+  "runtime.source.twilio.stream_connected",
   "platform.notification",
 ]
 outputs = ["control.session.completed"]
@@ -1205,6 +1208,17 @@ producer = "runtime.assembly"
 consumers = [
   "control.phone_session",
   "control.operator",
+]
+
+[[contract]]
+id = "runtime.source.twilio.stream_connected"
+kind = "event"
+maturity = "implemented"
+door = "<state_dir>/stream.connected token ({unix_ts,call_sid,attempt} JSON) written by src/source/twilio_ws.rs on every accepted `start` (attempt 0, redial, or supersede adoption); env-gated on EARSHOT_REDIAL_DIR so bridge-probe writes nothing. Absence within control.launch's --stream-confirm-secs is the no-stream signal (a placed call is not a stream, 2026-07-29)"
+producer = "runtime.source.twilio"
+consumers = [
+  "control.launch",
+  "control.supervise",
 ]
 
 [[contract]]

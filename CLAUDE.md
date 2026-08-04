@@ -64,7 +64,7 @@ scripts/bridge-probe.sh --to +1… --label <venue-date> [--dtmf 1234#] [--promot
 scripts/slate-stage.sh --issuer <TICKER>            # same-day restage after a probe promotes a venue
 scripts/missed-arm-check.py --date YYYY-MM-DD       # did we capture a traded board and place nothing? (run after every event day)
 scripts/board-open.py --issuer <TICKER>             # is there an open Kalshi mention board right now
-scripts/launch-event.sh --config <cfg> --account <env> --bind-port <p> --to +1…  # one isolated event; run per event for concurrent calls (docs/MULTI-EVENT.md §8)
+scripts/launch-event.sh --config <cfg> --account <env> --bind-port <p> --to +1…  # one isolated event; run per event for concurrent calls (docs/MULTI-EVENT.md §8). Refuses a config with no mid-call persistence unless --one-shot-ok; classified first-dial retry (--dial-attempts, default 3); --stream-confirm-secs (default 90) arms the no-stream watchdog
 source ~/.kalshi/earshot_env                 # credentials (never in repo)
 ```
 

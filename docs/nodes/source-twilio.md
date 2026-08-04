@@ -44,6 +44,19 @@ attempt and writing no marker. A same-callSid connection is a stale zombie and
 is dropped (StaleReattach semantics). Every accepted TCP stream (first accept
 and re-accepts) gets `TCP_NODELAY` before the WS handshake.
 
+On every accepted `start` — attempt 0, a redial, or a supersede adoption —
+the source also atomically writes `<redial-dir>/stream.connected`
+(`{"unix_ts":<int-seconds>,"call_sid":"<sid-or-empty>","attempt":<int>}`), the
+in-band signal `control.launch`'s no-stream watchdog polls: a placed call is
+not a stream (2026-07-29). Both marker paths derive from `EARSHOT_REDIAL_DIR`
+and are `None` when it is unset, so `bridge-probe` (which sets no such env)
+stays a bare recorder that writes nothing. NOTE: writing `stream.connected` in
+the one-shot `start` handler is a deliberate, documented deviation from the
+"byte-identical to pre-2026-07-29" one-shot ACCEPT/READ control flow — it is a
+marker write gated on the launcher's env, not a change to what audio the
+source delivers or when it exits; the alternative (grepping an arm log the
+launcher does not own) is not workable.
+
 ## Side effects and exclusive resources
 
 Exclusively owns its TCP bind address and accepted WebSocket. It reads Twilio
@@ -68,11 +81,13 @@ requires the supervisor contract.
 
 ## Verification
 
-Run `cargo test --test twilio_source` (marker schema, supersede swap/attempt
-accounting, one-shot isolation regressions included),
+Run `cargo test --test twilio_source` (redial + stream.connected marker
+schemas, the env-gated absence that keeps bridge-probe bare, supersede
+swap/attempt accounting, one-shot isolation regressions included),
 `cargo test --test twilio_listen_only`, and the unit tests in
-`source::twilio_ws`. Live wire facts remain pinned in `docs/TWILIO.md` and
-`VERIFICATIONS.md`.
+`source::twilio_ws` (plus the arm-time `check_redial_dir_for_persistence`
+refusal in `config::tests`). Live wire facts remain pinned in `docs/TWILIO.md`
+and `VERIFICATIONS.md`.
 
 ## Migration status
 

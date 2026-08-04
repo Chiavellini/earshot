@@ -30,6 +30,12 @@ CONFIG="" ACCOUNT="" BIND_PORT="" TO="" DTMF="" LIVE="" ALLOW_MENTION="" FILLABL
 DIGIT_DELAY="" DTMF_REPEAT=""   # empty => twilio-dial.sh defaults (4 s, play once)
 BIN="${EARSHOT_BIN:-}" NO_DIAL="" STREAM_URL_OVERRIDE="" TLS_HOST="" OPERATOR_HANDLER=""
 MAX_MINUTES_OVERRIDE="" CALL_END_GRACE_OVERRIDE=""
+DIAL_SCRIPT="scripts/twilio-dial.sh" DIAL_ATTEMPTS=3 ONE_SHOT_OK="" HANGUP_SCRIPT=""
+# 90 s covers slow PSTN origination + ring with margin: the stream forks at
+# ANSWER (<Start><Stream> precedes <Play digits>), so real time-to-first-media
+# is ~4-30 s (Q-REDIAL timeline; MSFT bridge-entry transcript hears audio from
+# 0.00 s of the call).
+STREAM_CONFIRM_SECS=90
 while [[ $# -gt 0 ]]; do
   case "$1" in
     # Operator-screened (Class B) venues: page the configured human cell into a
@@ -61,6 +67,18 @@ while [[ $# -gt 0 ]]; do
     --max-minutes)     MAX_MINUTES_OVERRIDE="$2"; shift 2 ;;
     --call-end-grace)  CALL_END_GRACE_OVERRIDE="$2"; shift 2 ;;
     --bin)           BIN="$2"; shift 2 ;;
+    # First-dial resilience (2026-08-04, Gap A): the dial script's classified
+    # exits (4 permanent / 5 transient / 6 ambiguous) drive a bounded retry.
+    # --dial-script exists for stub tests and is symmetric with the
+    # supervisor's knob; production keeps the default.
+    --dial-script)   DIAL_SCRIPT="$2"; shift 2 ;;
+    --hangup-script) HANGUP_SCRIPT="$2"; shift 2 ;;   # forwarded to the supervisor; stub tests only
+    --dial-attempts) DIAL_ATTEMPTS="$2"; shift 2 ;;
+    # A config without mid-call persistence (max_reconnects unset/0) is
+    # refused unless this flag names the one-shot as deliberate.
+    --one-shot-ok)   ONE_SHOT_OK=1; shift ;;
+    # No-stream watchdog window (a placed call is not a stream — 2026-07-29).
+    --stream-confirm-secs) STREAM_CONFIRM_SECS="$2"; shift 2 ;;
     --no-dial)       NO_DIAL=1; shift ;;
     --i-am-live)     LIVE="--i-am-live"; shift ;;
     --allow-mention) ALLOW_MENTION="--allow-mention"; shift ;;
@@ -218,6 +236,19 @@ export TWILIO_STREAM_URL="$STREAM_URL"
 export EARSHOT_REDIAL_DIR="$STATE_DIR"
 MAX_RECONNECTS=$(sed -n 's/^[[:space:]]*max_reconnects[[:space:]]*=[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$CONFIG" | head -1)
 
+# No config gets armed one-shot by ACCIDENT (2026-08-04, Gap B/C): the Rust
+# default is max_reconnects = 0, only slate-stage-derived configs carry the
+# Q-REDIAL production values, and the hand-written 26jul29 configs went to
+# real events where a first drop would have ended the run silently. Applies
+# under --no-dial too — rehearsals must mirror production posture.
+if [[ -z "$ONE_SHOT_OK" ]] && [[ -z "${MAX_RECONNECTS:-}" || "$MAX_RECONNECTS" -eq 0 ]]; then
+  echo "REFUSING: config has no mid-call persistence (twilio_stream.max_reconnects unset/0)." >&2
+  echo "  A first drop ends the run. Add \"max_reconnects = 2\" + \"idle_timeout_secs = 8\"" >&2
+  echo "  (the Q-REDIAL pinned values; slate-stage.sh stages them), or relaunch with" >&2
+  echo "  --one-shot-ok to name the one-shot posture as deliberate." >&2
+  exit 2
+fi
+
 # Supervisor time budgets, derived from THIS event's call time.
 #
 # Both of the supervisor's own defaults are anchored on when the SUPERVISOR
@@ -265,6 +296,8 @@ DERIVED_MAXMIN=$(echo "$DERIVED_BUDGETS" | awk '{print $2}')
 SUPERVISOR_BUDGETS=""
 [[ -n "${DERIVED_MAXMIN:-}" ]] && SUPERVISOR_BUDGETS="--max-minutes $DERIVED_MAXMIN"
 [[ -n "${DERIVED_GRACE:-}" ]] && SUPERVISOR_BUDGETS="$SUPERVISOR_BUDGETS --call-end-grace $DERIVED_GRACE"
+# Unconditional echo: the 7942a41 clock-derivation is now posture-testable.
+echo "supervisor budgets:${SUPERVISOR_BUDGETS:- (defaults)}"
 
 # Arm the pipeline (blocks, waiting for the dial). Dial from a second shell, or
 # background this and dial below.
@@ -275,6 +308,11 @@ REPORT="${STATE_DIR}/report.json"
 # below pass instantly against a dead arm — delete it before starting.
 READY_FILE="${STATE_DIR}/listener.ready"
 rm -f "$READY_FILE"
+# Same stale-token hazard for the no-stream watchdog's signal: a
+# stream.connected left by a previous run would confirm a stream that never
+# landed.
+STREAM_CONNECTED_FILE="${STATE_DIR}/stream.connected"
+rm -f "$STREAM_CONNECTED_FILE"
 # Pinned binary (--bin / EARSHOT_BIN, produced by scripts/preflight-event.sh)
 # runs EXACTLY what was drilled and skips the fire-time compile — `cargo run`
 # from the live checkout can hit a dirty tree, a cold rebuild racing the
@@ -308,8 +346,119 @@ done
 [[ -f "$READY_FILE" ]] || { echo "arm never wrote ${READY_FILE} within 120 s" >&2; exit 1; }
 echo "listener ready ($(tr -d '\n' < "$READY_FILE" 2>/dev/null || echo '?')) — dialing"
 
+# Never fails the launcher; a dead mailer must not kill a live event.
+page() { # $1 = subject, $2 = body
+  "${EARSHOT_NOTIFY:-scripts/notify.sh}" "$1" "$2" --quiet || true
+}
+
+# Classified first-dial retry (2026-08-04, Gap A). Retries ONLY when no call
+# can exist (exit 5 transient / 1 unclassified — the operator dial script has
+# no classification, so its generic failures retry too). Exit 6 (ambiguous:
+# the POST may have created a call the recovery lookup could not prove) never
+# blind-retries — a second leg into a live bridge is the 21-73 s operator-drop
+# class. 2/3/4 are permanent. Backoff 2 s then 5 s: the dial fires minutes
+# before the call; three fast attempts leave the operator time to act.
+dial_with_retry() { # $@ = full dial command; sets DIAL_RC
+  local attempt=1 rc=0
+  while :; do
+    rc=0
+    "$@" || rc=$?
+    case "$rc" in
+      0) DIAL_RC=0; return 0 ;;
+      5|1)
+        if (( attempt >= DIAL_ATTEMPTS )); then
+          echo "dial attempt ${attempt}/${DIAL_ATTEMPTS} failed (exit ${rc}) — retries exhausted" >&2
+          break
+        fi
+        local delay=2; (( attempt >= 2 )) && delay=5
+        echo "dial attempt ${attempt}/${DIAL_ATTEMPTS} failed transiently (exit ${rc}) — retrying in ${delay}s" >&2
+        sleep "$delay"
+        attempt=$((attempt + 1))
+        ;;
+      6)
+        page "DIAL AMBIGUOUS: ${EVENT_ID}" "dial transport failed and the recovery lookup could not prove call state. NOT retrying blindly (double-leg risk). Check Twilio console, then dial by hand: ${DIAL_SCRIPT} --to ${TO} --stream-url ${STREAM_URL} --sid-file ${STATE_DIR}/call.sid"
+        break
+        ;;
+      *) break ;;
+    esac
+  done
+  DIAL_RC="$rc"
+  return "$rc"
+}
+
+# Redial supervisor BEFORE the first dial (2026-08-04): it is purely
+# marker-driven (baselines pre-existing redial.request content at startup,
+# refuses without listener.ready — which now exists), so starting it here is
+# safe, gives the post-dial window a redial consumer from second zero, and
+# gives the no-stream watchdog someone to hand a synthetic request to.
+REDIAL_PID=""
+if [[ -z "$NO_DIAL" && -n "${MAX_RECONNECTS:-}" && "$MAX_RECONNECTS" -gt 0 ]]; then
+  if [[ -n "$OPERATOR_HANDLER" ]]; then
+    EARSHOT_OPERATOR_CONFIG="$CONFIG" scripts/redial-supervisor.sh --state-dir "$STATE_DIR" --to "$TO" --stream-url "$STREAM_URL" \
+      ${DTMF:+--dtmf "$DTMF"} ${DIGIT_DELAY:+--digit-delay "$DIGIT_DELAY"} \
+      ${DTMF_REPEAT:+--dtmf-repeat "$DTMF_REPEAT"} --max-redials "$MAX_RECONNECTS" \
+      $SUPERVISOR_BUDGETS \
+      ${HANGUP_SCRIPT:+--hangup-script "$HANGUP_SCRIPT"} \
+      --dial-script scripts/operator-redial.sh &
+  else
+    scripts/redial-supervisor.sh --state-dir "$STATE_DIR" --to "$TO" --stream-url "$STREAM_URL" \
+      ${DTMF:+--dtmf "$DTMF"} ${DIGIT_DELAY:+--digit-delay "$DIGIT_DELAY"} \
+      ${DTMF_REPEAT:+--dtmf-repeat "$DTMF_REPEAT"} --max-redials "$MAX_RECONNECTS" \
+      $SUPERVISOR_BUDGETS \
+      ${HANGUP_SCRIPT:+--hangup-script "$HANGUP_SCRIPT"} \
+      --dial-script "$DIAL_SCRIPT" &
+  fi
+  REDIAL_PID=$!
+  echo "$REDIAL_PID" > "${STATE_DIR}/redial-supervisor.pid"
+  trap 'kill "$ARM_PID" "$NGROK_PID" "$REDIAL_PID" 2>/dev/null || true' EXIT
+  echo "redial supervisor up (pid ${REDIAL_PID}${OPERATOR_HANDLER:+, operator redial wrapper}, max ${MAX_RECONNECTS} redials${SUPERVISOR_BUDGETS:+,$SUPERVISOR_BUDGETS})"
+fi
+
+# No-stream watchdog (2026-08-04, Gap Q): a placed call is not a stream —
+# 2026-07-29 calls ran to completion while nothing ever accept()ed, and the
+# 900 s accept window is otherwise silent. The source writes
+# ${STATE_DIR}/stream.connected on every accepted start; if it does not
+# appear within the window, page and (with a supervisor running) hand it a
+# synthetic no_stream redial request — the supervisor hangs up the deaf
+# CallSid and redials with its own budget/backoff/media-confirm machinery.
+start_stream_watchdog() {
+  (
+    DEADLINE=$(( $(date +%s) + STREAM_CONFIRM_SECS ))
+    while [[ ! -f "$STREAM_CONNECTED_FILE" ]] && (( $(date +%s) < DEADLINE )); do sleep 1; done
+    if [[ -f "$STREAM_CONNECTED_FILE" ]]; then
+      echo "stream-watchdog: stream confirmed ($(tr -d '\n' < "$STREAM_CONNECTED_FILE" 2>/dev/null || echo '?'))"
+      exit 0
+    fi
+    DEAF_SID=$(head -1 "${STATE_DIR}/call.sid" 2>/dev/null || echo "")
+    page "NO STREAM: ${EVENT_ID}" "call ${DEAF_SID:-<no sid>} placed but no stream landed within ${STREAM_CONFIRM_SECS}s. Manual redial: ${DIAL_SCRIPT} --to ${TO} --stream-url ${STREAM_URL} --sid-file ${STATE_DIR}/call.sid"
+    if [[ -n "${REDIAL_PID:-}" ]]; then
+      # Synthetic marker — reason vocabulary gains no_stream (producer: this
+      # watchdog, not the source). Consumes one redial-budget unit: a deaf
+      # first call IS a real recovery attempt.
+      TMP="${STATE_DIR}/.no_stream.$$"
+      printf '{"unix_ts":%s,"old_call_sid":"%s","attempt":0,"reason":"no_stream"}\n' "$(date +%s)" "$DEAF_SID" > "$TMP"
+      mv "$TMP" "${STATE_DIR}/redial.request"
+      echo "stream-watchdog: wrote synthetic no_stream redial request (deaf sid: ${DEAF_SID:-none})"
+      DEADLINE=$(( $(date +%s) + STREAM_CONFIRM_SECS ))
+      while [[ ! -f "$STREAM_CONNECTED_FILE" ]] && (( $(date +%s) < DEADLINE )); do sleep 1; done
+      if [[ -f "$STREAM_CONNECTED_FILE" ]]; then
+        echo "stream-watchdog: stream confirmed after no_stream redial"
+        exit 0
+      fi
+    fi
+    page "NO STREAM FINAL: ${EVENT_ID}" "still no stream after the recovery window. The arm's accept window is open (900s from arm) — a manual dial can still save the event."
+  ) &
+  WATCHDOG_PID=$!
+  echo "$WATCHDOG_PID" > "${STATE_DIR}/stream-watchdog.pid"
+  trap 'kill "$ARM_PID" "$NGROK_PID" "$REDIAL_PID" "$WATCHDOG_PID" 2>/dev/null || true' EXIT
+}
+
 # Dial this event's call, forking its inbound audio to THIS event's stream URL.
 # The CallSid lands in the state dir so a supervisor can hang up mid-call (STOP).
+# On final dial failure the launcher pages and KEEPS THE ARM ALIVE: the
+# listener.ready token is valid, the accept window is 900 s, and a manual dial
+# can still save the event — tearing down would forfeit it.
+WATCHDOG_PID=""
 if [[ -n "$NO_DIAL" ]]; then
   echo "--no-dial: skipping twilio-dial (rehearsal without a real call)"
 elif [[ -n "$OPERATOR_HANDLER" ]]; then
@@ -321,37 +470,23 @@ elif [[ -n "$OPERATOR_HANDLER" ]]; then
     echo "page leg not answered/joined within 60 s — REFUSING to dial the bridge unmanned" >&2
     exit 1
   }
-  scripts/twilio-operator-dial.sh --to "$TO" --config "$CONFIG" --operator-i-am-paged \
+  if dial_with_retry scripts/twilio-operator-dial.sh --to "$TO" --config "$CONFIG" --operator-i-am-paged \
     ${DTMF:+--dtmf "$DTMF"} --stream-url "$STREAM_URL" \
     ${DIGIT_DELAY:+--digit-delay "$DIGIT_DELAY"} ${DTMF_REPEAT:+--dtmf-repeat "$DTMF_REPEAT"} \
-    --sid-file "${STATE_DIR}/call.sid"
-
-  if [[ -n "${MAX_RECONNECTS:-}" && "$MAX_RECONNECTS" -gt 0 ]]; then
-    EARSHOT_OPERATOR_CONFIG="$CONFIG" scripts/redial-supervisor.sh --state-dir "$STATE_DIR" --to "$TO" --stream-url "$STREAM_URL" \
-      ${DTMF:+--dtmf "$DTMF"} ${DIGIT_DELAY:+--digit-delay "$DIGIT_DELAY"} \
-      ${DTMF_REPEAT:+--dtmf-repeat "$DTMF_REPEAT"} --max-redials "$MAX_RECONNECTS" \
-      $SUPERVISOR_BUDGETS \
-      --dial-script scripts/operator-redial.sh &
-    REDIAL_PID=$!
-    echo "$REDIAL_PID" > "${STATE_DIR}/redial-supervisor.pid"
-    trap 'kill "$ARM_PID" "$NGROK_PID" "$REDIAL_PID" 2>/dev/null || true' EXIT
-    echo "redial supervisor up (pid ${REDIAL_PID}, operator redial wrapper, max ${MAX_RECONNECTS} redials${SUPERVISOR_BUDGETS:+,$SUPERVISOR_BUDGETS})"
+    --sid-file "${STATE_DIR}/call.sid"; then
+    start_stream_watchdog
+  else
+    page "FIRST DIAL FAILED: ${EVENT_ID}" "operator bridge dial failed (exit ${DIAL_RC}) after retries. Arm is warm and accepting for 900s. Dial by hand: scripts/twilio-operator-dial.sh --to ${TO} --config ${CONFIG} --operator-i-am-paged --stream-url ${STREAM_URL} --sid-file ${STATE_DIR}/call.sid"
+    echo "first dial failed (exit ${DIAL_RC}) — arm stays warm; see the page for the manual dial command" >&2
   fi
 else
-  scripts/twilio-dial.sh --to "$TO" ${DTMF:+--dtmf "$DTMF"} --stream-url "$STREAM_URL" \
+  if dial_with_retry "$DIAL_SCRIPT" --to "$TO" ${DTMF:+--dtmf "$DTMF"} --stream-url "$STREAM_URL" \
     ${DIGIT_DELAY:+--digit-delay "$DIGIT_DELAY"} ${DTMF_REPEAT:+--dtmf-repeat "$DTMF_REPEAT"} \
-    --sid-file "${STATE_DIR}/call.sid"
-
-  # Redial supervisor: only when the config opts into mid-call persistence.
-  if [[ -n "${MAX_RECONNECTS:-}" && "$MAX_RECONNECTS" -gt 0 ]]; then
-    scripts/redial-supervisor.sh --state-dir "$STATE_DIR" --to "$TO" --stream-url "$STREAM_URL" \
-      ${DTMF:+--dtmf "$DTMF"} ${DIGIT_DELAY:+--digit-delay "$DIGIT_DELAY"} \
-      ${DTMF_REPEAT:+--dtmf-repeat "$DTMF_REPEAT"} --max-redials "$MAX_RECONNECTS" \
-      $SUPERVISOR_BUDGETS &
-    REDIAL_PID=$!
-    echo "$REDIAL_PID" > "${STATE_DIR}/redial-supervisor.pid"
-    trap 'kill "$ARM_PID" "$NGROK_PID" "$REDIAL_PID" 2>/dev/null || true' EXIT
-    echo "redial supervisor up (pid ${REDIAL_PID}, max ${MAX_RECONNECTS} redials${SUPERVISOR_BUDGETS:+,$SUPERVISOR_BUDGETS})"
+    --sid-file "${STATE_DIR}/call.sid"; then
+    start_stream_watchdog
+  else
+    page "FIRST DIAL FAILED: ${EVENT_ID}" "dial failed (exit ${DIAL_RC}) after retries. Arm is warm and accepting for 900s. Dial by hand: ${DIAL_SCRIPT} --to ${TO} --stream-url ${STREAM_URL} --sid-file ${STATE_DIR}/call.sid"
+    echo "first dial failed (exit ${DIAL_RC}) — arm stays warm; see the page for the manual dial command" >&2
   fi
 fi
 

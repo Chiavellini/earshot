@@ -527,7 +527,16 @@ if grep -q 'kind = "twilio' "$CONFIG" 2>/dev/null; then
       [[ -n "$TLS_PORT" ]] && TLS_URL="wss://${EARSHOT_TLS_HOST}/e/${TLS_PORT}"
     fi
     if [[ -z "$TLS_URL" ]]; then
-      check WARN "TLS ingress UNVERIFIED — set EARSHOT_STREAM_URL (or EARSHOT_TLS_HOST) so preflight can probe the wss endpoint this event will actually use. Q-TLS is the phone lane's front door and nothing else checks it."
+      # FAIL, not WARN (2026-08-04, Gap P): a phone arm whose ingress preflight
+      # never ran is exactly the "healthy-looking night, dead front door" class
+      # (6fe1e30). Laptop/ngrok rehearsals have no TLS host at preflight time —
+      # they say so explicitly with EARSHOT_TUNNEL_REHEARSAL=1, which keeps the
+      # historical WARN.
+      if [[ -n "${EARSHOT_TUNNEL_REHEARSAL:-}" ]]; then
+        check WARN "TLS ingress UNVERIFIED (EARSHOT_TUNNEL_REHEARSAL=1 — ngrok/laptop rehearsal posture; production events must preflight their real wss endpoint)"
+      else
+        check FAIL "TLS ingress UNVERIFIED — set EARSHOT_STREAM_URL (or EARSHOT_TLS_HOST) so preflight can probe the wss endpoint this event will actually use; Q-TLS is the phone lane's front door and nothing else checks it. For a deliberate ngrok/laptop rehearsal, set EARSHOT_TUNNEL_REHEARSAL=1."
+      fi
     else
       TLS_HOSTNAME="${TLS_URL#*://}"; TLS_HOSTNAME="${TLS_HOSTNAME%%/*}"
       TLS_PATH="/${TLS_URL#*://*/}"
@@ -564,6 +573,20 @@ PY
         esac
       fi
     fi
+fi
+
+# ── Mid-call persistence (Q-REDIAL): no phone arm without a reconnect budget ─
+# The Rust default is max_reconnects = 0 (one-shot): a first drop ends the
+# run. Only slate-stage-derived configs carry the pinned production values;
+# the hand-written 26jul29 configs went to real events bare. launch-event.sh
+# refuses at T-0 (unless --one-shot-ok); this is the night-before signal.
+if grep -q 'kind = "twilio' "$CONFIG" 2>/dev/null; then
+  MAXR=$(sed -n 's/^[[:space:]]*max_reconnects[[:space:]]*=[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$CONFIG" | head -1)
+  if [[ -n "$MAXR" && "$MAXR" -gt 0 ]]; then
+    check PASS "mid-call persistence: max_reconnects = $MAXR"
+  else
+    check FAIL "phone config has NO mid-call persistence (max_reconnects unset/0) — a first drop ends the run. Add \"max_reconnects = 2\" + \"idle_timeout_secs = 8\" (Q-REDIAL pinned values; slate-stage.sh stages them), or launch with --one-shot-ok to name a deliberate one-shot."
+  fi
 fi
 
 # ── Caddyfile no-rewrite invariant (Q-M3 signature base) ───────────────────

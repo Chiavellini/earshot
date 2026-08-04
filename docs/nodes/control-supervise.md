@@ -32,7 +32,13 @@ and parses its JSON `reason` field
 `<state-dir>/listener.ready` token as a dial precondition, and takes a
 `--call-end-grace <secs>` budget (default 2700) plus a `--dial-script <path>`
 parameter (default `scripts/twilio-dial.sh`) so gated operator-venue dial
-scripts can be substituted with identical pass-through args.
+scripts can be substituted with identical pass-through args. A
+`--hangup-script <path>` parameter (default `scripts/twilio-hangup.sh`)
+exists for the same reason — stub tests must never reach the Twilio API. The
+`reason` vocabulary also accepts `no_stream`: not a source drop but a
+synthetic marker written by `control.launch`'s no-stream watchdog when a
+placed call never produced a stream (2026-08-04, Gap Q). The supervisor needs
+no special case — any non-`stop` reason redials and hangs up the deaf CallSid.
 
 ## Output contracts
 
@@ -77,7 +83,10 @@ produced nothing. That case logs `REDIAL-NO-MEDIA:` naming the attempt and the
 elapsed time. It matters because the budget is small — production runs
 `max_reconnects = 2` — so a bridge that admits and instantly re-drops would
 otherwise consume every attempt behind two cheerful "redialed OK" lines. A
-genuine second drop minutes later is not flagged.
+genuine second drop minutes later is not flagged. As of 2026-08-04
+`REDIAL-NO-MEDIA` also PAGES via `${EARSHOT_NOTIFY:-scripts/notify.sh}` — a
+log line nobody reads during a live call is the PYPL/BA silent-miss lesson
+again.
 
 Time budgets are supplied by `control.launch`, which derives them from the
 event's call time; the defaults here are the fallback for a config with no
@@ -91,14 +100,17 @@ dial/hangup, grade evaluates final artifacts, and notify delivers alerts.
 
 ## Verification
 
-Run `bash -n` on the supervisor scripts and rehearsal modes/short budgets where
-available. Exercise stale marker, STOP, launcher death, max-redials, deadline,
-and failed-dial paths without a traded account. For `redial-supervisor.sh`,
-drive it with stub dial/hangup scripts in a scratch state dir and prove:
-same-second double-marker both consumed, stop-after-grace exits 0 without a
-dial, abnormal reasons dial immediately with no pre-dial backoff, failed dial
-backs off and success resets, missing `listener.ready` refuses then honors
-the pending request.
+Run `bash -n` on the supervisor scripts and `cargo test --test
+redial_supervisor` — the stub-driven suite this section prescribed since
+2026-07-29 and that first existed on 2026-08-04. It drives the real script
+with `--dial-script`/`--hangup-script` recording stubs in a scratch state dir
+(no network; Twilio env removed, notify stubbed via `EARSHOT_NOTIFY`) and
+proves: startup marker baselined not dialed, STOP halts without dialing,
+redial budget respected, failed dial backs off and success resets,
+stop-after-grace exits 0 without a dial, early stop still redials,
+same-second double-marker both consumed, missing `listener.ready` refuses
+then honors the pending request, `REDIAL-NO-MEDIA` flagged and paged, and the
+synthetic `no_stream` marker redials and hangs up the deaf CallSid.
 
 ## Migration status
 

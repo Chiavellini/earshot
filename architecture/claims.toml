@@ -224,8 +224,14 @@ paths = [
   "scripts/redial-supervisor.sh",
   "scripts/url-escalate.sh",
   "scripts/webcast-autorun.sh",
+  # 2026-08-04: the stub-driven suite control-supervise.md §Verification has
+  # prescribed since 2026-07-29 and that never existed until now.
+  "tests/redial_supervisor.rs",
 ]
-verification = ["bash -n scripts/redial-supervisor.sh"]
+verification = [
+  "bash -n scripts/redial-supervisor.sh",
+  "cargo test --test redial_supervisor",
+]
 evidence = ["PHONE-LANE-HANDOFF.md"]
 
 [[claim]]

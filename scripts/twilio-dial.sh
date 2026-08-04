@@ -102,15 +102,111 @@ if [[ "$DRY_RUN" == "1" ]]; then
   exit 0
 fi
 
-RESP=$(curl -s -X POST "https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls.json" \
+# Classified exits (2026-08-04, Gap A — launch-event.sh retries on these):
+#   0  call created (sid printed / written to --sid-file)
+#   1  HTTP 2xx but unparseable / no sid (residual; callers may retry)
+#   2  usage error   3  DTMF charset (both unchanged)
+#   4  DEFINITE rejection, HTTP 4xx (bad To/From, auth) — retrying is pointless
+#   5  transient, HTTP 5xx or curl failed with a PROVEN absence of a call —
+#      safe to retry (no call exists)
+#   6  AMBIGUOUS: transport failed AND the recovery lookup could not prove
+#      whether a call was created — a blind repeat risks two legs in the
+#      bridge (the 21–73 s operator-drop class). Callers must page, not retry.
+# --max-time bounds the POST: a hung origination at T-0 used to wedge the
+# launcher forever.
+set +e
+RESP_RAW=$(curl -s --max-time 15 -w '\n%{http_code}' -X POST "https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls.json" \
   --data-urlencode "To=${TO}" \
   --data-urlencode "From=${TWILIO_FROM_NUMBER}" \
   --data-urlencode "Twiml=${TWIML}" \
   -u "${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}")
+CURL_EXIT=$?
+set -e
+
+adopt_or_classify() {
+  # Ambiguous creation (curl transport failure): the POST may or may not have
+  # created a call. One bounded lookup, never a blind re-POST
+  # (docs/nodes/control-phone-session.md: ambiguous creation is not blindly
+  # repeated). Exactly one live recent call to $TO → adopt it. None → proven
+  # no-call, transient (5). Lookup fails or >1 match → ambiguous (6).
+  echo "call origination AMBIGUOUS (curl exit ${CURL_EXIT}) — checking for an in-flight call to ${TO}" >&2
+  set +e
+  LOOKUP=$(curl -s --max-time 10 -G "https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls.json" \
+    --data-urlencode "To=${TO}" --data-urlencode "PageSize=5" \
+    -u "${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}")
+  LOOKUP_EXIT=$?
+  set -e
+  if [[ $LOOKUP_EXIT -ne 0 || -z "$LOOKUP" ]]; then
+    echo "recovery lookup also failed (curl exit ${LOOKUP_EXIT}) — cannot prove call state" >&2
+    exit 6
+  fi
+  FOUND=$(echo "$LOOKUP" | python3 -c '
+import sys, json, email.utils, datetime
+try:
+    calls = json.load(sys.stdin).get("calls", [])
+except Exception:
+    print("PARSE-ERROR"); raise SystemExit
+now = datetime.datetime.now(datetime.timezone.utc)
+live = []
+for c in calls:
+    if c.get("status") not in ("queued", "ringing", "in-progress"):
+        continue
+    try:
+        created = email.utils.parsedate_to_datetime(c.get("date_created") or "")
+    except Exception:
+        continue
+    if (now - created).total_seconds() <= 120:
+        live.append(c.get("sid", ""))
+print(" ".join(live))
+')
+  if [[ "$FOUND" == "PARSE-ERROR" ]]; then
+    echo "recovery lookup returned unparseable JSON — cannot prove call state" >&2
+    exit 6
+  fi
+  set -- $FOUND
+  if [[ $# -eq 1 && -n "$1" ]]; then
+    SID="$1"
+    echo "adopted in-flight call from recovery lookup: CallSid=${SID}"
+    echo "hang up with: scripts/twilio-hangup.sh ${SID}"
+    [[ -n "$SID_FILE" ]] && echo "$SID" > "$SID_FILE"
+    exit 0
+  elif [[ $# -eq 0 ]]; then
+    echo "recovery lookup proves NO live call to ${TO} in the last 120s — transient, safe to retry" >&2
+    exit 5
+  else
+    echo "recovery lookup found MULTIPLE live calls to ${TO} ($*) — refusing to guess" >&2
+    exit 6
+  fi
+}
+
+if [[ $CURL_EXIT -ne 0 || -z "$RESP_RAW" ]]; then
+  adopt_or_classify
+fi
+
+HTTP_CODE="${RESP_RAW##*$'\n'}"
+RESP="${RESP_RAW%$'\n'*}"
+case "$HTTP_CODE" in
+  2*) : ;;  # created — parse the sid below
+  4*)
+    echo "call origination REJECTED (HTTP ${HTTP_CODE}) — permanent, not retrying:" >&2
+    echo "$RESP" >&2
+    exit 4
+    ;;
+  5*)
+    echo "call origination FAILED transiently (HTTP ${HTTP_CODE}) — no call exists, safe to retry:" >&2
+    echo "$RESP" >&2
+    exit 5
+    ;;
+  *)
+    echo "call origination returned unrecognized HTTP code '${HTTP_CODE}':" >&2
+    echo "$RESP" >&2
+    exit 1
+    ;;
+esac
 
 SID=$(echo "$RESP" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("sid","ERROR"))')
 if [[ "$SID" == "ERROR" || -z "$SID" ]]; then
-  echo "call origination FAILED:" >&2
+  echo "call origination FAILED (HTTP ${HTTP_CODE} but no sid):" >&2
   echo "$RESP" >&2
   exit 1
 fi

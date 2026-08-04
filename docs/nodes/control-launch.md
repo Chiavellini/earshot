@@ -41,6 +41,29 @@ is forbidden as the dial gate: the WS listener binds BEFORE the detector
 build, so on 2026-07-29 the port answered all day while an ORT-less detector
 build hung and the media socket sat unaccepted in the kernel backlog.
 
+Once the token appears, launch owns the FIRST dial (2026-08-04, Gap A) — a
+classified retry, not the old fire-and-hope. `twilio-dial.sh` returns
+0 (created), 4 (permanent 4xx: bad number/auth), 5 (transient 5xx / proven
+no-call), or 6 (ambiguous: transport failed and a bounded `Calls.json`
+recovery lookup could neither adopt an in-flight call nor prove none). Launch
+retries only 5/1 (up to `--dial-attempts`, default 3, backoff 2 s then 5 s),
+stops on 2/3/4, and on 6 pages `DIAL AMBIGUOUS` without a blind repeat (a
+second leg into a live bridge is the 21–73 s operator-drop class). On final
+failure it pages with the manual-dial command and KEEPS THE ARM ALIVE: the
+900 s accept window is open and a hand dial can still save the event, so
+tearing down would forfeit it. The redial supervisor is started BEFORE the
+first dial (it is marker-driven and baselines existing content at startup),
+so the post-dial window has a redial consumer from second zero.
+
+Launch also owns the **no-stream watchdog** (Gap Q): a placed call is not a
+stream — on 2026-07-29 calls ran to completion while nothing ever accept()ed.
+The Twilio source writes `<state-dir>/stream.connected` on every accepted
+`start`; if it does not appear within `--stream-confirm-secs` (default 90 s —
+the stream forks at ANSWER, so real time-to-first-media is ~4–30 s), launch
+pages `NO STREAM` and, with a supervisor running, writes a synthetic
+`redial.request` with `reason=no_stream` and the deaf CallSid, which the
+supervisor consumes to hang up the deaf leg and redial.
+
 ## Side effects and exclusive resources
 
 It starts tunnels and the pinned arm process and writes per-event logs/state.
@@ -53,7 +76,16 @@ rather than placing the call itself.
 Placeholder/stale config, missing pin/URL/model, double arm, port collision, or
 child startup failure refuses without emitting `ListenerReady`. A partial
 launch must clean up children and expose a nonzero result; no caller may dial
-merely because a process was spawned.
+merely because a process was spawned. A phone config with no mid-call
+persistence (`twilio_stream.max_reconnects` unset/0 — the Rust default) is
+REFUSED unless `--one-shot-ok` names the one-shot as deliberate: a first drop
+would otherwise end the run silently, and only slate-stage-derived configs
+carry the Q-REDIAL production values (`max_reconnects = 2` /
+`idle_timeout_secs = 8`). `preflight-event.sh` fails the same config the night
+before. This is distinct from the arm-time Rust check (`config.rs
+check_redial_dir_for_persistence`), which refuses if persistence is set but
+`EARSHOT_REDIAL_DIR` is unset — the source would re-accept but nobody would be
+asked to redial.
 
 ## Parallel work boundary
 
@@ -76,9 +108,15 @@ neither and the supervisor keeps its historical defaults.
 
 ## Verification
 
-Run `bash -n` on the owned launch scripts,
-`cargo test --test launch_webcast_posture`, and a fully dry rehearsal with an
-isolated state directory. Verify no orphan tunnel/decoder/arm remains.
+Run `bash -n` on the owned launch scripts (under both bash 3.2 and 5 — the box
+runs 5, the laptop 3.2, and a bash-3.2 parse error has slipped in before),
+`cargo test --test launch_webcast_posture`, `cargo test --test
+launch_event_posture` (which now also covers the one-shot refusal, the
+starts_at-derived budget echo, the classified dial retry, the ambiguous-dial
+page, and the no-stream watchdog's synthetic marker), and a fully dry
+rehearsal with an isolated state directory. Verify no orphan
+tunnel/decoder/arm remains. The classified retry and watchdog are additionally
+covered by the Q-CALLPATH live rehearsal (VERIFICATIONS.md).
 
 ## Migration status
 

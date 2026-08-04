@@ -127,6 +127,13 @@ pub struct TwilioWsSource {
     /// (`$EARSHOT_REDIAL_DIR/redial.request`). None = no marker (tests,
     /// probe, one-shot postures).
     pub redial_request_path: Option<std::path::PathBuf>,
+    /// Where to write the stream-connected marker on every accepted `start`
+    /// (`$EARSHOT_REDIAL_DIR/stream.connected`). The launcher's no-stream
+    /// watchdog polls it after each dial (a placed call is not a stream —
+    /// 2026-07-29: calls connected and ran to completion while nothing ever
+    /// accept()ed). None = no marker (tests, probe, one-shot postures); the
+    /// env-gating keeps bridge-probe a bare recorder.
+    pub stream_connected_path: Option<std::path::PathBuf>,
     /// Twilio auth token for `X-Twilio-Signature` validation (from
     /// `TWILIO_AUTH_TOKEN`; never in repo). `None` disables validation — a
     /// loud dev/loopback-only posture.
@@ -156,6 +163,10 @@ impl TwilioWsSource {
                 .ok()
                 .filter(|s| !s.is_empty())
                 .map(|d| std::path::Path::new(&d).join("redial.request")),
+            stream_connected_path: std::env::var("EARSHOT_REDIAL_DIR")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .map(|d| std::path::Path::new(&d).join("stream.connected")),
             auth_token: std::env::var("TWILIO_AUTH_TOKEN").ok().filter(|s| !s.is_empty()),
             public_url: std::env::var("TWILIO_STREAM_URL").ok().filter(|s| !s.is_empty()),
         })
@@ -363,6 +374,7 @@ impl AudioSource for TwilioWsSource {
         let max_reconnects = self.max_reconnects;
         let reaccept_window = self.reaccept_window;
         let redial_request_path = self.redial_request_path;
+        let stream_connected_path = self.stream_connected_path;
         let source_id = self.source_id;
         let listener = TcpListener::from_std(self.listener)?;
         tracing::info!(addr = %listener.local_addr()?, max_reconnects, "twilio source: waiting for stream connection");
@@ -560,6 +572,11 @@ impl AudioSource for TwilioWsSource {
                             "twilio: stream started (mediaFormat verified 8 kHz μ-law mono)"
                         );
                         last_call_sid = call_sid;
+                        write_stream_connected(
+                            stream_connected_path.as_deref(),
+                            last_call_sid.as_deref(),
+                            attempt,
+                        );
                     }
                     "media" => {
                         if !started {
@@ -610,6 +627,14 @@ impl AudioSource for TwilioWsSource {
                 // Deliberately consumes NO reconnect attempt — it IS the
                 // redial arriving — and requests NO redial.
                 StreamEnd::Superseded(new_ws) => {
+                    // The adopted stream's `start` was consumed in
+                    // try_supersede, so mark connection here (last_call_sid
+                    // already holds the new sid).
+                    write_stream_connected(
+                        stream_connected_path.as_deref(),
+                        last_call_sid.as_deref(),
+                        attempt,
+                    );
                     adopted = Some(new_ws);
                     continue;
                 }
@@ -684,6 +709,24 @@ fn request_redial(path: Option<&std::path::Path>, old_call_sid: Option<&str>, at
     );
     if let Err(e) = crate::fsio::write_atomic(path, body.as_bytes()) {
         tracing::error!(path = %path.display(), error = %e, "could not write redial request");
+    }
+}
+
+/// Tell the launcher's no-stream watchdog a stream actually landed:
+/// atomically (re)write `$EARSHOT_REDIAL_DIR/stream.connected`. Written on
+/// every accepted `start` (attempt 0, redials, supersede adoptions). Body:
+/// `{"unix_ts":<int-seconds>,"call_sid":"<sid-or-empty>","attempt":<int>}`.
+/// Absent path = no marker (bridge-probe stays a bare recorder).
+fn write_stream_connected(path: Option<&std::path::Path>, call_sid: Option<&str>, attempt: u32) {
+    let Some(path) = path else { return };
+    let unix_ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let sid = call_sid.unwrap_or("");
+    let body = format!("{{\"unix_ts\":{unix_ts},\"call_sid\":\"{sid}\",\"attempt\":{attempt}}}\n");
+    if let Err(e) = crate::fsio::write_atomic(path, body.as_bytes()) {
+        tracing::error!(path = %path.display(), error = %e, "could not write stream-connected marker");
     }
 }
 

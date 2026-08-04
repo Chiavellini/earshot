@@ -577,6 +577,34 @@ pub fn allowlist_covers_keywords(cfg: &EventConfig) -> Result<(), ConfigError> {
     )))
 }
 
+/// Persistence needs a consumer: `max_reconnects > 0` makes the source
+/// re-enter its accept loop after a drop and write a redial marker — but the
+/// marker path derives from `EARSHOT_REDIAL_DIR`, and without it the source
+/// only WARNs mid-call ("re-accept is open but nobody was asked to redial")
+/// and the re-accept window dies as EndOfStream. Fail at arm time instead of
+/// discovering it mid-call. `redial_dir` is the env value, passed in so tests
+/// don't touch process env; `launch-event.sh` always exports it, so only bare
+/// `earshot arm` invocations can trip this — which is the point.
+pub fn check_redial_dir_for_persistence(
+    cfg: &EventConfig,
+    redial_dir: Option<&str>,
+) -> Result<(), ConfigError> {
+    let wants_persistence = cfg.sources.iter().any(|s| {
+        matches!(s, SourceConfig::TwilioStream { max_reconnects: Some(n), .. } if *n > 0)
+    });
+    if wants_persistence && redial_dir.map_or(true, str::is_empty) {
+        return Err(ConfigError::Invalid(
+            "twilio_stream.max_reconnects > 0 but EARSHOT_REDIAL_DIR is unset — the source \
+             would re-accept after a drop but nobody would ever be asked to redial, and the \
+             run would end quietly at the re-accept window. launch-event.sh exports it; \
+             export EARSHOT_REDIAL_DIR=<state dir>, or set max_reconnects = 0 for a \
+             deliberate one-shot."
+                .into(),
+        ));
+    }
+    Ok(())
+}
+
 /// The CTC scorer implements NO acoustic boost — `detector::streaming_ctc`
 /// compiles keywords with a fixed boost of 1.0 and never reads the per-entry
 /// value — so keyword `boost` values are dead config under that engine. They
@@ -1112,6 +1140,27 @@ mod tests {
             let cfg: EventConfig = toml::from_str(&twilio_toml(bad)).unwrap();
             assert!(super::validate(&cfg).is_err(), "{bad:?} must be rejected");
         }
+    }
+
+    #[test]
+    fn persistence_without_redial_dir_refuses_at_arm() {
+        // Gap E (2026-08-04): max_reconnects > 0 with no EARSHOT_REDIAL_DIR
+        // used to only WARN mid-call — the source re-accepted but nobody was
+        // ever asked to redial. Arm-time refusal, env passed in as a value so
+        // this test never touches process env.
+        let cfg: EventConfig = toml::from_str(&twilio_toml("max_reconnects = 2")).unwrap();
+        let err = check_redial_dir_for_persistence(&cfg, None).unwrap_err().to_string();
+        assert!(err.contains("EARSHOT_REDIAL_DIR"), "{err}");
+        let err = check_redial_dir_for_persistence(&cfg, Some("")).unwrap_err().to_string();
+        assert!(err.contains("EARSHOT_REDIAL_DIR"), "{err}");
+        assert!(check_redial_dir_for_persistence(&cfg, Some("state/EV")).is_ok());
+
+        // One-shot postures (unset or 0) never need the dir — bridge-probe
+        // and every pre-2026-07-29 config stay bare.
+        let cfg: EventConfig = toml::from_str(&twilio_toml("")).unwrap();
+        assert!(check_redial_dir_for_persistence(&cfg, None).is_ok());
+        let cfg: EventConfig = toml::from_str(&twilio_toml("max_reconnects = 0")).unwrap();
+        assert!(check_redial_dir_for_persistence(&cfg, None).is_ok());
     }
 
     #[test]

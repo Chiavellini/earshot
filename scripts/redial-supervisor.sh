@@ -46,6 +46,7 @@ MAX_REDIALS=3 MAX_MINUTES=120 CALL_END_GRACE=2700
 MEDIA_CONFIRM_SECS=30
 LAST_DIAL_TS=0
 DIAL_SCRIPT="scripts/twilio-dial.sh"
+HANGUP_SCRIPT="scripts/twilio-hangup.sh"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --state-dir)      STATE_DIR="$2"; shift 2 ;;
@@ -61,6 +62,8 @@ while [[ $# -gt 0 ]]; do
     # Future operator-venue redials pass a different (gated) dial script; the
     # pass-through args are identical, only the invoked path changes.
     --dial-script)    DIAL_SCRIPT="$2"; shift 2 ;;
+    # Stub tests must never touch the Twilio API; production keeps the default.
+    --hangup-script)  HANGUP_SCRIPT="$2"; shift 2 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -177,6 +180,12 @@ while :; do
   # attempts with two cheerful "redialed OK" lines and no explanation.
   if (( LAST_DIAL_TS > 0 && NOW - LAST_DIAL_TS <= MEDIA_CONFIRM_SECS )); then
     log "REDIAL-NO-MEDIA: redial #${REDIALS} produced no audio — the source went idle again after $((NOW - LAST_DIAL_TS))s (bar ${MEDIA_CONFIRM_SECS}s). The call connected but the leg is silent or was dropped again; a further redial will likely do the same."
+    # Page it: the budget is small and this class eats it silently otherwise
+    # (2026-08-01 f67ac27 made it visible in the log; a log nobody reads
+    # during a live call is the PYPL/BA lesson again).
+    "${EARSHOT_NOTIFY:-scripts/notify.sh}" "REDIAL-NO-MEDIA: $(basename "$STATE_DIR")" \
+      "redial #${REDIALS} connected but produced no audio within ${MEDIA_CONFIRM_SECS}s; budget $((MAX_REDIALS - REDIALS)) left" \
+      --quiet >>"$LOG" 2>&1 || log "warn: notify failed for REDIAL-NO-MEDIA"
   fi
 
   REDIALS=$((REDIALS + 1))
@@ -187,7 +196,7 @@ while :; do
   # callSid, so ordering is safe and serializing it only delays the redial.
   if [[ -n "$OLD_SID" ]]; then
     {
-      if scripts/twilio-hangup.sh "$OLD_SID" >>"$LOG" 2>&1; then
+      if "$HANGUP_SCRIPT" "$OLD_SID" >>"$LOG" 2>&1; then
         log "hung up previous call $OLD_SID"
       else
         log "previous call $OLD_SID hangup skipped (probably already dead)"

@@ -1876,7 +1876,7 @@ the exact production mechanism*):
 | **Detection-triggered mention FILL** | **ASSERTED** | **has NEVER happened.** One real fill ever = M2 plumbing 07-10 (non-mention 1¢). DPZ is this test |
 | **DPZ dial-in number** | **ASSERTED** | TBD — event is NO-GO without it (Track A above; deadline 07-19) |
 | Competitive fill at tight caps | **ASSERTED (evidence against)** | Q-MSPM: best competitor's whole loop beat our *audio arrival* by ~400 ms on MS-RECE. Until audio transport + detector chunking shrink, expect to lose sub-50¢ races on contested words. ⚠ 2026-07-27: **RECE settled NO** — the latency deficit is real but that race had **negative EV** (−26¢ at our cap), so this row evidences *lateness*, not *forgone profit* |
-| Mid-call stream recovery | BUILT, NOT PROD-REHEARSED | in-process re-accept + redial supervisor landed 2026-07-29 (opt-in `max_reconnects`, default 0 = old behavior); rehearse via launch-event + TTS + induced hangup + SIGTERM before first live use — see follow-up 1 |
+| Mid-call stream recovery | PROD-REHEARSED (Q-REDIAL 2026-07-30) | in-process re-accept + redial supervisor; drop→fresh audio 4.03 s vs the TTS number with a real SIGTERM. Persistence now REQUIRED by launch-event.sh unless `--one-shot-ok` (2026-08-04) — see follow-up 1 |
 | Post-STOP arm SIGTERM immunity | KNOWN BUG (covered) | follow-up 5: TERM→KILL escalation covers it, fired for real 07-15 |
 | Book freshness at decision | INSTRUMENTED, UNPROVEN | `book_age` added 07-16 after the MS RECE 20¢-vs-98¢ discrepancy; first data next live run |
 
@@ -2011,12 +2011,16 @@ Deferred follow-ups from the same audit (tracked, deliberately NOT done yet):
    a recoverable end (seq continuity + stale-callSid gating,
    `docs/layers/source.md`), writes `state/<id>/redial.request`, and
    `scripts/redial-supervisor.sh` (started by `launch-event.sh`) re-dials with
-   backoff; the armed pipeline and warm detector never restart. Default stays 0
-   (one-shot) — ⚠ NOT yet PROD-REHEARSED: flip a config's `max_reconnects` only
-   after a launch-event.sh rehearsal vs the TTS number with an induced mid-call
-   hangup (twilio-hangup.sh) and a real SIGTERM passes on the box. Protocol
-   tests: `tests/twilio_source.rs` (drop→redial re-attach, stale zombie
-   rejected, budgets).
+   backoff; the armed pipeline and warm detector never restart. **PROD-REHEARSED
+   2026-07-30 (Q-REDIAL):** launch-event.sh vs the TTS number, induced far-end
+   hangup, real SIGTERM — drop→new CallSid 0.60 s, drop→fresh audio 4.03 s, no
+   double-fire across the splice. As of 2026-08-04 persistence is REQUIRED by
+   `launch-event.sh` (and `preflight-event.sh`) unless `--one-shot-ok` names a
+   deliberate one-shot — the Rust default of 0 is kept only so `bridge-probe`
+   stays a bare recorder. Protocol tests: `tests/twilio_source.rs` (drop→redial
+   re-attach, stale zombie rejected, budgets, stream.connected marker);
+   supervisor tests: `tests/redial_supervisor.rs`; launcher tests:
+   `tests/launch_event_posture.rs`; combined live re-verify: Q-CALLPATH.
 2. ~~Warm-path order latency: connection/presign reuse is a LOST_RACE lever~~
    **POST-MORTEM COMPLETE 2026-07-16 — the premise was wrong on every count.**
    Evidence: `state/KXEARNINGSMENTIONMS-26JUL15/report.json` + the public

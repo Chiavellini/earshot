@@ -484,3 +484,65 @@ async fn exhausted_budget_expires_reaccept_window_as_end_of_stream() {
         .unwrap();
     assert_eq!(exit, SourceExit::EndOfStream);
 }
+
+#[tokio::test]
+async fn stream_connected_marker_written_on_start() {
+    // Gap Q (2026-08-04): the launcher's no-stream watchdog needs an in-band
+    // "a stream actually landed" signal — a placed call is not a stream
+    // (2026-07-29: calls ran to completion while nothing ever accept()ed).
+    // Wire contract: $EARSHOT_REDIAL_DIR/stream.connected, JSON
+    // {"unix_ts":<int>,"call_sid":"<sid-or-empty>","attempt":<int>}.
+    let (mut src, url) = bound_source(5, 2);
+    let dir = tempfile::tempdir().unwrap();
+    let marker = dir.path().join("stream.connected");
+    src.stream_connected_path = Some(marker.clone());
+
+    let (tx, _rx) = ring::ring::<AudioFrame>(64);
+    let run = tokio::spawn(src.run(tx));
+
+    let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    ws.send(Message::Text(start_msg_sid("audio/x-mulaw", 8000, 1, "CAconn"))).await.unwrap();
+    ws.send(Message::Text(media_msg(1, &[0xFF; 160]))).await.unwrap();
+
+    // The marker is written in the start handler; poll until it lands.
+    let mut waited = 0u64;
+    while !marker.exists() && waited < 3_000 {
+        tokio::time::sleep(Duration::from_millis(25)).await;
+        waited += 25;
+    }
+    let v: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&marker).unwrap()).unwrap();
+    assert!(v["unix_ts"].as_u64().unwrap() > 0, "marker: {v}");
+    assert_eq!(v["call_sid"].as_str().unwrap(), "CAconn", "marker: {v}");
+    assert_eq!(v["attempt"].as_u64().unwrap(), 0, "marker: {v}");
+
+    drop(ws);
+    let _ = tokio::time::timeout(Duration::from_secs(5), run).await;
+}
+
+#[tokio::test]
+async fn stream_connected_marker_absent_without_env() {
+    // Regression pin: bridge-probe constructs a bare bind with no
+    // EARSHOT_REDIAL_DIR — it must stay a bare recorder, writing NO markers.
+    // bound_source() goes through TwilioWsSource::bind, so this asserts the
+    // env-gated default, then runs a full session to prove no file appears.
+    let (src, url) = bound_source(5, 2);
+    assert!(src.stream_connected_path.is_none() || std::env::var("EARSHOT_REDIAL_DIR").is_ok(),
+        "stream_connected_path must derive only from EARSHOT_REDIAL_DIR");
+    let had_env = std::env::var("EARSHOT_REDIAL_DIR").is_ok();
+
+    let (tx, _rx) = ring::ring::<AudioFrame>(64);
+    let run = tokio::spawn(src.run(tx));
+
+    let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    ws.send(Message::Text(start_msg("audio/x-mulaw", 8000, 1))).await.unwrap();
+    ws.send(Message::Text(media_msg(1, &[0xFF; 160]))).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    drop(ws);
+    let _ = tokio::time::timeout(Duration::from_secs(5), run).await;
+
+    if !had_env {
+        assert!(!std::path::Path::new("stream.connected").exists(),
+            "bare source must not write a marker into the cwd");
+    }
+}
