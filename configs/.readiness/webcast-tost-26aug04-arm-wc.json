@@ -1,0 +1,160 @@
+{
+ "config": "webcast-tost-26aug04-arm-wc",
+ "keywords_sha256": "9f4b4611d9685cd42f605d5787c93dc4540575cefecb37b4924ce9386ef5ad73",
+ "date": "2026-08-04",
+ "engine": "streaming_ctc",
+ "voices": [
+  "Samantha",
+  "Daniel",
+  "Paulina"
+ ],
+ "carriers": 2,
+ "keywords": [
+  {
+   "ticker": "KXEARNINGSMENTIONTOST-26AUG04-AGEN",
+   "phrase": "agent",
+   "variants": [
+    "agent",
+    "agents",
+    "agentic",
+    "agentics"
+   ],
+   "clips": 36,
+   "confirmed": 138
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTOST-26AUG04-FRAU",
+   "phrase": "fraud",
+   "variants": [
+    "fraud",
+    "frauds",
+    "theft",
+    "thefts"
+   ],
+   "clips": 36,
+   "confirmed": 88
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTOST-26AUG04-HUNG",
+   "phrase": "hungry howies",
+   "variants": [
+    "hungry howies"
+   ],
+   "clips": 9,
+   "confirmed": 12
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTOST-26AUG04-INST",
+   "phrase": "instacart",
+   "variants": [
+    "instacart",
+    "instacarts"
+   ],
+   "clips": 18,
+   "confirmed": 12
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTOST-26AUG04-LOCA",
+   "phrase": "local",
+   "variants": [
+    "local",
+    "locals"
+   ],
+   "clips": 18,
+   "confirmed": 64
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTOST-26AUG04-LOND",
+   "phrase": "london",
+   "variants": [
+    "london",
+    "londons"
+   ],
+   "clips": 18,
+   "confirmed": 52
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTOST-26AUG04-MEMO",
+   "phrase": "memory",
+   "variants": [
+    "memory",
+    "memorys",
+    "chip",
+    "chips"
+   ],
+   "clips": 36,
+   "confirmed": 62
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTOST-26AUG04-PREF",
+   "phrase": "preferred",
+   "variants": [
+    "preferred",
+    "preferreds"
+   ],
+   "clips": 18,
+   "confirmed": 16
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTOST-26AUG04-RESY",
+   "phrase": "resy",
+   "variants": [
+    "resy",
+    "resys"
+   ],
+   "clips": 18,
+   "confirmed": 2
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTOST-26AUG04-SHAR",
+   "phrase": "share repurchase",
+   "variants": [
+    "share repurchase",
+    "buyback",
+    "buybacks"
+   ],
+   "clips": 27,
+   "confirmed": 4
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTOST-26AUG04-TARI",
+   "phrase": "tariff",
+   "variants": [
+    "tariff",
+    "tariffs"
+   ],
+   "clips": 18,
+   "confirmed": 34
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTOST-26AUG04-TOAS",
+   "phrase": "toast iq",
+   "variants": [
+    "toast iq",
+    "toast i q",
+    "toast eye q",
+    "toastiq"
+   ],
+   "clips": 36,
+   "confirmed": 0
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTOST-26AUG04-UBER",
+   "phrase": "uber eats",
+   "variants": [
+    "uber eats"
+   ],
+   "clips": 9,
+   "confirmed": 4
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTOST-26AUG04-VOIC",
+   "phrase": "voice ordering",
+   "variants": [
+    "voice ordering"
+   ],
+   "clips": 9,
+   "confirmed": 12
+  }
+ ]
+}

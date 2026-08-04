@@ -1,0 +1,243 @@
+# KXEARNINGSMENTIONAMD-26AUG04 — webcast arm config, generated 2026-08-04 by scripts/stage-afternoon-26aug04.py
+#
+# VENUE: resolved at ~T-0 into $HOME/amd-stream.url. All four 2026-08-04
+# afternoon events are `bridge_unpublished` (no dial-in in any scanned 8-K, and
+# none published on the IR page), so this is the only lane. If a dial-in turns
+# up, add a twilio_stream leg -- do not replace these.
+#
+# Posture: 1c mention-probe observe (non-crossing). Fill posture stays gated on
+# the unscored Phase-4 precision verdict.
+
+[event]
+id        = "KXEARNINGSMENTIONAMD-26AUG04-WEBCAST"
+starts_at = "2026-08-04T21:00:00Z"
+
+[pipeline]
+chunk_ms       = 80
+resample_to_hz = 16000
+
+[detector]
+engine = "streaming_ctc"
+
+[detector.streaming_ctc]
+model_dir         = "models/sherpa-onnx-streaming-zipformer-ctc-small-2024-03-18"
+num_threads       = 1
+default_threshold = 0.15
+refractory_ms     = 2000
+
+# Kept so the engine reverts in a one-line change above.
+[detector.sherpa_kws]
+model_dir         = "models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
+num_threads       = 1
+max_active_paths  = 4
+default_threshold = 0.20
+default_boost     = 2.0
+refractory_ms     = 2000
+fp32              = true
+
+[arbiter]
+mode = "fanout"
+
+[[sources]]
+kind = "pipe"
+label = "streamlink"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "streamlink --stdout --hls-live-edge 1 --hls-segment-stream-data --hls-playlist-reload-time segment \"$(cat $HOME/amd-stream.url)\" best | ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 2000000 -analyzeduration 5000000 -i - -vn -f s16le -ac 1 -ar 16000 -",
+]
+
+[[sources]]
+kind = "pipe"
+label = "pipe_tuned"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 2000000 -analyzeduration 5000000 -live_start_index -1 -http_persistent 1 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2 -i \"$(cat $HOME/amd-stream.url)\" -vn -f s16le -ac 1 -ar 16000 -",
+]
+
+[kalshi]
+series = "KXEARNINGSMENTIONAMD"
+env = "prod"
+
+[risk]
+max_order_notional_cents = 100
+max_event_notional_cents = 100
+book_stale_ms            = 2000
+audio_stale_ms           = 2000
+allowlist_tickers = [
+  "KXEARNINGSMENTIONAMD-26AUG04-AGEN",
+  "KXEARNINGSMENTIONAMD-26AUG04-CHIN",
+  "KXEARNINGSMENTIONAMD-26AUG04-EXPO",
+  "KXEARNINGSMENTIONAMD-26AUG04-FRON",
+  "KXEARNINGSMENTIONAMD-26AUG04-HELI",
+  "KXEARNINGSMENTIONAMD-26AUG04-HIGH",
+  "KXEARNINGSMENTIONAMD-26AUG04-INFE",
+  "KXEARNINGSMENTIONAMD-26AUG04-MEMO",
+  "KXEARNINGSMENTIONAMD-26AUG04-META",
+  "KXEARNINGSMENTIONAMD-26AUG04-MI45",
+  "KXEARNINGSMENTIONAMD-26AUG04-MICR",
+  "KXEARNINGSMENTIONAMD-26AUG04-OPEN",
+  "KXEARNINGSMENTIONAMD-26AUG04-ORAC",
+  "KXEARNINGSMENTIONAMD-26AUG04-ROCM",
+  "KXEARNINGSMENTIONAMD-26AUG04-SUPP",
+  "KXEARNINGSMENTIONAMD-26AUG04-TSMC",
+  "KXEARNINGSMENTIONAMD-26AUG04-VENI",
+]
+
+# Agentic AI (KXEARNINGSMENTIONAMD-26AUG04-AGEN) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAMD-26AUG04-AGEN"
+phrase           = "agentic ai"
+variants         = ["agentic ai", "agentic a i"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# China (KXEARNINGSMENTIONAMD-26AUG04-CHIN) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAMD-26AUG04-CHIN"
+phrase           = "china"
+variants         = ["china", "chinas"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Export Restriction / Export Control (KXEARNINGSMENTIONAMD-26AUG04-EXPO) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAMD-26AUG04-EXPO"
+phrase           = "export restriction"
+variants         = ["export restriction", "export restrictions", "export control", "export controls"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Frontier (KXEARNINGSMENTIONAMD-26AUG04-FRON) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAMD-26AUG04-FRON"
+phrase           = "frontier"
+variants         = ["frontier", "frontiers"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Helios (KXEARNINGSMENTIONAMD-26AUG04-HELI) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAMD-26AUG04-HELI"
+phrase           = "helios"
+variants         = ["helios"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# HPC / High-Performance Computing (KXEARNINGSMENTIONAMD-26AUG04-HIGH) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAMD-26AUG04-HIGH"
+phrase           = "hpc"
+variants         = ["hpc", "hpcs", "h p c", "high performance computing"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Inference / Inferencing (KXEARNINGSMENTIONAMD-26AUG04-INFE) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAMD-26AUG04-INFE"
+phrase           = "inference"
+variants         = ["inference", "inferences", "inferencing", "inferencings"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Memory / HBM (KXEARNINGSMENTIONAMD-26AUG04-MEMO) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAMD-26AUG04-MEMO"
+phrase           = "memory"
+variants         = ["memory", "memorys", "hbm", "hbms", "h b m"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Meta (KXEARNINGSMENTIONAMD-26AUG04-META) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAMD-26AUG04-META"
+phrase           = "meta"
+variants         = ["meta", "metas"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# MI450 / MI455X (KXEARNINGSMENTIONAMD-26AUG04-MI45) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+# DROPPED ultra-short variant "mi" — <3 chars matches a syllable, not a word (measured: 38 FA in one event set). Re-add deliberately if this phrasing matters, and own the precision cost.
+# DROPPED ultra-short variant "mis" — <3 chars matches a syllable, not a word (measured: 38 FA in one event set). Re-add deliberately if this phrasing matters, and own the precision cost.
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAMD-26AUG04-MI45"
+phrase           = "mi four fifty"
+variants         = ["mi four fifty", "em eye four fifty", "m i four fifty", "mi four five zero", "mi four fifty five x"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Microsoft / Azure (KXEARNINGSMENTIONAMD-26AUG04-MICR) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAMD-26AUG04-MICR"
+phrase           = "microsoft"
+variants         = ["microsoft", "microsofts", "azure", "azures"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# OpenAI (KXEARNINGSMENTIONAMD-26AUG04-OPEN) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAMD-26AUG04-OPEN"
+phrase           = "openai"
+variants         = ["openai", "openais", "open ai", "open a i"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Oracle (KXEARNINGSMENTIONAMD-26AUG04-ORAC) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAMD-26AUG04-ORAC"
+phrase           = "oracle"
+variants         = ["oracle", "oracles"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# ROCm (KXEARNINGSMENTIONAMD-26AUG04-ROCM) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAMD-26AUG04-ROCM"
+phrase           = "rocm"
+variants         = ["rocm", "rocms", "rock m", "r o c m", "rock em"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Supply Chain (KXEARNINGSMENTIONAMD-26AUG04-SUPP) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAMD-26AUG04-SUPP"
+phrase           = "supply chain"
+variants         = ["supply chain", "supply chains"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# TSMC (KXEARNINGSMENTIONAMD-26AUG04-TSMC) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAMD-26AUG04-TSMC"
+phrase           = "tsmc"
+variants         = ["tsmc", "tsmcs", "t s m c"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Venice (KXEARNINGSMENTIONAMD-26AUG04-VENI) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAMD-26AUG04-VENI"
+phrase           = "venice"
+variants         = ["venice", "venices"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# --- prepare summary: 17 tradeable, 0 skipped (said-N-times), 0 skipped (unencodable), 0 variants dropped of 17 markets ---

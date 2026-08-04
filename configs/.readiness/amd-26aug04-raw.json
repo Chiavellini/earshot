@@ -1,0 +1,203 @@
+{
+ "config": "amd-26aug04-raw",
+ "keywords_sha256": "bd66352d2a0fdc6630cb9ee5807d3727f3a364b4eae759cf5745c37cfa0f7821",
+ "date": "2026-08-03",
+ "engine": "streaming_ctc",
+ "voices": [
+  "Samantha",
+  "Daniel",
+  "Paulina"
+ ],
+ "carriers": 2,
+ "keywords": [
+  {
+   "ticker": "KXEARNINGSMENTIONAMD-26AUG04-AGEN",
+   "phrase": "agentic ai",
+   "variants": [
+    "agentic ai",
+    "agentic a i"
+   ],
+   "clips": 18,
+   "confirmed": 6
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMD-26AUG04-CHIN",
+   "phrase": "china",
+   "variants": [
+    "china",
+    "chinas"
+   ],
+   "clips": 18,
+   "confirmed": 56
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMD-26AUG04-EXPO",
+   "phrase": "export restriction",
+   "variants": [
+    "export restriction",
+    "export restrictions",
+    "export control",
+    "export controls"
+   ],
+   "clips": 36,
+   "confirmed": 148
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMD-26AUG04-FRON",
+   "phrase": "frontier",
+   "variants": [
+    "frontier",
+    "frontiers"
+   ],
+   "clips": 18,
+   "confirmed": 86
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMD-26AUG04-HELI",
+   "phrase": "helios",
+   "variants": [
+    "helios"
+   ],
+   "clips": 9,
+   "confirmed": 20
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMD-26AUG04-HIGH",
+   "phrase": "hpc",
+   "variants": [
+    "hpc",
+    "hpcs",
+    "h p c",
+    "high performance computing"
+   ],
+   "clips": 36,
+   "confirmed": 62
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMD-26AUG04-INFE",
+   "phrase": "inference",
+   "variants": [
+    "inference",
+    "inferences",
+    "inferencing",
+    "inferencings"
+   ],
+   "clips": 36,
+   "confirmed": 134
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMD-26AUG04-MEMO",
+   "phrase": "memory",
+   "variants": [
+    "memory",
+    "memorys",
+    "hbm",
+    "hbms",
+    "h b m"
+   ],
+   "clips": 45,
+   "confirmed": 44
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMD-26AUG04-META",
+   "phrase": "meta",
+   "variants": [
+    "meta",
+    "metas"
+   ],
+   "clips": 18,
+   "confirmed": 10
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMD-26AUG04-MI45",
+   "phrase": "mi four fifty",
+   "variants": [
+    "mi four fifty",
+    "em eye four fifty",
+    "m i four fifty",
+    "mi four five zero",
+    "mi four fifty five x"
+   ],
+   "clips": 45,
+   "confirmed": 74
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMD-26AUG04-MICR",
+   "phrase": "microsoft",
+   "variants": [
+    "microsoft",
+    "microsofts",
+    "azure",
+    "azures"
+   ],
+   "clips": 36,
+   "confirmed": 52
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMD-26AUG04-OPEN",
+   "phrase": "openai",
+   "variants": [
+    "openai",
+    "openais",
+    "open ai",
+    "open a i"
+   ],
+   "clips": 36,
+   "confirmed": 4
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMD-26AUG04-ORAC",
+   "phrase": "oracle",
+   "variants": [
+    "oracle",
+    "oracles"
+   ],
+   "clips": 18,
+   "confirmed": 42
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMD-26AUG04-ROCM",
+   "phrase": "rocm",
+   "variants": [
+    "rocm",
+    "rocms",
+    "rock m",
+    "r o c m",
+    "rock em"
+   ],
+   "clips": 45,
+   "confirmed": 42
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMD-26AUG04-SUPP",
+   "phrase": "supply chain",
+   "variants": [
+    "supply chain",
+    "supply chains"
+   ],
+   "clips": 18,
+   "confirmed": 80
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMD-26AUG04-TSMC",
+   "phrase": "tsmc",
+   "variants": [
+    "tsmc",
+    "tsmcs",
+    "t s m c"
+   ],
+   "clips": 27,
+   "confirmed": 42
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMD-26AUG04-VENI",
+   "phrase": "venice",
+   "variants": [
+    "venice",
+    "venices"
+   ],
+   "clips": 18,
+   "confirmed": 50
+  }
+ ]
+}

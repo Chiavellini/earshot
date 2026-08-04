@@ -1,0 +1,228 @@
+{
+ "config": "mcd-26aug04-raw",
+ "keywords_sha256": "9062b90eea57be90a624ee41f8a4e65f61452954890ce4dc5bf3029cd9dcc10a",
+ "date": "2026-08-04",
+ "engine": "streaming_ctc",
+ "voices": [
+  "Samantha",
+  "Daniel",
+  "Paulina"
+ ],
+ "carriers": 2,
+ "keywords": [
+  {
+   "ticker": "KXEARNINGSMENTIONMCD-26AUG04-BIG",
+   "phrase": "big arch",
+   "variants": [
+    "big arch",
+    "big arches"
+   ],
+   "clips": 18,
+   "confirmed": 32
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONMCD-26AUG04-BUFF",
+   "phrase": "buffalo",
+   "variants": [
+    "buffalo",
+    "buffalos"
+   ],
+   "clips": 18,
+   "confirmed": 38
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONMCD-26AUG04-CAES",
+   "phrase": "caesar",
+   "variants": [
+    "caesar",
+    "caesars"
+   ],
+   "clips": 18,
+   "confirmed": 48
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONMCD-26AUG04-COMP",
+   "phrase": "competition",
+   "variants": [
+    "competition",
+    "competitions"
+   ],
+   "clips": 18,
+   "confirmed": 38
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONMCD-26AUG04-DELI",
+   "phrase": "delivery",
+   "variants": [
+    "delivery",
+    "deliverys"
+   ],
+   "clips": 18,
+   "confirmed": 28
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONMCD-26AUG04-DIVI",
+   "phrase": "dividend",
+   "variants": [
+    "dividend",
+    "dividends"
+   ],
+   "clips": 18,
+   "confirmed": 42
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONMCD-26AUG04-DOOR",
+   "phrase": "doordash",
+   "variants": [
+    "doordash",
+    "door dash"
+   ],
+   "clips": 18,
+   "confirmed": 36
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONMCD-26AUG04-HAPP",
+   "phrase": "happy meal",
+   "variants": [
+    "happy meal",
+    "happy meals"
+   ],
+   "clips": 18,
+   "confirmed": 84
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONMCD-26AUG04-HOT",
+   "phrase": "hot honey",
+   "variants": [
+    "hot honey"
+   ],
+   "clips": 9,
+   "confirmed": 12
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONMCD-26AUG04-IRAN",
+   "phrase": "iran",
+   "variants": [
+    "iran",
+    "irans",
+    "middle east"
+   ],
+   "clips": 27,
+   "confirmed": 28
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONMCD-26AUG04-LOYA",
+   "phrase": "loyalty",
+   "variants": [
+    "loyalty",
+    "loyaltys"
+   ],
+   "clips": 18,
+   "confirmed": 18
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONMCD-26AUG04-MCCA",
+   "phrase": "mccafe",
+   "variants": [
+    "mccafe",
+    "mc cafe",
+    "mac cafe",
+    "mccaf"
+   ],
+   "clips": 36,
+   "confirmed": 60
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONMCD-26AUG04-MCCH",
+   "phrase": "mcchicken",
+   "variants": [
+    "mcchicken",
+    "mc chicken",
+    "mac chicken"
+   ],
+   "clips": 27,
+   "confirmed": 64
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONMCD-26AUG04-MONO",
+   "phrase": "monopoly",
+   "variants": [
+    "monopoly",
+    "monopolys"
+   ],
+   "clips": 18,
+   "confirmed": 48
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONMCD-26AUG04-RED",
+   "phrase": "red bull",
+   "variants": [
+    "red bull"
+   ],
+   "clips": 9,
+   "confirmed": 12
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONMCD-26AUG04-REVE",
+   "phrase": "revenue",
+   "variants": [
+    "revenue",
+    "revenues"
+   ],
+   "clips": 18,
+   "confirmed": 62
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONMCD-26AUG04-SNAC",
+   "phrase": "snack wrap",
+   "variants": [
+    "snack wrap",
+    "snack wraps"
+   ],
+   "clips": 18,
+   "confirmed": 72
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONMCD-26AUG04-SOCC",
+   "phrase": "soccer",
+   "variants": [
+    "soccer",
+    "soccers",
+    "football",
+    "footballs"
+   ],
+   "clips": 36,
+   "confirmed": 58
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONMCD-26AUG04-SUPP",
+   "phrase": "supply chain",
+   "variants": [
+    "supply chain",
+    "supply chains"
+   ],
+   "clips": 18,
+   "confirmed": 80
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONMCD-26AUG04-TARI",
+   "phrase": "tariff",
+   "variants": [
+    "tariff",
+    "tariffs"
+   ],
+   "clips": 18,
+   "confirmed": 34
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONMCD-26AUG04-WORL",
+   "phrase": "world cup",
+   "variants": [
+    "world cup",
+    "world cups"
+   ],
+   "clips": 18,
+   "confirmed": 34
+  }
+ ]
+}
