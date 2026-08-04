@@ -24,11 +24,34 @@ Inputs are public Kalshi event/series responses, an explicit horizon, and the
 known recurring-series/date rules. Ticker suffixes are never accepted as call
 dates unless an explicitly registered daily-series rule says so.
 
+**Both sweeps query `status=open`.** That is a load-bearing property, not an
+implementation detail: every event in the union is open by construction, so a
+resolved call date lying in the past is a self-refuting pair and the node is
+obliged to say so.
+
 ## Output contracts
 
 `slate/latest.json` contains discovered events, resolved date plus source,
 unresolved/disputed flags, and differences between broad and per-series sweeps.
 Unknown dates remain explicit and are not silently dropped.
+
+`stale_open_event` is true when an event came back OPEN with a call date that
+has already passed. It marks the date as **untrustworthy** — never as a second
+date source, the same discipline as `ticker_date_misleading`. A stale event is
+reported outside the horizon filter and always earns the issuer-page
+confirmation fetch, because re-deriving its real date is the only thing that
+makes it actionable. DAILY_SERIES are exempt: their past events are genuinely
+past, not rolled forward.
+
+This exists because of PGR, 2026-08-04. Kalshi reuses ONE event ticker per
+series for the standing "*What will <issuer> say during their next earnings
+call?*" and does not re-date `sub_title` when the event rolls forward.
+`KXEARNINGSMENTIONPGR-26JUL15` still read "On Jul 15, 2026" on Aug 4 while its
+12 markets were open and trading — measured 14:33–14:54Z, during Progressive's
+Aug 4 call. `today <= call_date` dropped it, so Progressive was never on the
+slate at all and ~178,000 contracts traded on a board we were recording to WAV.
+Note `ticker_misleads()` is structurally blind here for the HOOD reason: ticker
+and stale `sub_title` are wrong *together*, so they agree.
 
 ## Side effects and exclusive resources
 
@@ -54,6 +77,13 @@ git behavior should be extracted from `scripts/slate-daily.sh`, not expanded.
 Run `python3 scripts/discover-events.py --self-test`, then a bounded live sweep
 to a temporary output and validate its schema. Run
 `scripts/slate-daily.sh --dry-run` for the current integration seam.
+
+The self-test freezes three misdating classes as offline fixtures, and each one
+is a real event that was nearly or actually lost: **BA** (ticker and sub_title
+disagree), **HOOD** (both wrong together, only the settlement source carries the
+truth), and **PGR** (sub_title stale on a still-open board). It also asserts the
+four cry-wolf guards on the PGR detector — a call today, a future call, an
+unresolved date, and a daily-series past event must none of them flag.
 
 ## Migration status
 

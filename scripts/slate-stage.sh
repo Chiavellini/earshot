@@ -111,13 +111,22 @@ DRY=0
 SLATE="slate/latest.json"
 HORIZON=3
 SPEC_FLAG=""
+ONLY_ISSUER=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run)      DRY=1; shift ;;
     --slate)        SLATE="$2"; shift 2 ;;
     --horizon-days) HORIZON="$2"; shift 2 ;;
     --speculative)  SPEC_FLAG="--speculative"; shift ;;
-    *) echo "usage: slate-stage.sh [--dry-run] [--slate <json>] [--horizon-days N] [--speculative]" >&2
+    # Same-day promotion (2026-08-04, SPOT). A morning bridge-probe can flip
+    # admission to `held` hours before the call, but the nightly sweep has
+    # already run and will not run again in time. This re-stages ONE issuer on
+    # demand, through this same script, so the promoted event gets the real
+    # phone-lane derivation (Q-REDIAL values and all) instead of a hand-rolled
+    # config. Idempotence above already handles "webcast exists, phone does
+    # not" — that is exactly the state a freshly-promoted venue is in.
+    --issuer)       ONLY_ISSUER=$(tr '[:lower:]' '[:upper:]' <<<"$2"); shift 2 ;;
+    *) echo "usage: slate-stage.sh [--dry-run] [--slate <json>] [--horizon-days N] [--speculative] [--issuer TICKER]" >&2
        exit 2 ;;
   esac
 done
@@ -276,6 +285,7 @@ seed_ports
 note "ports already claimed on disk:${USED_PORTS:- none}"
 
 while IFS=$'\t' read -r EV ISS CDATE CTIME DISPUTED; do
+  [[ -n "$ONLY_ISSUER" && "$ISS" != "$ONLY_ISSUER" ]] && continue
   LC=$(tr '[:upper:]' '[:lower:]' <<<"$ISS")
   DATEPART=$(tr '[:upper:]' '[:lower:]' <<<"${EV##*-}")
   RAW="configs/${LC}-${DATEPART}-raw.toml"

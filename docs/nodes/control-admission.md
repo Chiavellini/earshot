@@ -47,9 +47,36 @@ preflight input.
 ## Output contracts
 
 The probe produces WAV/JSONL/JSON/transcript evidence under
-`corpus/bridge-probes/` and a proposed classification:
-`held`, `dropped`, or `operator_screened`, with detail and probe date. A human
-currently copies the audited fields into the registry.
+`corpus/bridge-probes/` and a classification: `held`, `dropped`,
+`operator_screened`, or `passcode_required`, with detail and probe date.
+
+**`--promote` writes that verdict into the registry itself**, via
+`scripts/registry-admit.py`, instead of printing a snippet for a human to
+retype. THE MSFT RULE is unchanged — admission is still established ONLY by a
+probe dial — and this is that rule working as designed: the probe records the
+answer it already got. `registry-propose.py` remains the propose-only,
+human-audited path for PAPER evidence, which is a different thing.
+
+Auto-promotion is deliberately narrow. Only **`held`** is inferable from
+mechanical facts (the leg ran to `--secs` with frames flowing, within 5%).
+`dropped`, `operator_screened` and `passcode_required` are transcript
+readings: printed for a human, never auto-written, and `--auto` refuses them.
+
+The proven digits are persisted alongside, to
+`state/hunt/numbers-probed.env` (gitignored, 0600) — distinct from the
+hunt-regenerated `numbers.env`. Without this, `admission = "held"` names a
+bridge nobody can dial.
+
+This closes the 2026-08-04 SPOT gap: a toll-free number and PIN admitted us to
+the live Spotify call and held 598 s of clean audio, the snippet printed
+correctly, nobody pasted it, `configs/dial-ins.toml` kept saying no-entry, and
+an 18-market board traded 157,217 contracts without us.
+
+**Long captures are refused.** A short probe against an open board is normal
+and necessary — that is how admission is established on event day. A probe
+longer than 300 s against an issuer with an open Kalshi mention board is not a
+probe at all but an undetected call capture, and is refused unless
+`--corpus-only` is passed. This node listens to the entry flow, not the call.
 
 ## Side effects and exclusive resources
 

@@ -25,10 +25,34 @@ capture: record what the artifact actually is. Its `meta.json` carries the
 source video identity and the standing caveat that advertisements are absent,
 so downstream offsets are programme time and not wall clock.
 
+`chain-capture.sh` belongs to this node: it chains multi-leg bridge recordings
+for corpus. It is owned here rather than by `control.admission` (which owns
+`bridge-probe.sh`) because it banks evidence and never classifies admission.
+
 ## Does not own
 
 It does not select a production source, label ground truth, tune a detector,
 draw latency conclusions, launch a traded arm, or classify bridge admission.
+
+**"Does not launch a traded arm" is now enforced, not merely stated.** On
+2026-08-04 this node's tools recorded two live earnings calls — Spotify via
+`bridge-probe` and Progressive via `chain-capture.sh` — whose boards traded
+157,217 and ~178,000 contracts while the arm path sat idle, and nothing
+objected, because a recorder has no idea whether what it records is tradeable.
+
+So a record-only tool now REFUSES when the issuer has an open Kalshi mention
+board, unless `--corpus-only` is passed. The override exists because corpus
+capture on a live board is legitimate; making it an explicit, greppable flag
+is the difference between a decision and an accident. The check fails CLOSED:
+an undetermined board lookup also refuses, since a guard that fails open on a
+network hiccup is how this class returns. `bridge-probe.sh` applies it only
+above 300 s, so ordinary event-day admission probing is untouched.
+
+`chain-capture.sh` additionally stops after 3 consecutive short legs. Wall
+clock cannot distinguish "still capturing" from "dialling a corpse": when
+Progressive's call ended during leg 6, the loop re-dialled 17 more times and
+each leg held ~12.3 s of "the conference has ended". This is the same principle
+`control.supervise` states as *a dial is not a capture*.
 
 ## Input contracts
 

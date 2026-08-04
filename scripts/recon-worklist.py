@@ -56,11 +56,21 @@ def build(slate, registry, days, stale_days, today, hunt=None):
         # Filtering on the disputed date would make the DATE-DISPUTED flag
         # inert — it would flag events it had already thrown away.
         disputed = bool(ev.get("call_date_disputed"))
-        eff = ev.get("ir_page_date") if disputed else cd
+        # ⚠ A STALE-DATE event (open board, passed sub_title date — PGR
+        # 2026-08-04) has the SAME shape of bug one step further out: the date
+        # we distrust is in the PAST, so no substitution can rescue it and the
+        # horizon test drops it no matter which end we filter on. It must
+        # bypass the horizon outright. Dropping it is exactly what left
+        # Progressive off the slate while its 12 markets traded through the
+        # call. If the issuer page gave us a real date, prefer it.
+        stale = bool(ev.get("stale_open_event"))
+        eff = ev.get("ir_page_date") if (disputed or stale) else cd
+        if stale and not eff:
+            eff = cd          # unresolved: show the stale date, flagged as such
         if not eff:
             continue
         d = datetime.date.fromisoformat(eff)
-        if not (today <= d <= horizon):
+        if not stale and not (today <= d <= horizon):
             continue
         issuer = ev.get("issuer") or ""
         entry = registry.get(issuer)
@@ -70,6 +80,11 @@ def build(slate, registry, days, stale_days, today, hunt=None):
             # Kalshi's metadata contradicts the issuer's own page. Staging
             # against the slate date would arm on the wrong day.
             flags.append(f"DATE-DISPUTED(kalshi={cd})")
+        if stale:
+            # The board is OPEN and the date has passed: the label is stale, the
+            # event is not. Re-derive the real call date before anything else —
+            # this row is unstageable until someone does.
+            flags.append(f"STALE-DATE(open, kalshi={cd})")
         if entry is None:
             flags.append("NO-ENTRY")
         else:
@@ -168,6 +183,13 @@ def check():
         {"issuer": "HOOD", "event_ticker": "KXEARNINGSMENTIONHOOD-26JUL17",
          "call_date": "2026-07-17", "call_date_disputed": True,
          "ir_page_date": "2026-07-29"},
+        # THE PGR CASE (2026-08-04): the board is OPEN but the sub_title date
+        # passed 13 days ago, and the IR fetch 404'd so there is NO believed
+        # date to substitute. HOOD's rescue does not reach it. It must STILL
+        # appear — an open board with an unknown date is the most actionable
+        # row on the list, and dropping it is what cost us Progressive.
+        {"issuer": "PGR", "event_ticker": "KXEARNINGSMENTIONPGR-26JUL15",
+         "call_date": "2026-07-15", "stale_open_event": True},
     ]}
     registry = {
         "F": {"tier": "bridge_unpublished", "listen_access": "no",
@@ -191,7 +213,8 @@ def check():
     }
     rows = build(slate, registry, days=10, stale_days=45, today=today, hunt=hunt)
     got = {r["issuer"]: r["flags"] for r in rows}
-    assert set(got) == {"AMD", "WMT", "DIS", "HOOD"}, f"wrong issuers flagged: {got}"
+    assert set(got) == {"AMD", "WMT", "DIS", "HOOD", "PGR"}, \
+        f"wrong issuers flagged: {got}"
     assert got["AMD"] == ["NO-ENTRY", "HUNT-FOUND"], got
     assert got["WMT"] == ["STALE(88d)", "HUNT-BLIND"], got
     assert got["DIS"] == ["UNKNOWN"], \
@@ -211,12 +234,28 @@ def check():
     hood = next(r for r in rows if r["issuer"] == "HOOD")
     assert hood["call_date"] == "2026-07-29", \
         f"disputed row must carry the BELIEVED date, got {hood['call_date']}"
+    # Surfaced with NO believed date at all — the horizon must not reach it.
+    assert got["PGR"] == ["STALE-DATE(open, kalshi=2026-07-15)", "NO-ENTRY"], got
+    pgr = next(r for r in rows if r["issuer"] == "PGR")
+    assert pgr["call_date"] == "2026-07-15", \
+        f"unresolved stale row shows the stale date, flagged: {pgr['call_date']}"
+    # A past date WITHOUT the open-board contradiction stays dropped — the
+    # horizon filter must keep doing its job, or every settled event returns.
+    assert not [r for r in build(
+        {"events": [{"issuer": "OLD", "event_ticker": "KXEARNINGSMENTIONOLD-26JUL01",
+                     "call_date": "2026-07-01"}]},
+        {}, 10, 45, today)], "a genuinely past event must not resurface"
     assert hood["days_out"] == 1, f"days_out must count from the believed date: {hood}"
     esc = [r for r in rows if "NO-ENTRY" in r["flags"]
            and r["days_out"] <= ESCALATE_DAYS]
-    assert [r["issuer"] for r in esc] == ["AMD"], esc
+    # PGR escalates too, and that is the intended behaviour, not a side effect:
+    # an OPEN board with no registry entry and no resolved date is the single
+    # most urgent row the list can hold. Its negative days_out is honest — the
+    # date we are counting from is the one we just declared untrustworthy.
+    assert [r["issuer"] for r in esc] == ["PGR", "AMD"], esc
     print("recon-worklist --check: OK (3 registry flag classes + 2 hunt flag "
-          "classes + start-from fallback + escalation + horizon cut)")
+          "classes + start-from fallback + escalation + horizon cut + "
+          "STALE-DATE open-board rescue)")
 
 
 def main():
@@ -253,9 +292,18 @@ def main():
         print(md)
 
     for r in rows:
+        stale_f = next((f for f in r["flags"] if f.startswith("STALE-DATE")), None)
         if "NO-ENTRY" in r["flags"] and r["days_out"] <= ESCALATE_DAYS:
-            print(f"ESCALATE: {r['issuer']} {r['event_ticker']} calls in "
-                  f"{r['days_out']}d with NO registry entry")
+            # "calls in -20d" is nonsense for a stale row, and worse than
+            # nonsense: it reads as "long over" for an event whose board is
+            # OPEN. Say what is actually known instead.
+            if stale_f:
+                print(f"ESCALATE: {r['issuer']} {r['event_ticker']} BOARD IS OPEN "
+                      f"but its only date ({r['call_date']}) has passed — call "
+                      f"date UNKNOWN, no registry entry; re-derive from the issuer")
+            else:
+                print(f"ESCALATE: {r['issuer']} {r['event_ticker']} calls in "
+                      f"{r['days_out']}d with NO registry entry")
         # A disputed date escalates at ANY distance, not just inside
         # ESCALATE_DAYS: the whole failure mode is that the slate has the event
         # on the wrong day, so "how many days out" is exactly the number we

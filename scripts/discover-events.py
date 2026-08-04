@@ -24,6 +24,17 @@ TICKER DATE != CALL DATE. The call date comes from the event's `sub_title`
 ("On Jul 28, 2026"), which is correct even on the misdated BA ticker. Never
 parse the ticker suffix.
 
+AND THE SUB_TITLE ITSELF CAN GO STALE (2026-08-04, PGR — the third misdating
+class). Kalshi reuses ONE event ticker per series for the standing question
+"What will <issuer> say during their NEXT earnings call?" and does not re-date
+it when the event rolls forward. `KXEARNINGSMENTIONPGR-26JUL15` still carried
+`sub_title = "On Jul 15, 2026"` on Aug 4 while its 12 markets were `status=open`
+and trading — measured 14:33–14:54Z, DURING Progressive's Aug 4 call. The
+`today <= call_date` worklist filter therefore dropped a live, liquid board, and
+Progressive was never on the slate at all. See `stale_open_event()` below: this
+is the one contradiction the sweep can detect for free, because BOTH sweeps
+query `status=open` — so a past call_date on a returned event is self-refuting.
+
 RATE LIMITS ARE REAL. docs/RUNBOOK.md:465 — the events endpoint 429s under rapid
 repeat queries. There are ~135 KXEARNINGSMENTION* series, so the per-series
 sweep is ~135 requests: it is paced, it backs off on 429, and that is precisely
@@ -361,6 +372,33 @@ def ticker_misleads(event_ticker, d):
     return suffix != d.strftime("%y%b%d").upper()
 
 
+def stale_open_event(call_date_s, today_s, daily):
+    """Is this an OPEN event whose call date has already passed?
+
+    That combination is self-refuting, and it is free to detect: both sweeps
+    query `status=open`, so every event in the union is open by construction.
+    An open event whose sub_title date is in the past means the sub_title is
+    STALE, not that the event is over — Kalshi reuses one ticker per series for
+    the standing "next earnings call" and does not re-date it.
+
+    PGR 2026-08-04 is the case: `KXEARNINGSMENTIONPGR-26JUL15`, sub_title
+    "On Jul 15, 2026", 12 markets open, trades landing 14:33–14:54Z on Aug 4
+    while we recorded that very call to WAV and armed nothing.
+
+    Deliberately NOT a date source. This says "the date we have is not to be
+    trusted", never "the date is X" — same discipline as `ticker_misleads()`.
+    The operator (or the qualify lane) re-derives the real date from the
+    issuer's page. False positives cost one look at a worklist row; the false
+    NEGATIVE cost a whole liquid board.
+
+    DAILY_SERIES are excluded: their events are per-session and a past one is
+    genuinely past, not rolled forward.
+    """
+    if daily is not None or not call_date_s:
+        return False
+    return call_date_s < today_s
+
+
 def call_date(ev):
     """Call date from sub_title ('On Jul 28, 2026') — NEVER from the ticker."""
     sub = (ev.get("sub_title") or "").replace("On ", "").strip()
@@ -426,6 +464,36 @@ def self_test():
         "daily_air_date must refuse an event_ticker with no date suffix"
     assert call_date({"sub_title": "garbage"}) is None, \
         "unparsable sub_title must return None, not raise"
+
+    # ── STALE sub_title on an OPEN event (2026-08-04, PGR) ──────────────────
+    # Frozen from the live payload: KXEARNINGSMENTIONPGR-26JUL15 was returned by
+    # the status=open sweep on Aug 4 carrying a Jul 15 sub_title, while its 12
+    # markets traded 14:33–14:54Z through Progressive's Aug 4 call. The whole
+    # event was absent from slate/worklist.md because `today <= call_date` is
+    # false for it. This assertion is that miss, frozen.
+    pgr = {"series_ticker": "KXEARNINGSMENTIONPGR",
+           "event_ticker": "KXEARNINGSMENTIONPGR-26JUL15",
+           "sub_title": "On Jul 15, 2026"}
+    pgr_d = call_date(pgr)
+    assert pgr_d is not None and pgr_d.strftime("%Y-%m-%d") == "2026-07-15", \
+        f"PGR sub_title parse broke: {pgr_d}"
+    assert stale_open_event("2026-07-15", "2026-08-04", None), \
+        "PGR STALE-DATE detection broke — an open event with a passed call " \
+        "date must flag (this is the 2026-08-04 miss)"
+    # ticker_misleads CANNOT catch this one: suffix 26JUL15 agrees with the
+    # (stale) Jul 15 sub_title, exactly the HOOD wrong-together shape. That
+    # agreement is why a separate detector had to exist.
+    assert not ticker_misleads("KXEARNINGSMENTIONPGR-26JUL15", pgr_d), \
+        "PGR fixture assumption broke: ticker and stale sub_title must AGREE"
+    # …and it must not cry wolf on the ordinary cases.
+    assert not stale_open_event("2026-08-04", "2026-08-04", None), \
+        "false positive: a call TODAY is not stale"
+    assert not stale_open_event("2026-08-20", "2026-08-04", None), \
+        "false positive: a future call is not stale"
+    assert not stale_open_event(None, "2026-08-04", None), \
+        "an unresolved date is UNRESOLVED, not stale"
+    assert not stale_open_event("2026-07-29", "2026-08-04", air), \
+        "DAILY_SERIES past events are genuinely past — must never flag"
     assert issuer_of("KXFEDMENTION") == "FED", \
         "bare KXFEDMENTION series must label as FED, not empty string"
     assert issuer_of("KXEARNINGSMENTIONF") == "F", "earnings issuer broke"
@@ -507,7 +575,9 @@ def self_test():
     print("self-test: OK (BA fixture — date-from-sub_title, misleading-ticker "
           "detection, cry-wolf guard, FED issuer; HOOD fixture — "
           "settlement-source dispute, time-of-day recovery, landing-page "
-          "no-cry-wolf, agreeing-page confirm, fetch-failure tolerance)")
+          "no-cry-wolf, agreeing-page confirm, fetch-failure tolerance; "
+          "PGR fixture — STALE-DATE open-board detection, ticker/sub_title "
+          "agreeing-but-both-stale, 4 cry-wolf guards)")
 
 
 def main():
@@ -570,6 +640,12 @@ def main():
             # ticker against itself and can only ever agree. Reporting False
             # would claim "checked and clean" — the HOOD failure mode.
             "ticker_date_misleading": None if daily else ticker_misleads(tk, d),
+            # Open + past = the sub_title is stale (PGR 2026-08-04). Recorded
+            # as its own field, never folded into call_date_disputed: that one
+            # means "the ISSUER's page contradicts Kalshi", which needs a fetch.
+            # This needs nothing but the date we already have.
+            "stale_open_event": stale_open_event(
+                d.strftime("%Y-%m-%d") if d else None, today_s, daily),
         }
         if daily is not None:
             row["air_time_utc"] = daily.strftime("%H:%MZ")
@@ -594,8 +670,13 @@ def main():
         # ever return "ambiguous"/"unconfirmable". Fetching them nightly buys
         # nothing and spends a request per session on a page that geo-blocks
         # this box anyway. The airdate is already ticker-derived and tagged.
+        # A stale_open_event ALWAYS earns the fetch, even if its bogus date puts
+        # it outside the widened window: re-deriving the real date from the
+        # issuer is the only way it becomes actionable. Same reasoning that
+        # widened the window backwards for HOOD, one step further.
         if (not a.no_ir_check and daily is None
-                and (looks_recent or row["call_date"] is None)):
+                and (looks_recent or row["call_date"] is None
+                     or row["stale_open_event"])):
             row.update(confirm_call_date(ev, d))
         rows.append(row)
     rows.sort(key=lambda r: (r["call_date"] or "9999", r["issuer"]))
@@ -618,6 +699,26 @@ def main():
             print(f"      evidence    : {(r.get('call_date_evidence') or '')[:150]}")
             print(f"      source      : {r.get('settlement_url')}")
         print("  ⇒ TRUST THE ISSUER. Stage against the issuer date, not the slate date.")
+
+    # STALE-DATE events are printed OUTSIDE the horizon filter for the same
+    # reason DISPUTED ones are, and it is not a hypothetical: PGR 2026-08-04 sat
+    # in this JSON with call_date 2026-07-15 while its board traded through the
+    # call. `today <= call_date` can only ever hide it. An open event with a past
+    # date is a live event with a stale label until an issuer page says otherwise.
+    stale = [r for r in rows if r.get("stale_open_event")]
+    if stale:
+        print(f"\n{'='*72}\n⚠ STALE CALL DATE — event is OPEN but its date has "
+              f"passed ({len(stale)})\n{'='*72}")
+        for r in stale:
+            print(f"  {r['issuer']:<7} {r['event_ticker']:<34}")
+            print(f"      Kalshi says : {r['call_date']}  (sub_title {r['sub_title']!r})")
+            print(f"      issuer says : {r.get('ir_page_date') or '— unconfirmed —'}"
+                  + (f"  {r['call_time_utc']}" if r.get("call_time_utc") else ""))
+            print(f"      source      : {r.get('settlement_url')}")
+        print("  ⇒ The board is OPEN, so the call has NOT happened yet or has just")
+        print("    happened. Re-derive the date from the issuer before assuming it is over.")
+        print("    PGR 2026-08-04: this exact shape hid a 12-market board that traded")
+        print("    through the call while we recorded it and armed nothing.")
 
     print(f"\n{'='*72}\nSLATE — next {a.days} days ({len(upcoming)} events)\n{'='*72}")
     for r in upcoming:

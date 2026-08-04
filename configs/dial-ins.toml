@@ -466,6 +466,17 @@ confidence    = "low"
 last_verified = "2026-07-16"
 notes         = "Transcript evidence came from a search summary, not a direct fetch. Re-derive from the primary transcript before acting."
 
+[SNAP]
+tier          = "bridge_unpublished"
+qa_mechanism  = "dtmf_star"
+listen_access = "unknown"
+evidence      = "The Q2 2026 issuer announcement publishes only a live webcast and replay. The day-of Q4 attendee record is ungated (registrationFields=[]), but configuration.dialIn exposes only speaker=true and the conference intake is type=internal; no attendee phone leg is published. The Q1 2026 transcript independently proves that invited analysts use a telephone bridge: the operator put participants in listen-only mode, then instructed callers to press star-one on a touch-tone phone and pick up the handset before entering the queue. A real analyst phone leg therefore exists, but it is private."
+evidence_src  = "https://www.earningscall.ai/stock/transcript/SNAP-2026-Q1"
+number_src    = "https://investor.snap.com/news/news-details/2026/Snap-Inc--Announces-Date-of-Second-Quarter-2026-Results-Conference-Call/default.aspx"
+confidence    = "high"
+last_verified = "2026-08-03"
+notes         = "OPEN EVENT KXEARNINGSMENTIONSNAP-26AUG03 at 2026-08-03T21:00:00Z. Official webcast = https://events.q4inc.com/attendee/997870973; public metadata = https://attendees.events.q4inc.com/rest/v1/event/997870973. SEC 8-K sweep and exact-title web search found no current attendee bridge digits. The Q4 record contains speaker/internal conference material only; never treat it as public admission. No candidate exists for admission probing; webcast lane only."
+
 # ══════════════════════════════════════════════════════════════════════════════════
 # TIER: none — no phone leg. NOT phone-tradeable. Needs the (unbuilt) HLS adapter.
 # ══════════════════════════════════════════════════════════════════════════════════
@@ -539,6 +550,32 @@ confidence    = "medium"
 last_verified = "2026-07-16"
 notes         = "The 'if you have dialed in' conditional is the cleanest hybrid marker seen — it presumes some listeners are on a phone and some are not."
 
+[GRAB]
+tier          = "published"
+qa_mechanism  = "curated"
+listen_access = "yes"
+evidence      = "Day-of Q2 2026 IR access changed the classification: Grab's official IR page links to a Zoom meeting whose signed launch metadata publishes three Singapore PSTN dial-in legs and the meeting ID. The Q1 2026 Q&A remained curated: IR grouped questions from named analysts and read them to management rather than opening a telephone queue. A public listen-capable phone leg now exists even though the analyst-Q&A mechanism is curated."
+evidence_src  = "https://investors.grab.com/news-and-events/news-details/2026/Grab-to-Announce-Second-Quarter-2026-Results-on-3-August-2026-2026-0nRL6bYnpf/default.aspx"
+number_src    = "https://investors.grab.com/overview/default.aspx"
+confidence    = "high"
+last_verified = "2026-08-03"
+admission        = "passcode_required"
+admission_detail = "2026-08-03 23:41Z, first Singapore leg, dtmf = meeting-id then hash twice — the call CONNECTED and held 35.6s (1790 frames, 10 stalls), so Singapore outbound now works and the leg is reachable. But we never reached conference audio: Zoom's IVR said 'Welcome to Zoom. Enter your meeting ID followed by hash. Please enter the meeting passcode followed by hash. You have not entered any numbers. Please re-enter the meeting passcode followed by hash.' The meeting id was ACCEPTED; entry is blocked on a NUMERIC TELEPHONE PASSCODE. That passcode is absent from Zoom's own one-touch dial strings (which end at the meeting id + hash), absent from window.launchBase64, absent from MeetingConfig (h323DeviceList is empty), and is not derivable from the web `pwd` token. Neither `held` nor `dropped` — the bridge never judged us. Earlier same-day attempt was rejected pre-dial by Twilio geo-permission (since enabled by the account owner). Numbers and meeting id stay out of git: re-derive them from window.launchBase64 on the Zoom launch page linked from number_src."
+admission_probed = "2026-08-03"
+probe_artifact   = "corpus/bridge-probes/grab_2026_08_03.wav"
+notes         = "OPEN EVENT KXEARNINGSMENTIONGRAB-26AUG03 at 2026-08-04T00:00:00Z. Venue is a Zoom WEBINAR ('2026 Q2 Earnings Livestream'), not a meeting — confirmed by joining the web client, which admits an attendee on name alone (passcode embedded in the `wpk` link token) and shows a waiting room until the host opens. No HLS anywhere: the web client carries media over WebRTC, and Grab runs no parallel YouTube livestream (checked @Grab — not live). So the phone leg is the ONLY capture path, and it is gated on a passcode that is only published to registrants. The number/meeting material stays outside git. Phone arm is armable the moment the numeric passcode is known: configs/phone-grab-26aug03-arm.toml is built and validated (compile-keywords + detector-smoke OK)."
+
+[PLTR]
+tier          = "unknown"
+qa_mechanism  = "webcast_hand"
+listen_access = "unknown"
+evidence      = "The Q2 2026 issuer release offers a live webcast, a web registration form, and Say Technologies question submission, but no dial-in or phone-registration promise. On the Q1 2026 call, Palantir finance staff opened without a conference operator; retail questions were read aloud and a live analyst was told to turn on camera and accept an unmute prompt. This is a webinar path, while a private dial-in cannot be excluded from public evidence."
+evidence_src  = "https://investors.palantir.com/news-details/2026/Palantir-Announces-Date-of-Second-Quarter-2026-Earnings-Release-and-Webcast/"
+number_src    = "https://palantir.events/palantirearnings-q22026"
+confidence    = "medium"
+last_verified = "2026-08-03"
+notes         = "OPEN EVENT KXEARNINGSMENTIONPLTR-26AUG03 at 2026-08-03T21:00:00Z. Registration page contains only identity fields and a web submit action. SEC sweep and exact-title web search found no phone candidate. Webcast lane only."
+
 # ══════════════════════════════════════════════════════════════════════════════════
 # COHORT: sp500-random-2026-07-16 — prevalence sample, NOT the open board.
 #
@@ -596,6 +633,18 @@ number_src    = "https://investors.albemarle.com/news-and-events/news/"
 confidence    = "high"
 last_verified = "2026-07-16"
 notes         = "Q1 2026. Webcast on open-exchange.net; dial-in and webcast are parallel access paths."
+
+[AMD]
+tier          = "bridge_unpublished"
+qa_mechanism  = "operator_queue"
+listen_access = "unknown"
+evidence      = "EDGAR full-text hunt 2026-08-04 (scripts/hunt-dial-in.py, Q-EDGAR) scanned 7 8-K filings across 2025-11-04..2026-05-05 and found NO dial-in in any earnings exhibit — AMD does not publish a telephone bridge in its filings. But AMD earnings calls run an OPERATOR-MODERATED analyst Q&A, which cannot happen without a participant bridge, so one exists and is issued privately to covering analysts rather than published. This is the modal case in docs/DIAL-INS.md (~85-90% of S&P 500 issuers run a bridge, only ~35-40% publish it)."
+evidence_src  = "slate/hunt-status.json (HUNT-NONE: AMD tier=bridge_unpublished, 7 filings scanned)"
+number_src    = "https://ir.amd.com/news-events/financial-events"
+confidence    = "medium"
+last_verified = "2026-08-04"
+admission     = "untested"
+notes         = "OPEN EVENT KXEARNINGSMENTIONAMD-26AUG04, 17 markets. ACTION: the bridge is obtainable by analyst registration, not by hunting — the operator Q&A proves it exists and EDGAR proves it is not filed. Register on the IR events page as the standing Actinver analyst identity and capture BOTH the webcast URL and the participant dial-in + conference ID/passcode. GRAB 2026-08-03 is the cautionary precedent: every other piece was in place and a registrant-only numeric passcode was the single thing between us and a clean telephony feed. A number is not admission — probe with scripts/bridge-probe.sh before any phone arm (THE MSFT RULE)."
 
 [AMCR]
 tier          = "published"
@@ -856,3 +905,31 @@ last_verified = "2026-07-29"
 notes         = """OPEN EVENT KXEARNINGSMENTIONHOOD-26JUL17 — ⚠ THE TICKER DATE IS A LIE. The event ticker says 26JUL17; the call is 2026-07-29T21:00:00Z. Corroborated three ways: the IR page ('July 29, 2026 5:00 PM EDT'), the page's own Google-calendar link (dates=20260729T210000Z), and yt-dlp on the livestream ('This live event will begin in 63 minutes' at 19:57Z). Kalshi's settlement_sources for the event points at .../robinhood-q2-2026-earnings, i.e. Kalshi itself knows it is the Q2 call. HOOD never appeared in slate/latest.json for 07-29 and was absent from the RUNBOOK runsheet, caught only because the operator named Robinhood by hand. ⚠ CORRECTED: this was NOT 'discover-events.py dates from the ticker' — call_date() reads sub_title and is documented 'NEVER from the ticker'. It worked correctly. Kalshi's event_ticker (26JUL17) AND sub_title ('On Jul 17, 2026') are wrong TOGETHER, so ticker_misleads() is structurally blind here: it compares two fields that share the same bad source and therefore agree (it catches BA, where they disagree, and can never catch HOOD). settlement_sources[0].url is the only field carrying the truth and the sweep never reads it. The real fix is a NEW check: resolve the call date from settlement_sources and ESCALATE on disagreement with sub_title.
 VENUE = YouTube Live (youtube.com/live/PpJSU4M87nw) — first YouTube-hosted event we have ever armed, and it is NOT capturable from the box: YouTube bot-walls the us-east-1 IP at the segment layer while the master manifest still 200s. Full failure signature + the PCM-bytes gate that would have caught it in scripts/youtube-resolve.sh. Laptop (residential) piped clean PCM the same minute.
 'kalshi' is itself one of the 17 market words on this event."""
+
+[SPOT]
+tier          = "published"
+qa_mechanism  = "unknown"
+listen_access = "yes"
+admission        = "held"
+admission_detail = "held 598.4s to the 600s probe cap, 11 stalls >100ms, DTMF accepted first try; transcript is the live Q2 2026 call (operator preamble -> IR -> both co-CEOs). Capture ended on OUR cap, not a bridge drop."
+admission_probed = "2026-08-04"
+probe_artifact   = "corpus/bridge-probes/spot_2026_08_04.wav"
+evidence      = "Toll-free + numeric PIN admitted a silent listen-only caller to the live call and held to the probe cap. Digits in state/hunt/numbers-probed.env."
+evidence_src  = "corpus/bridge-probes/spot_2026_08_04.json"
+number_src    = "probe dial 2026-08-04 12:02Z (scripts/bridge-probe.sh)"
+confidence    = "high"
+last_verified = "2026-08-04"
+
+[PGR]
+tier          = "published"
+qa_mechanism  = "unknown"
+listen_access = "yes"
+admission        = "held"
+admission_detail = "held 6 consecutive legs of ~598s each (598.1/598.4/599.0/598.5/598.9) on 2026-08-04, re-dialling with DTMF every leg; every leg ended on OUR 600s cap, never a bridge drop. Arrival jitter was high (91-300 stalls/leg via ngrok on the laptop) but frame count matched wall-clock, so no audio was lost."
+admission_probed = "2026-08-04"
+probe_artifact   = "corpus/bridge-probes/pgr_2026_08_04_leg01.wav"
+evidence      = "Toll-free + dial-in PIN admitted a silent listen-only caller six times in a row across the live call. Digits in state/hunt/numbers-probed.env."
+evidence_src  = "corpus/bridge-probes/pgr_2026_08_04_leg01.json"
+number_src    = "probe dial 2026-08-04 14:01Z (scripts/chain-capture.sh)"
+confidence    = "high"
+last_verified = "2026-08-04"

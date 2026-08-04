@@ -11,7 +11,14 @@
 #   bridge-probe.sh --to +18774070666 --label msft-2026-10-27 \
 #                   [--dtmf 1234#] [--secs 120] [--bind-port 8099] \
 #                   [--stream-url wss://host/media] [--account <env-file>] \
-#                   [--ngrok-config <acct.yml>] [--yes]
+#                   [--ngrok-config <acct.yml>] [--promote [--issuer SPOT]] [--yes]
+#
+# --promote writes a `held` verdict straight into configs/dial-ins.toml via
+# scripts/registry-admit.py (issuer defaults to the label's first token). This
+# is THE MSFT RULE working as designed — admission still comes only from a
+# probe dial — and it closes the 2026-08-04 SPOT gap where a proven-working
+# bridge stayed unregistered because the snippet below was never pasted.
+# Only `held` auto-writes; every other verdict needs the transcript read.
 #
 # Safety:
 #   - REFUSES while any armed event is live (unless --yes): a probe must never
@@ -24,7 +31,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 TO="" DTMF="" LABEL="" SECS=120 BIND_PORT=8099 STREAM_URL_OVERRIDE=""
-ACCOUNT="" NGROK_CONFIG="" YES=0
+ACCOUNT="" NGROK_CONFIG="" YES=0 PROMOTE=0 ISSUER="" CORPUS_ONLY=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --to)           TO="$2"; shift 2 ;;
@@ -35,6 +42,9 @@ while [[ $# -gt 0 ]]; do
     --stream-url)   STREAM_URL_OVERRIDE="$2"; shift 2 ;;
     --account)      ACCOUNT="$2"; shift 2 ;;
     --ngrok-config) NGROK_CONFIG="$2"; shift 2 ;;
+    --promote)      PROMOTE=1; shift ;;
+    --issuer)       ISSUER="$2"; shift 2 ;;
+    --corpus-only)  CORPUS_ONLY=1; shift ;;
     --yes)          YES=1; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
@@ -44,6 +54,36 @@ done
   exit 2
 }
 [[ "$SECS" =~ ^[1-9][0-9]*$ && "$SECS" -le 600 ]] || { echo "REFUSING: --secs must be 1..600 — a probe listens to the entry flow, not the call" >&2; exit 2; }
+
+# ── Long-capture guard (2026-08-04, SPOT) ──────────────────────────────────
+# A SHORT probe against an open board is the normal, correct thing: that is how
+# admission gets established on event day (admission-window-probe.sh dials at
+# T-90..T-30, when the board is necessarily open). A LONG one is not a probe at
+# all — it is a call capture with no detector attached, which is exactly what
+# took Spotify: --secs 600 against an 18-market board that traded 157,217
+# contracts while we recorded it and armed nothing.
+#
+# So the guard keys on duration, matching this script's own stated purpose —
+# "a probe listens to the entry flow, not the call". Entry flows are ~1-2 min.
+LONG_PROBE_SECS=300
+if [[ "$SECS" -gt "$LONG_PROBE_SECS" && "${CORPUS_ONLY:-0}" != "1" ]]; then
+  GUARD_ISSUER=$(echo "${ISSUER:-${LABEL%%-*}}" | tr '[:lower:]' '[:upper:]')
+  BOARD_OUT=$(scripts/board-open.py --issuer "$GUARD_ISSUER" 2>&1) && BOARD_RC=0 || BOARD_RC=$?
+  if [[ "$BOARD_RC" == "0" ]]; then
+    cat >&2 <<EOF
+REFUSING: --secs $SECS is a CALL CAPTURE, not an entry probe, and
+$GUARD_ISSUER has an OPEN Kalshi mention board:
+  $BOARD_OUT
+
+  This tool runs no detector and can place no order. Capturing a live board
+  with it is the 2026-08-04 SPOT failure exactly.
+  Probe admission with a short leg (--secs 120), then ARM the call:
+      scripts/slate-stage.sh --issuer $GUARD_ISSUER && scripts/launch-event.sh …
+  Genuine long corpus capture on a live board: --corpus-only
+EOF
+    exit 6
+  fi
+fi
 
 # Guard: never probe while an event is armed (same process fingerprints as
 # run-arm.sh guard 8).
@@ -196,3 +236,41 @@ probe_artifact   = "${WAV}"
 
 ── then pin the transcript excerpt in VERIFICATIONS.md Q-ADMIT ─────────────
 EOF
+
+# ── --promote: write the verdict down instead of hoping someone retypes it ──
+# SPOT 2026-08-04 is why this exists. The snippet above was printed, correctly,
+# for a bridge that had just admitted us to a live earnings call — and it died
+# on the terminal. `configs/dial-ins.toml` kept saying no-entry, slate-stage.sh
+# kept staging webcast-only, and an 18-market board traded without us.
+#
+# THE MSFT RULE HOLDS: this writes admission ONLY from this probe's own dial,
+# and ONLY the one verdict that is mechanically inferable — the leg ran to
+# --secs with frames flowing. A short hold means the far end hung up, and
+# whether that was a screen or a drop is a TRANSCRIPT reading: printed for a
+# human, never auto-written.
+if [[ "$PROMOTE" == "1" ]]; then
+  [[ -n "$ISSUER" ]] || ISSUER="${LABEL%%-*}"
+  ISSUER_UC=$(echo "$ISSUER" | tr '[:lower:]' '[:upper:]')
+  # "held to the cap" = within 5% of what we asked for. The probe stops itself
+  # at --secs, so a full-length leg is the bridge never hanging up on us.
+  HELD_OK=$(python3 -c "print(1 if $HELD_S >= $SECS * 0.95 else 0)")
+  if [[ "$HELD_OK" == "1" ]]; then
+    STALLS=$(python3 -c "import json;print(json.load(open('$JSON'))['stalls_over_100ms'])")
+    scripts/registry-admit.py --auto \
+      --issuer "$ISSUER_UC" --admission held \
+      --detail "held ${HELD_S}s to the probe cap (${SECS}s), ${STALLS} stalls >100ms${DTMF:+, DTMF accepted}" \
+      --probed "$TODAY" --artifact "$WAV" \
+      --number "$TO" ${DTMF:+--passcode "$DTMF"} \
+      || echo "⚠ registry-admit failed — pin [$ISSUER_UC] by hand from the snippet above" >&2
+    echo
+    echo "⇒ Next: stage the phone arm for this issuer BEFORE the call:"
+    echo "     scripts/slate-stage.sh --issuer $ISSUER_UC"
+  else
+    echo
+    echo "⇒ NOT auto-promoted: held ${HELD_S}s of ${SECS}s — the far end hung up." >&2
+    echo "  Read the transcript, then record the verdict yourself:" >&2
+    echo "     scripts/registry-admit.py --issuer $ISSUER_UC \\" >&2
+    echo "         --admission <dropped|operator_screened|passcode_required> \\" >&2
+    echo "         --detail '<what the bridge said>' --probed $TODAY --artifact $WAV" >&2
+  fi
+fi
