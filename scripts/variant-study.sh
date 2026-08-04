@@ -35,13 +35,26 @@ VOICES=(Samantha Daniel)
 VOICE_TABLE="$(say -v '?' 2>/dev/null || true)"
 THIRD_VOICE="" THIRD_VOICE_NOTE=""
 for CAND in Paulina Mónica Monica; do
-  if grep -qE "^${CAND}[[:space:]]+[a-z]{2}_" <<<"$VOICE_TABLE"; then THIRD_VOICE="$CAND"; break; fi
+  # Current macOS prints localized display labels between the base name and
+  # locale, e.g. `Paulina (Spanish (Mexico)) es_MX`. Match the base name and
+  # locale without assuming they are adjacent; `say -v Paulina` accepts the
+  # stable base name.
+  if grep -qE "^${CAND}([[:space:]]|$).*[[:space:]]es_[A-Z]{2}[[:space:]]" <<<"$VOICE_TABLE"; then
+    THIRD_VOICE="$CAND"; break
+  fi
 done
 if [[ -z "$THIRD_VOICE" ]]; then
-  THIRD_VOICE="$(awk '$2 ~ /^es_/ {print $1; exit}' <<<"$VOICE_TABLE")"
+  THIRD_VOICE="$(awk '
+    match($0, /[[:space:]]es_[A-Z][A-Z][[:space:]]/) {
+      name=substr($0, 1, RSTART-1); sub(/[[:space:]]+$/, "", name); print name; exit
+    }' <<<"$VOICE_TABLE")"
 fi
 if [[ -z "$THIRD_VOICE" ]]; then
-  THIRD_VOICE="$(awk '$2 ~ /^en_/ && $1 != "Samantha" && $1 != "Daniel" {print $1; exit}' <<<"$VOICE_TABLE")"
+  THIRD_VOICE="$(awk '
+    match($0, /[[:space:]]en_[A-Z][A-Z][[:space:]]/) {
+      name=substr($0, 1, RSTART-1); sub(/[[:space:]]+$/, "", name)
+      if (name !~ /^Samantha([[:space:]]|$)/ && name !~ /^Daniel([[:space:]]|$)/) { print name; exit }
+    }' <<<"$VOICE_TABLE")"
   [[ -n "$THIRD_VOICE" ]] && THIRD_VOICE_NOTE="no Spanish voice installed — third voice is English ($THIRD_VOICE); Spanish-accent coverage NOT exercised"
 fi
 if [[ -n "$THIRD_VOICE" ]]; then
@@ -54,6 +67,21 @@ fi
 mkdir -p "$OUT/clips" "$OUT/cfg" "$OUT/logs"
 
 [[ -x "$BIN" ]] || { echo "REFUSING: no binary at $BIN (cargo build --release)" >&2; exit 2; }
+
+# macOS does not ship GNU timeout, and both `say` and a detector replay have
+# been observed to hang on an individual item. Keep the study bounded even on
+# a stock Mac. POSIX alarm state survives exec; the handler resets to the
+# target's default action, terminating it when the deadline expires.
+run_bounded() { # run_bounded <seconds> <command> [args...]
+  local seconds="$1"; shift
+  if command -v timeout >/dev/null; then
+    timeout "$seconds" "$@"
+  elif command -v gtimeout >/dev/null; then
+    gtimeout "$seconds" "$@"
+  else
+    perl -e 'alarm shift @ARGV; exec @ARGV or die "exec: $!\n"' "$seconds" "$@"
+  fi
+}
 
 # streaming_ctc loads onnxruntime dynamically; with ORT_DYLIB_PATH unset the
 # process futex-hangs silently in dlopen (deploy-box.sh incident class).
@@ -85,10 +113,20 @@ awk '/^\[detector\]/{f=1} f && /^\[/ && !/^\[detector/{exit} f' "$CFG" > "$OUT/c
 [[ -s "$OUT/cfg/detector.block" ]] || { echo "REFUSING: no [detector] block in $CFG" >&2; exit 2; }
 ENGINE=$(sed -n '/^\[detector\]/,/^\[/s/^engine[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$CFG" | head -1)
 
+# Carrier sentences: each variant is spoken bare AND inside each of these, so a
+# streaming-CTC encoder gets run-up. Top-level so CARRIERS_N can be stamped into
+# the artifact — consumers branch on that, never on the study date.
+CARRIERS=(
+  "and then we mentioned %s again after that"
+  "so the next item here is %s for this period"
+)
+CARRIERS_N=${#CARRIERS[@]}
+
 SIL="$OUT/clips/_sil.wav"
 ffmpeg -v error -y -f lavfi -i anullsrc=r=16000:cl=mono -t 2.6 -c:a pcm_s16le "$SIL"
 
 FAILS=0
+TTS_FAILURES=0
 REPORT="$OUT/report.tsv"
 : > "$REPORT"
 while IFS=$'\t' read -r TICKER PHRASE VARIANTS; do
@@ -106,14 +144,39 @@ while IFS=$'\t' read -r TICKER PHRASE VARIANTS; do
   SLUG="${TICKER##*-}"
   LIST="$OUT/clips/$SLUG.list"; : > "$LIST"
   EXPECTED=0
+  # CARRIER SENTENCES (2026-08-04). Until today every clip was the BARE variant
+  # text, and that systematically under-tests a streaming CTC detector: the
+  # encoder gets no run-up, so a word that is perfectly detectable in running
+  # speech can score ~0 in isolation. Measured on AMD "agentic ai": bare clips
+  # peaked at 0.0013 (study verdict 0/6 FAIL, which would have BLOCKED preflight),
+  # while the identical phrase inside a sentence peaked at 0.5737 — 440x higher,
+  # far above the 0.15 threshold. The word was fine; the instrument was wrong.
+  #
+  # A false FAIL is not a safe failure: it teaches operators to override the
+  # gate, and the gate's whole value is that it is blocking. So each variant is
+  # now spoken BOTH bare and inside two neutral carriers. Carriers are
+  # deliberately bland — no earnings vocabulary — so they cannot themselves
+  # satisfy another keyword and inflate that keyword's count.
+  # Defined once at top level (see CARRIERS near the voice setup) so its count
+  # can be stamped into the readiness artifact as the method marker.
   IFS='|' read -ra VARR <<< "$VARIANTS"
   for V in "${VARR[@]}"; do
     for VOICE in "${VOICES[@]}"; do
-      C="$OUT/clips/$SLUG-$(echo "$V" | tr -c 'a-zA-Z0-9' '_')-$VOICE"
-      say -v "$VOICE" -o "$C.aiff" "$V" </dev/null 2>/dev/null || continue
-      ffmpeg -nostdin -v error -y -i "$C.aiff" -ac 1 -ar 16000 -c:a pcm_s16le "$C.wav" </dev/null && rm -f "$C.aiff"
-      printf "file '%s'\nfile '%s'\n" "$C.wav" "$SIL" >> "$LIST"
-      EXPECTED=$((EXPECTED+1))
+      IDX=0
+      for FORM in "%s" "${CARRIERS[@]}"; do
+        # shellcheck disable=SC2059
+        TEXT="$(printf "$FORM" "$V")"
+        C="$OUT/clips/$SLUG-$(echo "$V" | tr -c 'a-zA-Z0-9' '_')-$VOICE-c$IDX"
+        IDX=$((IDX+1))
+        if ! run_bounded 20 say -v "$VOICE" -o "$C.aiff" "$TEXT" </dev/null 2>/dev/null; then
+          echo "⚠ variant-study: TTS failed/timed out: $TICKER variant=$V voice=$VOICE form=$IDX" >&2
+          TTS_FAILURES=$((TTS_FAILURES+1))
+          continue
+        fi
+        ffmpeg -nostdin -v error -y -i "$C.aiff" -ac 1 -ar 16000 -c:a pcm_s16le "$C.wav" </dev/null && rm -f "$C.aiff"
+        printf "file '%s'\nfile '%s'\n" "$C.wav" "$SIL" >> "$LIST"
+        EXPECTED=$((EXPECTED+1))
+      done
     done
   done
   WAV="$OUT/clips/$SLUG.wav"
@@ -151,10 +214,13 @@ PY
   } > "$MINI"
 
   LOG="$OUT/logs/$SLUG.log"
-  TIMEOUT=(); command -v timeout >/dev/null && TIMEOUT=(timeout 180)
-  command -v gtimeout >/dev/null && TIMEOUT=(gtimeout 180)
-  "${TIMEOUT[@]+"${TIMEOUT[@]}"}" "$BIN" replay --config "$MINI" > "$LOG" 2>&1 </dev/null
-  HITS=$(grep -acE "decision intent|detection ignored" "$LOG" || true)
+  run_bounded 180 "$BIN" replay --config "$MINI" > "$LOG" 2>&1 </dev/null
+  # `earshot replay` now renders detections in its summary as
+  #   kw0 Confirmed ... intent: <ticker>
+  # (including state-machine-suppressed repeats). Keep the older streaming log
+  # phrases too so this gate works with both report formats. Counting only the
+  # old phrases silently turned every real detection into confirmed=0.
+  HITS=$(grep -acE 'decision intent|detection ignored|^[[:space:]]+kw[0-9]+[[:space:]]+Confirmed([[:space:]]|$)' "$LOG" || true)
   VERDICT=OK; (( HITS == 0 )) && { VERDICT=FAIL; FAILS=$((FAILS+1)); }
   printf "%s\t%s\t%d/%d\t%s\n" "$TICKER" "$PHRASE" "$HITS" "$EXPECTED" "$VERDICT" | tee -a "$REPORT"
 done < "$OUT/keywords.tsv"
@@ -168,6 +234,7 @@ mkdir -p "$READY_DIR"
 READY="$READY_DIR/$(basename "$CFG" .toml).json"
 CFG_BASE="$(basename "$CFG" .toml)" KW_SHA="$KW_SHA" ENGINE="$ENGINE" OUT="$OUT" \
 READY="$READY" VOICES_CSV="$(IFS=,; echo "${VOICES[*]}")" VOICE_NOTE="$THIRD_VOICE_NOTE" \
+CARRIERS_N="$CARRIERS_N" \
 python3 - <<'PY'
 import json, os
 from datetime import date
@@ -191,6 +258,14 @@ artifact = {
     "date": date.today().isoformat(),
     "engine": os.environ["ENGINE"] or "unknown",
     "voices": os.environ["VOICES_CSV"].split(","),
+    # METHOD MARKER (2026-08-04). Consumers MUST branch on this, not on `date`.
+    # Carrier sentences roughly tripled clips per variant and moved raw counts
+    # ~3x while detectability was unchanged, so a confirmed/clips threshold
+    # calibrated on bare-clip studies is meaningless here (clean carrier words
+    # read 3.7-4.8). Dating the method by `date >= 2026-08-04` is wrong: this
+    # very study ran on 2026-08-03 UTC with carriers already in place.
+    # 0 = bare clips only (legacy); N = bare + N carrier sentences per variant.
+    "carriers": int(os.environ.get("CARRIERS_N", "0")),
     "keywords": [
         {
             "ticker": t,
@@ -214,4 +289,7 @@ print(f"readiness artifact: {path}")
 PY
 
 echo "── variant-study done: $((N_KW-FAILS))/$N_KW keywords detected ≥1 clip; report: $REPORT"
-(( FAILS == 0 )) || exit 1
+if (( TTS_FAILURES )); then
+  echo "⛔ variant-study incomplete: $TTS_FAILURES requested TTS clip(s) failed" >&2
+fi
+(( FAILS == 0 && TTS_FAILURES == 0 )) || exit 1

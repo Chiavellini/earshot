@@ -1,0 +1,257 @@
+# ⛔ ACCESS BLOCKED — KEYWORD-READY CONFIG, NOT A LAUNCHABLE WEBCAST ARM.
+# Grab's official Q2 2026 access URL resolves to a Zoom meeting, not an HLS
+# player. This repository has no verified Zoom web/VoIP capture adapter. The
+# official meeting metadata publishes Singapore PSTN legs, but the 2026-08-03
+# Twilio admission probe was rejected before dialing because Singapore outbound
+# permission is disabled. The source commands below fail closed so a stale
+# $HOME/grab-stream.url can never be mistaken for today's call.
+#
+# PHONE GO requires explicit Singapore calling authorization plus a held
+# listen-only admission probe. WEBCAST GO requires a separately verified Zoom
+# audio adapter. Neither gate is currently satisfied.
+#
+# ORIGINAL TEMPLATE CONTEXT — direct-m3u8 events (IR players, FOMC).
+# The production armed posture from the 07-22 race findings (docs/RACE-STRATEGY.md §5):
+#   leg 1 "streamlink"  — edge-join primary: the measured ladder winner
+#                         (−11.7..−13.65 s vs default join, RUNBOOK 07-17 + 07-20)
+#   leg 2 "pipe_tuned"  — tuned-ffmpeg backstop (-live_start_index -1 = the only
+#                         flag that moves the join point; −10.6..−11.65 s vs default)
+# Both legs run FULL detect chains OR-ed at the one-shot decision table
+# ([arbiter] mode = "fanout") — different legs hear different audio (07-22 TARI).
+#
+# Instantiate per event with scripts/stage-webcast-arm.sh, then:
+#   1. paste the `earshot prepare` keyword/risk sections over the placeholders,
+#   2. on call morning write the m3u8:  echo "<m3u8>" > ~/<lc>-stream.url
+#   3. launch attended: scripts/launch-webcast.sh --config <this> --account <env> \
+#        --wait-live ~/<lc>-stream.url --wait-kind hls
+# The live gate lives in launch-webcast.sh (NEVER inside a source cmd —
+# 07-22 post-mortems #1/#2). YouTube events: do NOT use this template; keep
+# the frozen yt-dlp leg (configs/webcast-tsla.toml) until a streamlink-vs-
+# YouTube ladder number exists (capture first).
+# Posture: mention-probe observe (1¢ non-crossing) — fill posture is gated on
+# the Phase-4 precision verdict (docs/RACE-STRATEGY.md).
+
+[event]
+id        = "KXEARNINGSMENTIONGRAB-26AUG03-WEBCAST"
+starts_at = "2026-08-04T00:00:00Z"
+
+[pipeline]
+chunk_ms       = 80
+resample_to_hz = 16000
+
+[detector]
+engine = "streaming_ctc"
+
+[detector.streaming_ctc]
+model_dir         = "models/sherpa-onnx-streaming-zipformer-ctc-small-2024-03-18"
+num_threads       = 1
+default_threshold = 0.15
+refractory_ms     = 2000
+
+# sherpa_kws block kept so the engine reverts with a one-line change above.
+
+[detector.sherpa_kws]
+model_dir         = "models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
+num_threads       = 1
+max_active_paths  = 4
+default_threshold = 0.20
+default_boost     = 2.0
+refractory_ms     = 2000
+fp32              = true
+
+[arbiter]
+mode = "fanout"
+
+[[sources]]
+kind = "pipe"
+label = "blocked_zoom_primary"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "echo 'GRAB ACCESS BLOCKED: official venue is Zoom; no verified audio adapter or admitted PSTN leg' >&2; exit 64",
+]
+
+[[sources]]
+kind = "pipe"
+label = "blocked_zoom_backstop"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "echo 'GRAB ACCESS BLOCKED: do not launch until phone admission or Zoom capture is verified' >&2; exit 64",
+]
+
+# NOTE (SUPERSEDED 2026-07-24 night — kept as the evidence trail): this file
+# used to say the edge-fetcher leg delivers "+0 ms" and that "the gap is decode,
+# not acquisition". BOTH clauses are now refuted (docs/LATENCY-PROOF.md parts
+# 1-3): the AXP NFL race decomposed to 1.241 s FEED + 0.289 s OURS, so the gap
+# is NOT decode; and the +0 ms reading came from an instrument that compared two
+# ffmpeg legs to each other and was structurally blind to a cost they shared.
+# Measured against the encoder instead, a speculative fetcher runs 4.5 s fresher
+# than this template's legs with ~5x less run-to-run variance.
+#
+# THIS TEMPLATE IS DELIBERATELY UNCHANGED — it is the proven stack, and FOMC
+# 2026-07-29 runs it. The speculative posture lives in
+# configs/webcast-fanout-arm-spec.toml (staged with
+# `stage-webcast-arm.sh --speculative`) and is gated on off-FOMC validation,
+# because its probing could get the box's IP rate-limited and that would take
+# every leg down, not just one.
+
+[kalshi]
+series = "KXEARNINGSMENTIONGRAB"
+env = "prod"
+
+# ── Placeholders below: replace with the `earshot prepare` output ──────────
+[risk]
+max_order_notional_cents = 100
+max_event_notional_cents = 100
+book_stale_ms            = 2000
+audio_stale_ms           = 2000
+allowlist_tickers = [
+  "KXEARNINGSMENTIONGRAB-26AUG03-BUYB",
+  "KXEARNINGSMENTIONGRAB-26AUG03-COMM",
+  "KXEARNINGSMENTIONGRAB-26AUG03-DELI",
+  "KXEARNINGSMENTIONGRAB-26AUG03-FOOD",
+  "KXEARNINGSMENTIONGRAB-26AUG03-GRAB",
+  "KXEARNINGSMENTIONGRAB-26AUG03-HEAD",
+  "KXEARNINGSMENTIONGRAB-26AUG03-IRAN",
+  "KXEARNINGSMENTIONGRAB-26AUG03-MAI",
+  "KXEARNINGSMENTIONGRAB-26AUG03-ROBO",
+  "KXEARNINGSMENTIONGRAB-26AUG03-STAS",
+  "KXEARNINGSMENTIONGRAB-26AUG03-SUPE",
+  "KXEARNINGSMENTIONGRAB-26AUG03-TAIL",
+  "KXEARNINGSMENTIONGRAB-26AUG03-WERI",
+]
+
+# Buyback / Buy Back (KXEARNINGSMENTIONGRAB-26AUG03-BUYB) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONGRAB-26AUG03-BUYB"
+phrase           = "buyback"
+variants         = ["buyback", "buybacks", "buy back", "by back", "bye back"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+# PHONETIC STUDY 2026-08-03: canonical forms were WEAK (best peak 0.0668).
+# "by back" / "bye back" preserve the spoken phrase while compiling a
+# different CTC path; final study fired 33 times across 15 completed clips.
+
+# Commission (KXEARNINGSMENTIONGRAB-26AUG03-COMM) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONGRAB-26AUG03-COMM"
+phrase           = "commission"
+variants         = ["commission", "commissions"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Delivery Hero (KXEARNINGSMENTIONGRAB-26AUG03-DELI) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONGRAB-26AUG03-DELI"
+phrase           = "delivery hero"
+variants         = ["delivery hero"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Foodpanda (KXEARNINGSMENTIONGRAB-26AUG03-FOOD) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONGRAB-26AUG03-FOOD"
+phrase           = "foodpanda"
+variants         = ["foodpanda", "foodpandas", "food panda"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+# PHONETIC STUDY 2026-08-03: glued form was a clean NEAR-MISS at 0.1340.
+# Spaced brand spelling fired; no operating-point reduction was needed.
+
+# GrabMart (KXEARNINGSMENTIONGRAB-26AUG03-GRAB) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONGRAB-26AUG03-GRAB"
+phrase           = "grabmart"
+variants         = ["grabmart", "grabmarts"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Headwind (KXEARNINGSMENTIONGRAB-26AUG03-HEAD) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONGRAB-26AUG03-HEAD"
+phrase           = "headwind"
+variants         = ["headwind", "headwinds", "head wind", "head winds"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+# PHONETIC STUDY 2026-08-03: compound form was WEAK at 0.0259. Spaced forms
+# previously measured 0.3615/0.4446 and fired in the 2026-07-30 RDDT study.
+
+# Iran / Middle East (KXEARNINGSMENTIONGRAB-26AUG03-IRAN) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONGRAB-26AUG03-IRAN"
+phrase           = "iran"
+variants         = ["iran", "irans", "middle east"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# MAI (KXEARNINGSMENTIONGRAB-26AUG03-MAI) — KEYWORD REMOVED 2026-08-03.
+# The product name's canonical, plural, spaced-letter, and spoken-letter-name
+# forms scored 0/12 on clean TTS (best peak 0.0387). The natural name
+# pronunciation is the high-false-alarm homophone "my"; arming that ordinary
+# word could consume the event one-shot before a genuine product mention.
+# Keep the ticker in [risk].allowlist_tickers so allowlist-diff reports the
+# deliberate ARMED-NO-KEYWORD posture without blocking the other 12 markets.
+
+# Robot / Robotic / Robotics (KXEARNINGSMENTIONGRAB-26AUG03-ROBO) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONGRAB-26AUG03-ROBO"
+phrase           = "robot"
+variants         = ["robot", "robots", "robotic", "robotics"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Stash (KXEARNINGSMENTIONGRAB-26AUG03-STAS) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONGRAB-26AUG03-STAS"
+phrase           = "stash"
+variants         = ["stash", "stashs"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Superbank (KXEARNINGSMENTIONGRAB-26AUG03-SUPE) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONGRAB-26AUG03-SUPE"
+phrase           = "superbank"
+variants         = ["superbank", "superbanks"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Tailwind (KXEARNINGSMENTIONGRAB-26AUG03-TAIL) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONGRAB-26AUG03-TAIL"
+phrase           = "tailwind"
+variants         = ["tailwind", "tailwinds", "tail wind", "tail winds"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+# PHONETIC STUDY 2026-08-03: compound form was WEAK at 0.0521. Spaced forms
+# previously measured 0.4997/0.5403 and fired in the 2026-07-30 RDDT study.
+
+# WeRide (KXEARNINGSMENTIONGRAB-26AUG03-WERI) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONGRAB-26AUG03-WERI"
+phrase           = "weride"
+variants         = ["weride", "werides", "we ride"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+# PHONETIC STUDY 2026-08-03: glued WeRide form was WEAK at 0.0482. Test the
+# brand's spoken two-word form; final study fired 3 times across 9 clips.
+
+# --- readiness summary: 12 armed; MAI deliberately excluded after phonetic study ---
+# REAL-SPEECH CHECK 2026-08-03: replaying Grab's official Q1 2026 recording
+# through this exact 12-keyword set produced 24 Confirmed detections and zero
+# dropped frames. Seven distinct markets fired (buyback, Middle East/IRAN,
+# commission, WeRide, headwind, GrabMart, Foodpanda); each is present in the
+# published Q1 transcript. No transcript-contradicted false fire was observed.

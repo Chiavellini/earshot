@@ -83,11 +83,26 @@ if grep -qE '^[[:space:]]*engine[[:space:]]*=[[:space:]]*"streaming_ctc"' "$CONF
     # returns 1 when the find comes up empty and kills the script SILENTLY,
     # before the REFUSING message below can explain why. Same family as the
     # pipefail traps in docs/RUNBOOK.md. Use an if.
-    _ort=$(find "${EARSHOT_ROOT:-$HOME/ear}/vendor" -name 'libonnxruntime*.so*' 2>/dev/null | head -1 || true)
+    # Two bugs fixed 2026-08-03, both of which made this resolver a no-op on a
+    # Mac: it searched ONLY '*.so*' (there is no .so on Darwin, so the find
+    # always came up empty and the REFUSE below fired on a healthy tree), and it
+    # rooted at $HOME/ear, which is the BOX layout — the laptop repo is
+    # $HOME/Code/ear. Resolve per-platform, and search the real repo root.
+    # -not -path '*dSYM*': the debug bundle holds a same-named file that dlopen
+    # HANGS on (see run-arm.sh) — that decoy hung preflight's detector-smoke.
+    _vend="${EARSHOT_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}/vendor"
+    case "$(uname -s)" in
+      Darwin) _pat='libonnxruntime*.dylib' ;;
+      *)      _pat='libonnxruntime*.so*'   ;;
+    esac
+    _ort=$(find "$_vend" -name "$_pat" -not -path '*dSYM*' 2>/dev/null | head -1 || true)
     if [[ -n "$_ort" ]]; then
       export ORT_DYLIB_PATH="$_ort"
     fi
   fi
+  case "${ORT_DYLIB_PATH:-}" in
+    *dSYM*) echo "REFUSING: ORT_DYLIB_PATH is a dSYM debug bundle, not a loadable library: $ORT_DYLIB_PATH" >&2; exit 2 ;;
+  esac
   [[ -n "${ORT_DYLIB_PATH:-}" && -f "${ORT_DYLIB_PATH}" ]] || {
     echo "REFUSING: config uses engine=streaming_ctc but ORT_DYLIB_PATH is unset/invalid." >&2
     echo "  run scripts/fetch-models.sh (it fetches the dylib and prints the export), or" >&2

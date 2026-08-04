@@ -191,12 +191,21 @@ PIN="$REPO/state/$EVENT/earshot-pinned"
 if grep -qE '^\s*engine\s*=\s*"streaming_ctc"' "$CONFIG"; then
   case "$(uname -s)" in
     Linux)  DYLIB="$(find "$REPO/vendor" -name 'libonnxruntime*.so*' 2>/dev/null | head -1)" ;;
-    Darwin) DYLIB="$(find "$REPO/vendor" -name 'libonnxruntime*.dylib' 2>/dev/null | head -1)" ;;
+    # -not -path '*dSYM*': a macOS debug bundle contains a file with the SAME
+    # NAME as the library (…dylib.dSYM/Contents/Resources/DWARF/…dylib). It is
+    # DWARF debug info, not a loadable library, and dlopen on it HANGS exactly
+    # the way a wrong-platform lib does. Found live 2026-08-03 when preflight's
+    # copy of this same find picked the decoy and detector-smoke hung >90 s.
+    # scripts/wnt-daily.sh:138 already excluded it; this path never did.
+    Darwin) DYLIB="$(find "$REPO/vendor" -name 'libonnxruntime*.dylib' -not -path '*dSYM*' 2>/dev/null | head -1)" ;;
     *)      DYLIB="" ;;
   esac
   [[ -n "$DYLIB" ]] || fail "config runs streaming_ctc but no HOST-PLATFORM libonnxruntime under vendor/
          ($(uname -s) needs $( [[ "$(uname -s)" == Darwin ]] && echo .dylib || echo .so );
          a wrong-platform lib HANGS SILENTLY at 'book snapshots live' — Ford 2026-07-28)."
+  case "$DYLIB" in
+    *dSYM*) fail "resolved ORT path is a dSYM debug bundle, not a loadable library: $DYLIB" ;;
+  esac
   export ORT_DYLIB_PATH="$DYLIB"
 fi
 

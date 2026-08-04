@@ -1,0 +1,144 @@
+{
+ "config": "webcast-grab-26aug03-arm-wc",
+ "keywords_sha256": "dccf5151f7805f0e1451078af603aafc022a31349dbb56a792bb244f2b611386",
+ "date": "2026-08-03",
+ "engine": "streaming_ctc",
+ "voices": [
+  "Samantha",
+  "Daniel",
+  "Paulina"
+ ],
+ "keywords": [
+  {
+   "ticker": "KXEARNINGSMENTIONGRAB-26AUG03-BUYB",
+   "phrase": "buyback",
+   "variants": [
+    "buyback",
+    "buybacks",
+    "buy back",
+    "by back",
+    "bye back"
+   ],
+   "clips": 15,
+   "confirmed": 33
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONGRAB-26AUG03-COMM",
+   "phrase": "commission",
+   "variants": [
+    "commission",
+    "commissions"
+   ],
+   "clips": 6,
+   "confirmed": 16
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONGRAB-26AUG03-DELI",
+   "phrase": "delivery hero",
+   "variants": [
+    "delivery hero"
+   ],
+   "clips": 3,
+   "confirmed": 4
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONGRAB-26AUG03-FOOD",
+   "phrase": "foodpanda",
+   "variants": [
+    "foodpanda",
+    "foodpandas",
+    "food panda"
+   ],
+   "clips": 9,
+   "confirmed": 12
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONGRAB-26AUG03-GRAB",
+   "phrase": "grabmart",
+   "variants": [
+    "grabmart",
+    "grabmarts"
+   ],
+   "clips": 6,
+   "confirmed": 5
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONGRAB-26AUG03-HEAD",
+   "phrase": "headwind",
+   "variants": [
+    "headwind",
+    "headwinds",
+    "head wind",
+    "head winds"
+   ],
+   "clips": 12,
+   "confirmed": 18
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONGRAB-26AUG03-IRAN",
+   "phrase": "iran",
+   "variants": [
+    "iran",
+    "irans",
+    "middle east"
+   ],
+   "clips": 9,
+   "confirmed": 5
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONGRAB-26AUG03-ROBO",
+   "phrase": "robot",
+   "variants": [
+    "robot",
+    "robots",
+    "robotic",
+    "robotics"
+   ],
+   "clips": 12,
+   "confirmed": 17
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONGRAB-26AUG03-STAS",
+   "phrase": "stash",
+   "variants": [
+    "stash",
+    "stashs"
+   ],
+   "clips": 6,
+   "confirmed": 3
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONGRAB-26AUG03-SUPE",
+   "phrase": "superbank",
+   "variants": [
+    "superbank",
+    "superbanks"
+   ],
+   "clips": 6,
+   "confirmed": 11
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONGRAB-26AUG03-TAIL",
+   "phrase": "tailwind",
+   "variants": [
+    "tailwind",
+    "tailwinds",
+    "tail wind",
+    "tail winds"
+   ],
+   "clips": 12,
+   "confirmed": 19
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONGRAB-26AUG03-WERI",
+   "phrase": "weride",
+   "variants": [
+    "weride",
+    "werides",
+    "we ride"
+   ],
+   "clips": 9,
+   "confirmed": 3
+  }
+ ]
+}

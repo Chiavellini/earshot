@@ -1,0 +1,326 @@
+{
+  "KXEARNINGSMENTIONPLTR-26AUG03": {
+    "pm_event_slug": "what-will-palantir-say-during-their-next-earnings-call-20260730163530759",
+    "pm_event_title": "What will Palantir say during their next earnings call?",
+    "clock": "word",
+    "pm_volume_at_build": 9080.346866,
+    "pm_liquidity_at_build": 1204.64657,
+    "markets": [
+      {
+        "question": "Will Palantir say \"Commercial\" 10+ times during earnings call?",
+        "condition_id": "0x7b55977bf0000f313c44998339be95a5e4796aae710394dd7875e5aa3671ff14",
+        "tokens": [
+          "71221659588895019267660172574673044267818502631159284946186771395697116659364",
+          "17310071681808718376941049744217435897230465727169454670845416601316539415142"
+        ],
+        "pm_slug": "will-palantir-say-commercial-10-times-during-earnings-call-20260730163530760"
+      },
+      {
+        "question": "Will Palantir say \"Government\" 10+ times during earnings call?",
+        "condition_id": "0x72319f5f905f9b7d93fc4da77903100d75e6e1c7734021ba3b4460039e972ef0",
+        "tokens": [
+          "98192554044137157567318914665177591817070148710384111112880469397337262710469",
+          "92966019705697620116216700080266921562966561035634360056125191036093314525389"
+        ],
+        "pm_slug": "will-palantir-say-government-10-times-during-earnings-call-20260730163530761"
+      },
+      {
+        "question": "Will Palantir say \"Enterprise\" 5+ times during earnings call?",
+        "condition_id": "0x9bd25f0a9fc7cfd1cdcc5e7a590e4fab35e0b306569ab57d35f5941f1eb76d46",
+        "tokens": [
+          "50304699501336122370876330697977315411981118715077318469467977615433000897239",
+          "27012988998721103056289196317709917685291266575064472500067170021600270276905"
+        ],
+        "pm_slug": "will-palantir-say-enterprise-5-times-during-earnings-call-20260730163530762"
+      },
+      {
+        "question": "Will Palantir say \"Infrastructure\" during earnings call?",
+        "condition_id": "0x0b767045803e286e76270ba5beff673eb9a116fab4ad8bd8fbca7369a947bf1c",
+        "tokens": [
+          "26909242758174798114697613445493291446018310532250641893929804254188005397727",
+          "23799436740230152108878553376984292799854990542721936729562785298007274380836"
+        ],
+        "pm_slug": "will-palantir-say-infrastructure-during-earnings-call-20260730163530763"
+      },
+      {
+        "question": "Will Palantir say \"Apollo\" during earnings call?",
+        "condition_id": "0xb7c6aa790c26c2b1df6edd451288d18969ec22179fed23aef0e9123ef588abf1",
+        "tokens": [
+          "8945486143374253633089368360242970206990560657781567410427586058515584036571",
+          "53093278842080139176733067249179646735370837458400191087002593664912266725493"
+        ],
+        "pm_slug": "will-palantir-say-apollo-during-earnings-call-20260730163530764"
+      },
+      {
+        "question": "Will Palantir say \"Leverage\" during earnings call?",
+        "condition_id": "0xa34c33479d070ef4a3134ff72a64f4f2b1d26ad5939fd3c819b64adc88d43f26",
+        "tokens": [
+          "52140938965632730911733359354361788339582433636113169041761277455917444021877",
+          "85655227906522299102343003016968374014524749649878405000990893119716065196258"
+        ],
+        "pm_slug": "will-palantir-say-leverage-during-earnings-call-20260730163530765"
+      },
+      {
+        "question": "Will Palantir say \"Defense\" during earnings call?",
+        "condition_id": "0x5dd13ce43972f321271bb4184d20ab35a13299bfd880b0db569d796ca7546726",
+        "tokens": [
+          "65919976941476925841212171986777095422319787739503836804463777947035255589589",
+          "3039378226106812166473811749556266971267380358467916574930327493669453884228"
+        ],
+        "pm_slug": "will-palantir-say-defense-during-earnings-call-20260730163530766"
+      },
+      {
+        "question": "Will Palantir say \"Healthcare\" during earnings call?",
+        "condition_id": "0x7435202d9ff100063787c982c78ea6194e1c191d6b25cb4c9726b2be14831fbe",
+        "tokens": [
+          "43193966188821779910395844529305570650248607414082230968696710106571159938423",
+          "102589218790542034954181137977408494394020394259503486440091849588006513703682"
+        ],
+        "pm_slug": "will-palantir-say-healthcare-during-earnings-call-20260730163530767"
+      },
+      {
+        "question": "Will Palantir say \"Insurance\" during earnings call?",
+        "condition_id": "0x1f37bae78d385c32042344be7d0e6eace1e7837c9f4f4e0239918c61dd4473a1",
+        "tokens": [
+          "36457437632526297954360950653781630972035052126476315908577409122601622718782",
+          "22789334445176449170395990016877186131333557385160031429456967686465974955893"
+        ],
+        "pm_slug": "will-palantir-say-insurance-during-earnings-call-20260730163530768"
+      },
+      {
+        "question": "Will Palantir say \"International\" during earnings call?",
+        "condition_id": "0x5ccd934d13cdfaa36aa91a6c249f0549e48e0670d4d0037d65d979a6f38f11f7",
+        "tokens": [
+          "58042514433701320257570481909118477709424385679510808958231638203404256757965",
+          "60558170903981258184668793462248077837797410212902937877813669972478829905227"
+        ],
+        "pm_slug": "will-palantir-say-international-during-earnings-call-20260730163530769"
+      },
+      {
+        "question": "Will Palantir say \"Warp Speed\" during earnings call?",
+        "condition_id": "0xd3c228392e3ee8a4d317e713820c53a72295d2b6f4d468bd8aef92c92d272273",
+        "tokens": [
+          "105944088090954422007748226439447908441330183141975116731512443333206879471931",
+          "105701589924656102207203685244348017157628240266259829044809378867960939331344"
+        ],
+        "pm_slug": "will-palantir-say-warp-speed-during-earnings-call-20260730163530770"
+      },
+      {
+        "question": "Will Palantir say \"Slop\" or \"AI Slop\" during earnings call?",
+        "condition_id": "0xab6ce53d9aaf506f100e77f041007dd3dcbe35ec7cbf6d0560cf84a347ba0fca",
+        "tokens": [
+          "32401400297103748884336413025499688488085742490948210702628732672341038252408",
+          "73541710596786031390302096807404197000947353031219142756844436864365403335753"
+        ],
+        "pm_slug": "will-palantir-say-slop-or-ai-slop-during-earnings-call-20260730163530771"
+      },
+      {
+        "question": "Will Palantir say \"Growth\" during earnings call?",
+        "condition_id": "0xbdcb560d3ea81dea979449fa9a4a18cec50cf68814029ea580980d6a15571e0b",
+        "tokens": [
+          "108477977258218819532624307512650352712524323160178407901253085103494255161725",
+          "48143449985721109778217710865724343074377199685132271445716285185000438848195"
+        ],
+        "pm_slug": "will-palantir-say-growth-during-earnings-call-20260730163530772"
+      },
+      {
+        "question": "Will Palantir say \"Anthropic\" or \"Claude\" during earnings call?",
+        "condition_id": "0xa6d47e97a295c3ac49628920c6f90284ba08d3b1a99684bb0386e203ebaa2044",
+        "tokens": [
+          "70194991570092448684191873490964340298442235987829033836618022039189715338452",
+          "3273532303988166208517208058289404524993659623391150113938732775712081499972"
+        ],
+        "pm_slug": "will-palantir-say-anthropic-or-claude-during-earnings-call-20260730163530773"
+      },
+      {
+        "question": "Will Palantir say \"Contract\" during earnings call?",
+        "condition_id": "0x13ee911c124ec7b7e5b7011a23dfab696ada49468c693b6aa990992f6a0e421a",
+        "tokens": [
+          "55735525222592281493574538681567961975279787759582710318793090353736782194021",
+          "27916911779752585685042387734823502629584243144978432461169442965953573067666"
+        ],
+        "pm_slug": "will-palantir-say-contract-during-earnings-call-20260730163530774"
+      },
+      {
+        "question": "Will the earnings call not air?",
+        "condition_id": "0x0e1b9feb42a812f99fb789d97f5c63a0bcc870685ee28820a944ded1c9f24b08",
+        "tokens": [
+          "78730130429823300776287227809689015891988417825888814664335496796968035619889",
+          "90695680098703279282617904579868271657235483959249437438973767555013159342200"
+        ],
+        "pm_slug": "will-the-earnings-call-not-air-20260730163530775"
+      }
+    ]
+  },
+  "KXEARNINGSMENTIONGRAB-26AUG03": {
+    "pm_event_slug": "grab-quarterly-earnings-gaap-eps-08-03-2026-0pt02",
+    "pm_event_title": "Will Grab (GRAB) beat quarterly earnings?",
+    "clock": "release",
+    "pm_volume_at_build": 9872.979376000001,
+    "pm_liquidity_at_build": 373.0766,
+    "markets": [
+      {
+        "question": "Will Grab (GRAB) beat quarterly earnings?",
+        "condition_id": "0x3a6428f54525fac1544ea52efc5a6d7717342c960a18e06cc50440b504e0f553",
+        "tokens": [
+          "45010129371053731444704064657104138642142689758329900216319464618818243884716",
+          "57829314926334518816697638838545411730572619801232852410403910592243419072346"
+        ],
+        "pm_slug": "grab-quarterly-earnings-gaap-eps-08-03-2026-0pt02"
+      }
+    ]
+  },
+  "KXEARNINGSMENTIONAMD-26AUG04": {
+    "pm_event_slug": "what-will-amd-say-during-their-next-earnings-call-20260730164425698",
+    "pm_event_title": "What will AMD say during their next earnings call?",
+    "clock": "word",
+    "pm_volume_at_build": 5306.92995,
+    "pm_liquidity_at_build": 4204.283,
+    "markets": [
+      {
+        "question": "Will AMD say \"AI\" or \"Artificial Intelligence\" 20+ times during earnings call?",
+        "condition_id": "0x8490df1a735146c98b3c763c7999423e1a2a5dc6b4cda622fd2bbdda3b72a53e",
+        "tokens": [
+          "8316142498667381572459929004468438207948847243011392080519105980369706621149",
+          "10185777270090989838171884632441606913266614688495528128859041284932348285677"
+        ],
+        "pm_slug": "will-amd-say-ai-or-artificial-intelligence-20-times-during-earnings-call-20260730164425699"
+      },
+      {
+        "question": "Will AMD say \"CPU\" 20+ times during earnings call?",
+        "condition_id": "0xbff0188632a4dcfc28cef582bf006cf77a31baf83003d4cbe1a1ca809fba813f",
+        "tokens": [
+          "39260263435743790508658505997485952376381518662372879801126070398466449123350",
+          "49432812703448995063931145119046889621927136395077105603830233902754295908342"
+        ],
+        "pm_slug": "will-amd-say-cpu-20-times-during-earnings-call-20260730164425700"
+      },
+      {
+        "question": "Will AMD say \"GPU\" 10+ times during earnings call?",
+        "condition_id": "0x66b88db5001befe6650d15ec4568994e4fa51d7176e938cd5b4ff967e70f5031",
+        "tokens": [
+          "106644134722546140849184706008377146198798207842516811527440650365863367658436",
+          "10651856664943761310681991730387637386407129714190273347037231746776388312233"
+        ],
+        "pm_slug": "will-amd-say-gpu-10-times-during-earnings-call-20260730164425701"
+      },
+      {
+        "question": "Will AMD say \"Data Center\" 10+ times during earnings call?",
+        "condition_id": "0xfc2e3431df695211985c09650f5501f33265616d5cd7107f9f01d7d66b0f4586",
+        "tokens": [
+          "39686586481396916882775157978126004308842116495228718563654087671200776794305",
+          "45696652345038527149040797120536080145821384790406503964002587394098430187260"
+        ],
+        "pm_slug": "will-amd-say-data-center-10-times-during-earnings-call-20260730164425702"
+      },
+      {
+        "question": "Will AMD say \"Game\" or \"Gaming\" 5+ times during earnings call?",
+        "condition_id": "0x1bb6b8b3828a22952d76e00a9d62422933048c788aaf0387ba7428a589b65bc7",
+        "tokens": [
+          "3530658875396383199746665256624352020785300757780916391403214618024966533042",
+          "58696380541509293779150822761396773503869838706258515775711863789041448359312"
+        ],
+        "pm_slug": "will-amd-say-game-or-gaming-5-times-during-earnings-call-20260730164425703"
+      },
+      {
+        "question": "Will AMD say \"Desktop\" during earnings call?",
+        "condition_id": "0xc34ddddb01d8b99dd9d28bd9a2b9a7b1625cb10c5d6296675440a4b165617356",
+        "tokens": [
+          "84462207342755036650905261849803691645312333528090087447745142927186108622034",
+          "1857733587760963722356498817952923618825669914113150787435305679087389028591"
+        ],
+        "pm_slug": "will-amd-say-desktop-during-earnings-call-20260730164425704"
+      },
+      {
+        "question": "Will AMD say \"Pipeline\" during earnings call?",
+        "condition_id": "0xf101ad388889b542fced09377d58ccdd27833a0de9f2786ee4ce9d64aad50ffc",
+        "tokens": [
+          "110333936835729361982719410462532640413803725064576613446133923094363921066939",
+          "65675522835522582943362146763960633642809438002328072827634261239354319659341"
+        ],
+        "pm_slug": "will-amd-say-pipeline-during-earnings-call-20260730164425705"
+      },
+      {
+        "question": "Will AMD say \"Helios\" during earnings call?",
+        "condition_id": "0x11e5e27c28d47c091bc7ffcdd5ef903145869984422571cf607fc00ad719f3b0",
+        "tokens": [
+          "6644495781764848814068880785005038260875558439294479395691352206326352374002",
+          "96011706960740544917597740307378567279279198957422681794858756537788436316322"
+        ],
+        "pm_slug": "will-amd-say-helios-during-earnings-call-20260730164425706"
+      },
+      {
+        "question": "Will AMD say \"China\" during earnings call?",
+        "condition_id": "0x665fbaa7576c7091ba5d1e75e6feea1f2a484a700dc793e1f3207d9891ff6379",
+        "tokens": [
+          "5982622150812848810362086633894409331191552269770084890430254319840406467573",
+          "31629137723132541111980425178421185376488470155411769906249901298331131674441"
+        ],
+        "pm_slug": "will-amd-say-china-during-earnings-call-20260730164425707"
+      },
+      {
+        "question": "Will AMD say \"Microsoft\" or \"Azure\" during earnings call?",
+        "condition_id": "0x6c5607d8f1099682a1c398b2829ffe3c64abbb17cf16aeeab4e7f6e4ef763b8f",
+        "tokens": [
+          "14093992073473228810954613525738842401897998089626754259174331445536200149315",
+          "29400824199998537351834585323224828558536348049973729841103977286012354422194"
+        ],
+        "pm_slug": "will-amd-say-microsoft-or-azure-during-earnings-call-20260730164425708"
+      },
+      {
+        "question": "Will AMD say \"Meta\" during earnings call?",
+        "condition_id": "0x1a510baf43dc0bd08072cc32c033e2a3e3deb7e5a24d4dcb012de395a4ced4af",
+        "tokens": [
+          "10783703958812133035954288174177995099885748517250115444837954199319085397330",
+          "26587163151650065232387381907835491546707072659553515868437619115662408363795"
+        ],
+        "pm_slug": "will-amd-say-meta-during-earnings-call-20260730164425709"
+      },
+      {
+        "question": "Will AMD say \"Supply Chain\" during earnings call?",
+        "condition_id": "0x64787ec4f29516619ae8ba4f20f7665c58f1b75c8ab4f1ca02243bb3e2612823",
+        "tokens": [
+          "86961677265263350123788963897013344180730591322306658646682593704815728679111",
+          "42980737798239401620201379459163030596974640496522261266225941470207879656377"
+        ],
+        "pm_slug": "will-amd-say-supply-chain-during-earnings-call-20260730164425710"
+      },
+      {
+        "question": "Will AMD say \"Frontier\" during earnings call?",
+        "condition_id": "0x672dee261a88dda61ec48398a9b187938194ec3cc49d07fa575d736223df45d1",
+        "tokens": [
+          "51175723644214338337691670112501538634583021044229128322450692762907640591384",
+          "88363591249070311086732168222473552116987916900416950838520868831694136560486"
+        ],
+        "pm_slug": "will-amd-say-frontier-during-earnings-call-20260730164425711"
+      },
+      {
+        "question": "Will AMD say \"Oracle\" during earnings call?",
+        "condition_id": "0x4d8c52ec9cd41a8841ca57dde94c595a0ac675e81186e9f1c4945ff87bbbb861",
+        "tokens": [
+          "96108124534727284472556075952801603394331191551779660872792962649995233035684",
+          "46133789447970787952856502620429636578061005045172441250289658981660430986149"
+        ],
+        "pm_slug": "will-amd-say-oracle-during-earnings-call-20260730164425712"
+      },
+      {
+        "question": "Will AMD say \"TSMC\" during earnings call?",
+        "condition_id": "0xc5d53610a57cac6a6e97e93a7e6f8014c50089bb6bb44c4488d83ef11c1e7673",
+        "tokens": [
+          "33400621551188222405899668320395952721751998345764736198678110195508544326786",
+          "89598256065357508140849023131460824871625922981749145375199095015779705792325"
+        ],
+        "pm_slug": "will-amd-say-tsmc-during-earnings-call-20260730164425713"
+      },
+      {
+        "question": "Will the earnings call not air?",
+        "condition_id": "0x35530f3f13332cb2dfc003ac17bdd6e4fcf8026cfd970cfd45882e4afc9c4022",
+        "tokens": [
+          "2078107099087895533078223362858402544030155677214556355305252489232576682492",
+          "109216067506696909734195258582417278021521248185789726262344669884530864057757"
+        ],
+        "pm_slug": "will-the-earnings-call-not-air-20260730164425714"
+      }
+    ]
+  }
+}

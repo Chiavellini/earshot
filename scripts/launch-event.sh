@@ -108,11 +108,22 @@ source "$ACCOUNT"
 # never here, on the TELEPHONY launcher. Resolve + REFUSE before the dial.
 if grep -qE '^[[:space:]]*engine[[:space:]]*=[[:space:]]*"streaming_ctc"' "$CONFIG"; then
   if [[ -z "${ORT_DYLIB_PATH:-}" ]]; then
-    _ort=$(find "${EARSHOT_ROOT:-$HOME/ear}/vendor" -name 'libonnxruntime*.so*' 2>/dev/null | head -1 || true)
+    # Same two fixes as launch-webcast.sh (2026-08-03): '*.so*'-only never
+    # resolves on Darwin, and $HOME/ear is the box layout, not the laptop's.
+    # dSYM exclusion because that bundle's same-named file HANGS dlopen.
+    _vend="${EARSHOT_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}/vendor"
+    case "$(uname -s)" in
+      Darwin) _pat='libonnxruntime*.dylib' ;;
+      *)      _pat='libonnxruntime*.so*'   ;;
+    esac
+    _ort=$(find "$_vend" -name "$_pat" -not -path '*dSYM*' 2>/dev/null | head -1 || true)
     if [[ -n "$_ort" ]]; then
       export ORT_DYLIB_PATH="$_ort"
     fi
   fi
+  case "${ORT_DYLIB_PATH:-}" in
+    *dSYM*) echo "REFUSING: ORT_DYLIB_PATH is a dSYM debug bundle, not a loadable library: $ORT_DYLIB_PATH" >&2; exit 2 ;;
+  esac
   [[ -n "${ORT_DYLIB_PATH:-}" && -f "${ORT_DYLIB_PATH}" ]] || {
     echo "REFUSING: config uses engine=streaming_ctc but ORT_DYLIB_PATH is unset/invalid." >&2
     echo "  run scripts/fetch-models.sh (it fetches the dylib and prints the export), or" >&2

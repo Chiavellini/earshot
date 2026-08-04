@@ -121,13 +121,94 @@ if dead:
     sys.exit(0)
 n = len(a.get("keywords", []))
 print(f"PASS keyword readiness: {n} keywords, all confirmed (study {a.get('date')}, engine {a.get('engine', '?')}, voices {'+'.join(a.get('voices', []))})")
+
+# WEAK-WORD WARNING (PLTR 2026-08-03). `nvidia` was the event's ONE true detection
+# miss — 37c pre-call, the only place real edge existed — and it passed this gate
+# silently. confirmed==0 is a FAIL above; a low-but-nonzero score is NOT a fail,
+# because dropping a keyword forfeits its market and that is a trading decision,
+# not a preflight one. But it must not be invisible.
+#
+# The metric is confirmed/clips, NOT raw confirmed. Raw counts are not comparable
+# across studies: the 2026-08-04 carrier-sentence change tripled clips per variant
+# and moved absolute counts by ~3x while the underlying detectability was
+# unchanged. The ratio is stable under that change. Reference point: NVID scored
+# 0.33 (2 of 6). Anything at or below that band deserves eyes before arming.
+WEAK_RATIO = 0.5
+weak = []
+for k in a.get("keywords", []):
+    c, n = int(k.get("confirmed") or 0), int(k.get("clips") or 0)
+    if c > 0 and n > 0 and c / n <= WEAK_RATIO:
+        weak.append((k.get("ticker", "?").split("-")[-1], k.get("phrase", "?"), c, n, c / n))
+weak.sort(key=lambda t: t[4])
+if weak:
+    detail = ", ".join(f"{t} \"{p}\" {c}/{n}={r:.2f}" for t, p, c, n, r in weak)
+    print(f"WARN {len(weak)} WEAK keyword(s) — confirmed/clips <= {WEAK_RATIO} in the study, "
+          f"materially likelier to be missed live (PLTR NVID scored 0.33 and was that event's "
+          f"only real edge, lost): {detail} — add variants and re-run the study, or accept the risk knowingly")
+
+# OVER-FIRING (added 2026-08-04). The same ratio read from ABOVE. A keyword that
+# fires many times on clips holding ONE utterance each is assembling from pieces
+# rather than hearing the word — the mechanism behind GRAB `commission` firing on
+# audio that said "moats ... competitive advantage".
+#
+# HONEST LIMITS, measured before shipping this — do not over-read a clean run:
+#   * It separates `commission` (2.67, GRAB cohort top) and nothing else.
+#   * It MISSES `robot` (1.42, at the GRAB median of 1.38) and `game` (1.50,
+#     BELOW four clean SNAP words: storage/china 2.00, live stream 1.83,
+#     family center 1.67). Both were live false positives.
+#   * `headwind` (1.50) ranks 5th highest and was a RECALL failure, so the ratio
+#     also conflates over-firing with variant count (confirmed sums per variant).
+#   * It is METHOD-DEPENDENT: carrier-sentence studies (2026-08-04 onward) read
+#     0.11-4.78 with CLEAN words at 3.7-4.8, so the legacy constant is nonsense
+#     there. Hence the split below and no absolute carrier-era number yet.
+# The durable discriminator is max Confirmed fires on a SINGLE clip (one
+# utterance per clip, so >=3 fires is the assembly window seen directly). That
+# field does not exist in the artifact yet; when variant-study.sh emits
+# max_fires_per_clip, gate on it and retire the ratio read.
+OVERFIRE_RATIO_LEGACY = 2.0   # PRE-REGISTERED 2026-08-04. Pre-carrier studies only.
+# Branch on the artifact's own method marker, never on its date: the first
+# carrier study ran 2026-08-03 UTC, so a date cutoff mis-classifies it and
+# flags every clean word at the legacy bar (observed on AMD before this fix).
+# Artifacts written before the marker existed have no key -> legacy, correctly.
+carriers_n = int(a.get("carriers") or 0)
+ratios = [(int(x.get("confirmed") or 0) / int(x.get("clips") or 1))
+          for x in a.get("keywords", []) if int(x.get("clips") or 0) > 0]
+over = []
+if carriers_n == 0:
+    bar, basis = OVERFIRE_RATIO_LEGACY, f"confirmed/clips > {OVERFIRE_RATIO_LEGACY} (legacy bare-clip study)"
+elif len(ratios) >= 10:
+    # Top decile OF THIS STUDY. Relative, because no absolute carrier-era bar is
+    # defensible yet: clean AMD words read 3.7-4.8. Calibration data, not a verdict.
+    bar = sorted(ratios)[int(len(ratios) * 0.9)]
+    basis = (f"top decile of THIS carrier study (n={len(ratios)}, cut {bar:.2f}) — no absolute "
+             f"carrier-era bar is defensible yet; this is calibration data, not a verdict")
+else:
+    bar, basis = None, ""
+if bar is not None:
+    for k in a.get("keywords", []):
+        c, n = int(k.get("confirmed") or 0), int(k.get("clips") or 0)
+        if n > 0 and c / n > bar:
+            over.append((k.get("ticker", "?").split("-")[-1], k.get("phrase", "?"), c, n, c / n))
+over.sort(key=lambda t: -t[4])
+if over:
+    detail = ", ".join(f"{t} \"{p}\" {c}/{n}={r:.2f}" for t, p, c, n, r in over)
+    print(f"WARN {len(over)} OVER-FIRING candidate(s) — {basis}: {detail} — "
+          f"NOTE this ratio caught GRAB \"commission\" (2.67) but does NOT separate "
+          f"\"robot\"/\"game\", which were also live false positives; treat as a prompt to "
+          f"inspect, not as coverage")
 PY
   )
-  case "$verdict" in
-    PASS*) check PASS "${verdict#PASS }" ;;
-    FAIL*) check FAIL "${verdict#FAIL }" ;;
-    *)     check FAIL "keyword-readiness gate could not run: ${verdict:-empty verdict}" ;;
+  # The gate may emit a verdict line plus optional WARN lines; handle each.
+  local vline
+  vline=$(printf '%s\n' "$verdict" | head -1)
+  case "$vline" in
+    PASS*) check PASS "${vline#PASS }" ;;
+    FAIL*) check FAIL "${vline#FAIL }" ;;
+    *)     check FAIL "keyword-readiness gate could not run: ${vline:-empty verdict}" ;;
   esac
+  while IFS= read -r extra; do
+    [[ "$extra" == WARN* ]] && check WARN "${extra#WARN }"
+  done < <(printf '%s\n' "$verdict" | tail -n +2)
 }
 
 # Dev short-circuit: gate-only run for fixture testing / quick iteration.
@@ -244,8 +325,12 @@ if cargo build --release 2>&1 | tail -1 | grep -q "Finished"; then
   # dead runtime is a tonight problem, not a T-20 problem.
   if [[ "$ENGINE" == "streaming_ctc" && -z "${ORT_DYLIB_PATH:-}" ]]; then
     case "$(uname -s)" in
-      Linux)  ORT_DYLIB_PATH="$(find vendor -name 'libonnxruntime*.so*' 2>/dev/null | head -1)" ;;
-      Darwin) ORT_DYLIB_PATH="$(find vendor -name 'libonnxruntime*.dylib' 2>/dev/null | head -1)" ;;
+      # -not -path '*dSYM*' — see run-arm.sh: the .dSYM bundle holds a file with
+      # the identical basename that dlopen HANGS on. Without this exclusion the
+      # find is order-dependent, and on 2026-08-03 it picked the decoy and this
+      # very check reported "detector-smoke HUNG (>90 s)" for a healthy tree.
+      Linux)  ORT_DYLIB_PATH="$(find vendor -name 'libonnxruntime*.so*'   -not -path '*dSYM*' 2>/dev/null | head -1)" ;;
+      Darwin) ORT_DYLIB_PATH="$(find vendor -name 'libonnxruntime*.dylib' -not -path '*dSYM*' 2>/dev/null | head -1)" ;;
     esac
     export ORT_DYLIB_PATH
   fi
@@ -261,12 +346,47 @@ if cargo build --release 2>&1 | tail -1 | grep -q "Finished"; then
   if [[ $CK_RC -eq 0 ]]; then
     check PASS "keywords compile (BPE-encodable) on the ARMED engine's vocab"
     # Short token targets are the acoustic analogue of the 2-character variant
-    # problem that produced 38 false alarms in one event set. Warn, never fail —
-    # dropping a keyword forfeits its market and that is a trading decision.
+    # problem that produced 38 false alarms in one event set.
+    #
+    # ESCALATED 2026-08-04 from WARN to FAIL-unless-acked. SNAP `game` (▁GA ME,
+    # k=2) fired live and settled NO — and the WARN below had fired that same
+    # night into the void. The measured confidences are why no softer gate works:
+    # 0.587 (traded, spec_edge) / 0.932 (pipe_tuned) / 0.953 (streamlink). A k=2
+    # target assembles at NEAR-CEILING confidence, so a decision-layer
+    # min_confidence gate cannot reach it — raise the gate past 0.587 and the
+    # 0.953 leg fires instead, because fanout ORs at the decision.
+    #
+    # Dropping the keyword still forfeits its market, which is a TRADING
+    # decision — so this does not refuse the word, it refuses to proceed
+    # SILENTLY. The ack file is the human taking the decision the WARN used to
+    # swallow. Compile-time refusal (kws_compile/config::validate) is
+    # deliberately NOT taken, for the same forfeits-a-market reason.
     SHORT=$(printf '%s\n' "$CK_OUT" | grep -oE "confirmed \[[^]]+\]: .* \(([12]) tokens\)" | sed -E 's/confirmed \[([^]]+)\].*\(([12]) tokens\)/\1 (\2 tokens)/' || true)
     if [[ -n "$SHORT" ]]; then
-      check WARN "SHORT token targets — highest false-alarm risk, review before arming:"
-      printf '%s\n' "$SHORT" | sed 's/^/        /'
+      ACK_FILE="configs/.acks/$(basename "$CONFIG" .toml)-short-tokens.ack"
+      ACK_MAX_AGE_DAYS=7
+      if [[ ! -f "$ACK_FILE" ]]; then
+        check FAIL "SHORT token targets (k<=2) present and UNACKED — live evidence: SNAP \"game\" fired 0.587/0.932/0.953 and settled NO; no confidence gate reaches a k=2 target. Acknowledge the trading decision:  mkdir -p configs/.acks && printf '%s\n' \"acked $(date -u +%F) by <operator>\" $(printf '%s\n' "$SHORT" | sed 's/^/           /' | tr '\n' ' ') > $ACK_FILE"
+        printf '%s\n' "$SHORT" | sed 's/^/        /'
+      else
+        ACK_AGE_D=$(( ( $(date -u +%s) - $(stat -f %m "$ACK_FILE" 2>/dev/null || stat -c %Y "$ACK_FILE") ) / 86400 ))
+        if (( ACK_AGE_D > ACK_MAX_AGE_DAYS )); then
+          check FAIL "short-token ack STALE (${ACK_AGE_D}d > ${ACK_MAX_AGE_DAYS}d): $ACK_FILE — re-ack for this event"
+        else
+          MISSING_ACK=""
+          while IFS= read -r s; do
+            [[ -z "$s" ]] && continue
+            w="${s%% (*}"
+            grep -qF -- "$w" "$ACK_FILE" || MISSING_ACK+="$w "
+          done <<< "$SHORT"
+          if [[ -n "$MISSING_ACK" ]]; then
+            check FAIL "short-token ack does not name: $MISSING_ACK— every k<=2 target must be listed in $ACK_FILE"
+          else
+            check WARN "SHORT token targets ACKED (${ACK_AGE_D}d old, $ACK_FILE) — highest false-alarm risk, accepted knowingly:"
+            printf '%s\n' "$SHORT" | sed 's/^/        /'
+          fi
+        fi
+      fi
     else
       check PASS "no 1-2 token keyword targets"
     fi

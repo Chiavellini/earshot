@@ -1,0 +1,151 @@
+{
+ "config": "webcast-snap-26aug03-arm-wc",
+ "keywords_sha256": "f3d33a97e147241e59c7a3b60b9616f31edb67764e833d72749827753b803ee4",
+ "date": "2026-08-03",
+ "engine": "streaming_ctc",
+ "voices": [
+  "Samantha",
+  "Daniel",
+  "Paulina"
+ ],
+ "keywords": [
+  {
+   "ticker": "KXEARNINGSMENTIONSNAP-26AUG03-CHIN",
+   "phrase": "china",
+   "variants": [
+    "china",
+    "chinas"
+   ],
+   "clips": 6,
+   "confirmed": 12
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONSNAP-26AUG03-FAMI",
+   "phrase": "family center",
+   "variants": [
+    "family center"
+   ],
+   "clips": 3,
+   "confirmed": 5
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONSNAP-26AUG03-GAME",
+   "phrase": "game",
+   "variants": [
+    "game",
+    "games"
+   ],
+   "clips": 6,
+   "confirmed": 9
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONSNAP-26AUG03-GLAS",
+   "phrase": "glasses",
+   "variants": [
+    "glasses"
+   ],
+   "clips": 3,
+   "confirmed": 4
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONSNAP-26AUG03-LIVE",
+   "phrase": "live stream",
+   "variants": [
+    "live stream",
+    "live streaming"
+   ],
+   "clips": 6,
+   "confirmed": 11
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONSNAP-26AUG03-MEMO",
+   "phrase": "memories storage",
+   "variants": [
+    "memories storage"
+   ],
+   "clips": 3,
+   "confirmed": 4
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONSNAP-26AUG03-PERP",
+   "phrase": "perplexity",
+   "variants": [
+    "perplexity",
+    "perplexitys"
+   ],
+   "clips": 6,
+   "confirmed": 5
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONSNAP-26AUG03-REST",
+   "phrase": "restructuring",
+   "variants": [
+    "restructuring",
+    "restructurings"
+   ],
+   "clips": 6,
+   "confirmed": 7
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONSNAP-26AUG03-RETE",
+   "phrase": "retention",
+   "variants": [
+    "retention",
+    "retentions"
+   ],
+   "clips": 6,
+   "confirmed": 6
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONSNAP-26AUG03-SPEC",
+   "phrase": "spectacles",
+   "variants": [
+    "spectacles"
+   ],
+   "clips": 3,
+   "confirmed": 4
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONSNAP-26AUG03-STOR",
+   "phrase": "storage",
+   "variants": [
+    "storage",
+    "storages"
+   ],
+   "clips": 6,
+   "confirmed": 12
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONSNAP-26AUG03-TARI",
+   "phrase": "tariff",
+   "variants": [
+    "tariff",
+    "tariffs"
+   ],
+   "clips": 6,
+   "confirmed": 5
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONSNAP-26AUG03-UK",
+   "phrase": "u k",
+   "variants": [
+    "u k",
+    "united kingdom"
+   ],
+   "clips": 6,
+   "confirmed": 6
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONSNAP-26AUG03-XBOX",
+   "phrase": "xbox",
+   "variants": [
+    "xbox",
+    "xboxs",
+    "x box",
+    "ex box"
+   ],
+   "clips": 12,
+   "confirmed": 11
+  }
+ ]
+}
