@@ -115,8 +115,9 @@ launch_event_posture` (which now also covers the one-shot refusal, the
 starts_at-derived budget echo, the classified dial retry, the ambiguous-dial
 page, and the no-stream watchdog's synthetic marker), and a fully dry
 rehearsal with an isolated state directory. Verify no orphan
-tunnel/decoder/arm remains. The classified retry and watchdog are additionally
-covered by the Q-CALLPATH live rehearsal (VERIFICATIONS.md).
+tunnel/decoder/arm remains. The classified retry and watchdog await a live
+re-verify — the SCHEDULED Q-CALLPATH rehearsal (VERIFICATIONS.md); until it
+runs, this path is stub-tested, not production-mechanism-validated.
 
 ## Migration status
 

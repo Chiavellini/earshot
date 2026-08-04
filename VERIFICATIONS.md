@@ -1882,6 +1882,43 @@ row; `board-open.py --issuer BULL` agreed (exit 0).
 **Confidence:** high. **Re-verify:** after any change to `bridge-probe.sh`'s
 promote block or `registry-admit.py`'s write path.
 
+## Q-CALLPATH — first-dial retry + no-stream watchdog (SCHEDULED, not yet live)
+
+**NOT YET PINNED — stub-tested, live rehearsal pending.** The call-path
+hardening (2026-08-04, commit on webcast-lane) is proven by
+`tests/redial_supervisor.rs` (10), `tests/launch_event_posture.rs` (+6), and
+`tests/twilio_source.rs` (+3), all under bash 3.2 and 5. Per the CLAUDE.md
+unattended rule these count as validated only after ONE combined live
+rehearsal with the production mechanism — deferred to after tonight's webcast
+launches (tonight is webcast-only, so `launch-event.sh` is not exercised
+live until then). Tonight's events do NOT ride this unproven-live path.
+
+Recipe (on the box, one TTS call chain vs +17627212978):
+1. `configs/rehearsal-qcallpath.toml` = clone of `rehearsal-qredial.toml`
+   with `max_reconnects = 3`, `idle_timeout_secs = 8`; pin the binary via
+   `preflight-event.sh`.
+2. Offline gates first (no call): launcher REFUSES a config with
+   `max_reconnects` stripped, accepts it with `--one-shot-ok`;
+   `preflight-event.sh` FAILs with no TLS env; pinned `arm` with
+   `EARSHOT_REDIAL_DIR` unset refuses at load (Gap E).
+3. `dial-fail-once.sh` wrapper: first invocation exits 5, second rewrites
+   `--stream-url` to a dead-but-routed path (`wss://<host>/e/9999`, Caddy
+   404s → stream never lands), later invocations `exec twilio-dial.sh`.
+4. `launch-event.sh --config rehearsal-qcallpath.toml … --to +17627212978
+   --tls-host media.<ip>.sslip.io --dial-script <dial-fail-once.sh>
+   --stream-confirm-secs 20`.
+5. Observe: attempt 1 exits 5 → retry → attempt 2's stream never lands → NO
+   STREAM page + synthetic `no_stream` marker → supervisor hangs up the deaf
+   CallSid + redials (correct URL) → `stream.connected` confirms. Then a real
+   `twilio-hangup.sh $(cat call.sid)` mid-call → Q-REDIAL parity
+   (drop→new CallSid <2s, fresh audio <6s). Then real `SIGTERM` → clean
+   report, ledger 0¢, no orphan pids.
+
+Pass criteria to pin here once run: retry within 10 s of the induced
+transient; NO-STREAM page ≤ confirm+5 s with the deaf sid; deaf call hung up;
+mid-call parity holds; one-shot no-double-fire across every splice; SIGTERM
+clean.
+
 ## Q-GRADE — missed-arm reconciliation, launchd-fired (2026-08-04, live)
 
 **PINNED.** `com.earshot.missed-arm` (17:30 local daily →
