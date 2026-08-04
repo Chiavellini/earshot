@@ -13,6 +13,13 @@ layer, `docs/ARCHITECTURE.md` maps the exact typed doors and
 - **Kalshi API facts live in `VERIFICATIONS.md`** — dated, evidence-backed
   live pins. Never code against remembered API details; if you discover a
   new wire fact, pin it there (with evidence) in the same change.
+- **Never point a recorder at a tradeable call.** `bridge-probe`/`chain-capture`
+  bank corpus: no detector, no orders. They refuse against an open Kalshi board
+  unless `--corpus-only`. To cover an event, ARM it (`launch-event.sh`) — the
+  arm path has no duration cap and holds one call 90 min, where a probe stops
+  at its `--secs` and never reconnects. On 2026-08-04 SPOT and PGR were both
+  recorded instead of armed while ~335,000 contracts traded
+  (`docs/POSTMORTEM-26AUG04.md`). Run `missed-arm-check.py` after every event.
 - Current runtime wiring exists in `pipeline::run_pipeline` (audio chain) and
   `main.rs::arm` (execution side). Do not add a third composer; the roadmap
   migrates both behind an explicit run supervisor.
@@ -53,7 +60,10 @@ cargo run --release -- replay --config configs/example-event.toml
 cargo run --release -- bench-detector --config <cfg> --corpus corpus/   # see docs/BAKEOFF.md
 cargo run --release -- arm --config configs/m2-drill.toml            # dry-run
 cargo run --release -- book --ticker <T> --secs 10                   # read-only
-scripts/bridge-probe.sh --to +1… --label <venue-date> [--dtmf 1234#]  # admission probe → dial-ins.toml `admission` (Q-ADMIT; preflight requires a fresh `held`)
+scripts/bridge-probe.sh --to +1… --label <venue-date> [--dtmf 1234#] [--promote]  # admission probe; --promote WRITES `held` into dial-ins.toml + proven digits (Q-ADMIT; preflight requires a fresh `held`)
+scripts/slate-stage.sh --issuer <TICKER>            # same-day restage after a probe promotes a venue
+scripts/missed-arm-check.py --date YYYY-MM-DD       # did we capture a traded board and place nothing? (run after every event day)
+scripts/board-open.py --issuer <TICKER>             # is there an open Kalshi mention board right now
 scripts/launch-event.sh --config <cfg> --account <env> --bind-port <p> --to +1…  # one isolated event; run per event for concurrent calls (docs/MULTI-EVENT.md §8)
 source ~/.kalshi/earshot_env                 # credentials (never in repo)
 ```

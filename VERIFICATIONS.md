@@ -1779,3 +1779,136 @@ not yet covered.
 establish what the bridge does to a silent caller.
 **Confidence:** high (4/4 controls, 32-issuer live sweep).
 **Re-verify:** if SEC changes the FTS endpoint or begins enforcing 10 req/s.
+
+## Q-STALE-EVENT — one event ticker per series, and `sub_title` goes stale (2026-08-04, live)
+
+**PINNED.** Kalshi reuses a SINGLE event ticker per mention series for the
+standing question "*What will <issuer> say during their next earnings call?*"
+and does **not** re-date it, or its `sub_title`, when the event rolls forward to
+the next quarter's call.
+
+**Claim:** an event returned by `GET /events?status=open` can carry a
+`sub_title` date weeks in the past while its markets are live and repricing.
+The date is stale; the event is not over.
+
+**Source / Evidence** (read-only public GETs, 2026-08-04 ~14:5x–15:2xZ):
+
+- `GET /events?series_ticker=KXEARNINGSMENTIONPGR` returns exactly two events,
+  `KXEARNINGSMENTIONPGR-26JUL15` and `-26APR15`, both titled "What will
+  Progressive say during their **next** earnings call?"
+- `KXEARNINGSMENTIONPGR-26JUL15` carries `sub_title = "On Jul 15, 2026"` and
+  `call_date_source = "sub_title"` in `slate/latest.json` (generated 02:02Z).
+- Its 12 markets were `status=active` with `close_time 2026-12-31T15:00:00Z`.
+- `GET /markets/trades?ticker=KXEARNINGSMENTIONPGR-26JUL15-SNAP` returned
+  trades at **14:33:26Z … 14:54:09Z on 2026-08-04** — i.e. during Progressive's
+  Aug 4 call, 20 days after the `sub_title` date.
+- Board totals that day: 12 markets, ~178,000 contracts, settling to
+  0.99/0.02.
+
+**Implication:** `today <= call_date` is not a safe way to drop an event, and
+this is the THIRD distinct Kalshi misdating class after BA (ticker and
+`sub_title` disagree) and HOOD (both wrong together). Note `ticker_misleads()`
+is structurally blind here for the HOOD reason — ticker `26JUL15` agrees with
+the stale `sub_title`. The free discriminator is that both sweeps query
+`status=open`, so an open event with a passed date is self-refuting.
+`scripts/discover-events.py` now emits `stale_open_event` and reports it
+outside the horizon filter; `recon-worklist.py` surfaces `STALE-DATE`.
+
+**Cost of not having this:** Progressive was absent from `slate/worklist.md`
+entirely on 2026-08-04. We recorded 4,121 s of that call to WAV and placed zero
+orders on a board that traded ~178,000 contracts.
+
+**Confidence:** high (direct trade timestamps against a stale `sub_title`).
+A live sweep the same day flagged a second instance unprompted — `BULL`
+(Webull) `-26JUL24`, 17 markets open and **unresolved** (0.15–0.58), i.e. a
+future call we had also been blind to.
+**Re-verify:** if Kalshi begins minting per-call event tickers, or if
+`sub_title` starts tracking the rolled-forward date.
+
+## Q-ADMIT addendum — SPOT and PGR admission (2026-08-04, live)
+
+**PINNED.** Two new `held` venues, both established by probe dial per THE MSFT
+RULE, taking probed `held` coverage from 1 venue (CMG) to 3.
+
+- **SPOT (Spotify).** Toll-free + numeric PIN, dialled 12:02:57Z. Held
+  **598.4 s** with **11 stalls >100 ms** — clean. DTMF accepted first try. The
+  transcript is unambiguously the live Q2 2026 call (operator preamble → Brian
+  Goldberg → both co-CEOs → Slido instructions). Capture ended on OUR 600 s
+  probe cap (`capture_bakeoff: max duration reached — stopping max_secs=600`),
+  **not** a bridge drop, cutting off mid-sentence before Q&A.
+  Evidence: `corpus/bridge-probes/spot_2026_08_04.{json,jsonl,wav}`.
+- **PGR (Progressive).** Toll-free + dial-in PIN, six consecutive full legs
+  from 14:01Z (598.1 / 598.4 / 599.0 / 598.5 / 598.9 / 529.9 s), each
+  re-dialling with DTMF and each ending on the same 600 s cap. Arrival jitter
+  was high (91–300 stalls/leg, max 4.5 s) via ngrok on the laptop, but frame
+  count matched wall-clock in every leg, so **no audio was lost** — the stalls
+  are delivery jitter, not gaps in the call.
+  Evidence: `corpus/bridge-probes/pgr_2026_08_04_leg0*.{json,jsonl,wav}`.
+
+**Implication:** neither venue was in `configs/dial-ins.toml` at all, so
+`slate-stage.sh:291` (`PHONE_OK=1` iff `admission == "held"`) staged
+webcast-only and no phone arm was ever derived for either. Both are now
+registered, with digits in `state/hunt/numbers-probed.env` (gitignored, 0600).
+
+**Confidence:** high (mechanical hold times + intelligible transcripts).
+**Re-verify:** next quarter — these are conference-provider reservations and
+digits rotate; `admission_probed` goes stale at 30 days.
+
+### Amendment — the live `--promote` path (2026-08-04, live)
+
+**PINNED.** The one unproven leg of the SPOT fix — `bridge-probe.sh --promote`
+wiring end-to-end with a real call — was rehearsed against the TTS loopback
+(+17627212978, the Q-REDIAL rehearsal number):
+
+- One dial, `--secs 120 --promote --issuer TTSREHEARSAL`: held **114.6 s**
+  (5744 frames, 16 stalls) — above the ≥95% auto-write floor (114.0 s).
+- `registry-admit.py --auto` made the write itself: printed
+  `created [TTSREHEARSAL] admission=held probed=2026-08-04`, and `git diff`
+  showed **exactly one appended 14-line section at EOF, zero other hunks** —
+  THE MSFT RULE comments, `[HOOD]`'s triple-quoted notes, and every other
+  section byte-identical. `tomllib` parsed the result. The proven number
+  landed in `state/hunt/numbers-probed.env` (0600).
+- The test section was then reverted (`git checkout -- configs/dial-ins.toml`
+  + the two env lines hand-removed); the artifacts below are the durable
+  record.
+
+Evidence: `corpus/bridge-probes/ttsrehearsal_2026_08_04.{json,jsonl,txt,wav}`.
+Also live-validated the same day, in scratch, against the real board:
+`discover-events.py` surfaced `KXEARNINGSMENTIONBULL-26JUL24` with
+`stale_open_event: true` (past-dated ticker, board open — the PGR class) and
+`recon-worklist.py` emitted its `STALE-DATE(open, kalshi=2026-07-24)` escalate
+row; `board-open.py --issuer BULL` agreed (exit 0).
+
+**Confidence:** high. **Re-verify:** after any change to `bridge-probe.sh`'s
+promote block or `registry-admit.py`'s write path.
+
+## Q-GRADE — missed-arm reconciliation, launchd-fired (2026-08-04, live)
+
+**PINNED.** `com.earshot.missed-arm` (17:30 local daily →
+`scripts/missed-arm-daily.sh`) validated per the CLAUDE.md unattended rule,
+NOT by a manual run:
+
+- `launchctl bootstrap` + `kickstart gui/<uid>/com.earshot.missed-arm`
+  (launchd env): exit 1 with both real positives — PGR (4,121 s captured,
+  0 orders, 178,691 contracts traded) and SPOT (598 s, 0 orders, 157,217) —
+  and the alert path fired with no `warn: notify.sh failed` in the log.
+- Second kickstart + real `SIGTERM` mid-run: wrapper logged `exit=143`, no
+  surviving processes, no partial state (the checker is read-only), and a
+  killed run pages UNDETERMINED rather than passing silently.
+
+Evidence: `~/Library/Logs/earshot/missed-arm.log` (2026-08-04 17:3xZ entries).
+**Caveat:** findings for box-launched events are expected-incomplete until the
+box's `state/` is rsynced down — see docs/nodes/control-grade.md §Known gap.
+**Re-verify:** after any change to `missed-arm-daily.sh`, the plist, or
+`missed-arm-check.py`'s exit contract.
+
+### Ops note — `cargo test` needs `ORT_DYLIB_PATH` when `models/` is present
+
+On a box with `models/` fetched, `tests/sherpa_kws.rs` loads the real model;
+with `ORT_DYLIB_PATH` unset the ort loader SIGABRTs (`libc++abi: terminating
+due to uncaught exception of type Ort::Exception`) instead of skipping — and
+non-deterministically (one same-tree run passed, the next aborted, likely
+load-order dependent). Observed live 2026-08-04 on the laptop. Run gates as
+`ORT_DYLIB_PATH=vendor/onnxruntime/<platform>/lib/libonnxruntime.dylib cargo
+test`, and never judge a suite through `| tail` — the 07-25 masked-exit-code
+defect hid exactly this.

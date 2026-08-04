@@ -821,6 +821,11 @@ owns = [
   # the call. An execution verdict on a run that never happened is still an
   # execution verdict, which is why it lives here.
   "scripts/missed-arm-check.py",
+  # the checker writes nothing and alerts nothing by design; the wrapper owns
+  # the daily firing's notify path (PYPL/BA lesson: a check nobody hears is
+  # not a check). Its launchd plist lives with the others under
+  # platform.runtime's configs/launchd/**.
+  "scripts/missed-arm-daily.sh",
   "scripts/run-verdict.sh",
   "scripts/validate-from-log.py",
 ]

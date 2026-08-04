@@ -1,0 +1,11 @@
+{
+  "label": "pgr-2026-08-04-leg15",
+  "frames": 631,
+  "samples": 100960,
+  "sample_rate_hz": 8000,
+  "duration_ms": 12620,
+  "held_ms": 12398,
+  "stalls_over_100ms": 1,
+  "wav_path": "corpus/bridge-probes/pgr_2026_08_04_leg15.wav",
+  "jsonl_path": "corpus/bridge-probes/pgr_2026_08_04_leg15.jsonl"
+}

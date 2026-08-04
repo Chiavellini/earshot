@@ -59,10 +59,20 @@ answer rather than a human with a browser:
   off-hours — are marked as such and probed at T-90..T-30 by
   `admission-window-probe.sh`, which refuses to dial outside that window.
 
-The binding constraint is now coverage, not plumbing: `admission` is set on 6
-of 58 registry venues and exactly one is `held`, so `slate-stage.sh` stages
-webcast-only for almost everything by construction. Growing `held` coverage is
-the highest-value phone-lane work available.
+The binding constraint is now coverage, not plumbing: `admission` is set on 10
+of 64 registry venues and **three** are `held` (CMG, SPOT, PGR), so
+`slate-stage.sh` still stages webcast-only for almost everything by
+construction. Growing `held` coverage is the highest-value phone-lane work
+available.
+
+**2026-08-04 changed how a probe's verdict reaches the registry.** SPOT and PGR
+were both `held` on the morning of their calls and neither was registered,
+because `bridge-probe.sh` printed a paste-ready snippet and a human had to
+retype it. `bridge-probe.sh --promote` now writes the verdict itself (via
+`scripts/registry-admit.py`, owned by `control.admission`) and persists the
+proven digits to `state/hunt/numbers-probed.env`. THE MSFT RULE is unchanged —
+only a probe dial sets `admission`, and only `held` auto-writes. Full account
+in `docs/POSTMORTEM-26AUG04.md`.
 
 ## Immediate outcomes
 

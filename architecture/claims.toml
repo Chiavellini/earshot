@@ -411,6 +411,10 @@ paths = [
   # dial-ins.toml [GRAB].admission = "passcode_required".
   "corpus/bridge-probes/grab_2026_08_03.json",
   "corpus/bridge-probes/grab_2026_08_03.jsonl",
+  # ttsrehearsal 2026-08-04: the live --promote proof (Q-ADMIT amendment) —
+  # one real dial, held 114.6 s, registry-admit --auto wrote one clean section.
+  "corpus/bridge-probes/ttsrehearsal_2026_08_04.json",
+  "corpus/bridge-probes/ttsrehearsal_2026_08_04.jsonl",
   "docs/nodes/evidence-capture.md",
   "scripts/wnt-daily.sh",
   # wnt-source-lane: bank the real WNT broadcast (Q-WNT-SRC retargeting).
@@ -644,6 +648,9 @@ contract_change = true
 paths = [
   "docs/nodes/control-grade.md",
   "scripts/missed-arm-check.py",
+  # the scheduled leg's notify wrapper. The launchd plist itself is owned and
+  # claimed by platform.runtime (configs/launchd/**), like slate-daily's.
+  "scripts/missed-arm-daily.sh",
 ]
 verification = [
   "python3 scripts/missed-arm-check.py --check",
@@ -654,3 +661,23 @@ evidence = [
   "corpus/bridge-probes/spot_2026_08_04.json",
   "corpus/bridge-probes/pgr_2026_08_04_leg01.json",
 ]
+
+[[claim]]
+id = "missed_arm.schedule"
+node = "platform.runtime"
+worker = "admission-evidence-lane"
+branch = "webcast-lane"
+state = "active"
+contract_change = false
+# 2026-08-04. The launchd unit that fires the missed-arm reconciliation daily
+# at 17:30 local. The wrapper it runs is control.grade's
+# (scripts/missed-arm-daily.sh, claimed under missed_arm.reconcile); this
+# claim covers only the scheduling artifact, which lives with the other
+# plists under platform.runtime's configs/launchd/**.
+paths = [
+  "configs/launchd/com.earshot.missed-arm.plist",
+]
+verification = [
+  "plutil -lint configs/launchd/com.earshot.missed-arm.plist",
+]
+evidence = ["VERIFICATIONS.md"]
