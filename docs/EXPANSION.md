@@ -54,6 +54,27 @@ Measured from tape (Q-PM amendment): on the identical earnings-mention events
 Kalshi traded **47.8×** (PLTR 26AUG03) and **292×** (AMD 26AUG04) Polymarket's
 notional, with PM median spreads of 31¢ and 19¢. The 10–100× figure holds for
 the Powell / Trump / NFLX boards it was sampled from, not for earnings.
+
+**AMENDED 2026-08-05 — two corrections, in opposite directions.**
+
+*The ratios were overstated.* Both were taken over the full tapes, which cover
+different spans. The AMD Polymarket capture **ended ~24 h before the call**:
+only **3.7%** of Kalshi's AMD notional falls inside the window Polymarket was
+recorded, so 292× compares Kalshi's call day against Polymarket's previous day.
+Same-window, AMD is **10.8×** and PLTR **30.4×** (63.5% coverage).
+`xvenue-report.py` now reports the shared window beside the full-tape ratio and
+raises a caveat below 50% coverage; the ledger rows carry both.
+
+*But the downgrade conflated two different uses, and only one of them dies.*
+
+- **PM as a SIGNAL source: dead, and the amendment does not rescue it.** At
+  14–48 prints per event a PM move cannot lead Kalshi. 10.8× instead of 292×
+  changes nothing here — the binding constraint is print *count*, not ratio.
+- **PM as an EXECUTION venue: a separate question, and volume is the wrong
+  test for it.** Our signal is the call audio, not the PM book. Thin, slow
+  flow is not a disqualifier for taking; it is the thing being taken from.
+  The measurement that decides it is **takeable size at an exploitable
+  price**, which is what `takeable_axis` now computes. First result below.
 **Surface:** PM tag `mention-markets` lists the *same* calls (keyword overlap
 ≈11/18 on AAPL; 8/17 auto-matched on AMD). Cumulative-count markets ("say AWS
 20+ times") re-price on every utterance — a streaming counter would hold edge
@@ -62,10 +83,35 @@ the whole call, and that shape is untested.
 `ws-subscriptions-clob`, ms timestamps, 0.001 tick). The lane is frozen:
 `pm-tape.py` + `examples/book-tape.rs` → `xvenue-normalize.py` →
 `xvenue-report.py` → `slate/xvenue-ledger.json`, standing on its own timer.
-**Action:** the volume axis is answered and negative for earnings-mention — a
-PM move is not a usable Kalshi signal at 14–48 prints per event. Point the Δt
-axis at **`KXFEDMENTION`**, where PM actually has the depth the original claim
-came from. **Execution stays gated — user decision 2026-07-30.**
+**Δdepth, first result (2026-08-05, n=2 events, 1 anchored word — thin).**
+Takeable = resting ask size at a price still leaving ≥N¢ if the word is said,
+time-weighted, in a window anchored on the moment Kalshi repriced.
+
+| | takeable ≥10¢, at the mention | session max | PM traded |
+|---|---:|---:|---:|
+| PLTR `ai slop` (the one anchored word) | **$0.00** | $73.80 | — |
+| AMD, all 8 matched words | not measurable | — | $335 |
+
+The unanchored, whole-capture figure is far larger (~$2.5k a board at ≥10¢),
+and it is **the wrong number**: it counts cheap size resting on words that were
+never said, where a low ask is correct pricing rather than opportunity. Anchored
+to the moment that matters, the one word we can measure had nothing takeable
+below 90¢ for the whole 300 s after Kalshi repriced. AMD cannot be measured at
+all — its PM capture stopped before the call.
+
+The obstacle is not that Polymarket is fast. It is that Polymarket is **wide**:
+at a 31¢/19¢ median spread the ask sits near $0.99 as a matter of course, so a
+stale book still offers nothing worth lifting. Slowness would be exploitable;
+width is not.
+
+**Action:** (a) the volume axis stays answered and negative *for signal use*;
+(b) Δdepth is now the live axis for *venue use* and it is **NOT_RESOLVABLE at
+n=1 anchored word** — it needs captures that span the call, which is the one
+thing neither banked event has; (c) point Δt at **`KXFEDMENTION`**, where PM
+has the depth the original claim came from. **Execution stays gated — user
+decision 2026-07-30**, and the gate is now a number: a board-level takeable
+p50 that survives the measured detector hit rate (at 75%, only the ≤50¢ tier
+has positive EV at all).
 
 ---
 

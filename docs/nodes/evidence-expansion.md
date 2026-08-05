@@ -5,8 +5,14 @@
 Survey adjacent mention-market surfaces (the full Kalshi Mentions census and
 Polymarket mirrors) read-only, rank where the capture→detect→fire infra is
 reusable, and run the standing cross-venue observatory that measures the
-**time** and **volume** difference between Kalshi and Polymarket on every
-shared market.
+**time**, **volume** and **depth** difference between Kalshi and Polymarket on
+every shared market.
+
+Depth is a third axis, not a detail of volume. Volume asks how much *traded* —
+which measures the competition. Depth asks how much rests at a price we could
+*take* — which measures the opportunity. They diverge precisely where thin flow
+lives, so a venue that trades almost nothing can still be worth executing on,
+and volume alone cannot say.
 
 ## Owns
 
@@ -121,9 +127,36 @@ Backfilled `pltr-26aug03` and the previously unanalysed `amd-26aug04`, giving
 n=2 on the volume axis; the Δt axis starts at the first event recorded with
 `book-tape`, because no Kalshi book tape exists for either backfilled event.
 
+v2.1 (2026-08-05): the **Δdepth axis** (`XV_SCHEMA = 2`). Quote rows carry the
+ladder (`bids_e6`/`asks_e6`, `book_levels`, `book_depth_kind`); the normalized
+row schema is now versioned separately from the raw-tape envelope, so a row
+bump cannot reject tapes already banked. `takeable_axis` reports time-weighted
+p50 / max / `persisted_s` per edge tier, in windows anchored on the Kalshi
+reprice, gated by a caller-supplied `--precision` with no default.
+
+What that bought, and what it did not:
+
+- The ladder was already on disk. `pm-capture.py` has banked 5 levels a side
+  since 07-30 and the v1 normalizer read only `bb`/`ba`, emitting null sizes on
+  every PM row. Recovering it made two closed events answerable retroactively.
+- **Δdepth is NOT_RESOLVABLE at n=1 anchored word.** PLTR yields one
+  (`ai slop`, $0.00 takeable below 90¢ for the full 300 s after the reprice);
+  AMD yields none, because its PM capture ended ~24 h before the call.
+- The binding constraint is capture coverage, not analysis. Neither banked
+  event has a Polymarket tape that spans its own call, so this axis — like Δt —
+  really starts at the first event recorded across the call on both venues.
+
 **Open:** automated Kalshi↔Polymarket pair discovery. `configs/pm-map-*.json`
 is still produced by `scripts/pm-map-build.py` from a hand-supplied PM slug, so
 "every shared market" is currently "every shared market someone mapped". The
 frozen registry (`slate/venue-pairs.json`: scored candidates, `--promote` to
 confirm, recorded rejections, and a machine-enforced GRAB-class `endDate`
 guard) is designed but not built.
+
+**Open (raised 2026-08-05):** a capture-window guard at *planning* time. The
+report now catches a non-overlapping capture after the fact (the AMD coverage
+caveat), but the cheaper fix is refusing to schedule a Polymarket capture whose
+market `endDate` precedes the Kalshi call — the same check that catches the
+GRAB class. This belongs in `slate/venue-pairs.json` when it is built. Until
+then, verify by hand that a PM capture spans the call: both banked events fail
+that test, which is why the depth axis has n=1.
