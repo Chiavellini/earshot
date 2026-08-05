@@ -738,6 +738,7 @@ owns = [
   "scripts/browser-resolve.py",
   "scripts/q4-resolve.sh",
   "scripts/shop-resolve-stream.sh",
+  "scripts/q4-register-resolve.py",
 ]
 inputs = [
   "control.event.qualified",

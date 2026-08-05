@@ -564,6 +564,7 @@ paths = [
   "scripts/q4-resolve.sh",
   "scripts/shop-resolve-stream.sh",
   "scripts/choruscall-resolve.py",
+  "scripts/q4-register-resolve.py",
 ]
 verification = ["bash -n scripts/manifest-probe.sh scripts/venue-probe.sh"]
 evidence = ["docs/nodes/control-acquire.md"]
