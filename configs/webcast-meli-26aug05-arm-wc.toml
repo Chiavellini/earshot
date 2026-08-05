@@ -234,7 +234,7 @@ policy           = "confirmed_only"
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONMELI-26AUG05-TAIL"
 phrase           = "tailwind"
-variants         = ["tailwind", "tailwinds"]
+variants = ["tailwind", "tailwinds", "tail wind", "tail winds"]  # widened 2026-08-05 (study confirmed:0; the CTC splits these compounds — the spaced forms are what it actually emits; proven live this morning on SHOP openai + UBER nvidia/zoox/lyft)
 max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"
