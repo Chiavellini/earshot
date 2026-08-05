@@ -101,9 +101,22 @@ def main():
                     body = resp.text()[:4000]
             except Exception:
                 pass
-            is_master = ("#EXT-X-STREAM-INF" in body) if body else bool(re.search(r"master|index", u, re.I))
-            if body and "#EXTINF" in body and "#EXT-X-STREAM-INF" not in body:
+            # Amazon IVS (what Q4 serves) has two shapes and only ONE survives:
+            #   playback.live-video.net/api/video/v1/<channel>.m3u8  = the stable
+            #     CHANNEL master — re-resolvable for the whole call;
+            #   playlist.live-video.net/v1/playlist/<token>          = a TOKENIZED
+            #     variant that expires and cannot be re-resolved (RUNBOOK §V6:
+            #     the leg dies mid-run and the fetcher can never recover).
+            # Classify by URL shape FIRST; a 404-at-first-poll channel URL is
+            # still the right answer (the channel 200s once the encoder starts).
+            if re.search(r"playback\.live-video\.net/api/video/v1/", u, re.I):
+                is_master = True
+            elif re.search(r"playlist\.live-video\.net/v1/playlist/", u, re.I):
                 is_master = False
+            else:
+                is_master = ("#EXT-X-STREAM-INF" in body) if body else bool(re.search(r"master|index", u, re.I))
+                if body and "#EXTINF" in body and "#EXT-X-STREAM-INF" not in body:
+                    is_master = False
             found[u] = is_master
             print(f"MANIFEST-SEEN {'master' if is_master else 'variant'} [{resp.status}] {u[:170]}", flush=True)
 
