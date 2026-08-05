@@ -558,7 +558,13 @@ worker = "tls-box-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
-paths = ["docs/nodes/control-acquire.md"]
+paths = [
+  "docs/nodes/control-acquire.md",
+  "scripts/browser-resolve.py",
+  "scripts/q4-resolve.sh",
+  "scripts/shop-resolve-stream.sh",
+  "scripts/choruscall-resolve.py",
+]
 verification = ["bash -n scripts/manifest-probe.sh scripts/venue-probe.sh"]
 evidence = ["docs/nodes/control-acquire.md"]
 

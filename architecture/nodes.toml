@@ -735,6 +735,9 @@ owns = [
   "scripts/manifest-probe.sh",
   "scripts/venue-probe.sh",
   "scripts/youtube-resolve.sh",
+  "scripts/browser-resolve.py",
+  "scripts/q4-resolve.sh",
+  "scripts/shop-resolve-stream.sh",
 ]
 inputs = [
   "control.event.qualified",

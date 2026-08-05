@@ -379,6 +379,17 @@ def main():
         print(f"  status still {st}; falling through to media polling anyway")
 
     # --- RESOLVE ------------------------------------------------------------
+    # RE-READ THE PAGE. Everything above was decided from a PRE-LIVE snapshot
+    # taken before the status gate, and the page shape changes when the event
+    # flips. Some venues serve a FORMLESS splash while upcoming — Clear Secure
+    # Q2 2026 (`NTtHOW8v`) is `pageId: "upcoming"` with no <form> at all — and
+    # the registration form only materialises at go-live. Registering against
+    # the stale copy raises "no registration form on the page" and loses the
+    # event; `commonScripts.js handleEventStatus` does exactly this re-read
+    # (`window.location.reload(false)` on a 0->1 flip), so mirror the player.
+    page, _ = _open(PAGE.format(wid=a.webcastid), jar)
+    cfg = parse_config(page)
+
     # Reach the `frame` page one of two ways: an emailed/access link, or by
     # registering (live-verified 2026-07-29 — the POST returns the frame page
     # directly for a live/archived event).

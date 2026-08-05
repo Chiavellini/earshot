@@ -177,7 +177,7 @@ policy           = "confirmed_only"
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONSHOP-26AUG05-OPEN"
 phrase           = "openai"
-variants         = ["openai", "openais"]
+variants = ["openai", "openais", "open ai", "open a i", "open eye"]  # widened 2026-08-05 (study confirmed:0; CTC splits the compound — spaced forms are what it actually emits)
 max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"
@@ -213,7 +213,7 @@ policy           = "confirmed_only"
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONSHOP-26AUG05-STAB"
 phrase           = "stablecoin"
-variants         = ["stablecoin", "stablecoins"]
+variants = ["stablecoin", "stablecoins", "stable coin", "stable coins"]  # widened 2026-08-05 (study confirmed:0; CTC splits the compound — spaced forms are what it actually emits)
 max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"

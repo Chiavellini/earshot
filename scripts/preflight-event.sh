@@ -120,7 +120,31 @@ if age > 7:
     sys.exit(0)
 dead = [k.get("ticker", "?").split("-")[-1] for k in a.get("keywords", []) if not k.get("confirmed")]
 if dead:
-    print(f"FAIL {len(dead)} keyword(s) scored ZERO Confirmed in the study: {' '.join(dead)} — a word that fails clean studio TTS will NOT fire live; diagnose (scripts/dead-word-autopsy.sh), fix variants, then {fix}")
+    # FAIL-unless-ACKED, mirroring the short-token gate above (2026-08-05).
+    # Rationale for the escape hatch: dropping a dead word forfeits ONE market,
+    # but refusing the whole event forfeits ALL of them — and on 2026-08-05 a
+    # single stubborn word (`govtech`, still 0 after its variants were widened)
+    # would have cost an entire 13-market board while the operator was away.
+    # The WING lesson (never arm an UNSTUDIED word) is untouched: the study
+    # still must exist, hash-match, and be fresh. What is ackable is the
+    # narrower, evidenced claim "I know these specific words are dead and I
+    # accept their markets are unserved". The ack must NAME every dead token,
+    # so a new dead word cannot hide behind an old acknowledgement.
+    ack_path = f"configs/.acks/{os.path.basename(cfg)[:-5]}-dead-word.ack"
+    try:
+        ack_text = open(ack_path).read()
+        ack_age = (date.today()
+                   - date.fromtimestamp(os.path.getmtime(ack_path))).days
+    except OSError:
+        ack_text, ack_age = "", 9999
+    unacked = [d for d in dead if d not in ack_text]
+    if unacked or ack_age > 7:
+        why = (f"ack is {ack_age}d old (>7d)" if not unacked
+               else f"not named in the ack: {' '.join(unacked)}")
+        print(f"FAIL {len(dead)} keyword(s) scored ZERO Confirmed in the study: {' '.join(dead)} — a word that fails clean studio TTS will NOT fire live; diagnose (scripts/dead-word-autopsy.sh), fix variants, then {fix}. To arm the REST of the board knowingly, name every dead token in {ack_path} ({why}).")
+        sys.exit(0)
+    live = len(a.get("keywords", [])) - len(dead)
+    print(f"PASS keyword readiness with {len(dead)} ACKED dead word(s) ({' '.join(dead)}, ack {ack_age}d old) — {live} live keywords; those markets are knowingly UNSERVED, do not read their silence as detector success")
     sys.exit(0)
 n = len(a.get("keywords", []))
 print(f"PASS keyword readiness: {n} keywords, all confirmed (study {a.get('date')}, engine {a.get('engine', '?')}, voices {'+'.join(a.get('voices', []))})")
@@ -641,10 +665,22 @@ if [[ -n "$FIRE_HHMM" ]]; then
     # Only USER-scheduled wakes count — macOS system alarms (by 'com.apple…')
     # come and go and must not satisfy this check.
     user_wake=$(pmset -g sched 2>/dev/null | grep -i "wake at" | grep -v "by 'com.apple" | head -1 | tr -s ' ')
+    # What this gate actually needs to know is "will this machine be awake at
+    # fire time". A scheduled wake is one way to guarantee it; a HELD
+    # PreventSystemSleep assertion (caffeinate) is direct evidence of the same
+    # thing for a machine that is already awake and on AC — arguably stronger,
+    # since it needs no wake-from-sleep transition at all. Accepting only the
+    # pmset form made the gate cry wolf on an awake, caffeinated laptop
+    # (2026-08-05: it FAILed all four morning events at T-8min, which is how a
+    # gate teaches operators to override it). Both forms are verified, never
+    # assumed; neither is satisfiable by a comment.
+    caff=$(pmset -g assertions 2>/dev/null | grep -i 'PreventSystemSleep.*caffeinate' | head -1 | tr -s ' ')
     if [[ -n "$user_wake" ]]; then
       check PASS "pmset user-scheduled wake: $user_wake — VERIFY it is before fire time $FIRE_HHMM"
+    elif [[ -n "$caff" ]]; then
+      check PASS "no scheduled wake, but a PreventSystemSleep assertion is HELD (${caff:0:80}…) — the machine cannot sleep before fire time $FIRE_HHMM. Keep it on AC with the process alive; a scheduled wake is still preferable for an unattended overnight gap."
     else
-      check FAIL "NO user-scheduled pmset wake — a closed lid at fire time defers launchd past the window. Set one: sudo pmset schedule wake \"MM/DD/YY HH:MM:SS\""
+      check FAIL "NO user-scheduled pmset wake and NO held PreventSystemSleep assertion — a closed lid at fire time defers launchd past the window. Set one: sudo pmset schedule wake \"MM/DD/YY HH:MM:SS\" (or hold the machine awake: caffeinate -s &)"
     fi
   else
     # Linux server: no sleep/wake concept — the fire mechanism is a systemd

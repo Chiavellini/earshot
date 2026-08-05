@@ -192,7 +192,7 @@ policy           = "confirmed_only"
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONDIS-26AUG05-FORT"
 phrase           = "fortnite"
-variants         = ["fortnite", "fortnites"]
+variants = ["fortnite", "fortnites", "fort nite", "fort night", "fortnight"]  # variants widened 2026-08-05 (study confirmed:0; CTC hears the homophone fortnight; 1c observe posture accepts the collision)
 max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"
@@ -242,14 +242,18 @@ max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"
 
-# Toy Story 5 (KXEARNINGSMENTIONDIS-26AUG05-TOYS) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
-[[keywords]]
-market_ticker    = "KXEARNINGSMENTIONDIS-26AUG05-TOYS"
-phrase           = "toy story"
-variants         = ["toy story"]
-max_price_cents  = 1
-budget_contracts = 1
-policy           = "confirmed_only"
+# Toy Story 5 (KXEARNINGSMENTIONDIS-26AUG05-TOYS) — DROPPED 2026-08-05, deliberately.
+# Unresolvable conflict: the market resolves on the text "Toy Story 5", but
+# `prepare` strips digits (the iPhone-18/Windows-11 class) and the CTC vocab
+# cannot BPE-encode "5" at all, so NO armed variant both fires and resolves:
+#   "toy story"      -> fires on any franchise mention, does not resolve (screen FAIL)
+#   "toy story five" -> encodable, but the screen still needs the numeral (screen FAIL)
+#   "toy story 5"    -> unencodable; the arm refuses at fire time
+# Forfeiting THIS market keeps the other 16 armed; keeping it red makes
+# preflight FAIL and the green gate refuses the whole DIS event. The ticker
+# stays in [risk].allowlist_tickers (the allowlist is a superset by contract)
+# so the live-board diff stays clean. Upstream fix: spoken-number exemption in
+# market-phrase-screen.py + digit handling in prepare.
 
 # Trump (KXEARNINGSMENTIONDIS-26AUG05-TRUM) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 # ⚠⚠ HIGH-RISK KEYWORD — collides with "strong": small phonetic distance and 'strong' is ubiquitous on earnings calls.
