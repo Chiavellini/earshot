@@ -29,6 +29,7 @@ export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 cd "$(dirname "$0")/.." || { echo "cannot reach repo root" >&2; exit 2; }
 
 EVENT=""; MAP=""; SECS=5400; OUTROOT="state/xvenue"; CHECK=0
+CALL_TIMES="slate/call-times.json"; ALLOW_OFF_CALL=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --event) EVENT="$2"; shift 2 ;;
@@ -36,6 +37,8 @@ while [[ $# -gt 0 ]]; do
     --secs)  SECS="$2";  shift 2 ;;
     --out)   OUTROOT="$2"; shift 2 ;;
     --check) CHECK=1; shift ;;
+    --call-times) CALL_TIMES="$2"; shift 2 ;;
+    --allow-off-call) ALLOW_OFF_CALL=1; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -53,12 +56,82 @@ if (( CHECK )); then
     if command -v "$b" >/dev/null 2>&1; then echo "  PASS  tool present: $b"
     else echo "  FAIL  tool MISSING: $b"; rc=1; fi
   done
+
+  # The capture-window guard, exercised for real. It runs BEFORE mkdir, so a
+  # refusal creates nothing on disk. Both banked events would have been
+  # refused by this: AMD's capture stopped ~24h before its call.
+  CT="$(mktemp)"
+  python3 - > "$CT" <<'PY'
+import json, time
+from datetime import datetime, timezone
+now = time.time()
+f = lambda t: datetime.fromtimestamp(t, timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+json.dump({"E-PAST": {"call_time_utc": f(now - 3600)},
+           "E-FUTURE": {"call_time_utc": f(now + 86400)}}, open('/dev/stdout', 'w'))
+PY
+  for c in "E-PAST:a call that already started" "E-FUTURE:a call past the window"; do
+    ev="${c%%:*}"; what="${c#*:}"
+    if "$0" --event "$ev" --map "$CT" --secs 5400 --call-times "$CT" >/dev/null 2>&1; then
+      echo "  FAIL  guard let through $what"; rc=1
+    else
+      [[ $? -eq 3 ]] && echo "  PASS  guard refuses $what" \
+                     || { echo "  FAIL  wrong exit for $what"; rc=1; }
+    fi
+  done
+  rm -f "$CT"
+
   (( rc )) && { echo "SELFTEST FAIL"; exit 2; }
   echo "SELFTEST PASS"; exit 0
 fi
 
 [[ -n "$EVENT" && -n "$MAP" ]] || { echo "usage: $0 --event E --map M [--secs N] | --check" >&2; exit 2; }
 [[ -f "$MAP" ]] || { echo "FATAL: no map at $MAP" >&2; exit 2; }
+
+# Does the planned window [now, now+SECS] actually contain the call?
+#
+# This is the guard both banked events failed. The AMD 26AUG04 Polymarket
+# capture ran on 08-03 and stopped ~24h BEFORE the call, so only 3.7% of
+# Kalshi's notional on that event falls inside the recorded window — the
+# tape looked healthy (28,811 book snapshots, 0 errors) and could not answer
+# a single question about the call it was named for. A recorder that misses
+# its event is worse than no recorder, because it banks evidence-shaped data.
+if [[ -f "$CALL_TIMES" ]]; then
+  WINDOW_VERDICT="$(python3 - "$CALL_TIMES" "$EVENT" "$SECS" <<'PY'
+import json, sys, time
+path, event, secs = sys.argv[1], sys.argv[2], int(sys.argv[3])
+try:
+    ent = (json.load(open(path)) or {}).get(event) or {}
+except (OSError, json.JSONDecodeError):
+    print("UNKNOWN no call-times table"); raise SystemExit
+raw = ent.get("call_time_utc")
+if not raw:
+    print(f"UNKNOWN {event} has no call_time_utc"); raise SystemExit
+try:
+    from datetime import datetime
+    call = datetime.fromisoformat(raw.replace("Z", "+00:00")).timestamp()
+except ValueError:
+    print(f"UNKNOWN unparseable call_time_utc {raw!r}"); raise SystemExit
+now = time.time()
+if call < now:
+    print(f"MISSED call {raw} already started {(now - call) / 60:.0f} min ago")
+elif call > now + secs:
+    print(f"ENDS_EARLY call {raw} is {(call - now) / 60:.0f} min out, "
+          f"past this {secs / 60:.0f} min window")
+else:
+    print(f"OK call {raw} lands {(call - now) / 60:.0f} min into the window")
+PY
+)"
+  case "$WINDOW_VERDICT" in
+    OK*)      echo "xvenue-autorun: window $WINDOW_VERDICT" ;;
+    UNKNOWN*) echo "xvenue-autorun: window unverified — $WINDOW_VERDICT" >&2 ;;
+    *)        echo "REFUSING: $WINDOW_VERDICT" >&2
+              echo "  This capture would bank a tape that cannot answer anything" >&2
+              echo "  about its own event (the AMD 26AUG04 failure). Re-time it," >&2
+              echo "  or pass --allow-off-call to record deliberately." >&2
+              (( ALLOW_OFF_CALL )) || exit 3
+              echo "xvenue-autorun: --allow-off-call, recording anyway" >&2 ;;
+  esac
+fi
 
 DIR="$OUTROOT/$EVENT"
 mkdir -p "$DIR"
