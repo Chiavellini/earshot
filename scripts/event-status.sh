@@ -46,13 +46,22 @@ for l in lines:
     mark = {"ok": "✓", "fail": "✗", "refused": "⛔", "warn": "⚠", "skipped": "~", "info": "·"}.get(l.get("outcome"), "?")
     host = f" [{l['host']}]" if l.get("host") else ""
     print(f"   {l.get('ts','?')} {mark} {l.get('actor','?'):22} {l.get('action','?'):15} {l.get('detail','')[:90]}{host}")
-stop = next((l for l in reversed(lines) if l.get("outcome") not in ("info", "ok")), None)
-if stop:
-    print(f"   STOPPED AT → {stop.get('actor')}/{stop.get('action')}: {stop.get('detail','')[:120]}")
-    if stop.get("log"):
-        print(f"   full context → {stop['log']}")
+# A failure that was later recovered from is history, not the current state —
+# reporting it as "STOPPED AT" sent a 06:00 operator chasing a preflight that
+# had already been fixed (2026-08-05). Only the TAIL of the timeline describes
+# where the event actually stands.
+bad = [l for l in lines if l.get("outcome") not in ("info", "ok")]
+last_bad = bad[-1] if bad else None
+tail_is_bad = bool(lines) and lines[-1].get("outcome") not in ("info", "ok")
+if tail_is_bad and last_bad:
+    print(f"   STOPPED AT → {last_bad.get('actor')}/{last_bad.get('action')}: {last_bad.get('detail','')[:120]}")
+    if last_bad.get("log"):
+        print(f"   full context → {last_bad['log']}")
 elif lines:
-    print("   no non-ok stop recorded")
+    cur = lines[-1]
+    print(f"   CURRENT → {cur.get('actor')}/{cur.get('action')} ({cur.get('outcome')}): {cur.get('detail','')[:100]}")
+    if last_bad:
+        print(f"   earlier failure (RECOVERED) → {last_bad.get('actor')}/{last_bad.get('action')}: {last_bad.get('detail','')[:90]}")
 arts = ["preflight-result.json", "listener.ready", "stream.connected", "call.sid",
         "report.json", "DESCOPED.json", "STOP", "launch.log", "arm.log", "redial.log"]
 have = [a for a in arts if (d / a).exists()]
