@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "rows": [
+    {
+      "pair_id": "amd-26aug04",
+      "generated_utc": "2026-08-04T23:03:43Z",
+      "verdict": "NOT_RESOLVABLE",
+      "matched_words": 8,
+      "joint_floor_s": 1.0,
+      "kalshi_notional_usd": 97893.55,
+      "pm_notional_usd": 335.22,
+      "kalshi_trades": 4903,
+      "pm_trades": 14,
+      "notional_ratio": 292.03,
+      "caveats": [
+        "Kalshi rows come from the post-hoc public trades tape (no receive clock, second granularity). They support the volume axis only."
+      ]
+    },
+    {
+      "pair_id": "pltr-26aug03",
+      "generated_utc": "2026-08-04T23:03:19Z",
+      "verdict": "NOT_RESOLVABLE",
+      "matched_words": 5,
+      "joint_floor_s": 1.0,
+      "kalshi_notional_usd": 103273.07,
+      "pm_notional_usd": 2160.7,
+      "kalshi_trades": 7918,
+      "pm_trades": 48,
+      "notional_ratio": 47.8,
+      "caveats": [
+        "Kalshi rows come from the post-hoc public trades tape (no receive clock, second granularity). They support the volume axis only."
+      ]
+    }
+  ],
+  "events": 2,
+  "gate_3_events_met": false
+}

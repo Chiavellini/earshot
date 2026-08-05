@@ -1,5 +1,5 @@
 {
- "generated_utc": "2026-08-04T02:31:30+00:00",
+ "generated_utc": "2026-08-04T17:21:30+00:00",
  "issuers": {
   "AAPL": {
    "evidence": "no dial-in in 4 scanned 8-K filing(s) (2026-01-29..2026-07-30) \u2014 webcast-only in this window; a bridge may still exist unpublished",
@@ -253,7 +253,7 @@
    "filings_scanned": 1,
    "found": false,
    "key": "SPCX",
-   "last_hunted": "2026-08-03",
+   "last_hunted": "2026-08-04",
    "number_src": null,
    "tier": "bridge_unpublished",
    "verdict": "no dial-in in 1 scanned 8-K filing(s) (2026-06-16..2026-06-16) \u2014 webcast-only in this window; a bridge may still exist unpublished"
@@ -283,7 +283,7 @@
    "filings_scanned": 2,
    "found": false,
    "key": "TOST",
-   "last_hunted": "2026-08-03",
+   "last_hunted": "2026-08-04",
    "number_src": null,
    "tier": "bridge_unpublished",
    "verdict": "no dial-in in 2 scanned 8-K filing(s) (2026-02-12..2026-05-07) \u2014 webcast-only in this window; a bridge may still exist unpublished"
@@ -346,14 +346,14 @@
    "verdict": "dial-in published in 2026-07-30 filing"
   },
   "ZETA": {
-   "evidence": "no dial-in in 3 scanned 8-K filing(s) (2026-02-24..2026-04-30) \u2014 webcast-only in this window; a bridge may still exist unpublished",
-   "filings_scanned": 3,
+   "evidence": "no dial-in in 2 scanned 8-K filing(s) (2026-02-24..2026-04-30) \u2014 webcast-only in this window; a bridge may still exist unpublished",
+   "filings_scanned": 2,
    "found": false,
    "key": "ZETA",
-   "last_hunted": "2026-08-03",
+   "last_hunted": "2026-08-04",
    "number_src": null,
    "tier": "bridge_unpublished",
-   "verdict": "no dial-in in 3 scanned 8-K filing(s) (2026-02-24..2026-04-30) \u2014 webcast-only in this window; a bridge may still exist unpublished"
+   "verdict": "no dial-in in 2 scanned 8-K filing(s) (2026-02-24..2026-04-30) \u2014 webcast-only in this window; a bridge may still exist unpublished"
   }
  }
 }
