@@ -116,6 +116,8 @@ mkdir -p "$STATE_DIR"
 exec >> "$LOG" 2>&1
 ts() { date "+%Y-%m-%d %H:%M:%S"; }
 log() { echo "[$(ts)] $*"; }
+"$REPO/scripts/journal.sh" --event "$EVENT_ID" --actor event-autorun.sh --action autorun-start \
+  --outcome info --detail "mode=${MODE:-live} test=${TEST:-0}" --log "$LOG" || true
 
 # Email via Gmail SMTP (app password) — best-effort, never fatal.
 # One retry with a 30 s backoff (RUNBOOK follow-up 7): the observed failure

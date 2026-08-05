@@ -115,6 +115,26 @@ esac
 # --- guard 1: config present -------------------------------------------------
 [[ -f "$CONFIG" ]] || fail "config $CONFIG not found"
 
+# --- guard 0: green gate (2026-08-04, marker-activated) ------------------------
+# Numbered 0, placed after guard 1 (the config must exist to be judged).
+# Enforces ONLY when a preflight verdict exists for this event; rehearsal
+# configs are exempt inside assert-ready.sh. EARSHOT_GREEN_OVERRIDE="<reason>"
+# proceeds but pages.
+if [[ -f "state/${EVENT}/preflight-result.json" ]]; then
+  if GREEN_OUT=$(scripts/assert-ready.sh "$CONFIG" 2>&1); then
+    echo "$GREEN_OUT"
+  elif [[ -n "${EARSHOT_GREEN_OVERRIDE:-}" ]]; then
+    echo "GREEN GATE OVERRIDDEN: $GREEN_OUT (reason: $EARSHOT_GREEN_OVERRIDE)"
+    scripts/notify.sh "GREEN GATE OVERRIDDEN: $EVENT" "$GREEN_OUT — override reason: $EARSHOT_GREEN_OVERRIDE" --quiet || true
+    scripts/journal.sh --event "$EVENT" --actor run-arm.sh --action note --outcome warn --detail "green gate overridden: $EARSHOT_GREEN_OVERRIDE" || true
+  else
+    scripts/notify.sh "$EVENT REFUSED by green gate" "$GREEN_OUT" --quiet || true
+    scripts/journal.sh --event "$EVENT" --actor run-arm.sh --action launch-start --outcome refused --detail "$GREEN_OUT" || true
+    fail "green gate: $GREEN_OUT"
+  fi
+fi
+scripts/journal.sh --event "$EVENT" --actor run-arm.sh --action launch-start --outcome info --detail "slug=$SLUG config=$CONFIG" || true
+
 # --- guard 8: NO DOUBLE-ARM (added 2026-07-29) -------------------------------
 # Numbered 8 but placed HERE, second, on purpose: guards 2–7 are cited by number
 # in docs/RUNBOOK.md so they keep their numbers, and a refusal this early costs

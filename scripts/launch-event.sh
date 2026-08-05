@@ -159,7 +159,39 @@ EVENT_ID=$(sed -n '/^\[event\]/,/^\[/s/^id[[:space:]]*=[[:space:]]*"\([^"]*\)".*
 [[ -n "$EVENT_ID" ]] || { echo "could not parse [event].id from ${CONFIG}" >&2; exit 2; }
 STATE_DIR="state/${EVENT_ID}"
 mkdir -p "$STATE_DIR"
+# Same auto-pin as launch-webcast.sh (2026-08-05 rehearsal catch): a scheduled
+# context has no cargo on PATH; when preflight pinned, run the pin.
+if [[ -z "$BIN" && -x "${STATE_DIR}/earshot-pinned" ]]; then
+  BIN="${STATE_DIR}/earshot-pinned"
+  echo "pinned binary auto-selected: $BIN"
+fi
+# Everything from here lands in the per-event log too (2026-08-04: this
+# launcher's stdout was terminal scrollback only — zero run evidence survived
+# the day). Pattern proven live at arm-on-url.sh. Pre-EVENT_ID output above
+# stays terminal-only by design: no event dir exists to file it under.
+exec > >(tee -a "${STATE_DIR}/launch.log") 2>&1
 echo "event=${EVENT_ID}  account=${ACCOUNT}  port=${BIND_PORT}  state=${STATE_DIR}"
+jnl() { scripts/journal.sh --event "$EVENT_ID" --actor launch-event.sh --action "$1" --outcome "$2" --detail "${3:-}" --log "${STATE_DIR}/launch.log" || true; }
+
+# ── Green gate (2026-08-04, marker-activated) ───────────────────────────────
+# Enforces ONLY when a preflight verdict exists for this event — legacy and
+# rehearsal invocations are untouched. EARSHOT_GREEN_OVERRIDE="<reason>"
+# proceeds but pages: an override that pages is a decision, not a bypass.
+if [[ -f "${STATE_DIR}/preflight-result.json" ]]; then
+  if GREEN_OUT=$(scripts/assert-ready.sh "$CONFIG" 2>&1); then
+    echo "$GREEN_OUT"
+  elif [[ -n "${EARSHOT_GREEN_OVERRIDE:-}" ]]; then
+    echo "GREEN GATE OVERRIDDEN: $GREEN_OUT (reason: $EARSHOT_GREEN_OVERRIDE)"
+    "${EARSHOT_NOTIFY:-scripts/notify.sh}" "GREEN GATE OVERRIDDEN: $EVENT_ID" "$GREEN_OUT — override reason: $EARSHOT_GREEN_OVERRIDE" --quiet || true
+    jnl note warn "green gate overridden: $EARSHOT_GREEN_OVERRIDE"
+  else
+    echo "REFUSED by green gate: $GREEN_OUT" >&2
+    "${EARSHOT_NOTIFY:-scripts/notify.sh}" "$EVENT_ID REFUSED by green gate" "$GREEN_OUT — fix and relaunch, or EARSHOT_GREEN_OVERRIDE=\"<reason>\" (pages)." --quiet || true
+    jnl launch-start refused "$GREEN_OUT"
+    exit 7
+  fi
+fi
+jnl launch-start info "config=$CONFIG port=$BIND_PORT posture=${LIVE:-dry}${ALLOW_MENTION:+ mention}${FILLABLE:+ fillable}"
 
 # --operator-handler double-gate half 1: the config must opt in explicitly.
 # (Half 2 is --operator-i-am-paged, passed only after the page leg is live.)
@@ -329,6 +361,7 @@ else
 fi
 ARM_PID=$!
 echo "$ARM_PID" > "${STATE_DIR}/arm.pid"
+jnl arm-start info "$([[ -n "$BIN" ]] && echo "pinned $BIN" || echo "cargo run (UNPINNED)") pid=$ARM_PID"
 trap 'kill "$ARM_PID" "$NGROK_PID" 2>/dev/null || true' EXIT
 # Wait for the arm's readiness token before dialing — arm validates every
 # market and waits for book snapshots first, which takes ~30 s on a 14-market
@@ -343,8 +376,9 @@ for _ in $(seq 1 240); do
   kill -0 "$ARM_PID" 2>/dev/null || { echo "arm exited before writing ${READY_FILE} — see log above" >&2; exit 1; }
   sleep 0.5
 done
-[[ -f "$READY_FILE" ]] || { echo "arm never wrote ${READY_FILE} within 120 s" >&2; exit 1; }
+[[ -f "$READY_FILE" ]] || { echo "arm never wrote ${READY_FILE} within 120 s" >&2; jnl listener-ready fail "no token within 120s"; exit 1; }
 echo "listener ready ($(tr -d '\n' < "$READY_FILE" 2>/dev/null || echo '?')) — dialing"
+jnl listener-ready ok "$(tr -d '\n' < "$READY_FILE" 2>/dev/null | head -c 120 || echo '?')"
 
 # Never fails the launcher; a dead mailer must not kill a live event.
 page() { # $1 = subject, $2 = body
@@ -364,10 +398,11 @@ dial_with_retry() { # $@ = full dial command; sets DIAL_RC
     rc=0
     "$@" || rc=$?
     case "$rc" in
-      0) DIAL_RC=0; return 0 ;;
+      0) DIAL_RC=0; jnl dial ok "attempt ${attempt} sid=$(head -c 40 "${STATE_DIR}/call.sid" 2>/dev/null || echo '?')"; return 0 ;;
       5|1)
         if (( attempt >= DIAL_ATTEMPTS )); then
           echo "dial attempt ${attempt}/${DIAL_ATTEMPTS} failed (exit ${rc}) — retries exhausted" >&2
+          jnl dial fail "attempt ${attempt}/${DIAL_ATTEMPTS} rc=${rc} — retries exhausted"
           break
         fi
         local delay=2; (( attempt >= 2 )) && delay=5
@@ -377,9 +412,10 @@ dial_with_retry() { # $@ = full dial command; sets DIAL_RC
         ;;
       6)
         page "DIAL AMBIGUOUS: ${EVENT_ID}" "dial transport failed and the recovery lookup could not prove call state. NOT retrying blindly (double-leg risk). Check Twilio console, then dial by hand: ${DIAL_SCRIPT} --to ${TO} --stream-url ${STREAM_URL} --sid-file ${STATE_DIR}/call.sid"
+        jnl dial fail "rc=6 ambiguous — NOT retrying (double-leg risk); paged"
         break
         ;;
-      *) break ;;
+      *) jnl dial fail "rc=${rc} permanent"; break ;;
     esac
   done
   DIAL_RC="$rc"
@@ -412,6 +448,7 @@ if [[ -z "$NO_DIAL" && -n "${MAX_RECONNECTS:-}" && "$MAX_RECONNECTS" -gt 0 ]]; t
   echo "$REDIAL_PID" > "${STATE_DIR}/redial-supervisor.pid"
   trap 'kill "$ARM_PID" "$NGROK_PID" "$REDIAL_PID" 2>/dev/null || true' EXIT
   echo "redial supervisor up (pid ${REDIAL_PID}${OPERATOR_HANDLER:+, operator redial wrapper}, max ${MAX_RECONNECTS} redials${SUPERVISOR_BUDGETS:+,$SUPERVISOR_BUDGETS})"
+  jnl supervisor-start info "pid=${REDIAL_PID} max_redials=${MAX_RECONNECTS}${OPERATOR_HANDLER:+ operator-wrapper}"
 fi
 
 # No-stream watchdog (2026-08-04, Gap Q): a placed call is not a stream —
@@ -427,10 +464,12 @@ start_stream_watchdog() {
     while [[ ! -f "$STREAM_CONNECTED_FILE" ]] && (( $(date +%s) < DEADLINE )); do sleep 1; done
     if [[ -f "$STREAM_CONNECTED_FILE" ]]; then
       echo "stream-watchdog: stream confirmed ($(tr -d '\n' < "$STREAM_CONNECTED_FILE" 2>/dev/null || echo '?'))"
+      jnl stream ok "confirmed within ${STREAM_CONFIRM_SECS}s"
       exit 0
     fi
     DEAF_SID=$(head -1 "${STATE_DIR}/call.sid" 2>/dev/null || echo "")
     page "NO STREAM: ${EVENT_ID}" "call ${DEAF_SID:-<no sid>} placed but no stream landed within ${STREAM_CONFIRM_SECS}s. Manual redial: ${DIAL_SCRIPT} --to ${TO} --stream-url ${STREAM_URL} --sid-file ${STATE_DIR}/call.sid"
+    jnl stream fail "no_stream within ${STREAM_CONFIRM_SECS}s (deaf sid ${DEAF_SID:-none}); paged"
     if [[ -n "${REDIAL_PID:-}" ]]; then
       # Synthetic marker — reason vocabulary gains no_stream (producer: this
       # watchdog, not the source). Consumes one redial-budget unit: a deaf
@@ -443,10 +482,12 @@ start_stream_watchdog() {
       while [[ ! -f "$STREAM_CONNECTED_FILE" ]] && (( $(date +%s) < DEADLINE )); do sleep 1; done
       if [[ -f "$STREAM_CONNECTED_FILE" ]]; then
         echo "stream-watchdog: stream confirmed after no_stream redial"
+        jnl stream ok "confirmed after no_stream redial"
         exit 0
       fi
     fi
     page "NO STREAM FINAL: ${EVENT_ID}" "still no stream after the recovery window. The arm's accept window is open (900s from arm) — a manual dial can still save the event."
+    jnl stream fail "FINAL — no stream after recovery window; arm accept window still open"
   ) &
   WATCHDOG_PID=$!
   echo "$WATCHDOG_PID" > "${STATE_DIR}/stream-watchdog.pid"
@@ -491,4 +532,8 @@ else
 fi
 
 echo "event ${EVENT_ID} live. kill with: touch ${STATE_DIR}/STOP"
-wait "$ARM_PID"
+jnl live info "kill with: touch ${STATE_DIR}/STOP"
+ARM_RC=0
+wait "$ARM_PID" || ARM_RC=$?
+jnl arm-exit "$([[ $ARM_RC -eq 0 ]] && echo ok || echo fail)" "rc=${ARM_RC} report=${REPORT}"
+exit "$ARM_RC"

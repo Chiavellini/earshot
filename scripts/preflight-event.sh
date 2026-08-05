@@ -20,13 +20,14 @@
 # Exit nonzero on any FAIL; a PREFLIGHT email reports the full checklist.
 set -uo pipefail
 
-CONFIG="" ACCOUNT="" FIRE_HHMM="" EVENT_ENV="" ONLY_READINESS=0
+CONFIG="" ACCOUNT="" FIRE_HHMM="" EVENT_ENV="" ONLY_READINESS=0 RESULT_JSON=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --config)    CONFIG="$2"; shift 2 ;;
     --account)   ACCOUNT="$2"; shift 2 ;;
     --fire-hhmm) FIRE_HHMM="$2"; shift 2 ;;
     --event-env) EVENT_ENV="$2"; shift 2 ;;
+    --result-json) RESULT_JSON="$2"; shift 2 ;;  # structured verdict artifact (Phase D door); default state/<EVENT_ID>/preflight-result.json
     --only-readiness) ONLY_READINESS=1; shift ;;  # dev: run ONLY the keyword-readiness gate (no build/probes/mail)
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
@@ -43,6 +44,7 @@ else
 fi
 
 FAILS=0
+WARNS=0
 REPORT_LINES=()
 
 # GNU timeout exists on the box; the CDMX laptop has neither timeout nor
@@ -63,6 +65,7 @@ check() {  # check <PASS|FAIL|WARN> <message>
   REPORT_LINES+=("[$verdict] $msg")
   echo "[$verdict] $msg"
   [[ "$verdict" == FAIL ]] && FAILS=$((FAILS+1))
+  [[ "$verdict" == WARN ]] && WARNS=$((WARNS+1))
   return 0
 }
 
@@ -369,7 +372,19 @@ if cargo build --release 2>&1 | tail -1 | grep -q "Finished"; then
         check FAIL "SHORT token targets (k<=2) present and UNACKED — live evidence: SNAP \"game\" fired 0.587/0.932/0.953 and settled NO; no confidence gate reaches a k=2 target. Acknowledge the trading decision:  mkdir -p configs/.acks && printf '%s\n' \"acked $(date -u +%F) by <operator>\" $(printf '%s\n' "$SHORT" | sed 's/^/           /' | tr '\n' ' ') > $ACK_FILE"
         printf '%s\n' "$SHORT" | sed 's/^/        /'
       else
-        ACK_AGE_D=$(( ( $(date -u +%s) - $(stat -f %m "$ACK_FILE" 2>/dev/null || stat -c %Y "$ACK_FILE") ) / 86400 ))
+        # Portability (fixed 2026-08-04, found running this on the us-east box):
+        # BSD `stat -f %m` and GNU `stat -f` are DIFFERENT FLAGS — on GNU, -f is
+        # --file-system, which SUCCEEDS and prints "  File: ..." instead of an
+        # mtime. So the `||` fallback never fired on Linux, the arithmetic got
+        # that text, and preflight died with `File: unbound variable` — taking
+        # every later gate (admission, TLS, readiness, mailer) with it. Detect
+        # the OS instead of relying on failure, matching the guard at :468.
+        if [[ "$(uname -s)" == Darwin ]]; then
+          ACK_MTIME=$(stat -f %m "$ACK_FILE")
+        else
+          ACK_MTIME=$(stat -c %Y "$ACK_FILE")
+        fi
+        ACK_AGE_D=$(( ( $(date -u +%s) - ACK_MTIME ) / 86400 ))
         if (( ACK_AGE_D > ACK_MAX_AGE_DAYS )); then
           check FAIL "short-token ack STALE (${ACK_AGE_D}d > ${ACK_MAX_AGE_DAYS}d): $ACK_FILE — re-ack for this event"
         else
@@ -518,7 +533,7 @@ fi
 #
 # Runs on any OS, not just the box: if an ingress is named, it gets probed. Only
 # meaningful for a phone arm — a webcast arm dials nothing.
-if grep -q 'kind = "twilio' "$CONFIG" 2>/dev/null; then
+if grep -qE '^[[:space:]]*kind[[:space:]]*=[[:space:]]*"twilio' "$CONFIG" 2>/dev/null; then
     # The ingress is a LAUNCH argument, not a config field, so preflight has to
     # be told. Accept it the same ways the launcher can receive it.
     TLS_URL="${EARSHOT_STREAM_URL:-}"
@@ -580,7 +595,7 @@ fi
 # run. Only slate-stage-derived configs carry the pinned production values;
 # the hand-written 26jul29 configs went to real events bare. launch-event.sh
 # refuses at T-0 (unless --one-shot-ok); this is the night-before signal.
-if grep -q 'kind = "twilio' "$CONFIG" 2>/dev/null; then
+if grep -qE '^[[:space:]]*kind[[:space:]]*=[[:space:]]*"twilio' "$CONFIG" 2>/dev/null; then
   MAXR=$(sed -n 's/^[[:space:]]*max_reconnects[[:space:]]*=[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$CONFIG" | head -1)
   if [[ -n "$MAXR" && "$MAXR" -gt 0 ]]; then
     check PASS "mid-call persistence: max_reconnects = $MAXR"
@@ -606,6 +621,21 @@ fi
 tz=$(readlink /etc/localtime | sed 's|.*/zoneinfo/||')
 [[ "$tz" == "America/Mexico_City" ]] && check PASS "timezone: $tz" \
   || check WARN "timezone is '$tz', not America/Mexico_City — ALL window times (launchd fire, END_HHMM) shift with local time; re-verify the schedule"
+# 2026-08-04: the fire-mechanism gate used to run only when the caller
+# remembered --fire-hhmm — a silent skip. Default it from the event env so a
+# slate-staged event always gets the gate; FAIL loudly on a contradiction.
+if [[ -z "$FIRE_HHMM" && -n "$EVENT_ENV" && -f "$EVENT_ENV" ]]; then
+  ENV_FIRE=$(source "$EVENT_ENV" 2>/dev/null; echo "${FIRE_HHMM:-}")
+  if [[ -n "$ENV_FIRE" ]]; then
+    FIRE_HHMM="$ENV_FIRE"
+    check PASS "fire time defaulted from $EVENT_ENV: FIRE_HHMM=$FIRE_HHMM (gate cannot silently skip)"
+  fi
+elif [[ -n "$FIRE_HHMM" && -n "$EVENT_ENV" && -f "$EVENT_ENV" ]]; then
+  ENV_FIRE=$(source "$EVENT_ENV" 2>/dev/null; echo "${FIRE_HHMM:-}")
+  if [[ -n "$ENV_FIRE" && "$ENV_FIRE" != "$FIRE_HHMM" ]]; then
+    check FAIL "fire-time CONTRADICTION: --fire-hhmm $FIRE_HHMM but $EVENT_ENV says FIRE_HHMM=$ENV_FIRE — one of them is wrong; the timer and the wake check must agree"
+  fi
+fi
 if [[ -n "$FIRE_HHMM" ]]; then
   if [[ "$(uname -s)" == Darwin ]]; then
     # Only USER-scheduled wakes count — macOS system alarms (by 'com.apple…')
@@ -760,7 +790,14 @@ if [[ -n "$EVENT_ENV" ]]; then
       fi
     )
     if [[ "$DIAL_STATUS" == TBD:* ]]; then
-      check FAIL "dial-in still TBD in $EVENT_ENV (${DIAL_STATUS#TBD:}) — NO-GO. The number hunt has not completed; event-autorun would abort at fire time. See docs/RUNBOOK.md Track A."
+      # Lane-aware (2026-08-04): TO_NUMBER=TBD is slate-stage's DELIBERATE
+      # posture for a webcast-only event — nothing dials, so TBD digits are
+      # correct there, not a NO-GO. FAILing them trains override behavior.
+      if grep -qE '^[[:space:]]*kind[[:space:]]*=[[:space:]]*"twilio' "$CONFIG" 2>/dev/null; then
+        check FAIL "dial-in still TBD in $EVENT_ENV (${DIAL_STATUS#TBD:}) — NO-GO. The number hunt has not completed; event-autorun would abort at fire time. See docs/RUNBOOK.md Track A."
+      else
+        check PASS "dial-in TBD in $EVENT_ENV is the deliberate webcast-only posture (no twilio source in $CONFIG — nothing dials)"
+      fi
     else
       check PASS "dial-in resolved in $EVENT_ENV (${DIAL_STATUS#OK:})"
     fi
@@ -780,7 +817,7 @@ fi
 # probe call. So: a phone arm requires a probe-observed `admission = "held"`
 # in configs/dial-ins.toml for this venue (scripts/bridge-probe.sh sets it).
 # Twilio-source configs only — a webcast arm dials nothing (don't cry wolf).
-if grep -q 'kind = "twilio' "$CONFIG" 2>/dev/null; then
+if grep -qE '^[[:space:]]*kind[[:space:]]*=[[:space:]]*"twilio' "$CONFIG" 2>/dev/null; then
   ADMIT_OUT=$(EVENT_ID="$EVENT_ID" CONFIG="$CONFIG" python3 - <<'PY'
 import os, re, sys, tomllib
 
@@ -916,6 +953,60 @@ else
 fi
 
 echo
+# ── Structured verdict artifact (Phase D door; consumed by assert-ready.sh
+# and preflight-nightly.sh's feature-detect). Written on PASS AND FAIL, as the
+# last act, via tmp+mv; a write failure must never convert a PASS into a
+# crash-exit — hence the || WARN, never a FAIL increment after the verdict.
+if [[ -z "$RESULT_JSON" && -n "${EVENT_ID:-}" ]]; then
+  RESULT_JSON="state/${EVENT_ID}/preflight-result.json"
+fi
+if [[ -n "$RESULT_JSON" ]]; then
+  SKIPPED=""
+  [[ -z "$EVENT_ENV" ]] && SKIPPED="dial-in"
+  [[ -z "$FIRE_HHMM" ]] && SKIPPED="${SKIPPED:+$SKIPPED,}fire-mechanism"
+  if mkdir -p "$(dirname "$RESULT_JSON")" 2>/dev/null && \
+     PF_LINES=$(printf '%s\n' "${REPORT_LINES[@]}") \
+     PF_EVENT="${EVENT_ID:-}" PF_CONFIG="$CONFIG" PF_FAILS="$FAILS" PF_WARNS="$WARNS" \
+     PF_FIRE="$FIRE_HHMM" PF_ENV="$EVENT_ENV" PF_SKIPPED="$SKIPPED" \
+     PF_CFG_SHA="$(shasum -a 256 "$CONFIG" 2>/dev/null | cut -d' ' -f1)" \
+     PF_KW_SHA="$(python3 "$(dirname "$0")/keywords-extract.py" "$CONFIG" --sha256 2>/dev/null || true)" \
+     python3 - > "${RESULT_JSON}.tmp" <<'PY' && mv "${RESULT_JSON}.tmp" "$RESULT_JSON"
+import json, os, socket
+from datetime import datetime, timezone
+gates = []
+for line in os.environ.get("PF_LINES", "").splitlines():
+    if line.startswith("[") and "]" in line:
+        v, m = line[1:].split("]", 1)
+        gates.append({"verdict": v, "msg": m.strip()})
+print(json.dumps({
+    "schema": 1,
+    "event_id": os.environ.get("PF_EVENT", ""),
+    "config": os.environ.get("PF_CONFIG", ""),
+    "config_sha256": os.environ.get("PF_CFG_SHA", ""),
+    "keywords_sha256": os.environ.get("PF_KW_SHA", ""),
+    "generated_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "host": socket.gethostname().split(".")[0],
+    "pass": int(os.environ.get("PF_FAILS", "1")) == 0,
+    "fails": int(os.environ.get("PF_FAILS", "0")),
+    "warns": int(os.environ.get("PF_WARNS", "0")),
+    "fire_hhmm": os.environ.get("PF_FIRE", ""),
+    "event_env": os.environ.get("PF_ENV", ""),
+    "gates": gates,
+    "gates_skipped": [s for s in os.environ.get("PF_SKIPPED", "").split(",") if s],
+}, indent=1))
+PY
+  then
+    echo "preflight-result: $RESULT_JSON"
+  else
+    echo "[WARN] could not write $RESULT_JSON — assert-ready.sh will refuse until a preflight writes it" >&2
+    rm -f "${RESULT_JSON}.tmp" 2>/dev/null || true
+  fi
+fi
+if [[ -n "${EVENT_ID:-}" ]]; then
+  "$(dirname "$0")/journal.sh" --event "$EVENT_ID" --actor preflight-event.sh --action preflight \
+    --outcome "$([[ $FAILS -eq 0 ]] && echo ok || echo fail)" \
+    --detail "$FAILS fails, $WARNS warns" --log "$RESULT_JSON" || true
+fi
 if [[ "$FAILS" -eq 0 ]]; then
   echo "PREFLIGHT PASS — pinned binary + environment verified for ${EVENT_ID:-?}"
 else

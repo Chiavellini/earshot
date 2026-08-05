@@ -17,6 +17,9 @@ SUBJ="${1:?usage: notify.sh <subject> <body> [--quiet]}"
 BODY="${2:-}"
 QUIET="${3:-}"
 delivered=0
+# Delivery log: today's URL-MISSED pages had no record of whether they arrived.
+NLOG="$HOME/.kalshi/notify.log"
+nlog() { echo "$(date -u +%FT%TZ) $1 $SUBJ" >> "$NLOG" 2>/dev/null || true; }
 
 if [ -f "$HOME/.kalshi/mail_env" ]; then
   if (
@@ -38,11 +41,14 @@ with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=20) as s:
 PY
   ); then
     delivered=1
+    nlog MAIL-OK
   else
     echo "notify.sh: mail send FAILED (subject: $SUBJ)" >&2
+    nlog MAIL-FAIL
   fi
 else
   echo "notify.sh: ~/.kalshi/mail_env missing — mail channel skipped" >&2
+  nlog MAIL-SKIP
 fi
 
 if [ "$(uname)" = "Darwin" ]; then
@@ -55,4 +61,10 @@ if [ "$(uname)" = "Darwin" ]; then
   fi
 fi
 
-[ "$delivered" = 1 ] || { echo "notify.sh: EVERY channel failed" >&2; exit 1; }
+if [ "$delivered" = 1 ]; then
+  nlog DELIVERED
+else
+  nlog ALL-FAILED
+  echo "notify.sh: EVERY channel failed" >&2
+  exit 1
+fi

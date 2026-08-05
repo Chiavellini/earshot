@@ -43,6 +43,29 @@ URLF="$HOME/$SLUG-stream.url"
 LOG="$HOME/$SLUG-armonurl-$(date -u +%Y%m%dT%H%M%SZ).log"
 exec > >(tee -a "$LOG") 2>&1
 page() { "$REPO/scripts/notify.sh" "$1" "$2" || true; }
+EVENT_ID=$(sed -n '/^\[event\]/,/^\[/s/^[[:space:]]*id[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$CONFIG" | head -1)
+jnl() { "$REPO/scripts/journal.sh" --event "${EVENT_ID:-UNKNOWN}" --actor arm-on-url.sh --action "$1" --outcome "$2" --detail "${3:-}" --log "$LOG" || true; }
+
+# ── Green gate (2026-08-04, marker-activated) ───────────────────────────────
+# Enforces ONLY when a preflight verdict exists for this event — legacy and
+# rehearsal invocations are untouched. EARSHOT_GREEN_OVERRIDE="<reason>"
+# proceeds but pages: an override that pages is a decision, not a bypass.
+# Runs at watcher START, hours before T-0, so a refusal pages with time to fix.
+if [[ -n "$EVENT_ID" && -f "state/${EVENT_ID}/preflight-result.json" ]]; then
+  if GREEN_OUT=$("$REPO/scripts/assert-ready.sh" "$CONFIG" 2>&1); then
+    echo "$GREEN_OUT"
+  elif [[ -n "${EARSHOT_GREEN_OVERRIDE:-}" ]]; then
+    echo "GREEN GATE OVERRIDDEN: $GREEN_OUT (reason: $EARSHOT_GREEN_OVERRIDE)"
+    page "GREEN GATE OVERRIDDEN: $EVENT_ID" "$GREEN_OUT — override reason: $EARSHOT_GREEN_OVERRIDE"
+    jnl note warn "green gate overridden: $EARSHOT_GREEN_OVERRIDE"
+  else
+    echo "REFUSED by green gate: $GREEN_OUT"
+    page "$SLUG REFUSED by green gate" "$GREEN_OUT — fix and restart the watcher, or set EARSHOT_GREEN_OVERRIDE=\"<reason>\" (pages)."
+    jnl watch-start refused "$GREEN_OUT"
+    exit 7
+  fi
+fi
+jnl watch-start info "deadline=$DEADLINE_HHMM kind=$KIND posture=${LIVE:---dry-run}"
 
 # Resolve the deadline to an absolute epoch the same way url-escalate.sh does:
 # the NEXT occurrence of that UTC wall time.
@@ -65,11 +88,13 @@ while [[ ! -s "$URLF" ]]; do
   if (( $(date -u +%s) > DEADLINE )); then
     echo "URL-MISSED: $SLUG — no $URLF by deadline. NOT ARMED."
     page "$SLUG NOT ARMED — no URL" "Resolver never produced $URLF before $DEADLINE_HHMM UTC. See $LOG"
+    jnl url fail "URL-MISSED at deadline $DEADLINE_HHMM — NOT ARMED"
     exit 3
   fi
   sleep 5
 done
 echo "URL-READY: $SLUG $(head -c 120 "$URLF")"
+jnl url ok "$(head -c 120 "$URLF")"
 
 # ── step 2: PCM gate — the check that HTTP 200 cannot make ─────────────────
 # Deliberately gates on the URL FILE, so we test exactly what the arm will read.
@@ -77,8 +102,10 @@ if ! "$REPO/scripts/pcm-gate.sh" --kind "$KIND" --url-file "$URLF" --secs "$SECS
   echo "PCM-GATE FAILED for $SLUG on $(hostname -s) — REFUSING to arm a deaf leg."
   page "$SLUG NOT ARMED — no decodable audio" \
        "pcm-gate got no PCM from $URLF on $(hostname -s). This vantage is dead (HOOD 07-29 class). See $LOG"
+  jnl pcm-gate fail "no decodable PCM on $(hostname -s) — NOT ARMED"
   exit 4
 fi
+jnl pcm-gate ok "decoded PCM on $(hostname -s)"
 
 # ── step 3: launch ─────────────────────────────────────────────────────────
 # NO --wait-live here, deliberately. That gate polls the target for liveness,
@@ -88,4 +115,5 @@ fi
 # redundant: step 2 just decoded real PCM off this exact URL, which is a
 # strictly stronger liveness proof than an is_live poll.
 echo "ARMING $SLUG at $(date -u +%FT%TZ)"
+jnl arm-handoff info "exec launch-webcast.sh posture=${LIVE:---dry-run}"
 exec "$REPO/scripts/launch-webcast.sh" --config "$CONFIG" --account "$ACCOUNT" $LIVE

@@ -124,6 +124,37 @@ EVENT_ID=$(sed -n '/^\[event\]/,/^\[/s/^id[[:space:]]*=[[:space:]]*"\([^"]*\)".*
 STATE_DIR="state/${EVENT_ID}"
 mkdir -p "$STATE_DIR"
 REPORT="${STATE_DIR}/report.json"
+# 2026-08-05 rehearsal catch: a launchd-fired watcher reached the exec with no
+# --bin and DIED on `exec: cargo: not found` (launchd's PATH has no ~/.cargo).
+# When preflight pinned a binary for this event, run the pin — which is also
+# what the runbook demands. Explicit --bin still wins.
+if [[ -z "$BIN" && -x "${STATE_DIR}/earshot-pinned" ]]; then
+  BIN="${STATE_DIR}/earshot-pinned"
+  echo "pinned binary auto-selected: $BIN (preflight wrote it; cargo fallback never fires under launchd)"
+fi
+# Per-event log (2026-08-04): the final exec below inherits this redirect, so
+# the arm's own stdout is captured per-event for the first time.
+exec > >(tee -a "${STATE_DIR}/launch.log") 2>&1
+jnl() { scripts/journal.sh --event "$EVENT_ID" --actor launch-webcast.sh --action "$1" --outcome "$2" --detail "${3:-}" --log "${STATE_DIR}/launch.log" || true; }
+
+# ── Green gate (2026-08-04, marker-activated) ───────────────────────────────
+# Enforces ONLY when a preflight verdict exists for this event. Override
+# EARSHOT_GREEN_OVERRIDE="<reason>" proceeds but pages.
+if [[ -f "${STATE_DIR}/preflight-result.json" ]]; then
+  if GREEN_OUT=$(scripts/assert-ready.sh "$CONFIG" 2>&1); then
+    echo "$GREEN_OUT"
+  elif [[ -n "${EARSHOT_GREEN_OVERRIDE:-}" ]]; then
+    echo "GREEN GATE OVERRIDDEN: $GREEN_OUT (reason: $EARSHOT_GREEN_OVERRIDE)"
+    scripts/notify.sh "GREEN GATE OVERRIDDEN: $EVENT_ID" "$GREEN_OUT — override reason: $EARSHOT_GREEN_OVERRIDE" --quiet || true
+    jnl note warn "green gate overridden: $EARSHOT_GREEN_OVERRIDE"
+  else
+    echo "REFUSED by green gate: $GREEN_OUT" >&2
+    scripts/notify.sh "$EVENT_ID REFUSED by green gate" "$GREEN_OUT — fix and relaunch, or EARSHOT_GREEN_OVERRIDE=\"<reason>\" (pages)." --quiet || true
+    jnl launch-start refused "$GREEN_OUT"
+    exit 7
+  fi
+fi
+jnl launch-start info "config=$CONFIG"
 
 # Self-check for post-mortem #3: prove this shell can trap SIGTERM and write
 # the state dir — a sandboxed parent that swallows signals or blocks writes
@@ -201,7 +232,9 @@ echo "webcast lane: event=${EVENT_ID}  config=${CONFIG}  state=${STATE_DIR}"
 echo "posture: ${POSTURE}"
 if [[ -n "$BIN" ]]; then
   [[ -x "$BIN" ]] || { echo "pinned binary not executable: ${BIN}" >&2; exit 2; }
+  jnl arm-start info "pinned $BIN — $POSTURE"
   exec "$BIN" arm --config "$CONFIG" --state-dir "$STATE_DIR" --report "$REPORT" --allow-mention ${LIVE_ARGS[@]+"${LIVE_ARGS[@]}"}
 else
+  jnl arm-start warn "cargo run (UNPINNED — the runbook forbids this for real events) — $POSTURE"
   exec cargo run --release -- arm --config "$CONFIG" --state-dir "$STATE_DIR" --report "$REPORT" --allow-mention ${LIVE_ARGS[@]+"${LIVE_ARGS[@]}"}
 fi

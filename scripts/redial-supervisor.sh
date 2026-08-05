@@ -79,6 +79,7 @@ SID_FILE="${STATE_DIR}/call.sid"
 READY="${STATE_DIR}/listener.ready"
 LOG="${STATE_DIR}/redial.log"
 log() { echo "$(date -u +%FT%TZ) $*" >> "$LOG"; echo "redial-supervisor: $*" >&2; }
+jnl() { "$(dirname "${BASH_SOURCE[0]}")/journal.sh" --event "$(basename "$STATE_DIR")" --actor redial-supervisor.sh --action "$1" --outcome "$2" --detail "${3:-}" --log "$LOG" || true; }
 
 # Parse one string field out of the marker JSON; empty on any parse failure.
 marker_field() { # $1 = marker content, $2 = field name
@@ -121,6 +122,7 @@ LAST_NOT_READY_CONTENT=""
 BACKOFF=0
 REDIALS=0
 log "up: watching $REQ content (max_redials=$MAX_REDIALS, max_minutes=$MAX_MINUTES, call_end_grace=${CALL_END_GRACE}s, dial=$DIAL_SCRIPT, to=$TO)"
+jnl supervisor-start info "max_redials=$MAX_REDIALS max_minutes=$MAX_MINUTES"
 
 while :; do
   sleep 0.25
@@ -179,6 +181,7 @@ while :; do
   # — and a bridge that admits and instantly re-drops would otherwise eat both
   # attempts with two cheerful "redialed OK" lines and no explanation.
   if (( LAST_DIAL_TS > 0 && NOW - LAST_DIAL_TS <= MEDIA_CONFIRM_SECS )); then
+    jnl redial fail "REDIAL-NO-MEDIA: redial #${REDIALS} produced no audio after $((NOW - LAST_DIAL_TS))s"
     log "REDIAL-NO-MEDIA: redial #${REDIALS} produced no audio — the source went idle again after $((NOW - LAST_DIAL_TS))s (bar ${MEDIA_CONFIRM_SECS}s). The call connected but the leg is silent or was dropped again; a further redial will likely do the same."
     # Page it: the budget is small and this class eats it silently otherwise
     # (2026-08-01 f67ac27 made it visible in the log; a log nobody reads
@@ -213,10 +216,12 @@ while :; do
     # fresh idle marker over the next MEDIA_CONFIRM_SECS, checked at the top of
     # the loop.
     LAST_DIAL_TS=$(date +%s)
+    jnl redial ok "#${REDIALS} new sid $(head -c 40 "$SID_FILE" 2>/dev/null || echo '?')"
     log "redialed OK (#${REDIALS}): new CallSid $(head -1 "$SID_FILE" 2>/dev/null || echo '?') — media unconfirmed for ${MEDIA_CONFIRM_SECS}s"
     BACKOFF=0
   else
     BACKOFF=$(( BACKOFF == 0 ? 1 : (BACKOFF * 2 > 30 ? 30 : BACKOFF * 2) ))
+    jnl redial fail "#${REDIALS} dial failed — backoff ${BACKOFF}s"
     log "REDIAL #${REDIALS} FAILED — backing off ${BACKOFF}s before honoring the next request"
     sleep "$BACKOFF"
   fi
