@@ -638,12 +638,23 @@ notes         = "Q1 2026. Webcast on open-exchange.net; dial-in and webcast are 
 tier          = "bridge_unpublished"
 qa_mechanism  = "operator_queue"
 listen_access = "unknown"
+admission        = "operator_screened"
+admission_detail = "dial 19:21Z (T-98m) to the registration-issued toll-free with the registration-issued conference passcode (digits NOT here — they live in state/hunt/numbers-probed.env, source = the Actinver analyst-registration confirmation): InCom Conferencing routed us to a HUMAN queue rather than an automated passcode bridge — 'The next available conference specialist will be with you momentarily', looping, then the far end hung up on our silence at 55.6s (7 stalls). Passcode did not self-admit. NOTE: probed 98 min before the call, so 'conference not yet open' is not excluded — re-probe at ~T-20 before concluding this is Class B by design."
+admission_probed = "2026-08-04"
+probe_artifact   = "corpus/bridge-probes/amd_2026_08_04.wav"
+# ⚠ HONEST SCOPE: this date names the 2026-07-30 fake-operator LADDER rehearsal
+# (page cell -> conference -> gated bridge dial), which is venue-INDEPENDENT
+# machinery and is recorded in full under [YUM]. No AMD-specific ladder
+# rehearsal has been run. Set 2026-08-04 with the operator's explicit approval
+# to take the ladder on this call; the venue-specific half of a Class B
+# admission is a human talking to the specialist, which cannot be rehearsed
+# against a real bridge without occupying it.
+operator_handler = "rehearsed-2026-07-30"
 evidence      = "EDGAR full-text hunt 2026-08-04 (scripts/hunt-dial-in.py, Q-EDGAR) scanned 7 8-K filings across 2025-11-04..2026-05-05 and found NO dial-in in any earnings exhibit — AMD does not publish a telephone bridge in its filings. But AMD earnings calls run an OPERATOR-MODERATED analyst Q&A, which cannot happen without a participant bridge, so one exists and is issued privately to covering analysts rather than published. This is the modal case in docs/DIAL-INS.md (~85-90% of S&P 500 issuers run a bridge, only ~35-40% publish it)."
 evidence_src  = "slate/hunt-status.json (HUNT-NONE: AMD tier=bridge_unpublished, 7 filings scanned)"
 number_src    = "https://ir.amd.com/news-events/financial-events"
 confidence    = "medium"
 last_verified = "2026-08-04"
-admission     = "untested"
 notes         = "OPEN EVENT KXEARNINGSMENTIONAMD-26AUG04, 17 markets. ACTION: the bridge is obtainable by analyst registration, not by hunting — the operator Q&A proves it exists and EDGAR proves it is not filed. Register on the IR events page as the standing Actinver analyst identity and capture BOTH the webcast URL and the participant dial-in + conference ID/passcode. GRAB 2026-08-03 is the cautionary precedent: every other piece was in place and a registrant-only numeric passcode was the single thing between us and a clean telephony feed. A number is not admission — probe with scripts/bridge-probe.sh before any phone arm (THE MSFT RULE)."
 
 [AMCR]
@@ -933,3 +944,136 @@ evidence_src  = "corpus/bridge-probes/pgr_2026_08_04_leg01.json"
 number_src    = "probe dial 2026-08-04 14:01Z (scripts/chain-capture.sh)"
 confidence    = "high"
 last_verified = "2026-08-04"
+
+# ── 2026-08-05 slate (venue intel from the 2026-08-04 prep-night research
+#    sweep: official PRs/8-Ks/IR pages, two sources each; Kalshi never a
+#    source). Digits NEVER here — hunted numbers live in state/hunt/numbers.env.
+
+[DASH]
+tier          = "bridge_unpublished"
+qa_mechanism  = "webcast_hand"
+listen_access = "yes"
+evidence      = "Q2 2026 announcement (Business Wire 2026-07-06, three verbatim carriers) is webcast-only: 'register for and access the live webcast at ir.doordash.com'. No dial-in language in any recent 8-K. CRITICAL: call slot MOVED to 1:30 p.m. PT / 4:30 p.m. ET as of Q1 2026 (was 2:00 p.m. PT through Q4 2025) — the Q1'26 8-K EX-99.1 confirms the new slot."
+evidence_src  = "https://ir.doordash.com/news (2026-07-06 release; Q4-WAF geo-blocks this box, verified via wire carriers)"
+number_src    = "none published"
+confidence    = "high"
+last_verified = "2026-08-05"
+webcast_platform = "q4inc"
+webcast_note  = "registration REQUIRED (Actinver identity); q4inc attendee tooling; player opens ~T-15"
+
+[DIS]
+tier          = "bridge_unpublished"
+qa_mechanism  = "curated"
+listen_access = "yes"
+evidence      = "Q3 FY26 webcast announcement (Business Wire 2026-07-14 + investors.thewaltdisneycompany.com): 8:30 a.m. ET / 5:30 a.m. PT pre-market, webcast-only ('To access the webcast, please visit www.disney.com/investors'). Q2 FY26 sibling event page had a PUBLIC embedded q4inc player, no registration, no dial-in."
+evidence_src  = "https://investors.thewaltdisneycompany.com/news (2026-07-14; WAF-blocked from this box, verified via two verbatim reprints)"
+number_src    = "none published"
+confidence    = "high"
+last_verified = "2026-08-05"
+webcast_platform = "q4inc"
+webcast_note  = "PUBLIC player, no registration — best-case morning acquisition; highest-volume board of the morning"
+
+[DUOL]
+tier          = "bridge_unpublished"
+qa_mechanism  = "curated"
+listen_access = "yes"
+evidence      = "Q2 2026 announcement (GlobeNewswire 2026-07-08 + investors.duolingo.com): 5:00 p.m. ET, PUBLIC VIDEO webcast on open-exchange; Q&A limited to sell-side analysts; no dial-in in the announcement or the Q1'26 8-K exhibit. EDGAR hunt found no filings with numbers (hunt-blind)."
+evidence_src  = "https://investors.duolingo.com/events/event-details/duolingo-second-quarter-2026-earnings-call"
+number_src    = "none published"
+confidence    = "high"
+last_verified = "2026-08-05"
+webcast_platform = "open-exchange"
+webcast_note  = "OpenExchange = the Ford 2026-07-28 login/session-gated class — resolve the m3u8 from a LOGGED-IN browser; top frame may never request it (iframe)"
+
+[EBAY]
+tier          = "bridge_unpublished"
+qa_mechanism  = "curated"
+listen_access = "yes"
+evidence      = "IR event page + events index: 2:30 p.m. PT Aug 5; dedicated open-exchange.net webcast subdomain (ebay-q2-earnings pattern); Q1'26 SEC-filed release describes webcast-only access. No dial-in anywhere."
+evidence_src  = "https://investors.ebayinc.com (event-details, Q2 2026)"
+number_src    = "none published"
+confidence    = "high"
+last_verified = "2026-08-05"
+webcast_platform = "open-exchange"
+webcast_note  = "same Ford-class caution as DUOL; the per-event subdomain is already live — harvest the session tonight"
+
+[FIG]
+tier          = "bridge_unpublished"
+qa_mechanism  = "curated"
+listen_access = "yes"
+evidence      = "Q2 announcement (Business Wire 2026-07-15): 5:00 p.m. ET Aug 5, webcast via investor.figma.com, registration required. Zero dial-in mentions across all four SEC-filed earnings releases since the 2025 IPO. NOT a Zoom venue (prep-night hypothesis refuted): q4inc-hosted IR."
+evidence_src  = "https://investor.figma.com (Cloudflare-challenges this box; verified via wire text)"
+number_src    = "none published"
+confidence    = "high"
+last_verified = "2026-08-05"
+webcast_platform = "q4inc"
+webcast_note  = "registration REQUIRED; IR site Cloudflare-walled from the box — resolve/register from the laptop browser only"
+
+[MELI]
+tier          = "published"
+qa_mechanism  = "phone_present"
+listen_access = "unknown"
+admission        = "operator_screened"
+admission_detail = "probe 2026-08-05 04:15Z (off-hours): routed into the NAMED MercadoLibre Chorus Call queue — \"Welcome to Chorus Call. Please hold for the Mercado Libre Conference. A conference specialist will be with you shortly.\" looping; queue hung up on us at 50.0s with no specialist (off-hours staffing). The published instruction is operator-assisted (\"ask to join\"), so in-window a HUMAN answers and screens — silent posture would drop. Phone lane requires the gated operator-handler ladder + a human on the page leg."
+admission_probed = "2026-08-05"
+probe_artifact   = "corpus/bridge-probes/meli_26aug05.wav"
+evidence      = "Q2 2026 IR PDF (2026-07-29, hosted on the issuer CDN linked from investor.mercadolibre.com): 5:00 p.m. ET; Chorus Call webcast; PUBLISHED operator-assisted dial-in — toll-free + international, 'ask to join MercadoLibre's conference call to be able to pose questions'. 'Ask to join' = live operator = InCom screen-risk class; the listen posture may be dropped or held, only a probe decides (THE MSFT RULE)."
+evidence_src  = "investor.mercadolibre.com → IR PDF on the issuer CDN (2026-07-29)"
+number_src    = "state/hunt/MELI-2026q08.json (EDGAR 8-K 2026-05-07) + the 2026-07-29 PDF (same toll-free)"
+confidence    = "high"
+last_verified = "2026-08-05"
+webcast_platform = "chorus-call"
+webcast_note  = "choruscall-resolve.py CAN auto-resolve — webcastid recorded in slate/call-times.json source field; no registration"
+
+[SHOP]
+tier          = "bridge_unpublished"
+qa_mechanism  = "curated"
+listen_access = "yes"
+evidence      = "Q2 2026 announcement (IR page + GlobeNewswire, 2026-07-08): 8:30 a.m. ET pre-market; webcast-only on Shopify's OWN investors page (proprietary player); no dial-in language."
+evidence_src  = "https://www.shopify.com/investors/quarterly-results/webcast/q2-2026"
+number_src    = "none published"
+confidence    = "high"
+last_verified = "2026-08-05"
+webcast_platform = "proprietary"
+webcast_note  = "proprietary player — DevTools m3u8 read tonight if page opens early; INTC-class player-gate risk"
+
+[TLN]
+tier          = "bridge_unpublished"
+qa_mechanism  = "phone_present"
+listen_access = "unknown"
+evidence      = "Q2 2026 announcement (GlobeNewswire 2026-07-15, raw HTML read directly): 4:30 p.m. ET Aug 5 AFTER close (the 10:00 a.m. hypothesis is REFUTED); webcast via Notified/edge.media-server.com; 'For participants joining the call via phone, please register here prior to the start time to receive dial-in information' — a REGISTRATION-UNLOCKED dial-in (GRAB-class): register tonight, harvest number+passcode from the confirmation."
+evidence_src  = "GlobeNewswire 2026-07-15 (Talen Energy Q2 2026 announcement)"
+number_src    = "phone-registration confirmation (pending tonight's registration)"
+confidence    = "high"
+last_verified = "2026-08-05"
+webcast_platform = "notified"
+webcast_note  = "edge.media-server.com direct event frame — historically resolvable without login; webcast registration also required"
+
+[UBER]
+tier          = "bridge_unpublished"
+qa_mechanism  = "curated"
+listen_access = "yes"
+evidence      = "Q2 2026 announcement (investor.uber.com 2026-07-13 + Business Wire, identical text): 8:00 a.m. ET pre-market; 'A live audio webcast will be available' — webcast-only, no dial-in in the announcement or recent 8-K exhibits."
+evidence_src  = "https://investor.uber.com/news-events/ (2026-07-13 release)"
+number_src    = "none published"
+confidence    = "high"
+last_verified = "2026-08-05"
+webcast_platform = "q4inc"
+webcast_note  = "morning event — watcher + escalate fire pre-dawn; player expected ~T-15"
+
+[YOU]
+tier          = "published"
+qa_mechanism  = "phone_present"
+listen_access = "unknown"
+reservation_window = true
+admission        = "untested"
+admission_detail = "probed 2026-08-05 04:13Z (off-hours, call is 12:00Z): number is LIVE and answers as an OPERATOR-ASSISTED teleconference service — 'We are unable to connect you to a live operator at this time. Please use the contact details provided on your confirmation to leave a message for our reservations team. Goodbye.' (held 10.6s). Off-window, so this classifies NOTHING about admission (Q-ADMIT addendum) — it proves the number and the operator-assisted shape. Decide in-window: scripts/admission-window-probe.sh --config configs/twilio-you-26aug05-arm.toml --run in 10:30..11:30Z."
+admission_probed = "2026-08-05"
+probe_artifact   = "corpus/bridge-probes/you_26aug05.wav"
+evidence      = "Q2 2026 PR (PR Newswire 2026-07-22 via ir.clearme.com + IR homepage Upcoming Event): 8:00 a.m. ET Aug 5 PRE-MARKET (morning confirmed — the afternoon hypothesis is dead). PUBLISHED toll-free + international teleconference dial-in, no registration gate named; Chorus Call webcast."
+evidence_src  = "https://ir.clearme.com (2026-07-22 PR + homepage)"
+number_src    = "state/hunt/YOU-2026q08.json (EDGAR 8-K 2026-05-06) + the 2026-07-22 PR (same toll-free)"
+confidence    = "high"
+last_verified = "2026-08-05"
+webcast_platform = "chorus-call"
+webcast_note  = "choruscall-resolve.py CAN auto-resolve (webcastid in slate/call-times.json source field) — this is the MORNING auto-resolver win; no registration"

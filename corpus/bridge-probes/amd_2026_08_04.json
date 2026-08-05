@@ -1,0 +1,11 @@
+{
+  "label": "amd-2026-08-04",
+  "frames": 2791,
+  "samples": 446560,
+  "sample_rate_hz": 8000,
+  "duration_ms": 55820,
+  "held_ms": 55596,
+  "stalls_over_100ms": 7,
+  "wav_path": "corpus/bridge-probes/amd_2026_08_04.wav",
+  "jsonl_path": "corpus/bridge-probes/amd_2026_08_04.jsonl"
+}

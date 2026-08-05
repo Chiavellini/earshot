@@ -1,0 +1,240 @@
+# WEBCAST FANOUT ARM TEMPLATE — direct-m3u8 events (IR players, FOMC).
+# The production armed posture from the 07-22 race findings (docs/RACE-STRATEGY.md §5):
+#   leg 1 "streamlink"  — edge-join primary: the measured ladder winner
+#                         (−11.7..−13.65 s vs default join, RUNBOOK 07-17 + 07-20)
+#   leg 2 "pipe_tuned"  — tuned-ffmpeg backstop (-live_start_index -1 = the only
+#                         flag that moves the join point; −10.6..−11.65 s vs default)
+# Both legs run FULL detect chains OR-ed at the one-shot decision table
+# ([arbiter] mode = "fanout") — different legs hear different audio (07-22 TARI).
+#
+# Instantiate per event with scripts/stage-webcast-arm.sh, then:
+#   1. paste the `earshot prepare` keyword/risk sections over the placeholders,
+#   2. on call morning write the m3u8:  echo "<m3u8>" > ~/<lc>-stream.url
+#   3. launch attended: scripts/launch-webcast.sh --config <this> --account <env> \
+#        --wait-live ~/<lc>-stream.url --wait-kind hls
+# The live gate lives in launch-webcast.sh (NEVER inside a source cmd —
+# 07-22 post-mortems #1/#2). YouTube events: do NOT use this template; keep
+# the frozen yt-dlp leg (configs/webcast-tsla.toml) until a streamlink-vs-
+# YouTube ladder number exists (capture first).
+# Posture: mention-probe observe (1¢ non-crossing) — fill posture is gated on
+# the Phase-4 precision verdict (docs/RACE-STRATEGY.md).
+
+[event]
+id        = "KXEARNINGSMENTIONDUOL-26AUG05-WEBCAST"
+starts_at = "2026-08-05T21:00:00Z"
+
+[pipeline]
+chunk_ms       = 80
+resample_to_hz = 16000
+
+[detector]
+engine = "streaming_ctc"
+
+[detector.streaming_ctc]
+model_dir         = "models/sherpa-onnx-streaming-zipformer-ctc-small-2024-03-18"
+num_threads       = 1
+default_threshold = 0.15
+refractory_ms     = 2000
+
+# sherpa_kws block kept so the engine reverts with a one-line change above.
+
+[detector.sherpa_kws]
+model_dir         = "models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
+num_threads       = 1
+max_active_paths  = 4
+default_threshold = 0.20
+default_boost     = 2.0
+refractory_ms     = 2000
+fp32              = true
+
+[arbiter]
+mode = "fanout"
+
+[[sources]]
+kind = "pipe"
+label = "streamlink"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "streamlink --stdout --hls-live-edge 1 --hls-segment-stream-data --hls-playlist-reload-time segment \"$(cat $HOME/duol-stream.url)\" best | ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 2000000 -analyzeduration 5000000 -i - -vn -f s16le -ac 1 -ar 16000 -",
+]
+
+[[sources]]
+kind = "pipe"
+label = "pipe_tuned"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 2000000 -analyzeduration 5000000 -live_start_index -1 -http_persistent 1 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2 -i \"$(cat $HOME/duol-stream.url)\" -vn -f s16le -ac 1 -ar 16000 -",
+]
+
+# NOTE (SUPERSEDED 2026-07-24 night — kept as the evidence trail): this file
+# used to say the edge-fetcher leg delivers "+0 ms" and that "the gap is decode,
+# not acquisition". BOTH clauses are now refuted (docs/LATENCY-PROOF.md parts
+# 1-3): the AXP NFL race decomposed to 1.241 s FEED + 0.289 s OURS, so the gap
+# is NOT decode; and the +0 ms reading came from an instrument that compared two
+# ffmpeg legs to each other and was structurally blind to a cost they shared.
+# Measured against the encoder instead, a speculative fetcher runs 4.5 s fresher
+# than this template's legs with ~5x less run-to-run variance.
+#
+# THIS TEMPLATE IS DELIBERATELY UNCHANGED — it is the proven stack, and FOMC
+# 2026-07-29 runs it. The speculative posture lives in
+# configs/webcast-fanout-arm-spec.toml (staged with
+# `stage-webcast-arm.sh --speculative`) and is gated on off-FOMC validation,
+# because its probing could get the box's IP rate-limited and that would take
+# every leg down, not just one.
+
+[kalshi]
+series = "KXEARNINGSMENTIONDUOL"
+env = "prod"
+
+# ── Placeholders below: replace with the `earshot prepare` output ──────────
+[risk]
+max_order_notional_cents = 100
+max_event_notional_cents = 100
+book_stale_ms            = 2000
+audio_stale_ms           = 2000
+allowlist_tickers = [
+  "KXEARNINGSMENTIONDUOL-26AUG05-100",
+  "KXEARNINGSMENTIONDUOL-26AUG05-ASIA",
+  "KXEARNINGSMENTIONDUOL-26AUG05-CHAT",
+  "KXEARNINGSMENTIONDUOL-26AUG05-CHES",
+  "KXEARNINGSMENTIONDUOL-26AUG05-CHIN",
+  "KXEARNINGSMENTIONDUOL-26AUG05-FLAS",
+  "KXEARNINGSMENTIONDUOL-26AUG05-FREE",
+  "KXEARNINGSMENTIONDUOL-26AUG05-LINK",
+  "KXEARNINGSMENTIONDUOL-26AUG05-LUCK",
+  "KXEARNINGSMENTIONDUOL-26AUG05-MCDO",
+  "KXEARNINGSMENTIONDUOL-26AUG05-MUSI",
+  "KXEARNINGSMENTIONDUOL-26AUG05-SPEAK",
+  "KXEARNINGSMENTIONDUOL-26AUG05-SPOT",
+  "KXEARNINGSMENTIONDUOL-26AUG05-TUTO",
+]
+
+# 100 Million (KXEARNINGSMENTIONDUOL-26AUG05-100) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONDUOL-26AUG05-100"
+phrase           = "million"
+variants         = ["million", "millions"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Asia (KXEARNINGSMENTIONDUOL-26AUG05-ASIA) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONDUOL-26AUG05-ASIA"
+phrase           = "asia"
+variants         = ["asia", "asias"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# ChatGPT (KXEARNINGSMENTIONDUOL-26AUG05-CHAT) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONDUOL-26AUG05-CHAT"
+phrase           = "chatgpt"
+variants         = ["chatgpt", "chatgpts"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Chess (KXEARNINGSMENTIONDUOL-26AUG05-CHES) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONDUOL-26AUG05-CHES"
+phrase           = "chess"
+variants         = ["chess"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# China / Chinese (KXEARNINGSMENTIONDUOL-26AUG05-CHIN) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONDUOL-26AUG05-CHIN"
+phrase           = "china"
+variants         = ["china", "chinas", "chinese", "chineses"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Flashcard (KXEARNINGSMENTIONDUOL-26AUG05-FLAS) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONDUOL-26AUG05-FLAS"
+phrase           = "flashcard"
+variants         = ["flashcard", "flashcards"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Free Trial (KXEARNINGSMENTIONDUOL-26AUG05-FREE) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONDUOL-26AUG05-FREE"
+phrase           = "free trial"
+variants         = ["free trial"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# LinkedIn (KXEARNINGSMENTIONDUOL-26AUG05-LINK) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONDUOL-26AUG05-LINK"
+phrase           = "linkedin"
+variants         = ["linkedin", "linkedins"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Luckin Coffee (KXEARNINGSMENTIONDUOL-26AUG05-LUCK) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONDUOL-26AUG05-LUCK"
+phrase           = "luckin coffee"
+variants         = ["luckin coffee"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# McDonald's (KXEARNINGSMENTIONDUOL-26AUG05-MCDO) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONDUOL-26AUG05-MCDO"
+phrase           = "mcdonalds"
+variants         = ["mcdonalds"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Music (KXEARNINGSMENTIONDUOL-26AUG05-MUSI) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONDUOL-26AUG05-MUSI"
+phrase           = "music"
+variants         = ["music", "musics"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Speaking Adventure (KXEARNINGSMENTIONDUOL-26AUG05-SPEAK) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONDUOL-26AUG05-SPEAK"
+phrase           = "speaking adventure"
+variants         = ["speaking adventure"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Spotify (KXEARNINGSMENTIONDUOL-26AUG05-SPOT) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONDUOL-26AUG05-SPOT"
+phrase           = "spotify"
+variants         = ["spotify", "spotifys"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Tutor (KXEARNINGSMENTIONDUOL-26AUG05-TUTO) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONDUOL-26AUG05-TUTO"
+phrase           = "tutor"
+variants         = ["tutor", "tutors"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# --- prepare summary: 14 tradeable, 0 skipped (said-N-times), 0 skipped (unencodable), 0 variants dropped of 14 markets ---

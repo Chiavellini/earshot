@@ -1,0 +1,11 @@
+{
+  "label": "you-26aug05",
+  "frames": 540,
+  "samples": 86400,
+  "sample_rate_hz": 8000,
+  "duration_ms": 10800,
+  "held_ms": 10578,
+  "stalls_over_100ms": 0,
+  "wav_path": "corpus/bridge-probes/you_26aug05.wav",
+  "jsonl_path": "corpus/bridge-probes/you_26aug05.jsonl"
+}
