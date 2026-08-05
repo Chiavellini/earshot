@@ -105,6 +105,41 @@ def captures_for(date, probe_dir="corpus/bridge-probes", state_dir="state"):
         e = out.setdefault(m.group(1), {"held_s": 0.0, "sources": []})
         e["frames_in"] = e.get("frames_in", 0) + int(r.get("frames_in") or 0)
         e["sources"].append(os.path.relpath(p))
+
+    # JOURNAL EVIDENCE (2026-08-05). report.json is written only on a CLEAN
+    # exit. A webcast that ends normally kills its legs ("pipe source idle past
+    # 30s"), the arm exits via the error path, and no report is written — so a
+    # COMPLETE 62-minute capture with live detections looked exactly like a
+    # miss. YOU-26AUG05 captured its whole call and this checker still said
+    # "no capture evidence for 2026-08-05". A grading tool that cannot see a
+    # success is as dangerous as one that cannot see a failure.
+    # state/<E>/journal.jsonl records arm-start regardless of how the run ends.
+    for p in sorted(glob.glob(os.path.join(state_dir, "*", "journal.jsonl"))):
+        ev = os.path.basename(os.path.dirname(p))
+        m = re.match(r"KXEARNINGSMENTION([A-Z0-9]+?)-", ev)
+        if not m:
+            continue
+        if suffix and suffix not in ev.upper():
+            continue
+        armed = False
+        try:
+            for ln in open(p):
+                try:
+                    j = json.loads(ln)
+                except Exception:
+                    continue
+                if j.get("action") == "arm-start":
+                    armed = True
+        except OSError:
+            continue
+        if not armed:
+            continue
+        e = out.setdefault(m.group(1), {"held_s": 0.0, "sources": []})
+        # An armed run that produced no report still HEARD; mark it so the
+        # caller can distinguish "captured, report missing" from "never ran".
+        e.setdefault("frames_in", 0)
+        e["armed_no_report"] = "report.json" not in " ".join(e["sources"])
+        e["sources"].append(os.path.relpath(p))
     return out
 
 
@@ -138,10 +173,27 @@ def reconcile(captures, orders, board=None):
                              "reason": str(exc), **cap})
             continue
         if b.get("traded"):
+            # An ARMED run that placed nothing is NOT a missed arm when the
+            # posture is 1c non-crossing observe — declining an ask above the
+            # cap is the design, not a loss ("observe non-crossing … not a lost
+            # race"). Distinguish the two, or the tool cries wolf on exactly
+            # the nights that went well and gets ignored on the nights that
+            # did not. MISSED-ARM stays for audio captured with NO arm-start.
+            armed_run = any("journal.jsonl" in src for src in cap.get("sources", []))
+            intents = 0
+            if armed_run:
+                for src in cap.get("sources", []):
+                    log = os.path.join(os.path.dirname(src), "launch.log")
+                    try:
+                        with open(log, errors="ignore") as fh:
+                            intents += sum(1 for ln in fh if "decision intent" in ln)
+                    except OSError:
+                        pass
             findings.append({
-                "issuer": issuer, "verdict": "MISSED-ARM",
+                "issuer": issuer,
+                "verdict": "ARMED-OBSERVING" if armed_run else "MISSED-ARM",
                 "markets": b.get("markets", 0), "volume": b.get("volume", 0.0),
-                "orders": 0, **cap})
+                "orders": 0, "intents": intents, **cap})
     findings.sort(key=lambda f: (f["verdict"] != "MISSED-ARM",
                                  -f.get("volume", 0)))
     return findings
@@ -223,11 +275,22 @@ def main():
 
     missed = [f for f in findings if f["verdict"] == "MISSED-ARM"]
     undet = [f for f in findings if f["verdict"] == "UNDETERMINED"]
+    observing = [f for f in findings if f["verdict"] == "ARMED-OBSERVING"]
     print(f"missed-arm-check {a.date}: {len(caps)} issuer(s) captured, "
-          f"{len(missed)} MISSED-ARM, {len(undet)} undetermined")
-    for f in missed:
+          f"{len(missed)} MISSED-ARM, {len(observing)} ARMED-OBSERVING, "
+          f"{len(undet)} undetermined")
+    # Print the good news too: an operator who only ever sees this tool shout
+    # cannot tell a silent success from a silent failure.
+    for f in missed + observing + undet:
         heard = (f"{f['held_s']:.0f}s of audio" if f.get("held_s")
                  else f"{f.get('frames_in', 0)} frames")
+        if f["verdict"] == "ARMED-OBSERVING":
+            print(f"\n✓ ARMED-OBSERVING: {f['issuer']} — the arm ran and produced "
+                  f"{f.get('intents', 0)} decision intent(s); 0 orders is the "
+                  f"1c non-crossing posture declining asks above cap, not a miss. "
+                  f"Board traded {f['volume']:.0f} contracts / {f['markets']} markets.")
+            print(f"   evidence: {', '.join(f['sources'][:4])}")
+            continue
         print(f"\n⛔ MISSED-ARM: {f['issuer']} — captured {heard}, placed 0 "
               f"orders, and its board traded {f['volume']:.0f} contracts "
               f"across {f['markets']} markets.")
