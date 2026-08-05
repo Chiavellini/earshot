@@ -156,6 +156,48 @@ paths = [
   "configs/webcast-tost-26aug04-arm-wc.toml",
   "configs/webcast-zeta-26aug04-arm-wc.toml",
   "scripts/stage-afternoon-26aug04.py",
+  "configs/aaoi-26aug06-raw.toml",
+  "configs/abnb-26aug06-raw.toml",
+  "configs/celh-26aug06-raw.toml",
+  "configs/dash-26aug05-raw.toml",
+  "configs/dis-26aug05-raw.toml",
+  "configs/dkng-26aug07-raw.toml",
+  "configs/duol-26aug05-raw.toml",
+  "configs/ebay-26aug05-raw.toml",
+  "configs/fig-26aug05-raw.toml",
+  "configs/lly-26aug07-raw.toml",
+  "configs/lyft-26aug06-raw.toml",
+  "configs/meli-26aug05-raw.toml",
+  "configs/nbis-26aug06-raw.toml",
+  "configs/shop-26aug05-raw.toml",
+  "configs/tln-26aug05-raw.toml",
+  "configs/ttwo-26aug07-raw.toml",
+  "configs/uber-26aug05-raw.toml",
+  "configs/vst-26aug07-raw.toml",
+  "configs/webcast-aaoi-26aug06-arm-wc.toml",
+  "configs/webcast-abnb-26aug06-arm-wc.toml",
+  "configs/webcast-celh-26aug06-arm-wc.toml",
+  "configs/webcast-dash-26aug05-arm-wc.toml",
+  "configs/webcast-dis-26aug05-arm-wc.toml",
+  "configs/webcast-dkng-26aug07-arm-wc.toml",
+  "configs/webcast-duol-26aug05-arm-wc.toml",
+  "configs/webcast-ebay-26aug05-arm-wc.toml",
+  "configs/webcast-fig-26aug05-arm-wc.toml",
+  "configs/webcast-lly-26aug07-arm-wc.toml",
+  "configs/webcast-lyft-26aug06-arm-wc.toml",
+  "configs/webcast-meli-26aug05-arm-wc.toml",
+  "configs/webcast-nbis-26aug06-arm-wc.toml",
+  "configs/webcast-shop-26aug05-arm-wc.toml",
+  "configs/webcast-tln-26aug05-arm-wc.toml",
+  "configs/webcast-ttwo-26aug07-arm-wc.toml",
+  "configs/webcast-uber-26aug05-arm-wc.toml",
+  "configs/webcast-vst-26aug07-arm-wc.toml",
+  "configs/webcast-wen-26aug07-arm-wc.toml",
+  "configs/webcast-you-26aug05-arm-wc.toml",
+  "configs/wen-26aug07-raw.toml",
+  "configs/you-26aug05-raw.toml",
+  "scripts/slate-time-merge.py",
+  "slate/call-times.json",
 ]
 verification = [
   "cargo test --lib prepare",
@@ -227,6 +269,18 @@ paths = [
   # 2026-08-04: the stub-driven suite control-supervise.md §Verification has
   # prescribed since 2026-07-29 and that never existed until now.
   "tests/redial_supervisor.rs",
+  "scripts/event-autorun.sh",
+  "configs/dash-26aug05-autorun.env",
+  "configs/dis-26aug05-autorun.env",
+  "configs/duol-26aug05-autorun.env",
+  "configs/ebay-26aug05-autorun.env",
+  "configs/fig-26aug05-autorun.env",
+  "configs/meli-26aug05-autorun.env",
+  "configs/shop-26aug05-autorun.env",
+  "configs/tln-26aug05-autorun.env",
+  "configs/ttwo-26aug07-autorun.env",
+  "configs/uber-26aug05-autorun.env",
+  "configs/you-26aug05-autorun.env",
 ]
 verification = [
   "bash -n scripts/redial-supervisor.sh",
@@ -427,6 +481,12 @@ paths = [
   "scripts/wnt-captions-parse.py",
   "scripts/wnt-vod-fetch.sh",
   "src/capture_bakeoff/mod.rs",
+  "corpus/bridge-probes/amd_2026_08_04.json",
+  "corpus/bridge-probes/amd_2026_08_04.jsonl",
+  "corpus/bridge-probes/you_26aug05.json",
+  "corpus/bridge-probes/you_26aug05.jsonl",
+  "corpus/bridge-probes/meli_26aug05.json",
+  "corpus/bridge-probes/meli_26aug05.jsonl",
 ]
 verification = ["cargo test --lib capture_bakeoff"]
 evidence = ["corpus/bridge-probes/tts_rehearsal_2026_07_29.json"]
@@ -542,6 +602,33 @@ verification = [
 evidence = ["docs/nodes/source-pipe.md"]
 
 [[claim]]
+id = "xvenue.book_recorder"
+node = "runtime.kalshi.book"
+worker = "xvenue-lane"
+branch = "webcast-lane"
+state = "active"
+contract_change = true
+# The blocker named by docs/POSTMORTEM-26AUG03.md follow-up #2: the book cache
+# mirrored and never persisted, so no Kalshi millisecond series existed and
+# every cross-venue Δt sat under the joint second-granularity floor. The tap is
+# additive — run_ws/run_ws_url still pass None, so the arm path is unchanged.
+# NOTE: src/main.rs is deliberately NOT touched; it is held by
+# phone.runtime_assembly, so the recorder ships as an example binary instead of
+# a new subcommand flag.
+paths = [
+  "docs/layers/book-cache.md",
+  "examples/book-tape.rs",
+  "src/kalshi/book.rs",
+  "tests/ws_tape.rs",
+]
+verification = [
+  "cargo test --test ws_tape",
+  "cargo test --test ws_book",
+  "scripts/doc-lint.sh",
+]
+evidence = ["docs/POSTMORTEM-26AUG03.md"]
+
+[[claim]]
 id = "expansion.pm_measure"
 node = "evidence.expansion"
 worker = "expansion-lane"
@@ -559,14 +646,30 @@ paths = [
   "configs/pm-map-26aug03.json",
   "scripts/pm-map-build.py",
   "scripts/pm-edge-report.py",
+  # 2026-08-04: the lane made robust and frozen. Raw tape -> versioned
+  # normalizer -> written artifact + committed ledger, with both venues on
+  # PUSH feeds (Q-XVENUE-WS) so a lead/lag number is no longer an artifact of
+  # polling one side at 1 Hz. pm-capture.py is left untouched on purpose: it is
+  # the proven poll fallback and was live on the box when this landed.
+  "scripts/pm-tape.py",
+  "scripts/xvenue-normalize.py",
+  "scripts/xvenue-report.py",
+  "scripts/xvenue-autorun.sh",
+  "scripts/xvenue-daily.sh",
+  "slate/xvenue-ledger.json",
 ]
 verification = [
   "python3 -m py_compile scripts/pm-capture.py",
   "python3 -m py_compile scripts/pm-map-build.py",
   "python3 -m py_compile scripts/pm-edge-report.py",
+  "python3 scripts/pm-tape.py --self-test",
+  "python3 scripts/xvenue-normalize.py --self-test",
+  "python3 scripts/xvenue-report.py --self-test",
+  "scripts/xvenue-autorun.sh --check",
+  "scripts/xvenue-daily.sh --dry-run",
   "scripts/doc-lint.sh",
 ]
-evidence = ["VERIFICATIONS.md#q-pm"]
+evidence = ["VERIFICATIONS.md#q-pm", "VERIFICATIONS.md#q-xvenue-ws"]
 
 [[claim]]
 id = "hunt.bridge_acquisition"
@@ -682,8 +785,74 @@ contract_change = false
 # plists under platform.runtime's configs/launchd/**.
 paths = [
   "configs/launchd/com.earshot.missed-arm.plist",
+  "configs/launchd/com.earshot.stage-nightly.plist",
+  "configs/launchd/com.earshot.study-nightly.plist",
+  "configs/launchd/com.earshot.preflight-nightly.plist",
 ]
 verification = [
   "plutil -lint configs/launchd/com.earshot.missed-arm.plist",
 ]
 evidence = ["VERIFICATIONS.md"]
+
+[[claim]]
+id = "ops.traceability"
+node = "control.operate"
+worker = "prep-night-26aug05"
+branch = "webcast-lane"
+state = "active"
+contract_change = true
+# 2026-08-04 prep night: the per-event journal, the green gate, descope
+# records, and the T-0 agent installers — the machinery that converts
+# human-memory steps into scheduled jobs and blocking gates.
+paths = [
+  "docs/nodes/control-operate.md",
+  "docs/runbooks/RUNBOOK-26AUG04-AFTERNOON.md",
+  "scripts/journal.sh",
+  "scripts/assert-ready.sh",
+  "scripts/descope-event.sh",
+  "scripts/watcher-liveness.sh",
+  "scripts/install-t0-agents.sh",
+  "scripts/study-nightly.sh",
+  "scripts/stage-nightly.sh",
+  "scripts/event-status.sh",
+  "docs/runbooks/RUNBOOK-2026-08-05.md",
+]
+verification = [
+  "bash -n scripts/journal.sh scripts/assert-ready.sh scripts/descope-event.sh scripts/watcher-liveness.sh scripts/install-t0-agents.sh scripts/study-nightly.sh",
+  "scripts/doc-lint.sh",
+]
+evidence = ["docs/nodes/control-operate.md"]
+
+[[claim]]
+id = "notify.delivery_log"
+node = "platform.notify"
+worker = "prep-night-26aug05"
+branch = "webcast-lane"
+state = "active"
+contract_change = false
+# 2026-08-04: three URL-MISSED pages fired and nobody can say whether they
+# arrived. notify.sh now appends per-channel outcomes to ~/.kalshi/notify.log.
+paths = [
+  "scripts/notify.sh",
+]
+verification = [
+  "bash -n scripts/notify.sh",
+]
+evidence = ["docs/runbooks/RUNBOOK-26AUG04-AFTERNOON.md"]
+
+[[claim]]
+id = "build.derived_slate_ignore"
+node = "project.build"
+worker = "prep-night-26aug05"
+branch = "webcast-lane"
+state = "active"
+contract_change = false
+# slate/latest-timed.json is generated nightly by slate-time-merge.py — a
+# derived artifact, gitignored like every other regenerable output.
+paths = [
+  ".gitignore",
+]
+verification = [
+  "git check-ignore slate/latest-timed.json",
+]
+evidence = [".gitignore"]

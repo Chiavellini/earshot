@@ -28,3 +28,4 @@ corpus-quiet/
 state/
 vendor/
 scripts/__pycache__/
+slate/latest-timed.json

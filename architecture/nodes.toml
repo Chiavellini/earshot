@@ -471,8 +471,10 @@ status = "active"
 doc = "docs/layers/book-cache.md"
 doc_style = "layer"
 owns = [
+  "examples/book-tape.rs",
   "src/kalshi/book.rs",
   "tests/ws_book.rs",
+  "tests/ws_tape.rs",
 ]
 inputs = [
   "runtime.core",
@@ -606,12 +608,22 @@ doc = "docs/layers/prepare.md"
 doc_style = "layer"
 owns = [
   "configs/[!d]*.toml",
+  # the [!d] above exists ONLY to exclude dial-ins.toml (control.qualify's
+  # registry) — but it also orphaned every d-issuer event config (dash, dis,
+  # dkng, duol, 2026-08-04). These two globs re-admit d* while still
+  # excluding dial-ins.toml (d-i-a-l fails di[!a]).
+  "configs/d[!i]*.toml",
+  "configs/di[!a]*.toml",
   "docs/work/PLAN-26JUL30.md",
   "src/prepare.rs",
   "scripts/stage-afternoon-26aug04.py",
   "scripts/stage-webcast-arm.sh",
   "scripts/stage-webcast-capture.sh",
   "scripts/slate-stage.sh",
+  # staging input shaping: hand-verified call times merged into the slate the
+  # stager consumes (slate/latest-timed.json is generated → gitignored).
+  "scripts/slate-time-merge.py",
+  "slate/call-times.json",
 ]
 inputs = [
   "runtime.core",
@@ -619,6 +631,26 @@ inputs = [
   "runtime.detector.keyword_compiler",
 ]
 outputs = ["control.event.prepared"]
+
+[[node]]
+id = "control.operate"
+job = "Give the operator one place to run an event day from and one place to reconstruct it: day runbooks, the per-event lifecycle journal, the green gate, and the T-0 agent installers."
+status = "active"
+doc = "docs/nodes/control-operate.md"
+doc_style = "node"
+owns = [
+  "docs/runbooks/**",
+  "scripts/journal.sh",
+  "scripts/assert-ready.sh",
+  "scripts/descope-event.sh",
+  "scripts/watcher-liveness.sh",
+  "scripts/install-t0-agents.sh",
+  "scripts/study-nightly.sh",
+  "scripts/stage-nightly.sh",
+  "scripts/event-status.sh",
+]
+inputs = []
+outputs = []
 
 [[node]]
 id = "control.preflight"
@@ -1033,7 +1065,13 @@ owns = [
   "scripts/pm-capture.py",
   "scripts/pm-edge-report.py",
   "scripts/pm-map-build.py",
+  "scripts/pm-tape.py",
+  "scripts/xvenue-autorun.sh",
+  "scripts/xvenue-daily.sh",
+  "scripts/xvenue-normalize.py",
+  "scripts/xvenue-report.py",
   "configs/pm-map-*.json",
+  "slate/xvenue-ledger.json",
 ]
 inputs = [
   "control.events.discovered",
