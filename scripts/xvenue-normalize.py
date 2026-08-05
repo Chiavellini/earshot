@@ -47,7 +47,17 @@ import os
 import sys
 import zlib
 
-XV_SCHEMA = 1
+# The schema of the rows THIS script writes. Bumped to 2 on 2026-08-05 when
+# the ladder stopped being discarded (see book_depth_kind below). Every v1
+# field is unchanged and still present, so a v1 reader keeps working.
+XV_SCHEMA = 2
+
+# The raw-tape envelopes this normalizer can read. Deliberately a SEPARATE
+# constant: the wire format written by book-tape.rs / pm-tape.py did not
+# change, so its version must not move just because the normalized row gained
+# fields. Conflating the two would have made a schema bump reject every tape
+# already banked — the exact data this lane exists to rescue.
+XV_TAPE_SCHEMA_ACCEPTED = (1,)
 
 # Declared measurement floors. These are DATA, not commentary: the report
 # refuses to compare rows whose granularity differs, which is the guard the
@@ -56,6 +66,17 @@ GRAN_MS = 1_000_000
 GRAN_S = 1_000_000_000
 
 ONE_E6 = 1_000_000
+
+# How much of the book a source can see. Travels on every quote row for the
+# same reason venue_ts_granularity_ns does: the limitation is data, so a
+# report can label a truncated figure a FLOOR instead of quietly presenting
+# it as the whole book.
+#   full  — the entire ladder the venue published
+#   top5  — the source truncates (pm-capture.py banks 5 levels a side)
+#   none  — this row carries no size information at all
+DEPTH_FULL = "full"
+DEPTH_TOP5 = "top5"
+DEPTH_NONE = "none"
 
 
 # ── exact decimal parsing ─────────────────────────────────────────────────
@@ -145,10 +166,11 @@ def check_schema(path, kind, header):
     if kind not in ("kalshi_ws", "pm_ws") or header is None:
         return
     got = header.get("schema_version")
-    if got != XV_SCHEMA:
+    if got not in XV_TAPE_SCHEMA_ACCEPTED:
         raise SystemExit(
-            f"FATAL: {path} is schema {got!r}, this normalizer speaks {XV_SCHEMA}. "
-            f"Refusing to guess — a field may have changed meaning."
+            f"FATAL: {path} is tape schema {got!r}, this normalizer reads "
+            f"{XV_TAPE_SCHEMA_ACCEPTED}. Refusing to guess — a field may have "
+            f"changed meaning."
         )
 
 
@@ -196,6 +218,11 @@ def kalshi_ws_records(path, header, pair):
 
         bb = max(b["bids"]) if b["bids"] else None
         ba = min(b["asks"]) if b["asks"] else None
+        # The full ladder was always reconstructed here; v1 emitted only its
+        # two extremes and threw the rest away. Kalshi ticks at 1¢, so this is
+        # at most 99 levels a side.
+        bids_l = _ladder_from_dict(b["bids"], best_high=True)
+        asks_l = _ladder_from_dict(b["asks"], best_high=False)
         yield {
             "schema_version": XV_SCHEMA,
             "pair_id": pair,
@@ -218,7 +245,41 @@ def kalshi_ws_records(path, header, pair):
             "spread_e6": (ba - bb) if (bb is not None and ba is not None) else None,
             "bid_size_e6": b["bids"].get(bb),
             "ask_size_e6": b["asks"].get(ba),
+            "bids_e6": bids_l,
+            "asks_e6": asks_l,
+            "book_levels": [len(bids_l), len(asks_l)],
+            "book_depth_kind": DEPTH_FULL,
         }
+
+
+def _ladder_from_dict(levels, best_high):
+    """{px_e6: sz_e6} -> [[px_e6, sz_e6], …] BEST FIRST.
+
+    Best-first is the canonical order for every venue in this lane, chosen so
+    a consumer never has to know which way a given venue sorted its wire (PM
+    sorts best-price-LAST, Kalshi is a map). ladder[0] is always the level you
+    would trade against first.
+    """
+    if not levels:
+        return []
+    return [[px, levels[px]] for px in sorted(levels, reverse=best_high)]
+
+
+def _ladder_from_pairs(pairs, reverse=False):
+    """[[price_str, size_str], …] -> [[px_e6, sz_e6], …], dropping unparsable
+    levels rather than coercing them to zero: a level we cannot read is not a
+    level with no size on it."""
+    out = []
+    for lv in pairs or []:
+        try:
+            px, sz = to_e6(lv[0]), to_e6(lv[1])
+        except (IndexError, TypeError):
+            continue
+        if px is not None and sz is not None:
+            out.append([px, sz])
+    if reverse:
+        out.reverse()
+    return out
 
 
 def _apply(book, side, px_e6, qty_e6, delta):
@@ -260,19 +321,33 @@ def pm_ws_records(path, header, pair):
                 bids, asks = msg.get("bids") or [], msg.get("asks") or []
                 bb = to_e6(bids[-1]["price"]) if bids else None
                 ba = to_e6(asks[-1]["price"]) if asks else None
+                # Best-price-LAST on the wire, so reverse into best-first.
                 yield _pm_quote(pair, aid, meta, row, venue_ts, bb, ba,
                                 to_e6(bids[-1]["size"]) if bids else None,
-                                to_e6(asks[-1]["size"]) if asks else None)
+                                to_e6(asks[-1]["size"]) if asks else None,
+                                _ladder_from_pairs(
+                                    [[lv.get("price"), lv.get("size")] for lv in bids],
+                                    reverse=True),
+                                _ladder_from_pairs(
+                                    [[lv.get("price"), lv.get("size")] for lv in asks],
+                                    reverse=True),
+                                DEPTH_FULL)
             elif et == "price_change":
                 for ch in msg.get("price_changes") or []:
                     aid = ch.get("asset_id")
                     meta = assets.get(aid, {})
+                    # best_bid/best_ask only — this frame carries NO size. It
+                    # must report `none`, never an empty ladder: an empty
+                    # ladder reads as "no liquidity resting", which is the
+                    # opposite of "we were not told", and would understate the
+                    # very quantity the depth axis exists to measure.
                     yield _pm_quote(pair, aid, meta, row, venue_ts,
                                     to_e6(ch.get("best_bid")), to_e6(ch.get("best_ask")),
-                                    None, None)
+                                    None, None, None, None, DEPTH_NONE)
 
 
-def _pm_quote(pair, aid, meta, row, venue_ts, bb, ba, bsz, asz):
+def _pm_quote(pair, aid, meta, row, venue_ts, bb, ba, bsz, asz,
+              bids_l=None, asks_l=None, depth_kind=DEPTH_NONE):
     return {
         "schema_version": XV_SCHEMA,
         "pair_id": pair,
@@ -296,6 +371,11 @@ def _pm_quote(pair, aid, meta, row, venue_ts, bb, ba, bsz, asz):
         "spread_e6": (ba - bb) if (bb is not None and ba is not None) else None,
         "bid_size_e6": bsz,
         "ask_size_e6": asz,
+        "bids_e6": bids_l,
+        "asks_e6": asks_l,
+        "book_levels": (None if depth_kind == DEPTH_NONE
+                        else [len(bids_l or []), len(asks_l or [])]),
+        "book_depth_kind": depth_kind,
     }
 
 
@@ -317,6 +397,13 @@ def pm_poll_records(path, pair, poll_interval_ns, legs=None):
         if t == "book":
             bb, ba = to_e6(row.get("bb")), to_e6(row.get("ba"))
             ts = row.get("server_ts_ms")
+            # pm-capture.py has banked 5 levels a side since 2026-07-30
+            # (top_bids/top_asks, already best-first) and v1 read only bb/ba,
+            # emitting null sizes. Recovering these is what makes the depth
+            # axis answerable for events that are already over.
+            bids_l = _ladder_from_pairs(row.get("top_bids"))
+            asks_l = _ladder_from_pairs(row.get("top_asks"))
+            has_depth = bool(bids_l or asks_l)
             yield {
                 "schema_version": XV_SCHEMA,
                 "pair_id": pair,
@@ -337,8 +424,14 @@ def pm_poll_records(path, pair, poll_interval_ns, legs=None):
                 "ask_e6": ba,
                 "mid_e6": (bb + ba) // 2 if (bb is not None and ba is not None) else None,
                 "spread_e6": (ba - bb) if (bb is not None and ba is not None) else None,
-                "bid_size_e6": None,
-                "ask_size_e6": None,
+                # v1 emitted null here because it never looked past bb/ba.
+                # Now sourced from the ladder's own best level.
+                "bid_size_e6": bids_l[0][1] if bids_l else None,
+                "ask_size_e6": asks_l[0][1] if asks_l else None,
+                "bids_e6": bids_l if has_depth else None,
+                "asks_e6": asks_l if has_depth else None,
+                "book_levels": [len(bids_l), len(asks_l)] if has_depth else None,
+                "book_depth_kind": DEPTH_TOP5 if has_depth else DEPTH_NONE,
             }
         elif t == "trade":
             px, sz = to_e6(row.get("price")), to_e6(row.get("size"))
@@ -510,7 +603,7 @@ def self_test():
     with tempfile.TemporaryDirectory() as d:
         kt = os.path.join(d, "k.jsonl")
         with open(kt, "w") as fh:
-            fh.write(json.dumps({"t": "session", "schema_version": XV_SCHEMA,
+            fh.write(json.dumps({"t": "session", "schema_version": XV_TAPE_SCHEMA_ACCEPTED[0],
                                  "venue": "kalshi", "feed_kind": "push",
                                  "tickers": ["EV-WORD"], "host": "t"}) + "\n")
             snap = {"type": "orderbook_snapshot", "seq": 1, "msg": {
@@ -528,7 +621,7 @@ def self_test():
 
         pt = os.path.join(d, "p.jsonl")
         with open(pt, "w") as fh:
-            fh.write(json.dumps({"t": "session", "schema_version": XV_SCHEMA,
+            fh.write(json.dumps({"t": "session", "schema_version": XV_TAPE_SCHEMA_ACCEPTED[0],
                                  "venue": "polymarket", "feed_kind": "push",
                                  "assets": {"A1": {"q": "Will X say \"word\"?",
                                                    "outcome": "YES"}},
@@ -541,7 +634,13 @@ def self_test():
                            {"price": "0.106", "size": "77.7"}]}
             fh.write(json.dumps({"t": "frame", "wall_ns": 11, "mono_ns": 3,
                                  "raw": json.dumps(bk)}) + "\n")
-            fh.write(json.dumps({"t": "close", "rows": 1}) + "\n")
+            # A price_change carries best bid/ask and NO sizes at all.
+            pc = {"event_type": "price_change", "timestamp": "1785883437900",
+                  "price_changes": [{"asset_id": "A1", "best_bid": "0.105",
+                                     "best_ask": "0.107"}]}
+            fh.write(json.dumps({"t": "frame", "wall_ns": 12, "mono_ns": 4,
+                                 "raw": json.dumps(pc)}) + "\n")
+            fh.write(json.dumps({"t": "close", "rows": 2}) + "\n")
 
         outp = os.path.join(d, "n.jsonl")
         normalize([kt, pt], "fx", outp, 1_000_000_000)
@@ -557,6 +656,52 @@ def self_test():
         chk("pm best ask is asks[-1]", 106000, pm[0]["ask_e6"])
         chk("pm spread 0.002", 2000, pm[0]["spread_e6"])
         chk("pm outcome labelled", "YES", pm[0]["outcome"])
+
+        # ── depth (schema 2) ──────────────────────────────────────────────
+        # v1 kept only the two extremes of a ladder it had fully rebuilt.
+        chk("kalshi ladder is full", DEPTH_FULL, k[0]["book_depth_kind"])
+        chk("kalshi bids best-first", [[400000, 100000000]], k[0]["bids_e6"])
+        chk("kalshi no-leg became a yes ask", [[450000, 200000000]], k[0]["asks_e6"])
+        chk("kalshi delta adds a level", 2, len(k[1]["bids_e6"]))
+        chk("kalshi bids stay best-first", 420000, k[1]["bids_e6"][0][0])
+        chk("pm ladder is full", DEPTH_FULL, pm[0]["book_depth_kind"])
+        # Wire order is best-price-LAST; the canonical row is best-FIRST.
+        chk("pm bids reversed to best-first",
+            [[104000, 133320000], [1000, 500000000]], pm[0]["bids_e6"])
+        chk("pm asks reversed to best-first",
+            [[106000, 77700000], [900000, 10000000]], pm[0]["asks_e6"])
+        chk("pm level counts stated", [2, 2], pm[0]["book_levels"])
+        chk("top-of-book agrees with ladder head",
+            pm[0]["bid_e6"], pm[0]["bids_e6"][0][0])
+        # The one that matters: "we were not told" must never render as
+        # "nothing is resting there".
+        chk("price_change declares no depth", DEPTH_NONE, pm[1]["book_depth_kind"])
+        chk("price_change ladder is null, NOT empty", None, pm[1]["bids_e6"])
+        chk("price_change levels null, NOT zero", None, pm[1]["book_levels"])
+        chk("price_change still carries its prices", 105000, pm[1]["bid_e6"])
+
+        # ── legacy poll capture: the banked 5-level ladder ────────────────
+        # This path is what makes an event that is already over answerable.
+        qt = os.path.join(d, "q.jsonl")
+        with open(qt, "w") as fh:
+            fh.write(json.dumps({
+                "t": "book", "wall_ns": 21, "mono_ns": 5,
+                "server_ts_ms": "1785883437828", "asset": "A1",
+                "q": "Will X say \"word\"?", "bb": "0.051", "ba": "0.99",
+                # already best-first on the wire, unlike the WS book
+                "top_bids": [["0.051", "21.24"], ["0.05", "10"]],
+                "top_asks": [["0.99", "25"], ["0.996", "15.29"]]}) + "\n")
+        qout = os.path.join(d, "q-norm.jsonl")
+        normalize([qt], "fx", qout, 1_000_000_000)
+        q = [json.loads(x) for x in open(qout)]
+        chk("poll ladder is a FLOOR, not the book", DEPTH_TOP5, q[0]["book_depth_kind"])
+        chk("poll bids recovered", [[51000, 21240000], [50000, 10000000]], q[0]["bids_e6"])
+        chk("poll asks recovered", [[990000, 25000000], [996000, 15290000]], q[0]["asks_e6"])
+        # v1 emitted null here on every single PM poll row — 5,389 of them on
+        # PLTR alone — which is why the depth axis read as unanswerable.
+        chk("poll best-bid size no longer null", 21240000, q[0]["bid_size_e6"])
+        chk("poll best-ask size no longer null", 25000000, q[0]["ask_size_e6"])
+
         # Determinism: same input, byte-identical output.
         out2 = os.path.join(d, "n2.jsonl")
         normalize([kt, pt], "fx", out2, 1_000_000_000)

@@ -1,9 +1,9 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "rows": [
     {
       "pair_id": "amd-26aug04",
-      "generated_utc": "2026-08-04T23:03:43Z",
+      "generated_utc": "2026-08-05T16:32:17Z",
       "verdict": "NOT_RESOLVABLE",
       "matched_words": 8,
       "joint_floor_s": 1.0,
@@ -12,13 +12,18 @@
       "kalshi_trades": 4903,
       "pm_trades": 14,
       "notional_ratio": 292.03,
+      "takeable_p50_usd_10c": null,
+      "takeable_p50_usd_50c": null,
+      "takeable_resolved": 0,
+      "precision_assumed": 0.75,
       "caveats": [
-        "Kalshi rows come from the post-hoc public trades tape (no receive clock, second granularity). They support the volume axis only."
+        "Kalshi rows come from the post-hoc public trades tape (no receive clock, second granularity). They support the volume axis only.",
+        "CAPTURE BARELY OVERLAPS: only 3.7% of Kalshi's notional falls inside the window Polymarket was recorded. The full-tape ratio compares DIFFERENT time spans and overstates the gap (292.03x vs 10.76x same-window). Treat the same-window figure as the venue comparison and re-capture across the call."
       ]
     },
     {
       "pair_id": "pltr-26aug03",
-      "generated_utc": "2026-08-04T23:03:19Z",
+      "generated_utc": "2026-08-05T16:32:07Z",
       "verdict": "NOT_RESOLVABLE",
       "matched_words": 5,
       "joint_floor_s": 1.0,
@@ -27,6 +32,10 @@
       "kalshi_trades": 7918,
       "pm_trades": 48,
       "notional_ratio": 47.8,
+      "takeable_p50_usd_10c": 0.0,
+      "takeable_p50_usd_50c": 0.0,
+      "takeable_resolved": 1,
+      "precision_assumed": 0.75,
       "caveats": [
         "Kalshi rows come from the post-hoc public trades tape (no receive clock, second granularity). They support the volume axis only."
       ]
