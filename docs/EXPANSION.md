@@ -49,16 +49,23 @@ automates config pairs; (c) quiet-day `bridge-probe-batch.sh` sweep over the
 before/after; every new `held` issuer is a Tier-1 event forever after.
 
 ### 2. Polymarket dual-listing of the SAME events (measure-only)
-**Surface:** PM tag `mention-markets` mirrors the class at 10–100× volume
-(Powell pressers $0.9–5.5M, NFLX earnings $6.6M) and lists the *same*
-AAPL/AMZN 26JUL30 calls (keyword overlap ≈11/18 on AAPL). Single-mention
-markets = our exact race; cumulative-count markets ("say AWS 20+ times")
-re-price on every utterance — a streaming counter holds edge the whole call.
-**State:** read APIs fully public (Q-PM); `scripts/pm-capture.py` live on the
-box since 2026-07-30 15:49Z capturing AAPL+AMZN books+trades.
-**Action:** capture during every armed Kalshi event → `pm-edge-report.py`
-after ≥3 overlaps → provable-improvements verdict. **Execution (wallet, CLOB
-orders, Polygon) stays gated on that report — user decision 2026-07-30.**
+⚠ **DOWNGRADED 2026-08-04 — the 10–100× premise is false for THIS class.**
+Measured from tape (Q-PM amendment): on the identical earnings-mention events
+Kalshi traded **47.8×** (PLTR 26AUG03) and **292×** (AMD 26AUG04) Polymarket's
+notional, with PM median spreads of 31¢ and 19¢. The 10–100× figure holds for
+the Powell / Trump / NFLX boards it was sampled from, not for earnings.
+**Surface:** PM tag `mention-markets` lists the *same* calls (keyword overlap
+≈11/18 on AAPL; 8/17 auto-matched on AMD). Cumulative-count markets ("say AWS
+20+ times") re-price on every utterance — a streaming counter would hold edge
+the whole call, and that shape is untested.
+**State:** read APIs fully public (Q-PM) **and now push** (Q-XVENUE-WS —
+`ws-subscriptions-clob`, ms timestamps, 0.001 tick). The lane is frozen:
+`pm-tape.py` + `examples/book-tape.rs` → `xvenue-normalize.py` →
+`xvenue-report.py` → `slate/xvenue-ledger.json`, standing on its own timer.
+**Action:** the volume axis is answered and negative for earnings-mention — a
+PM move is not a usable Kalshi signal at 14–48 prints per event. Point the Δt
+axis at **`KXFEDMENTION`**, where PM actually has the depth the original claim
+came from. **Execution stays gated — user decision 2026-07-30.**
 
 ---
 

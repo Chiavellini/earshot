@@ -229,6 +229,70 @@ fn apply_message(scratch: &mut HashMap<String, Ladders>, msg: &Value) -> Option<
     }
 }
 
+/// One verbatim WS frame with the clocks we received it on.
+///
+/// The tape stores the wire text UNPARSED on purpose. `dollars_to_cents`
+/// drops sub-cent levels and the ladder is integer cents by design — both
+/// correct for the trading path, both lossy. A recorder that stored the parsed
+/// book could only ever answer questions this parser already anticipated, and
+/// cross-venue analysis is exactly the case where that bites (Polymarket ticks
+/// at 0.001, verified live 2026-08-04). Raw text re-normalizes forever.
+#[derive(Debug, Clone)]
+pub struct RawFrame {
+    /// Nanoseconds since the Unix epoch on OUR host — the cross-venue time
+    /// axis. Kalshi's WS frames carry `seq` but no server timestamp, so this
+    /// receive stamp is the only clock available on this side.
+    pub wall_ns: u64,
+    pub mono_ns: u64,
+    pub text: String,
+}
+
+/// A recording tap on the book feed.
+///
+/// `try_send` only: a slow or wedged recorder must NEVER stall the book feed
+/// that the executor reads. Overflow increments `dropped` instead of blocking,
+/// so a truncated tape is always visible as a number rather than as silence.
+#[derive(Clone)]
+pub struct FrameTap {
+    pub tx: tokio::sync::mpsc::Sender<RawFrame>,
+    pub dropped: Arc<AtomicU64>,
+}
+
+impl FrameTap {
+    pub fn new(capacity: usize) -> (Self, tokio::sync::mpsc::Receiver<RawFrame>) {
+        let (tx, rx) = tokio::sync::mpsc::channel(capacity);
+        (
+            Self {
+                tx,
+                dropped: Arc::new(AtomicU64::new(0)),
+            },
+            rx,
+        )
+    }
+
+    fn offer(&self, text: &str) {
+        let frame = RawFrame {
+            wall_ns: wall_ns_now(),
+            mono_ns: MonotonicNs::now().0,
+            text: text.to_string(),
+        };
+        if self.tx.try_send(frame).is_err() {
+            self.dropped.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
+/// Wall-clock nanoseconds since the Unix epoch. Distinct from
+/// `clock::MonotonicNs`, which is the ONLY clock allowed for latency inside
+/// the runtime; this one exists solely so a recorded frame can be joined
+/// against another venue's tape after the fact.
+fn wall_ns_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0)
+}
+
 /// WS reader with reconnect. Runs until aborted. On any error it reconnects
 /// after 500 ms and re-subscribes — a fresh subscribe always yields a fresh
 /// snapshot, so the book can never silently drift across reconnects.
@@ -250,10 +314,23 @@ pub async fn run_ws_url(
     cache: Arc<BookCache>,
     tickers: Vec<String>,
 ) {
+    run_ws_url_tapped(ws_url, signer, cache, tickers, None).await
+}
+
+/// Same reader with an optional recording tap. The arm path enters through
+/// `run_ws` / `run_ws_url`, which pass `None` — recording is strictly additive
+/// and cannot change what the executor sees.
+pub async fn run_ws_url_tapped(
+    ws_url: String,
+    signer: Arc<Signer>,
+    cache: Arc<BookCache>,
+    tickers: Vec<String>,
+    tap: Option<FrameTap>,
+) {
     let mut attempt = 0u32;
     loop {
         attempt += 1;
-        match connect_and_stream(&ws_url, &signer, &cache, &tickers).await {
+        match connect_and_stream(&ws_url, &signer, &cache, &tickers, tap.as_ref()).await {
             Ok(()) => tracing::info!("ws stream ended cleanly"),
             Err(e) => tracing::warn!(attempt, "ws error: {e}; reconnecting"),
         }
@@ -266,6 +343,7 @@ async fn connect_and_stream(
     signer: &Arc<Signer>,
     cache: &Arc<BookCache>,
     tickers: &[String],
+    tap: Option<&FrameTap>,
 ) -> Result<(), KalshiError> {
     let path = "/trade-api/ws/v2";
     let host = ws_url
@@ -334,6 +412,13 @@ async fn connect_and_stream(
             // Ping (server) is auto-ponged by tungstenite; Pong answers ours.
             _ => continue,
         };
+        // Tap BEFORE parsing, and tap unconditionally: a frame this parser
+        // rejects (or an `error` message) is exactly the frame a later
+        // investigation wants, so the tape is verbatim and complete or it is
+        // not evidence.
+        if let Some(tap) = tap {
+            tap.offer(&text);
+        }
         tracing::debug!(msg = %text.chars().take(2000).collect::<String>(), "ws raw");
         let Ok(msg) = serde_json::from_str::<Value>(&text) else { continue };
         if msg["type"] == "error" {
