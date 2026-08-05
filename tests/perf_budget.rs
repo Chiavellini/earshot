@@ -272,7 +272,7 @@ async fn perf_executor_fire_path() {
         "executor: decision→exec p95 {} µs, exec→send p95 {} µs over {} live sends",
         d2e.p95_us, e2s.p95_us, e2s.count
     );
-    assert_eq!(report.orders.iter().filter(|o| o.send_ts.is_some()).count(), 6);
+    assert_eq!(report.orders.iter().filter(|o| o.reached_wire()).count(), 6);
     assert!(e2s.p95_us < 5_000, "exec→send p95 {} µs — pre-staging broken?", e2s.p95_us);
     // decision→exec here includes queue wait: this rig pre-fills the channel
     // before the executor starts, so the edge is test-shaped. Bound it only

@@ -135,6 +135,28 @@ pub struct OrderRecord {
     pub book_age_ns: Option<u64>,
 }
 
+impl OrderRecord {
+    /// Did this record actually reach Kalshi?
+    ///
+    /// THE distinction the 2026-08-05 morning lost. `ExecReport.orders` holds
+    /// every intent the executor processed, including the five non-fire early
+    /// returns (non-crossing, EV gate, dry-run, risk refusal, send-failed), so
+    /// `orders.len()` is an INTENT count and calling it "orders placed"
+    /// reported 23 when the true number was 0. `send_ts` is stamped at exactly
+    /// one place — immediately around `transport.send_order` — so it is the
+    /// only honest answer.
+    pub fn reached_wire(&self) -> bool {
+        self.send_ts.is_some()
+    }
+
+    /// Did Kalshi acknowledge it with an order id? Strictly stronger than
+    /// `reached_wire`: a send can time out ambiguously and still be on the
+    /// book, which is why the executor queries by client id before giving up.
+    pub fn acked(&self) -> bool {
+        self.order_id.is_some()
+    }
+}
+
 pub struct ExecCtx {
     /// Order entry: the one wire the fire path sends through.
     pub transport: OrderTransport,
@@ -415,6 +437,127 @@ async fn handle_intent(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A record shaped like whatever `handle_intent` returns at a given exit.
+    fn rec() -> OrderRecord {
+        OrderRecord {
+            client_order_id: "c-1".into(),
+            ticker: "KX-T".into(),
+            price_cents: 97,
+            count: 1,
+            tier: Tier::Confirmed,
+            dry_run: false,
+            lost_race: false,
+            refusal: None,
+            order_status: None,
+            order_id: None,
+            audio_ts: 1,
+            decision_ts: 2,
+            exec_ts: 3,
+            send_ts: None,
+            hdrs_ts: None,
+            ack_ts: None,
+            best_ask: None,
+            book_age_ns: None,
+        }
+    }
+
+    /// 2026-08-05: "23 orders placed" was reported when the true number was 0.
+    /// Every non-fire exit returns a record that lands in `ExecReport.orders`,
+    /// so the list length is an INTENT count. Only `send_ts` — stamped once,
+    /// around `transport.send_order` — answers "did this reach Kalshi".
+    #[test]
+    fn no_early_return_counts_as_having_reached_the_wire() {
+        // 1. non-crossing (LOST_RACE): the 26AUG05 morning's entire population.
+        let mut non_crossing = rec();
+        non_crossing.lost_race = true;
+        // 2. EV gate.
+        let mut ev = rec();
+        ev.refusal = Some("EV gate".into());
+        // 3. shadow mode.
+        let mut dry = rec();
+        dry.dry_run = true;
+        dry.refusal = Some("dry_run".into());
+        // 4. risk gate.
+        let mut risk = rec();
+        risk.refusal = Some("event notional would reach 194¢, cap 100¢".into());
+        // 5. send failed and the status query proved it never landed.
+        let mut absent = rec();
+        absent.refusal = Some("send failed, not on book".into());
+
+        for (name, r) in [
+            ("non-crossing", non_crossing),
+            ("ev gate", ev),
+            ("dry run", dry),
+            ("risk gate", risk),
+            ("send failed", absent),
+        ] {
+            assert!(!r.reached_wire(), "{name} must NOT count as sent");
+            assert!(!r.acked(), "{name} must NOT count as acked");
+        }
+    }
+
+    /// The success path, and the ambiguous one: a send that timed out but was
+    /// later proven on the book is acked even though the ack timestamps are
+    /// absent — which is why `acked()` keys on `order_id`, not `ack_ts`.
+    #[test]
+    fn sent_and_acked_are_distinct_and_both_reachable() {
+        let mut sent_only = rec();
+        sent_only.send_ts = Some(10);
+        assert!(sent_only.reached_wire());
+        assert!(!sent_only.acked(), "a send without an order id is not acked");
+
+        let mut full = rec();
+        full.send_ts = Some(10);
+        full.hdrs_ts = Some(11);
+        full.ack_ts = Some(12);
+        full.order_id = Some("ord-1".into());
+        full.order_status = Some("resting".into());
+        assert!(full.reached_wire() && full.acked());
+
+        // Ambiguous outcome: transport errored, status query found it resting.
+        let mut recovered = rec();
+        recovered.send_ts = Some(10);
+        recovered.order_id = Some("ord-2".into());
+        recovered.refusal = None;
+        assert!(recovered.acked(), "a recovered order is on the book and must count");
+    }
+
+    /// The report must carry the counts, not force every reader to re-derive
+    /// them. `scripts/missed-arm-check.py` and `scripts/run-verdict.sh` both
+    /// counted `len(orders)` and both therefore reported the 26AUG05 morning as
+    /// 23 orders placed.
+    #[test]
+    fn run_json_counts_intents_sent_and_acked_separately() {
+        let mut lost = rec();
+        lost.lost_race = true;
+        let mut refused = rec();
+        refused.refusal = Some("event notional would reach 194¢, cap 100¢".into());
+        let mut sent = rec();
+        sent.send_ts = Some(10);
+        let mut acked = rec();
+        acked.send_ts = Some(10);
+        acked.order_id = Some("ord-1".into());
+
+        let report = ExecReport {
+            orders: vec![lost, refused, sent, acked],
+            lost_races: 1,
+            observe_noncross: 0,
+            recorder: crate::telemetry::LatencyRecorder::new(),
+        };
+        let json = crate::telemetry::build_run_json(
+            "KX-EVENT",
+            None,
+            Some(&report),
+            &crate::telemetry::ExitRecord::clean(),
+        )
+        .unwrap();
+
+        assert_eq!(json["intents"], 4, "every processed intent is counted");
+        assert_eq!(json["sent"], 2, "only records with send_ts reached Kalshi");
+        assert_eq!(json["acked"], 1, "only records with an order id were acknowledged");
+        assert_eq!(json["orders"].as_array().unwrap().len(), 4, "records are still all present");
+    }
 
     #[test]
     fn fee_matches_verified_cases() {

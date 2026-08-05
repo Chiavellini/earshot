@@ -9,8 +9,14 @@ without corrupting host-local runtime artifacts.
 
 The canonical rsync deployment in `scripts/deploy-box.sh`, TLS ingress setup in
 `scripts/install-tls-ingress.sh`, model artifact installation in
-`scripts/fetch-models.sh`, and deployed service configuration under `deploy/`,
-including `deploy/caddy/Caddyfile`.
+`scripts/fetch-models.sh`, host readiness verification in `scripts/box-ready.sh`,
+and deployed service configuration under `deploy/`, including
+`deploy/caddy/Caddyfile`.
+
+`scripts/box-ready.sh` answers one question — *can the target host run this
+event, right now?* — and answers it at prep time rather than at T-60. It is
+read-only except under `--repair`, which refuses while `src/`, `Cargo.toml`, or
+`Cargo.lock` are dirty so the deployed binary always corresponds to a commit.
 
 ## Does not own
 
@@ -30,6 +36,21 @@ Success means the allowed source tree matches the reviewed input and
 post-deploy checks prove target-platform runtime libraries/configuration remain
 present. The target `DeploymentReceipt` records revision, host, time, excludes,
 and verification results.
+
+`scripts/box-ready.sh` emits the readiness half of that receipt today:
+`state/<EVENT_ID>/box-ready.json` (schema 1) carrying `go`/`fails`/`warns`, the
+box binary's sha256 prefix and build time, the box's compiled
+`MENTION_FILL_CAP_CENTS`, the resolved `wss://` stream URL, and one record per
+gate. Exit 0 is GO, 1 is NO-GO with the first blocker named on stdout. Consumers
+should treat a missing or stale artifact as NO-GO rather than as absence of
+evidence.
+
+Three facts it exists to surface, all knowable at prep time and all missed on
+2026-08-05: the deployed binary must be **newer than every source file** and its
+compiled `MENTION_FILL_CAP_CENTS` must agree with the tree being armed
+(`mention_fill_gate` refuses any higher cap); the config's bind port must appear
+in the **installed** `/etc/caddy/Caddyfile`, since every unrouted path returns
+404; and `state/` is rsync-excluded, so the digit store never arrives by deploy.
 
 ## Side effects and exclusive resources
 

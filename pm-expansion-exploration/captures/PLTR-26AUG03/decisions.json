@@ -1,0 +1,47 @@
+{
+  "event_dir": "state/KXEARNINGSMENTIONPLTR-26AUG03-WEBCAST",
+  "first_capture_ts_mono_ns": 227531665719166,
+  "listener_ready_unix_ts": 1785790949,
+  "bridge_offset_ns": 1785563417334280834,
+  "bridge_method": "listener.ready(unix_ts, whole-second wall) - report.json.first_capture_ts(mono_ns)",
+  "bridge_error_s": 2.0,
+  "bridge_warning": "APPROXIMATION, not ground truth: unix_ts is whole-second-truncated and the gap between 'listener ready' and 'first audio frame captured' is unmeasured. Do not treat any reach_anchor_ns derived from this bridge as exact; it carries at least +/-2.0s of uncertainty.",
+  "words": {
+    "KXEARNINGSMENTIONPLTR-26AUG03-SLOP": {
+      "market_ticker": "KXEARNINGSMENTIONPLTR-26AUG03-SLOP",
+      "audio_ts_mono_ns": 227573780726416,
+      "decision_ts_mono_ns": 227573850632583,
+      "detect_latency_us": 69873,
+      "tier": "Confirmed",
+      "leg": "ytdlp_primary",
+      "source": "armed-run"
+    },
+    "KXEARNINGSMENTIONPLTR-26AUG03-SOVE": {
+      "market_ticker": "KXEARNINGSMENTIONPLTR-26AUG03-SOVE",
+      "audio_ts_mono_ns": 227785559244500,
+      "decision_ts_mono_ns": 227785607334708,
+      "detect_latency_us": 48075,
+      "tier": "Confirmed",
+      "leg": "ytdlp_primary",
+      "source": "armed-run"
+    },
+    "KXEARNINGSMENTIONPLTR-26AUG03-MAVE": {
+      "market_ticker": "KXEARNINGSMENTIONPLTR-26AUG03-MAVE",
+      "audio_ts_mono_ns": 228008458582416,
+      "decision_ts_mono_ns": 228008660883250,
+      "detect_latency_us": 202287,
+      "tier": "Confirmed",
+      "leg": "ytdlp_primary",
+      "source": "armed-run"
+    },
+    "KXEARNINGSMENTIONPLTR-26AUG03-REVE": {
+      "market_ticker": "KXEARNINGSMENTIONPLTR-26AUG03-REVE",
+      "audio_ts_mono_ns": 228187518000875,
+      "decision_ts_mono_ns": 228187613241416,
+      "detect_latency_us": 95233,
+      "tier": "Confirmed",
+      "leg": "ytdlp_backstop",
+      "source": "armed-run"
+    }
+  }
+}

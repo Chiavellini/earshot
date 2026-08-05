@@ -16,7 +16,14 @@
 # 07-22 post-mortems #1/#2). YouTube events: do NOT use this template; keep
 # the frozen yt-dlp leg (configs/webcast-tsla.toml) until a streamlink-vs-
 # YouTube ladder number exists (capture first).
-# Posture: mention-probe observe (1¢ non-crossing) — fill posture is gated on
+# Posture: MENTION-FILL (2026-08-05 operator ruling, W7 lifted for this slate):
+# max_price_cents = 97 (MENTION_FILL_CAP_CENTS ceiling, raised 50->97 26AUG05),
+# budget_contracts = 1 (97x2=194c would exceed max_order_notional_cents=100),
+# min_confidence_confirmed = 0.22 (26AUG05 tape: all 5 NO markets fired
+#   0.152-0.217, everything >=0.24 settled YES; IN-SAMPLE n=26, NOT validated)
+# => orders MAY cross and fill, ONE ~97c contract per event. Spend double-bound per event
+# by [risk].max_event_notional_cents=100 and the per-event $1 probe ledger.
+# Prior posture: mention-probe observe (1¢ non-crossing) — fill posture was gated on
 # the Phase-4 precision verdict (docs/RACE-STRATEGY.md).
 
 [event]
@@ -116,10 +123,10 @@ allowlist_tickers = [
 market_ticker    = "KXEARNINGSMENTIONMELI-26AUG05-ADVE"
 phrase           = "advertising"
 variants         = ["advertising", "advertisings"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # AI / Artificial Intelligence (KXEARNINGSMENTIONMELI-26AUG05-AI) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 # DROPPED ultra-short variant "ai" — <3 chars matches a syllable, not a word (measured: 38 FA in one event set). Re-add deliberately if this phrasing matters, and own the precision cost.
 # DROPPED ultra-short variant "ais" — <3 chars matches a syllable, not a word (measured: 38 FA in one event set). Re-add deliberately if this phrasing matters, and own the precision cost.
@@ -127,116 +134,116 @@ policy           = "confirmed_only"
 market_ticker    = "KXEARNINGSMENTIONMELI-26AUG05-AI"
 phrase           = "a i"
 variants         = ["a i", "artificial intelligence"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Amazon (KXEARNINGSMENTIONMELI-26AUG05-AMAZ) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONMELI-26AUG05-AMAZ"
 phrase           = "amazon"
 variants         = ["amazon", "amazons"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Authentic Brands (KXEARNINGSMENTIONMELI-26AUG05-AUTH) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONMELI-26AUG05-AUTH"
 phrase           = "authentic brands"
 variants         = ["authentic brands"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Automated / Automation (KXEARNINGSMENTIONMELI-26AUG05-AUTO) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONMELI-26AUG05-AUTO"
 phrase           = "automated"
 variants         = ["automated", "automateds", "automation", "automations"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Chile (KXEARNINGSMENTIONMELI-26AUG05-CHIL) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONMELI-26AUG05-CHIL"
 phrase           = "chile"
 variants         = ["chile", "chiles"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Competition (KXEARNINGSMENTIONMELI-26AUG05-COMP) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONMELI-26AUG05-COMP"
 phrase           = "competition"
 variants         = ["competition", "competitions"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Delivery (KXEARNINGSMENTIONMELI-26AUG05-DELI) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONMELI-26AUG05-DELI"
 phrase           = "delivery"
 variants         = ["delivery", "deliverys"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Digital Bank (KXEARNINGSMENTIONMELI-26AUG05-DIGI) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONMELI-26AUG05-DIGI"
 phrase           = "digital bank"
 variants         = ["digital bank"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Headwind (KXEARNINGSMENTIONMELI-26AUG05-HEAD) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONMELI-26AUG05-HEAD"
 phrase           = "headwind"
 variants         = ["headwind", "headwinds"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Oil / Gas / Gasoline (KXEARNINGSMENTIONMELI-26AUG05-OIL) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONMELI-26AUG05-OIL"
 phrase           = "oil"
 variants         = ["oil", "oils", "gas", "gasoline", "gasolines"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Payroll Loan (KXEARNINGSMENTIONMELI-26AUG05-PAYR) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONMELI-26AUG05-PAYR"
 phrase           = "payroll loan"
 variants         = ["payroll loan"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Pharmacy (KXEARNINGSMENTIONMELI-26AUG05-PHAR) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONMELI-26AUG05-PHAR"
 phrase           = "pharmacy"
 variants         = ["pharmacy", "pharmacys"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Tailwind (KXEARNINGSMENTIONMELI-26AUG05-TAIL) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONMELI-26AUG05-TAIL"
 phrase           = "tailwind"
 variants = ["tailwind", "tailwinds", "tail wind", "tail winds"]  # widened 2026-08-05 (study confirmed:0; the CTC splits these compounds — the spaced forms are what it actually emits; proven live this morning on SHOP openai + UBER nvidia/zoox/lyft)
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # --- prepare summary: 14 tradeable, 0 skipped (said-N-times), 0 skipped (unencodable), 0 variants dropped of 14 markets ---

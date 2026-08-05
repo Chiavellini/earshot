@@ -1,0 +1,2250 @@
+{
+  "sources": [
+    "state/xvenue/PLTR-26AUG03/norm.jsonl",
+    "state/xvenue/AMD-26AUG04/norm.jsonl"
+  ],
+  "n_instruments": 32,
+  "per_instrument": {
+    "105944088090954422007748226439447908441330183141975116731512443333206879471931": {
+      "label": "Will Palantir say \"Warp Speed\" during earnings call?",
+      "n_quotes": 458,
+      "whole_session": {
+        "covered_s": 7852.4,
+        "tiers": {
+          "5c": {
+            "snapshots": 458,
+            "covered_s": 7852.4,
+            "max_usd": 51.88,
+            "p50_usd": 0.0,
+            "persisted_s": 2151.6
+          },
+          "10c": {
+            "snapshots": 458,
+            "covered_s": 7852.4,
+            "max_usd": 51.88,
+            "p50_usd": 0.0,
+            "persisted_s": 2151.6
+          },
+          "20c": {
+            "snapshots": 458,
+            "covered_s": 7852.4,
+            "max_usd": 3.55,
+            "p50_usd": 0.0,
+            "persisted_s": 104.5
+          },
+          "50c": {
+            "snapshots": 458,
+            "covered_s": 7852.4,
+            "max_usd": 0.56,
+            "p50_usd": 0.0,
+            "persisted_s": 104.5
+          }
+        },
+        "depth_kind_worst": "top5"
+      },
+      "snapshot_base_rate": {
+        "5c": {
+          "snapshots": 458,
+          "pct_nonzero": 4.8
+        },
+        "10c": {
+          "snapshots": 458,
+          "pct_nonzero": 4.8
+        },
+        "20c": {
+          "snapshots": 458,
+          "pct_nonzero": 1.5
+        },
+        "50c": {
+          "snapshots": 458,
+          "pct_nonzero": 1.3
+        }
+      },
+      "structural_vs_transient": {
+        "tier": "10c",
+        "recent_window_s": 10.0,
+        "just_moved": {
+          "n": 288,
+          "pct_nonzero": 1.4,
+          "median_usd": 0.0
+        },
+        "quiet": {
+          "n": 168,
+          "pct_nonzero": 9.5,
+          "median_usd": 0.0
+        }
+      }
+    },
+    "106644134722546140849184706008377146198798207842516811527440650365863367658436": {
+      "label": "Will AMD say \"GPU\" 10+ times during earnings call?",
+      "n_quotes": 41,
+      "whole_session": {
+        "covered_s": 8095.2,
+        "tiers": {
+          "5c": {
+            "snapshots": 41,
+            "covered_s": 8095.2,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "10c": {
+            "snapshots": 41,
+            "covered_s": 8095.2,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "20c": {
+            "snapshots": 41,
+            "covered_s": 8095.2,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "50c": {
+            "snapshots": 41,
+            "covered_s": 8095.2,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          }
+        },
+        "depth_kind_worst": "top5"
+      },
+      "snapshot_base_rate": {
+        "5c": {
+          "snapshots": 41,
+          "pct_nonzero": 0.0
+        },
+        "10c": {
+          "snapshots": 41,
+          "pct_nonzero": 0.0
+        },
+        "20c": {
+          "snapshots": 41,
+          "pct_nonzero": 0.0
+        },
+        "50c": {
+          "snapshots": 41,
+          "pct_nonzero": 0.0
+        }
+      },
+      "structural_vs_transient": {
+        "tier": "10c",
+        "recent_window_s": 10.0,
+        "just_moved": {
+          "n": 9,
+          "pct_nonzero": 0.0,
+          "median_usd": 0.0
+        },
+        "quiet": {
+          "n": 32,
+          "pct_nonzero": 0.0,
+          "median_usd": 0.0
+        }
+      }
+    },
+    "10783703958812133035954288174177995099885748517250115444837954199319085397330": {
+      "label": "Will AMD say \"Meta\" during earnings call?",
+      "n_quotes": 179,
+      "whole_session": {
+        "covered_s": 7667.5,
+        "tiers": {
+          "5c": {
+            "snapshots": 179,
+            "covered_s": 7667.5,
+            "max_usd": 538.91,
+            "p50_usd": 505.91,
+            "persisted_s": 7667.5
+          },
+          "10c": {
+            "snapshots": 179,
+            "covered_s": 7667.5,
+            "max_usd": 200.05,
+            "p50_usd": 167.05,
+            "persisted_s": 7667.5
+          },
+          "20c": {
+            "snapshots": 179,
+            "covered_s": 7667.5,
+            "max_usd": 33.0,
+            "p50_usd": 0.0,
+            "persisted_s": 385.1
+          },
+          "50c": {
+            "snapshots": 179,
+            "covered_s": 7667.5,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          }
+        },
+        "depth_kind_worst": "top5"
+      },
+      "snapshot_base_rate": {
+        "5c": {
+          "snapshots": 179,
+          "pct_nonzero": 100.0
+        },
+        "10c": {
+          "snapshots": 179,
+          "pct_nonzero": 100.0
+        },
+        "20c": {
+          "snapshots": 179,
+          "pct_nonzero": 20.1
+        },
+        "50c": {
+          "snapshots": 179,
+          "pct_nonzero": 0.0
+        }
+      },
+      "structural_vs_transient": {
+        "tier": "10c",
+        "recent_window_s": 10.0,
+        "just_moved": {
+          "n": 27,
+          "pct_nonzero": 100.0,
+          "median_usd": 200.05
+        },
+        "quiet": {
+          "n": 152,
+          "pct_nonzero": 100.0,
+          "median_usd": 167.05
+        }
+      }
+    },
+    "108477977258218819532624307512650352712524323160178407901253085103494255161725": {
+      "label": "Will Palantir say \"Growth\" during earnings call?",
+      "n_quotes": 21,
+      "whole_session": {
+        "covered_s": 6351.7,
+        "tiers": {
+          "5c": {
+            "snapshots": 21,
+            "covered_s": 6351.7,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "10c": {
+            "snapshots": 21,
+            "covered_s": 6351.7,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "20c": {
+            "snapshots": 21,
+            "covered_s": 6351.7,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "50c": {
+            "snapshots": 21,
+            "covered_s": 6351.7,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          }
+        },
+        "depth_kind_worst": "top5"
+      },
+      "snapshot_base_rate": {
+        "5c": {
+          "snapshots": 21,
+          "pct_nonzero": 0.0
+        },
+        "10c": {
+          "snapshots": 21,
+          "pct_nonzero": 0.0
+        },
+        "20c": {
+          "snapshots": 21,
+          "pct_nonzero": 0.0
+        },
+        "50c": {
+          "snapshots": 21,
+          "pct_nonzero": 0.0
+        }
+      },
+      "structural_vs_transient": {
+        "tier": "10c",
+        "recent_window_s": 10.0,
+        "just_moved": {
+          "n": 1,
+          "pct_nonzero": 0.0,
+          "median_usd": 0.0
+        },
+        "quiet": {
+          "n": 14,
+          "pct_nonzero": 0.0,
+          "median_usd": 0.0
+        }
+      }
+    },
+    "110333936835729361982719410462532640413803725064576613446133923094363921066939": {
+      "label": "Will AMD say \"Pipeline\" during earnings call?",
+      "n_quotes": 5,
+      "whole_session": {
+        "covered_s": 4376.8,
+        "tiers": {
+          "5c": {
+            "snapshots": 5,
+            "covered_s": 4376.8,
+            "max_usd": 107.85,
+            "p50_usd": 107.85,
+            "persisted_s": 4376.8
+          },
+          "10c": {
+            "snapshots": 5,
+            "covered_s": 4376.8,
+            "max_usd": 107.85,
+            "p50_usd": 107.85,
+            "persisted_s": 4376.8
+          },
+          "20c": {
+            "snapshots": 5,
+            "covered_s": 4376.8,
+            "max_usd": 107.85,
+            "p50_usd": 107.85,
+            "persisted_s": 4376.8
+          },
+          "50c": {
+            "snapshots": 5,
+            "covered_s": 4376.8,
+            "max_usd": 49.5,
+            "p50_usd": 49.5,
+            "persisted_s": 4376.8
+          }
+        },
+        "depth_kind_worst": "top5"
+      },
+      "snapshot_base_rate": {
+        "5c": {
+          "snapshots": 5,
+          "pct_nonzero": 100.0
+        },
+        "10c": {
+          "snapshots": 5,
+          "pct_nonzero": 100.0
+        },
+        "20c": {
+          "snapshots": 5,
+          "pct_nonzero": 100.0
+        },
+        "50c": {
+          "snapshots": 5,
+          "pct_nonzero": 100.0
+        }
+      },
+      "structural_vs_transient": {
+        "tier": "10c",
+        "recent_window_s": 10.0,
+        "just_moved": {
+          "n": 2,
+          "pct_nonzero": 100.0,
+          "median_usd": 107.85
+        },
+        "quiet": {
+          "n": 3,
+          "pct_nonzero": 100.0,
+          "median_usd": 107.85
+        }
+      }
+    },
+    "14093992073473228810954613525738842401897998089626754259174331445536200149315": {
+      "label": "Will AMD say \"Microsoft\" or \"Azure\" during earnings call?",
+      "n_quotes": 303,
+      "whole_session": {
+        "covered_s": 7725.5,
+        "tiers": {
+          "5c": {
+            "snapshots": 303,
+            "covered_s": 7725.5,
+            "max_usd": 577.75,
+            "p50_usd": 435.66,
+            "persisted_s": 7725.5
+          },
+          "10c": {
+            "snapshots": 303,
+            "covered_s": 7725.5,
+            "max_usd": 380.85,
+            "p50_usd": 133.51,
+            "persisted_s": 7725.5
+          },
+          "20c": {
+            "snapshots": 303,
+            "covered_s": 7725.5,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "50c": {
+            "snapshots": 303,
+            "covered_s": 7725.5,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          }
+        },
+        "depth_kind_worst": "top5"
+      },
+      "snapshot_base_rate": {
+        "5c": {
+          "snapshots": 303,
+          "pct_nonzero": 100.0
+        },
+        "10c": {
+          "snapshots": 303,
+          "pct_nonzero": 100.0
+        },
+        "20c": {
+          "snapshots": 303,
+          "pct_nonzero": 0.0
+        },
+        "50c": {
+          "snapshots": 303,
+          "pct_nonzero": 0.0
+        }
+      },
+      "structural_vs_transient": {
+        "tier": "10c",
+        "recent_window_s": 10.0,
+        "just_moved": {
+          "n": 54,
+          "pct_nonzero": 100.0,
+          "median_usd": 335.85
+        },
+        "quiet": {
+          "n": 249,
+          "pct_nonzero": 100.0,
+          "median_usd": 133.51
+        }
+      }
+    },
+    "2078107099087895533078223362858402544030155677214556355305252489232576682492": {
+      "label": "Will the earnings call not air?",
+      "n_quotes": 187,
+      "whole_session": {
+        "covered_s": 26957.2,
+        "tiers": {
+          "5c": {
+            "snapshots": 187,
+            "covered_s": 26957.2,
+            "max_usd": 19.9,
+            "p50_usd": 13.1,
+            "persisted_s": 26957.2
+          },
+          "10c": {
+            "snapshots": 187,
+            "covered_s": 26957.2,
+            "max_usd": 10.4,
+            "p50_usd": 3.6,
+            "persisted_s": 26957.2
+          },
+          "20c": {
+            "snapshots": 187,
+            "covered_s": 26957.2,
+            "max_usd": 10.4,
+            "p50_usd": 3.6,
+            "persisted_s": 26957.2
+          },
+          "50c": {
+            "snapshots": 187,
+            "covered_s": 26957.2,
+            "max_usd": 10.4,
+            "p50_usd": 3.6,
+            "persisted_s": 26957.2
+          }
+        },
+        "depth_kind_worst": "top5"
+      },
+      "snapshot_base_rate": {
+        "5c": {
+          "snapshots": 187,
+          "pct_nonzero": 100.0
+        },
+        "10c": {
+          "snapshots": 187,
+          "pct_nonzero": 100.0
+        },
+        "20c": {
+          "snapshots": 187,
+          "pct_nonzero": 100.0
+        },
+        "50c": {
+          "snapshots": 187,
+          "pct_nonzero": 100.0
+        }
+      },
+      "structural_vs_transient": {
+        "tier": "10c",
+        "recent_window_s": 10.0,
+        "just_moved": {
+          "n": 2,
+          "pct_nonzero": 100.0,
+          "median_usd": 7.0
+        },
+        "quiet": {
+          "n": 1,
+          "pct_nonzero": 100.0,
+          "median_usd": 3.6
+        }
+      }
+    },
+    "26909242758174798114697613445493291446018310532250641893929804254188005397727": {
+      "label": "Will Palantir say \"Infrastructure\" during earnings call?",
+      "n_quotes": 46,
+      "whole_session": {
+        "covered_s": 9391.6,
+        "tiers": {
+          "5c": {
+            "snapshots": 46,
+            "covered_s": 9391.6,
+            "max_usd": 222.34,
+            "p50_usd": 0.0,
+            "persisted_s": 4240.5
+          },
+          "10c": {
+            "snapshots": 46,
+            "covered_s": 9391.6,
+            "max_usd": 130.34,
+            "p50_usd": 0.0,
+            "persisted_s": 4240.5
+          },
+          "20c": {
+            "snapshots": 46,
+            "covered_s": 9391.6,
+            "max_usd": 16.17,
+            "p50_usd": 0.0,
+            "persisted_s": 3329.3
+          },
+          "50c": {
+            "snapshots": 46,
+            "covered_s": 9391.6,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          }
+        },
+        "depth_kind_worst": "top5"
+      },
+      "snapshot_base_rate": {
+        "5c": {
+          "snapshots": 46,
+          "pct_nonzero": 28.3
+        },
+        "10c": {
+          "snapshots": 46,
+          "pct_nonzero": 28.3
+        },
+        "20c": {
+          "snapshots": 46,
+          "pct_nonzero": 17.4
+        },
+        "50c": {
+          "snapshots": 46,
+          "pct_nonzero": 0.0
+        }
+      },
+      "structural_vs_transient": {
+        "tier": "10c",
+        "recent_window_s": 10.0,
+        "just_moved": {
+          "n": 19,
+          "pct_nonzero": 21.1,
+          "median_usd": 0.0
+        },
+        "quiet": {
+          "n": 24,
+          "pct_nonzero": 37.5,
+          "median_usd": 0.0
+        }
+      }
+    },
+    "32401400297103748884336413025499688488085742490948210702628732672341038252408": {
+      "label": "Will Palantir say \"Slop\" or \"AI Slop\" during earnings call?",
+      "n_quotes": 714,
+      "whole_session": {
+        "covered_s": 7424.7,
+        "tiers": {
+          "5c": {
+            "snapshots": 714,
+            "covered_s": 7424.7,
+            "max_usd": 73.8,
+            "p50_usd": 0.0,
+            "persisted_s": 1220.6
+          },
+          "10c": {
+            "snapshots": 714,
+            "covered_s": 7424.7,
+            "max_usd": 73.8,
+            "p50_usd": 0.0,
+            "persisted_s": 1220.6
+          },
+          "20c": {
+            "snapshots": 714,
+            "covered_s": 7424.7,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "50c": {
+            "snapshots": 714,
+            "covered_s": 7424.7,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          }
+        },
+        "depth_kind_worst": "top5"
+      },
+      "snapshot_base_rate": {
+        "5c": {
+          "snapshots": 714,
+          "pct_nonzero": 65.7
+        },
+        "10c": {
+          "snapshots": 714,
+          "pct_nonzero": 65.7
+        },
+        "20c": {
+          "snapshots": 714,
+          "pct_nonzero": 0.0
+        },
+        "50c": {
+          "snapshots": 714,
+          "pct_nonzero": 0.0
+        }
+      },
+      "structural_vs_transient": {
+        "tier": "10c",
+        "recent_window_s": 10.0,
+        "just_moved": {
+          "n": 84,
+          "pct_nonzero": 1.2,
+          "median_usd": 0.0
+        },
+        "quiet": {
+          "n": 613,
+          "pct_nonzero": 76.3,
+          "median_usd": 24.6
+        }
+      }
+    },
+    "33400621551188222405899668320395952721751998345764736198678110195508544326786": {
+      "label": "Will AMD say \"TSMC\" during earnings call?",
+      "n_quotes": 232,
+      "whole_session": {
+        "covered_s": 7754.2,
+        "tiers": {
+          "5c": {
+            "snapshots": 232,
+            "covered_s": 7754.2,
+            "max_usd": 76.61,
+            "p50_usd": 50.7,
+            "persisted_s": 7754.2
+          },
+          "10c": {
+            "snapshots": 232,
+            "covered_s": 7754.2,
+            "max_usd": 76.61,
+            "p50_usd": 50.7,
+            "persisted_s": 7754.2
+          },
+          "20c": {
+            "snapshots": 232,
+            "covered_s": 7754.2,
+            "max_usd": 76.61,
+            "p50_usd": 50.7,
+            "persisted_s": 7754.2
+          },
+          "50c": {
+            "snapshots": 232,
+            "covered_s": 7754.2,
+            "max_usd": 48.23,
+            "p50_usd": 4.23,
+            "persisted_s": 7754.2
+          }
+        },
+        "depth_kind_worst": "top5"
+      },
+      "snapshot_base_rate": {
+        "5c": {
+          "snapshots": 232,
+          "pct_nonzero": 100.0
+        },
+        "10c": {
+          "snapshots": 232,
+          "pct_nonzero": 100.0
+        },
+        "20c": {
+          "snapshots": 232,
+          "pct_nonzero": 100.0
+        },
+        "50c": {
+          "snapshots": 232,
+          "pct_nonzero": 100.0
+        }
+      },
+      "structural_vs_transient": {
+        "tier": "10c",
+        "recent_window_s": 10.0,
+        "just_moved": {
+          "n": 107,
+          "pct_nonzero": 100.0,
+          "median_usd": 50.7
+        },
+        "quiet": {
+          "n": 125,
+          "pct_nonzero": 100.0,
+          "median_usd": 50.7
+        }
+      }
+    },
+    "3530658875396383199746665256624352020785300757780916391403214618024966533042": {
+      "label": "Will AMD say \"Game\" or \"Gaming\" 5+ times during earnings call?",
+      "n_quotes": 81,
+      "whole_session": {
+        "covered_s": 7656.5,
+        "tiers": {
+          "5c": {
+            "snapshots": 81,
+            "covered_s": 7656.5,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "10c": {
+            "snapshots": 81,
+            "covered_s": 7656.5,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "20c": {
+            "snapshots": 81,
+            "covered_s": 7656.5,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "50c": {
+            "snapshots": 81,
+            "covered_s": 7656.5,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          }
+        },
+        "depth_kind_worst": "top5"
+      },
+      "snapshot_base_rate": {
+        "5c": {
+          "snapshots": 81,
+          "pct_nonzero": 0.0
+        },
+        "10c": {
+          "snapshots": 81,
+          "pct_nonzero": 0.0
+        },
+        "20c": {
+          "snapshots": 81,
+          "pct_nonzero": 0.0
+        },
+        "50c": {
+          "snapshots": 81,
+          "pct_nonzero": 0.0
+        }
+      },
+      "structural_vs_transient": {
+        "tier": "10c",
+        "recent_window_s": 10.0,
+        "just_moved": {
+          "n": 2,
+          "pct_nonzero": 0.0,
+          "median_usd": 0.0
+        },
+        "quiet": {
+          "n": 79,
+          "pct_nonzero": 0.0,
+          "median_usd": 0.0
+        }
+      }
+    },
+    "36457437632526297954360950653781630972035052126476315908577409122601622718782": {
+      "label": "Will Palantir say \"Insurance\" during earnings call?",
+      "n_quotes": 41,
+      "whole_session": {
+        "covered_s": 7620.6,
+        "tiers": {
+          "5c": {
+            "snapshots": 41,
+            "covered_s": 7620.6,
+            "max_usd": 286.85,
+            "p50_usd": 0.0,
+            "persisted_s": 2326.6
+          },
+          "10c": {
+            "snapshots": 41,
+            "covered_s": 7620.6,
+            "max_usd": 167.81,
+            "p50_usd": 0.0,
+            "persisted_s": 2326.6
+          },
+          "20c": {
+            "snapshots": 41,
+            "covered_s": 7620.6,
+            "max_usd": 34.2,
+            "p50_usd": 0.0,
+            "persisted_s": 1415.4
+          },
+          "50c": {
+            "snapshots": 41,
+            "covered_s": 7620.6,
+            "max_usd": 0.38,
+            "p50_usd": 0.0,
+            "persisted_s": 29.6
+          }
+        },
+        "depth_kind_worst": "top5"
+      },
+      "snapshot_base_rate": {
+        "5c": {
+          "snapshots": 41,
+          "pct_nonzero": 51.2
+        },
+        "10c": {
+          "snapshots": 41,
+          "pct_nonzero": 51.2
+        },
+        "20c": {
+          "snapshots": 41,
+          "pct_nonzero": 29.3
+        },
+        "50c": {
+          "snapshots": 41,
+          "pct_nonzero": 12.2
+        }
+      },
+      "structural_vs_transient": {
+        "tier": "10c",
+        "recent_window_s": 10.0,
+        "just_moved": {
+          "n": 11,
+          "pct_nonzero": 72.7,
+          "median_usd": 41.5
+        },
+        "quiet": {
+          "n": 25,
+          "pct_nonzero": 36.0,
+          "median_usd": 0.0
+        }
+      }
+    },
+    "39260263435743790508658505997485952376381518662372879801126070398466449123350": {
+      "label": "Will AMD say \"CPU\" 20+ times during earnings call?",
+      "n_quotes": 25,
+      "whole_session": {
+        "covered_s": 6288.7,
+        "tiers": {
+          "5c": {
+            "snapshots": 25,
+            "covered_s": 6288.7,
+            "max_usd": 38.95,
+            "p50_usd": 0.0,
+            "persisted_s": 2494.3
+          },
+          "10c": {
+            "snapshots": 25,
+            "covered_s": 6288.7,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "20c": {
+            "snapshots": 25,
+            "covered_s": 6288.7,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "50c": {
+            "snapshots": 25,
+            "covered_s": 6288.7,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          }
+        },
+        "depth_kind_worst": "top5"
+      },
+      "snapshot_base_rate": {
+        "5c": {
+          "snapshots": 25,
+          "pct_nonzero": 16.0
+        },
+        "10c": {
+          "snapshots": 25,
+          "pct_nonzero": 0.0
+        },
+        "20c": {
+          "snapshots": 25,
+          "pct_nonzero": 0.0
+        },
+        "50c": {
+          "snapshots": 25,
+          "pct_nonzero": 0.0
+        }
+      },
+      "structural_vs_transient": {
+        "tier": "10c",
+        "recent_window_s": 10.0,
+        "just_moved": {
+          "n": 5,
+          "pct_nonzero": 0.0,
+          "median_usd": 0.0
+        },
+        "quiet": {
+          "n": 20,
+          "pct_nonzero": 0.0,
+          "median_usd": 0.0
+        }
+      }
+    },
+    "39686586481396916882775157978126004308842116495228718563654087671200776794305": {
+      "label": "Will AMD say \"Data Center\" 10+ times during earnings call?",
+      "n_quotes": 77,
+      "whole_session": {
+        "covered_s": 7993.7,
+        "tiers": {
+          "5c": {
+            "snapshots": 77,
+            "covered_s": 7993.7,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "10c": {
+            "snapshots": 77,
+            "covered_s": 7993.7,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "20c": {
+            "snapshots": 77,
+            "covered_s": 7993.7,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "50c": {
+            "snapshots": 77,
+            "covered_s": 7993.7,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          }
+        },
+        "depth_kind_worst": "top5"
+      },
+      "snapshot_base_rate": {
+        "5c": {
+          "snapshots": 77,
+          "pct_nonzero": 0.0
+        },
+        "10c": {
+          "snapshots": 77,
+          "pct_nonzero": 0.0
+        },
+        "20c": {
+          "snapshots": 77,
+          "pct_nonzero": 0.0
+        },
+        "50c": {
+          "snapshots": 77,
+          "pct_nonzero": 0.0
+        }
+      },
+      "structural_vs_transient": {
+        "tier": "10c",
+        "recent_window_s": 10.0,
+        "just_moved": {
+          "n": 3,
+          "pct_nonzero": 0.0,
+          "median_usd": 0.0
+        },
+        "quiet": {
+          "n": 74,
+          "pct_nonzero": 0.0,
+          "median_usd": 0.0
+        }
+      }
+    },
+    "43193966188821779910395844529305570650248607414082230968696710106571159938423": {
+      "label": "Will Palantir say \"Healthcare\" during earnings call?",
+      "n_quotes": 475,
+      "whole_session": {
+        "covered_s": 7807.6,
+        "tiers": {
+          "5c": {
+            "snapshots": 475,
+            "covered_s": 7807.6,
+            "max_usd": 180.32,
+            "p50_usd": 0.0,
+            "persisted_s": 2230.6
+          },
+          "10c": {
+            "snapshots": 475,
+            "covered_s": 7807.6,
+            "max_usd": 180.32,
+            "p50_usd": 0.0,
+            "persisted_s": 2230.6
+          },
+          "20c": {
+            "snapshots": 475,
+            "covered_s": 7807.6,
+            "max_usd": 180.32,
+            "p50_usd": 0.0,
+            "persisted_s": 2230.6
+          },
+          "50c": {
+            "snapshots": 475,
+            "covered_s": 7807.6,
+            "max_usd": 132.05,
+            "p50_usd": 0.0,
+            "persisted_s": 2230.6
+          }
+        },
+        "depth_kind_worst": "top5"
+      },
+      "snapshot_base_rate": {
+        "5c": {
+          "snapshots": 475,
+          "pct_nonzero": 20.0
+        },
+        "10c": {
+          "snapshots": 475,
+          "pct_nonzero": 20.0
+        },
+        "20c": {
+          "snapshots": 475,
+          "pct_nonzero": 20.0
+        },
+        "50c": {
+          "snapshots": 475,
+          "pct_nonzero": 20.0
+        }
+      },
+      "structural_vs_transient": {
+        "tier": "10c",
+        "recent_window_s": 10.0,
+        "just_moved": {
+          "n": 227,
+          "pct_nonzero": 1.3,
+          "median_usd": 0.0
+        },
+        "quiet": {
+          "n": 245,
+          "pct_nonzero": 36.3,
+          "median_usd": 0.0
+        }
+      }
+    },
+    "50304699501336122370876330697977315411981118715077318469467977615433000897239": {
+      "label": "Will Palantir say \"Enterprise\" 5+ times during earnings call?",
+      "n_quotes": 46,
+      "whole_session": {
+        "covered_s": 7524.2,
+        "tiers": {
+          "5c": {
+            "snapshots": 46,
+            "covered_s": 7524.2,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "10c": {
+            "snapshots": 46,
+            "covered_s": 7524.2,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "20c": {
+            "snapshots": 46,
+            "covered_s": 7524.2,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "50c": {
+            "snapshots": 46,
+            "covered_s": 7524.2,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          }
+        },
+        "depth_kind_worst": "top5"
+      },
+      "snapshot_base_rate": {
+        "5c": {
+          "snapshots": 46,
+          "pct_nonzero": 0.0
+        },
+        "10c": {
+          "snapshots": 46,
+          "pct_nonzero": 0.0
+        },
+        "20c": {
+          "snapshots": 46,
+          "pct_nonzero": 0.0
+        },
+        "50c": {
+          "snapshots": 46,
+          "pct_nonzero": 0.0
+        }
+      },
+      "structural_vs_transient": {
+        "tier": "10c",
+        "recent_window_s": 10.0,
+        "just_moved": {
+          "n": 16,
+          "pct_nonzero": 0.0,
+          "median_usd": 0.0
+        },
+        "quiet": {
+          "n": 25,
+          "pct_nonzero": 0.0,
+          "median_usd": 0.0
+        }
+      }
+    },
+    "51175723644214338337691670112501538634583021044229128322450692762907640591384": {
+      "label": "Will AMD say \"Frontier\" during earnings call?",
+      "n_quotes": 332,
+      "whole_session": {
+        "covered_s": 7739.3,
+        "tiers": {
+          "5c": {
+            "snapshots": 332,
+            "covered_s": 7739.3,
+            "max_usd": 70.27,
+            "p50_usd": 51.27,
+            "persisted_s": 7739.3
+          },
+          "10c": {
+            "snapshots": 332,
+            "covered_s": 7739.3,
+            "max_usd": 70.27,
+            "p50_usd": 51.27,
+            "persisted_s": 7739.3
+          },
+          "20c": {
+            "snapshots": 332,
+            "covered_s": 7739.3,
+            "max_usd": 70.27,
+            "p50_usd": 51.27,
+            "persisted_s": 7739.3
+          },
+          "50c": {
+            "snapshots": 332,
+            "covered_s": 7739.3,
+            "max_usd": 40.63,
+            "p50_usd": 21.63,
+            "persisted_s": 7739.3
+          }
+        },
+        "depth_kind_worst": "top5"
+      },
+      "snapshot_base_rate": {
+        "5c": {
+          "snapshots": 332,
+          "pct_nonzero": 100.0
+        },
+        "10c": {
+          "snapshots": 332,
+          "pct_nonzero": 100.0
+        },
+        "20c": {
+          "snapshots": 332,
+          "pct_nonzero": 100.0
+        },
+        "50c": {
+          "snapshots": 332,
+          "pct_nonzero": 100.0
+        }
+      },
+      "structural_vs_transient": {
+        "tier": "10c",
+        "recent_window_s": 10.0,
+        "just_moved": {
+          "n": 184,
+          "pct_nonzero": 100.0,
+          "median_usd": 51.27
+        },
+        "quiet": {
+          "n": 148,
+          "pct_nonzero": 100.0,
+          "median_usd": 51.27
+        }
+      }
+    },
+    "52140938965632730911733359354361788339582433636113169041761277455917444021877": {
+      "label": "Will Palantir say \"Leverage\" during earnings call?",
+      "n_quotes": 44,
+      "whole_session": {
+        "covered_s": 7910.8,
+        "tiers": {
+          "5c": {
+            "snapshots": 44,
+            "covered_s": 7910.8,
+            "max_usd": 0.2,
+            "p50_usd": 0.0,
+            "persisted_s": 267.4
+          },
+          "10c": {
+            "snapshots": 44,
+            "covered_s": 7910.8,
+            "max_usd": 0.2,
+            "p50_usd": 0.0,
+            "persisted_s": 267.4
+          },
+          "20c": {
+            "snapshots": 44,
+            "covered_s": 7910.8,
+            "max_usd": 0.2,
+            "p50_usd": 0.0,
+            "persisted_s": 267.4
+          },
+          "50c": {
+            "snapshots": 44,
+            "covered_s": 7910.8,
+            "max_usd": 0.2,
+            "p50_usd": 0.0,
+            "persisted_s": 267.4
+          }
+        },
+        "depth_kind_worst": "top5"
+      },
+      "snapshot_base_rate": {
+        "5c": {
+          "snapshots": 44,
+          "pct_nonzero": 15.9
+        },
+        "10c": {
+          "snapshots": 44,
+          "pct_nonzero": 15.9
+        },
+        "20c": {
+          "snapshots": 44,
+          "pct_nonzero": 15.9
+        },
+        "50c": {
+          "snapshots": 44,
+          "pct_nonzero": 15.9
+        }
+      },
+      "structural_vs_transient": {
+        "tier": "10c",
+        "recent_window_s": 10.0,
+        "just_moved": {
+          "n": 16,
+          "pct_nonzero": 25.0,
+          "median_usd": 0.0
+        },
+        "quiet": {
+          "n": 28,
+          "pct_nonzero": 10.7,
+          "median_usd": 0.0
+        }
+      }
+    },
+    "55735525222592281493574538681567961975279787759582710318793090353736782194021": {
+      "label": "Will Palantir say \"Contract\" during earnings call?",
+      "n_quotes": 541,
+      "whole_session": {
+        "covered_s": 7802.7,
+        "tiers": {
+          "5c": {
+            "snapshots": 541,
+            "covered_s": 7802.7,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "10c": {
+            "snapshots": 541,
+            "covered_s": 7802.7,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "20c": {
+            "snapshots": 541,
+            "covered_s": 7802.7,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "50c": {
+            "snapshots": 541,
+            "covered_s": 7802.7,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          }
+        },
+        "depth_kind_worst": "top5"
+      },
+      "snapshot_base_rate": {
+        "5c": {
+          "snapshots": 541,
+          "pct_nonzero": 0.0
+        },
+        "10c": {
+          "snapshots": 541,
+          "pct_nonzero": 0.0
+        },
+        "20c": {
+          "snapshots": 541,
+          "pct_nonzero": 0.0
+        },
+        "50c": {
+          "snapshots": 541,
+          "pct_nonzero": 0.0
+        }
+      },
+      "structural_vs_transient": {
+        "tier": "10c",
+        "recent_window_s": 10.0,
+        "just_moved": {
+          "n": 12,
+          "pct_nonzero": 0.0,
+          "median_usd": 0.0
+        },
+        "quiet": {
+          "n": 33,
+          "pct_nonzero": 0.0,
+          "median_usd": 0.0
+        }
+      }
+    },
+    "58042514433701320257570481909118477709424385679510808958231638203404256757965": {
+      "label": "Will Palantir say \"International\" during earnings call?",
+      "n_quotes": 286,
+      "whole_session": {
+        "covered_s": 7345.9,
+        "tiers": {
+          "5c": {
+            "snapshots": 286,
+            "covered_s": 7345.9,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "10c": {
+            "snapshots": 286,
+            "covered_s": 7345.9,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "20c": {
+            "snapshots": 286,
+            "covered_s": 7345.9,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "50c": {
+            "snapshots": 286,
+            "covered_s": 7345.9,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          }
+        },
+        "depth_kind_worst": "top5"
+      },
+      "snapshot_base_rate": {
+        "5c": {
+          "snapshots": 286,
+          "pct_nonzero": 0.0
+        },
+        "10c": {
+          "snapshots": 286,
+          "pct_nonzero": 0.0
+        },
+        "20c": {
+          "snapshots": 286,
+          "pct_nonzero": 0.0
+        },
+        "50c": {
+          "snapshots": 286,
+          "pct_nonzero": 0.0
+        }
+      },
+      "structural_vs_transient": {
+        "tier": "10c",
+        "recent_window_s": 10.0,
+        "just_moved": {
+          "n": 38,
+          "pct_nonzero": 0.0,
+          "median_usd": 0.0
+        },
+        "quiet": {
+          "n": 237,
+          "pct_nonzero": 0.0,
+          "median_usd": 0.0
+        }
+      }
+    },
+    "5982622150812848810362086633894409331191552269770084890430254319840406467573": {
+      "label": "Will AMD say \"China\" during earnings call?",
+      "n_quotes": 515,
+      "whole_session": {
+        "covered_s": 7684.7,
+        "tiers": {
+          "5c": {
+            "snapshots": 515,
+            "covered_s": 7684.7,
+            "max_usd": 82.0,
+            "p50_usd": 0.0,
+            "persisted_s": 700.8
+          },
+          "10c": {
+            "snapshots": 515,
+            "covered_s": 7684.7,
+            "max_usd": 82.0,
+            "p50_usd": 0.0,
+            "persisted_s": 700.8
+          },
+          "20c": {
+            "snapshots": 515,
+            "covered_s": 7684.7,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "50c": {
+            "snapshots": 515,
+            "covered_s": 7684.7,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          }
+        },
+        "depth_kind_worst": "top5"
+      },
+      "snapshot_base_rate": {
+        "5c": {
+          "snapshots": 515,
+          "pct_nonzero": 14.0
+        },
+        "10c": {
+          "snapshots": 515,
+          "pct_nonzero": 14.0
+        },
+        "20c": {
+          "snapshots": 515,
+          "pct_nonzero": 0.0
+        },
+        "50c": {
+          "snapshots": 515,
+          "pct_nonzero": 0.0
+        }
+      },
+      "structural_vs_transient": {
+        "tier": "10c",
+        "recent_window_s": 10.0,
+        "just_moved": {
+          "n": 319,
+          "pct_nonzero": 10.7,
+          "median_usd": 0.0
+        },
+        "quiet": {
+          "n": 196,
+          "pct_nonzero": 19.4,
+          "median_usd": 0.0
+        }
+      }
+    },
+    "65919976941476925841212171986777095422319787739503836804463777947035255589589": {
+      "label": "Will Palantir say \"Defense\" during earnings call?",
+      "n_quotes": 94,
+      "whole_session": {
+        "covered_s": 5959.4,
+        "tiers": {
+          "5c": {
+            "snapshots": 94,
+            "covered_s": 5959.4,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "10c": {
+            "snapshots": 94,
+            "covered_s": 5959.4,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "20c": {
+            "snapshots": 94,
+            "covered_s": 5959.4,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "50c": {
+            "snapshots": 94,
+            "covered_s": 5959.4,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          }
+        },
+        "depth_kind_worst": "top5"
+      },
+      "snapshot_base_rate": {
+        "5c": {
+          "snapshots": 94,
+          "pct_nonzero": 0.0
+        },
+        "10c": {
+          "snapshots": 94,
+          "pct_nonzero": 0.0
+        },
+        "20c": {
+          "snapshots": 94,
+          "pct_nonzero": 0.0
+        },
+        "50c": {
+          "snapshots": 94,
+          "pct_nonzero": 0.0
+        }
+      },
+      "structural_vs_transient": {
+        "tier": "10c",
+        "recent_window_s": 10.0,
+        "just_moved": {
+          "n": 33,
+          "pct_nonzero": 0.0,
+          "median_usd": 0.0
+        },
+        "quiet": {
+          "n": 42,
+          "pct_nonzero": 0.0,
+          "median_usd": 0.0
+        }
+      }
+    },
+    "6644495781764848814068880785005038260875558439294479395691352206326352374002": {
+      "label": "Will AMD say \"Helios\" during earnings call?",
+      "n_quotes": 246,
+      "whole_session": {
+        "covered_s": 7729.1,
+        "tiers": {
+          "5c": {
+            "snapshots": 246,
+            "covered_s": 7729.1,
+            "max_usd": 94.0,
+            "p50_usd": 0.0,
+            "persisted_s": 525.5
+          },
+          "10c": {
+            "snapshots": 246,
+            "covered_s": 7729.1,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "20c": {
+            "snapshots": 246,
+            "covered_s": 7729.1,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "50c": {
+            "snapshots": 246,
+            "covered_s": 7729.1,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          }
+        },
+        "depth_kind_worst": "top5"
+      },
+      "snapshot_base_rate": {
+        "5c": {
+          "snapshots": 246,
+          "pct_nonzero": 25.2
+        },
+        "10c": {
+          "snapshots": 246,
+          "pct_nonzero": 0.0
+        },
+        "20c": {
+          "snapshots": 246,
+          "pct_nonzero": 0.0
+        },
+        "50c": {
+          "snapshots": 246,
+          "pct_nonzero": 0.0
+        }
+      },
+      "structural_vs_transient": {
+        "tier": "10c",
+        "recent_window_s": 10.0,
+        "just_moved": {
+          "n": 15,
+          "pct_nonzero": 0.0,
+          "median_usd": 0.0
+        },
+        "quiet": {
+          "n": 231,
+          "pct_nonzero": 0.0,
+          "median_usd": 0.0
+        }
+      }
+    },
+    "70194991570092448684191873490964340298442235987829033836618022039189715338452": {
+      "label": "Will Palantir say \"Anthropic\" or \"Claude\" during earnings call?",
+      "n_quotes": 257,
+      "whole_session": {
+        "covered_s": 7552.1,
+        "tiers": {
+          "5c": {
+            "snapshots": 257,
+            "covered_s": 7552.1,
+            "max_usd": 592.7,
+            "p50_usd": 0.0,
+            "persisted_s": 2100.7
+          },
+          "10c": {
+            "snapshots": 257,
+            "covered_s": 7552.1,
+            "max_usd": 60.35,
+            "p50_usd": 0.0,
+            "persisted_s": 2100.7
+          },
+          "20c": {
+            "snapshots": 257,
+            "covered_s": 7552.1,
+            "max_usd": 60.35,
+            "p50_usd": 0.0,
+            "persisted_s": 2100.7
+          },
+          "50c": {
+            "snapshots": 257,
+            "covered_s": 7552.1,
+            "max_usd": 26.0,
+            "p50_usd": 0.0,
+            "persisted_s": 2100.7
+          }
+        },
+        "depth_kind_worst": "top5"
+      },
+      "snapshot_base_rate": {
+        "5c": {
+          "snapshots": 257,
+          "pct_nonzero": 24.1
+        },
+        "10c": {
+          "snapshots": 257,
+          "pct_nonzero": 24.1
+        },
+        "20c": {
+          "snapshots": 257,
+          "pct_nonzero": 24.1
+        },
+        "50c": {
+          "snapshots": 257,
+          "pct_nonzero": 24.1
+        }
+      },
+      "structural_vs_transient": {
+        "tier": "10c",
+        "recent_window_s": 10.0,
+        "just_moved": {
+          "n": 113,
+          "pct_nonzero": 17.7,
+          "median_usd": 0.0
+        },
+        "quiet": {
+          "n": 140,
+          "pct_nonzero": 27.1,
+          "median_usd": 0.0
+        }
+      }
+    },
+    "71221659588895019267660172574673044267818502631159284946186771395697116659364": {
+      "label": "Will Palantir say \"Commercial\" 10+ times during earnings call?",
+      "n_quotes": 92,
+      "whole_session": {
+        "covered_s": 7665.2,
+        "tiers": {
+          "5c": {
+            "snapshots": 92,
+            "covered_s": 7665.2,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "10c": {
+            "snapshots": 92,
+            "covered_s": 7665.2,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "20c": {
+            "snapshots": 92,
+            "covered_s": 7665.2,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "50c": {
+            "snapshots": 92,
+            "covered_s": 7665.2,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          }
+        },
+        "depth_kind_worst": "top5"
+      },
+      "snapshot_base_rate": {
+        "5c": {
+          "snapshots": 92,
+          "pct_nonzero": 0.0
+        },
+        "10c": {
+          "snapshots": 92,
+          "pct_nonzero": 0.0
+        },
+        "20c": {
+          "snapshots": 92,
+          "pct_nonzero": 0.0
+        },
+        "50c": {
+          "snapshots": 92,
+          "pct_nonzero": 0.0
+        }
+      },
+      "structural_vs_transient": {
+        "tier": "10c",
+        "recent_window_s": 10.0,
+        "just_moved": {
+          "n": 20,
+          "pct_nonzero": 0.0,
+          "median_usd": 0.0
+        },
+        "quiet": {
+          "n": 65,
+          "pct_nonzero": 0.0,
+          "median_usd": 0.0
+        }
+      }
+    },
+    "78730130429823300776287227809689015891988417825888814664335496796968035619889": {
+      "label": "Will the earnings call not air?",
+      "n_quotes": 116,
+      "whole_session": {
+        "covered_s": 7794.5,
+        "tiers": {
+          "5c": {
+            "snapshots": 116,
+            "covered_s": 7794.5,
+            "max_usd": 643.36,
+            "p50_usd": 23.79,
+            "persisted_s": 7794.5
+          },
+          "10c": {
+            "snapshots": 116,
+            "covered_s": 7794.5,
+            "max_usd": 98.06,
+            "p50_usd": 0.06,
+            "persisted_s": 7794.5
+          },
+          "20c": {
+            "snapshots": 116,
+            "covered_s": 7794.5,
+            "max_usd": 3.0,
+            "p50_usd": 0.06,
+            "persisted_s": 7794.5
+          },
+          "50c": {
+            "snapshots": 116,
+            "covered_s": 7794.5,
+            "max_usd": 3.0,
+            "p50_usd": 0.06,
+            "persisted_s": 7794.5
+          }
+        },
+        "depth_kind_worst": "top5"
+      },
+      "snapshot_base_rate": {
+        "5c": {
+          "snapshots": 116,
+          "pct_nonzero": 100.0
+        },
+        "10c": {
+          "snapshots": 116,
+          "pct_nonzero": 100.0
+        },
+        "20c": {
+          "snapshots": 116,
+          "pct_nonzero": 100.0
+        },
+        "50c": {
+          "snapshots": 116,
+          "pct_nonzero": 100.0
+        }
+      },
+      "structural_vs_transient": null
+    },
+    "8316142498667381572459929004468438207948847243011392080519105980369706621149": {
+      "label": "Will AMD say \"AI\" or \"Artificial Intelligence\" 20+ times during earnings call?",
+      "n_quotes": 7,
+      "whole_session": {
+        "covered_s": 7406.6,
+        "tiers": {
+          "5c": {
+            "snapshots": 7,
+            "covered_s": 7406.6,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "10c": {
+            "snapshots": 7,
+            "covered_s": 7406.6,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "20c": {
+            "snapshots": 7,
+            "covered_s": 7406.6,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "50c": {
+            "snapshots": 7,
+            "covered_s": 7406.6,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          }
+        },
+        "depth_kind_worst": "top5"
+      },
+      "snapshot_base_rate": {
+        "5c": {
+          "snapshots": 7,
+          "pct_nonzero": 0.0
+        },
+        "10c": {
+          "snapshots": 7,
+          "pct_nonzero": 0.0
+        },
+        "20c": {
+          "snapshots": 7,
+          "pct_nonzero": 0.0
+        },
+        "50c": {
+          "snapshots": 7,
+          "pct_nonzero": 0.0
+        }
+      },
+      "structural_vs_transient": {
+        "tier": "10c",
+        "recent_window_s": 10.0,
+        "just_moved": {
+          "n": 4,
+          "pct_nonzero": 0.0,
+          "median_usd": 0.0
+        },
+        "quiet": {
+          "n": 3,
+          "pct_nonzero": 0.0,
+          "median_usd": 0.0
+        }
+      }
+    },
+    "84462207342755036650905261849803691645312333528090087447745142927186108622034": {
+      "label": "Will AMD say \"Desktop\" during earnings call?",
+      "n_quotes": 41,
+      "whole_session": {
+        "covered_s": 7669.0,
+        "tiers": {
+          "5c": {
+            "snapshots": 41,
+            "covered_s": 7669.0,
+            "max_usd": 74.67,
+            "p50_usd": 74.67,
+            "persisted_s": 7669.0
+          },
+          "10c": {
+            "snapshots": 41,
+            "covered_s": 7669.0,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "20c": {
+            "snapshots": 41,
+            "covered_s": 7669.0,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "50c": {
+            "snapshots": 41,
+            "covered_s": 7669.0,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          }
+        },
+        "depth_kind_worst": "top5"
+      },
+      "snapshot_base_rate": {
+        "5c": {
+          "snapshots": 41,
+          "pct_nonzero": 100.0
+        },
+        "10c": {
+          "snapshots": 41,
+          "pct_nonzero": 0.0
+        },
+        "20c": {
+          "snapshots": 41,
+          "pct_nonzero": 0.0
+        },
+        "50c": {
+          "snapshots": 41,
+          "pct_nonzero": 0.0
+        }
+      },
+      "structural_vs_transient": {
+        "tier": "10c",
+        "recent_window_s": 10.0,
+        "just_moved": null,
+        "quiet": {
+          "n": 41,
+          "pct_nonzero": 0.0,
+          "median_usd": 0.0
+        }
+      }
+    },
+    "86961677265263350123788963897013344180730591322306658646682593704815728679111": {
+      "label": "Will AMD say \"Supply Chain\" during earnings call?",
+      "n_quotes": 220,
+      "whole_session": {
+        "covered_s": 7842.4,
+        "tiers": {
+          "5c": {
+            "snapshots": 220,
+            "covered_s": 7842.4,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "10c": {
+            "snapshots": 220,
+            "covered_s": 7842.4,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "20c": {
+            "snapshots": 220,
+            "covered_s": 7842.4,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "50c": {
+            "snapshots": 220,
+            "covered_s": 7842.4,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          }
+        },
+        "depth_kind_worst": "top5"
+      },
+      "snapshot_base_rate": {
+        "5c": {
+          "snapshots": 220,
+          "pct_nonzero": 0.0
+        },
+        "10c": {
+          "snapshots": 220,
+          "pct_nonzero": 0.0
+        },
+        "20c": {
+          "snapshots": 220,
+          "pct_nonzero": 0.0
+        },
+        "50c": {
+          "snapshots": 220,
+          "pct_nonzero": 0.0
+        }
+      },
+      "structural_vs_transient": {
+        "tier": "10c",
+        "recent_window_s": 10.0,
+        "just_moved": null,
+        "quiet": {
+          "n": 220,
+          "pct_nonzero": 0.0,
+          "median_usd": 0.0
+        }
+      }
+    },
+    "8945486143374253633089368360242970206990560657781567410427586058515584036571": {
+      "label": "Will Palantir say \"Apollo\" during earnings call?",
+      "n_quotes": 40,
+      "whole_session": {
+        "covered_s": 7855.6,
+        "tiers": {
+          "5c": {
+            "snapshots": 40,
+            "covered_s": 7855.6,
+            "max_usd": 597.01,
+            "p50_usd": 0.0,
+            "persisted_s": 1365.2
+          },
+          "10c": {
+            "snapshots": 40,
+            "covered_s": 7855.6,
+            "max_usd": 154.42,
+            "p50_usd": 0.0,
+            "persisted_s": 1365.2
+          },
+          "20c": {
+            "snapshots": 40,
+            "covered_s": 7855.6,
+            "max_usd": 28.37,
+            "p50_usd": 0.0,
+            "persisted_s": 1365.2
+          },
+          "50c": {
+            "snapshots": 40,
+            "covered_s": 7855.6,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          }
+        },
+        "depth_kind_worst": "top5"
+      },
+      "snapshot_base_rate": {
+        "5c": {
+          "snapshots": 40,
+          "pct_nonzero": 27.5
+        },
+        "10c": {
+          "snapshots": 40,
+          "pct_nonzero": 27.5
+        },
+        "20c": {
+          "snapshots": 40,
+          "pct_nonzero": 5.0
+        },
+        "50c": {
+          "snapshots": 40,
+          "pct_nonzero": 0.0
+        }
+      },
+      "structural_vs_transient": {
+        "tier": "10c",
+        "recent_window_s": 10.0,
+        "just_moved": {
+          "n": 18,
+          "pct_nonzero": 27.8,
+          "median_usd": 0.0
+        },
+        "quiet": {
+          "n": 20,
+          "pct_nonzero": 20.0,
+          "median_usd": 0.0
+        }
+      }
+    },
+    "96108124534727284472556075952801603394331191551779660872792962649995233035684": {
+      "label": "Will AMD say \"Oracle\" during earnings call?",
+      "n_quotes": 430,
+      "whole_session": {
+        "covered_s": 7732.5,
+        "tiers": {
+          "5c": {
+            "snapshots": 430,
+            "covered_s": 7732.5,
+            "max_usd": 483.31,
+            "p50_usd": 313.0,
+            "persisted_s": 7732.5
+          },
+          "10c": {
+            "snapshots": 430,
+            "covered_s": 7732.5,
+            "max_usd": 483.31,
+            "p50_usd": 313.0,
+            "persisted_s": 7732.5
+          },
+          "20c": {
+            "snapshots": 430,
+            "covered_s": 7732.5,
+            "max_usd": 70.0,
+            "p50_usd": 69.0,
+            "persisted_s": 7732.5
+          },
+          "50c": {
+            "snapshots": 430,
+            "covered_s": 7732.5,
+            "max_usd": 50.0,
+            "p50_usd": 49.0,
+            "persisted_s": 7732.5
+          }
+        },
+        "depth_kind_worst": "top5"
+      },
+      "snapshot_base_rate": {
+        "5c": {
+          "snapshots": 430,
+          "pct_nonzero": 100.0
+        },
+        "10c": {
+          "snapshots": 430,
+          "pct_nonzero": 100.0
+        },
+        "20c": {
+          "snapshots": 430,
+          "pct_nonzero": 100.0
+        },
+        "50c": {
+          "snapshots": 430,
+          "pct_nonzero": 100.0
+        }
+      },
+      "structural_vs_transient": {
+        "tier": "10c",
+        "recent_window_s": 10.0,
+        "just_moved": {
+          "n": 12,
+          "pct_nonzero": 100.0,
+          "median_usd": 414.4
+        },
+        "quiet": {
+          "n": 418,
+          "pct_nonzero": 100.0,
+          "median_usd": 414.4
+        }
+      }
+    },
+    "98192554044137157567318914665177591817070148710384111112880469397337262710469": {
+      "label": "Will Palantir say \"Government\" 10+ times during earnings call?",
+      "n_quotes": 126,
+      "whole_session": {
+        "covered_s": 7466.2,
+        "tiers": {
+          "5c": {
+            "snapshots": 126,
+            "covered_s": 7466.2,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "10c": {
+            "snapshots": 126,
+            "covered_s": 7466.2,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "20c": {
+            "snapshots": 126,
+            "covered_s": 7466.2,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          },
+          "50c": {
+            "snapshots": 126,
+            "covered_s": 7466.2,
+            "max_usd": 0.0,
+            "p50_usd": 0.0,
+            "persisted_s": 0.0
+          }
+        },
+        "depth_kind_worst": "top5"
+      },
+      "snapshot_base_rate": {
+        "5c": {
+          "snapshots": 126,
+          "pct_nonzero": 0.0
+        },
+        "10c": {
+          "snapshots": 126,
+          "pct_nonzero": 0.0
+        },
+        "20c": {
+          "snapshots": 126,
+          "pct_nonzero": 0.0
+        },
+        "50c": {
+          "snapshots": 126,
+          "pct_nonzero": 0.0
+        }
+      },
+      "structural_vs_transient": {
+        "tier": "10c",
+        "recent_window_s": 10.0,
+        "just_moved": {
+          "n": 68,
+          "pct_nonzero": 0.0,
+          "median_usd": 0.0
+        },
+        "quiet": {
+          "n": 51,
+          "pct_nonzero": 0.0,
+          "median_usd": 0.0
+        }
+      }
+    }
+  },
+  "pooled": {
+    "5c": {
+      "instruments_with_data": 32,
+      "mean_pct_snapshots_nonzero": 37.3,
+      "mean_whole_session_p50_usd": 49.25
+    },
+    "10c": {
+      "instruments_with_data": 32,
+      "mean_pct_snapshots_nonzero": 32.9,
+      "mean_whole_session_p50_usd": 25.84
+    },
+    "20c": {
+      "instruments_with_data": 32,
+      "mean_pct_snapshots_nonzero": 22.9,
+      "mean_whole_session_p50_usd": 8.83
+    },
+    "50c": {
+      "instruments_with_data": 32,
+      "mean_pct_snapshots_nonzero": 21.0,
+      "mean_whole_session_p50_usd": 4.0
+    }
+  }
+}

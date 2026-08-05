@@ -38,16 +38,77 @@ worker = "phone-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
+# 2026-08-05 post-mortem, section 1: `arm()` writes report.json only on a clean
+# pipeline drain (src/main.rs:1334). Of ~14 exit paths exactly one produced a
+# report — MELI ended on the pipe idle guard (src/source/pipe.rs:184) and its
+# entire record was lost. The tail of arm() becomes a single finish_run() choke
+# point called from BOTH the Ok and Err arms, and PipelineReport gains an
+# `exit` record so a run always says how it ended.
 paths = [
   "docs/nodes/runtime-assembly.md",
   "src/lib.rs",
   "src/main.rs",
+  "tests/report_on_exit.rs",
+  # Section 2: these two asserted `send_ts.is_some()` inline; they now call the
+  # canonical OrderRecord::reached_wire() so the predicate has ONE definition.
+  "tests/e2e_full_chain.rs",
+  "tests/perf_budget.rs",
 ]
 verification = [
   "cargo test --test e2e_full_chain",
   "cargo test --test twilio_listen_only",
+  "cargo test --test report_on_exit",
+  "cargo test --test kill_sigterm",
 ]
 evidence = ["docs/nodes/runtime-assembly.md"]
+
+[[claim]]
+id = "post26aug05.wire_truth"
+node = "runtime.kalshi.executor"
+worker = "phone-lane"
+branch = "webcast-lane"
+state = "active"
+contract_change = true
+# 2026-08-05, section 2. `ExecReport.orders` is a list of INTENTS — all five
+# non-fire early returns push a record — so `orders.len()` reported "23 orders
+# placed" for a morning that sent nothing, and the `[LIVE]` tag came from
+# `!dry_run` rather than from any wire event. Adds the canonical predicates
+# `OrderRecord::reached_wire()` / `acked()`, replacing four drifting copies of
+# `send_ts.is_some()` in the test suite.
+paths = [
+  "docs/layers/executor.md",
+  "src/kalshi/executor.rs",
+  "tests/exec_mock.rs",
+  "tests/exec_fix_mock.rs",
+]
+verification = [
+  "cargo test --lib executor",
+  "cargo test --test exec_mock",
+  "cargo test --test exec_fix_mock",
+]
+evidence = ["docs/layers/executor.md"]
+
+[[claim]]
+id = "post26aug05.telemetry_exit_record"
+node = "runtime.telemetry"
+worker = "phone-lane"
+branch = "webcast-lane"
+state = "active"
+contract_change = true
+# Companion to phone.runtime_assembly: PipelineReport gains
+# `exit: ExitRecord { reason, detail }` so every terminated run is queryable
+# the same way whether it drained cleanly, died on a source error, or was
+# SIGTERMed. Without it a missing report and a crashed run are indistinguishable
+# from a run that never armed.
+paths = [
+  "docs/layers/telemetry.md",
+  "src/telemetry.rs",
+]
+verification = [
+  "cargo test --lib telemetry",
+  "cargo test --test report_on_exit",
+]
+evidence = ["docs/layers/telemetry.md"]
 
 [[claim]]
 id = "phone.runtime_config"
@@ -132,6 +193,10 @@ paths = [
   "configs/webcast-rddt-26jul30-arm-wc.toml",
   "configs/webcast-snap-26aug03-arm-wc.toml",
   "configs/webcast-yum-26jul30-arm-wc.toml",
+  # 2026-08-05 TLN: the hand-made phone-only arm, and the script that now
+  # derives it (verified semantically identical, same keywords_sha256).
+  "configs/tln-26aug05-phone-arm.toml",
+  "scripts/phone-lane-derive.py",
   "docs/layers/prepare.md",
   "docs/work/PLAN-26JUL30.md",
   "src/prepare.rs",
@@ -262,6 +327,9 @@ paths = [
   "configs/pltr-26aug03-autorun.env",
   "configs/snap-26aug03-autorun.env",
   "docs/RUNBOOK.md",
+  # 2026-08-05: schedule a phone event on the box and verify the LOADED unit;
+  # event-autorun.sh now honors the BIND_PORT its own env files declare.
+  "scripts/box-event-install.sh",
   "docs/nodes/control-supervise.md",
   "scripts/redial-supervisor.sh",
   "scripts/url-escalate.sh",
@@ -308,6 +376,12 @@ paths = [
   "scripts/run-arm.sh",
   "scripts/pcm-gate.sh",
   "scripts/arm-on-url.sh",
+  # 2026-08-05 (operator ruling): W7's FILL half lifted — launch-webcast.sh
+  # accepts --fillable (--fill-all still refused). The posture test encoded the
+  # OLD contract and had to move with it; the 26AUG05 morning proved why the
+  # gate mattered, since a 1c cap short-circuits before send_order and produced
+  # 30 "orders" with zero wire sends.
+  "tests/launch_webcast_posture.rs",
 ]
 verification = [
   "bash -n scripts/launch-event.sh",
@@ -475,6 +549,10 @@ paths = [
   # one real dial, held 114.6 s, registry-admit --auto wrote one clean section.
   "corpus/bridge-probes/ttsrehearsal_2026_08_04.json",
   "corpus/bridge-probes/ttsrehearsal_2026_08_04.jsonl",
+  # TLN 2026-08-05: the T-35 IN-WINDOW probe that classified the bridge as
+  # held (119.0 s of a 120 s cap) after an off-window probe classified nothing.
+  "corpus/bridge-probes/tln_2026_08_05.json",
+  "corpus/bridge-probes/tln_2026_08_05.jsonl",
   "docs/nodes/evidence-capture.md",
   "scripts/wnt-daily.sh",
   # wnt-source-lane: bank the real WNT broadcast (Q-WNT-SRC retargeting).
@@ -508,6 +586,11 @@ paths = [
   # claim per node and admission-evidence-lane already holds evidence.measure.
   "docs/POSTMORTEM-26AUG03.md",
   "docs/POSTMORTEM-26AUG04.md",
+  # 2026-08-05 day reconcile: 10 events, 8 COVERED / 2 DESCOPED / 0 MISSED, and
+  # the first real fills. Filed alongside the other two rather than under a new
+  # docs/postmortems/ directory — evidence.measure already owns this series by
+  # explicit path, so the convention costs no new ownership glob.
+  "docs/POSTMORTEM-26AUG05.md",
   "HANDOFF-26AUG04-MISSED-ARM.md",
   "docs/nodes/evidence-measure.md",
   "scripts/abs-lag.py",
@@ -579,6 +662,10 @@ state = "active"
 contract_change = true
 paths = [
   "deploy/caddy/Caddyfile",
+  # 2026-08-05: host GO/NO-GO moved from T-60 to prep time. The Caddyfile is
+  # in this claim because the route table and the readiness check are one
+  # change: 8080-8085 could not carry the ports slate-stage allocates.
+  "scripts/box-ready.sh",
   "docs/nodes/platform-deploy.md",
   "scripts/deploy-box.sh",
   "scripts/install-tls-ingress.sh",
@@ -726,28 +813,40 @@ evidence = [
   "https://investor.snap.com/news/news-details/2026/Snap-Inc--Announces-Date-of-Second-Quarter-2026-Results-Conference-Call/default.aspx",
 ]
 
+# `readiness.variant_study_log_count` was retired 2026-08-05: all three of its
+# paths (variant-study.sh, study-afternoon-26aug04.sh, restudy-26aug04.sh) are
+# committed and clean, which is the terminal transition for
+# `complete_pending_commit`. Its node is reclaimed below — doc-lint permits one
+# open claim per node, so the retirement had to precede the new claim.
+
 [[claim]]
-id = "readiness.variant_study_log_count"
+id = "bench.model_dir_grid"
 node = "evidence.benchmark"
-worker = "readiness-lane"
+worker = "latency-lane"
 branch = "webcast-lane"
-state = "complete_pending_commit"
-contract_change = false
+state = "active"
+contract_change = true
+# Adds model_dir as a third bake-off grid axis so two exports of the same
+# architecture (the 320 ms-quantum ctc-small-2024-03-18 vs a chunk-16 re-export
+# at 160 ms) can be compared INTERLEAVED in one run. Prerequisite for the P1
+# rung of the pre-declared ladder (docs/BAKEOFF.md, RACE-CHECKLIST P1); the
+# export itself does not exist yet, so this claim covers the HARNESS only.
+#
+# The CLI flag lives in src/main.rs, which is owned by node `runtime.assembly`
+# and already covered by the open `phone.runtime_assembly` claim. It is
+# deliberately NOT listed here: a path may carry only one open claim, so
+# listing it would be a doc-lint collision, not extra protection.
 paths = [
-  "scripts/variant-study.sh",
-  "scripts/study-afternoon-26aug04.sh",
-  # 26AUG04: targeted re-runs (spcx/zeta/tost) into /tmp/variant-study-*-v2
-  # after the keyword-set corrections; same study machinery, same lane.
-  "scripts/restudy-26aug04.sh",
+  "docs/BAKEOFF.md",
+  "docs/nodes/evidence-benchmark.md",
+  "src/bench/mod.rs",
 ]
 verification = [
-  "bash -n scripts/variant-study.sh",
-  "scripts/variant-study.sh configs/webcast-grab-26aug03-arm-wc.toml /tmp/variant-study-grab-26aug03-real",
+  "cargo test --release --lib bench::",
+  "cargo test --test bench_fixture",
 ]
 evidence = [
-  "configs/.readiness/webcast-grab-26aug03-arm-wc.json",
-  "configs/.readiness/webcast-pltr-26aug03-arm-wc.json",
-  "configs/.readiness/webcast-snap-26aug03-arm-wc.json",
+  "docs/BAKEOFF.md",
 ]
 
 [[claim]]
@@ -768,6 +867,11 @@ paths = [
   # the scheduled leg's notify wrapper. The launchd plist itself is owned and
   # claimed by platform.runtime (configs/launchd/**), like slate-daily's.
   "scripts/missed-arm-daily.sh",
+  # 2026-08-05: both graders counted len(orders) as "orders placed". That list
+  # is INTENTS — every non-fire early return lands in it — so the morning was
+  # graded as 23 orders when 0 had reached Kalshi. Both now count `sent`
+  # (send_ts != null), which is the only field a wire send sets.
+  "scripts/run-verdict.sh",
 ]
 verification = [
   "python3 scripts/missed-arm-check.py --check",
@@ -864,3 +968,25 @@ verification = [
   "git check-ignore slate/latest-timed.json",
 ]
 evidence = [".gitignore"]
+
+[[claim]]
+id = "risk.mention_fill_ceiling"
+node = "runtime.risk"
+worker = "phone-lane"
+branch = "webcast-lane"
+state = "active"
+contract_change = true
+# 2026-08-05 operator ruling: MENTION_FILL_CAP_CENTS 50 -> 97. 97 is where
+# ev_gate cuts out on its own (at 1 contract: cap 97 -> 3c gross - 1c fee = 2c
+# = min_ev_cents, passes; cap 98 -> 1c, refused). The constant was left
+# uncommitted and the deployed box binary still carries 50, which is what
+# blocked the TLN box run — scripts/box-ready.sh now compares the two.
+paths = [
+  "docs/layers/risk.md",
+  "src/risk.rs",
+]
+verification = [
+  "cargo test --lib risk",
+  "cargo test --test kill_sigterm",
+]
+evidence = ["docs/layers/risk.md"]

@@ -147,7 +147,7 @@ async fn fires_exactly_one_signed_post_per_intent() {
     assert_eq!(o.order_id.as_deref(), Some("srv-1"));
     assert_eq!(o.order_status.as_deref(), Some("canceled"));
     assert!(!o.lost_race);
-    assert!(o.send_ts.is_some() && o.ack_ts.is_some());
+    assert!(o.reached_wire() && o.ack_ts.is_some());
     assert!(o.ack_ts.unwrap() > o.send_ts.unwrap());
     let edges = report.recorder.snapshot();
     for edge in ["decision→exec", "handoff→exec", "book_age", "presign_age", "exec→send", "send→ack", "decision→ack", "capture→ack"] {

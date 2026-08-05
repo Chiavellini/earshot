@@ -56,6 +56,26 @@ failures are returned and recorded; sibling fanout legs may continue. Assembly
 must never substitute a missing dependency or silently select a different
 graph.
 
+**Every terminated run leaves a record.** `arm()` routes all post-listener exit
+paths through one choke point, `finish_run(report_path, event_id, report, exec,
+exit)`, which prints the summary and writes `telemetry::build_run_json(...)`.
+The pipeline's outcome selects the `ExitReason` — it must never decide *whether*
+a report exists:
+
+| pipeline outcome | `ExitReason` | report |
+|---|---|---|
+| `Ok(Ok(report))` | `clean_drain` | full |
+| `Ok(Err(e))`, single source | `source_error` | partial + `exit.detail` |
+| `Ok(Err(e))`, fanout | `all_legs_died` | partial + `exit.detail` |
+| join error / panic | `panic_or_join` | partial + `exit.detail` |
+| SIGTERM (kill watcher) | `sigterm` | `telemetry::sigterm_stub_json`, never clobbers an existing report |
+
+The failure this encodes: before 2026-08-05, `let report = pipeline_task.await??`
+skipped every line below it, so an errored run wrote nothing. MELI armed, took 4
+detections, sent one real order, then hit the pipe idle guard — and left no
+evidence it had ever run. Adding a new early return that bypasses `finish_run`
+re-opens that hole.
+
 ## Parallel work boundary
 
 Only this node connects runtime nodes. Stage internals and wire behavior are
@@ -66,6 +86,11 @@ as a focused assembly change.
 
 Run `cargo test --test e2e_full_chain`, `cargo test --test e2e_replay`,
 `cargo test --test e2e_fanout`, and `cargo test --test perf_budget`.
+
+Exit-path coverage: `cargo test --test report_on_exit` (the MELI regression —
+a dead source must still yield a run record) and `cargo test --test
+kill_sigterm` (the SIGTERM path still runs `on_terminate` and flushes the
+ledger).
 
 ## Migration status
 

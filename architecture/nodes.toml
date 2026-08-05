@@ -57,7 +57,10 @@ excluded_globs = [
   ".git/**",
   ".agents/**",
   ".codex/**",
-  ".claude/scheduled_tasks.lock",
+  # Agent-harness surface, not runtime: skills are procedures for an assistant,
+  # and the procedure they encode lives in the nodes they call, not in a node of
+  # their own. Excluded explicitly rather than by accident of glob coverage.
+  ".claude/**",
   ".venv*/**",
   "target/**",
   "vendor/**",
@@ -169,6 +172,7 @@ owns = [
   "tests/e2e_full_chain.rs",
   "tests/e2e_replay.rs",
   "tests/perf_budget.rs",
+  "tests/report_on_exit.rs",
 ]
 inputs = [
   "project.build.workspace",
@@ -607,6 +611,8 @@ status = "active"
 doc = "docs/layers/prepare.md"
 doc_style = "layer"
 owns = [
+  # webcast twin -> phone-only arm + its autorun env (keywords_sha256 preserved)
+  "scripts/phone-lane-derive.py",
   "configs/[!d]*.toml",
   # the [!d] above exists ONLY to exclude dial-ins.toml (control.qualify's
   # registry) — but it also orphaned every d-issuer event config (dash, dis,
@@ -825,6 +831,8 @@ status = "active"
 doc = "docs/nodes/control-supervise.md"
 doc_style = "node"
 owns = [
+  # schedules ONE phone event on the box and verifies the LOADED unit
+  "scripts/box-event-install.sh",
   "PHONE-LANE-HANDOFF.md",
   "configs/*-autorun.env",
   "docs/RUNBOOK.md",
@@ -906,6 +914,8 @@ doc = "docs/nodes/platform-deploy.md"
 doc_style = "node"
 owns = [
   "deploy/**",
+  # read-only host GO/NO-GO for one event; --repair is the only writing mode
+  "scripts/box-ready.sh",
   "scripts/deploy-box.sh",
   "scripts/fetch-models.sh",
   "scripts/install-tls-ingress.sh",
@@ -1027,6 +1037,7 @@ owns = [
   "docs/LATENCY-PROOF.md",
   "docs/POSTMORTEM-26AUG03.md",
   "docs/POSTMORTEM-26AUG04.md",
+  "docs/POSTMORTEM-26AUG05.md",
   "docs/RACE-STRATEGY.md",
   "src/latprobe/*.rs",
   "scripts/abs-lag.py",
@@ -1563,7 +1574,7 @@ consumers = [
 id = "platform.deploy.artifact"
 kind = "artifact"
 maturity = "compatibility"
-door = "deploy-box.sh verified host binary, models, scripts, and ingress configuration"
+door = "deploy-box.sh verified host binary, models, scripts, and ingress configuration; box-ready.sh additionally emits state/<EVENT_ID>/box-ready.json (schema 1: go/fails/warns, box binary sha256+build time, box MENTION_FILL_CAP_CENTS, resolved wss stream_url, per-gate verdicts) and exits nonzero on NO-GO, so a consumer can refuse a host instead of discovering it at T-60"
 producer = "platform.deploy"
 consumers = [
   "platform.runtime",

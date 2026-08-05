@@ -16,7 +16,14 @@
 # 07-22 post-mortems #1/#2). YouTube events: do NOT use this template; keep
 # the frozen yt-dlp leg (configs/webcast-tsla.toml) until a streamlink-vs-
 # YouTube ladder number exists (capture first).
-# Posture: mention-probe observe (1¢ non-crossing) — fill posture is gated on
+# Posture: MENTION-FILL (2026-08-05 operator ruling, W7 lifted for this slate):
+# max_price_cents = 97 (MENTION_FILL_CAP_CENTS ceiling, raised 50->97 26AUG05),
+# budget_contracts = 1 (97x2=194c would exceed max_order_notional_cents=100),
+# min_confidence_confirmed = 0.22 (26AUG05 tape: all 5 NO markets fired
+#   0.152-0.217, everything >=0.24 settled YES; IN-SAMPLE n=26, NOT validated)
+# => orders MAY cross and fill, ONE ~97c contract per event. Spend double-bound per event
+# by [risk].max_event_notional_cents=100 and the per-event $1 probe ledger.
+# Prior posture: mention-probe observe (1¢ non-crossing) — fill posture was gated on
 # the Phase-4 precision verdict (docs/RACE-STRATEGY.md).
 
 [event]
@@ -118,125 +125,125 @@ allowlist_tickers = [
 market_ticker    = "KXEARNINGSMENTIONFIG-26AUG05-AI"
 phrase           = "a i"
 variants         = ["a i", "artificial intelligence"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Anthropic (KXEARNINGSMENTIONFIG-26AUG05-ANTH) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONFIG-26AUG05-ANTH"
 phrase           = "anthropic"
 variants         = ["anthropic", "anthropics"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Code Connect (KXEARNINGSMENTIONFIG-26AUG05-CODE) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONFIG-26AUG05-CODE"
 phrase           = "code connect"
 variants         = ["code connect"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Coding (KXEARNINGSMENTIONFIG-26AUG05-CODI) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONFIG-26AUG05-CODI"
 phrase           = "coding"
 variants         = ["coding", "codings"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Colors (KXEARNINGSMENTIONFIG-26AUG05-COLO) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONFIG-26AUG05-COLO"
 phrase           = "colors"
 variants         = ["colors"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Gemini (KXEARNINGSMENTIONFIG-26AUG05-GEMI) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONFIG-26AUG05-GEMI"
 phrase           = "gemini"
 variants         = ["gemini", "geminis"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Google (KXEARNINGSMENTIONFIG-26AUG05-GOOG) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONFIG-26AUG05-GOOG"
 phrase           = "google"
 variants         = ["google", "googles"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Governance Plus (KXEARNINGSMENTIONFIG-26AUG05-GOVE) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONFIG-26AUG05-GOVE"
 phrase           = "governance plus"
 variants         = ["governance plus"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Hyperscaler (KXEARNINGSMENTIONFIG-26AUG05-HYPE) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONFIG-26AUG05-HYPE"
 phrase           = "hyperscaler"
 variants         = ["hyperscaler", "hyperscalers"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # India (KXEARNINGSMENTIONFIG-26AUG05-INDI) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONFIG-26AUG05-INDI"
 phrase           = "india"
 variants         = ["india", "indias"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Inference (KXEARNINGSMENTIONFIG-26AUG05-INFE) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONFIG-26AUG05-INFE"
 phrase           = "inference"
 variants         = ["inference", "inferences"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # OpenAI / ChatGPT (KXEARNINGSMENTIONFIG-26AUG05-OPEN) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONFIG-26AUG05-OPEN"
 phrase           = "openai"
 variants = ["openai", "openais", "open ai", "open a i", "chatgpt", "chat gpt"]  # widened 2026-08-05 (study confirmed:0; the CTC splits these compounds — the spaced forms are what it actually emits; proven live this morning on SHOP openai + UBER nvidia/zoox/lyft)
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Point of View (KXEARNINGSMENTIONFIG-26AUG05-POIN) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONFIG-26AUG05-POIN"
 phrase           = "point of view"
 variants         = ["point of view"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Round Trip (KXEARNINGSMENTIONFIG-26AUG05-ROUN) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONFIG-26AUG05-ROUN"
 phrase           = "round trip"
 variants         = ["round trip"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # --- prepare summary: 14 tradeable, 0 skipped (said-N-times), 0 skipped (unencodable), 0 variants dropped of 14 markets ---

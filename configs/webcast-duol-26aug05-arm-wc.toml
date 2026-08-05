@@ -16,7 +16,15 @@
 # 07-22 post-mortems #1/#2). YouTube events: do NOT use this template; keep
 # the frozen yt-dlp leg (configs/webcast-tsla.toml) until a streamlink-vs-
 # YouTube ladder number exists (capture first).
-# Posture: mention-probe observe (1¢ non-crossing) — fill posture is gated on
+# Posture: MENTION-FILL (2026-08-05 operator ruling, W7 lifted for this slate):
+# max_price_cents = 97 (MENTION_FILL_CAP_CENTS ceiling, raised 50->97 26AUG05),
+# budget_contracts = 1 (97x2=194c would exceed max_order_notional_cents=100),
+# min_confidence_confirmed = 0.22 (26AUG05 tape: all 5 NO markets fired
+#   0.152-0.217, everything >=0.24 settled YES; IN-SAMPLE n=26, NOT validated)
+# DROPPED KXEARNINGSMENTIONDUOL-26AUG05-100 ("100 Million"): the detector
+#   alphabet is letters+spaces, so no encodable variant can carry the token
+#   '100' that market-phrase-screen.py requires. Market knowingly FORFEIT.
+# Prior posture: mention-probe observe (1¢ non-crossing) — fill posture was gated on
 # the Phase-4 precision verdict (docs/RACE-STRATEGY.md).
 
 [event]
@@ -95,7 +103,6 @@ max_event_notional_cents = 100
 book_stale_ms            = 2000
 audio_stale_ms           = 2000
 allowlist_tickers = [
-  "KXEARNINGSMENTIONDUOL-26AUG05-100",
   "KXEARNINGSMENTIONDUOL-26AUG05-ASIA",
   "KXEARNINGSMENTIONDUOL-26AUG05-CHAT",
   "KXEARNINGSMENTIONDUOL-26AUG05-CHES",
@@ -111,130 +118,121 @@ allowlist_tickers = [
   "KXEARNINGSMENTIONDUOL-26AUG05-TUTO",
 ]
 
-# 100 Million (KXEARNINGSMENTIONDUOL-26AUG05-100) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
-[[keywords]]
-market_ticker    = "KXEARNINGSMENTIONDUOL-26AUG05-100"
-phrase           = "million"
-variants         = ["million", "millions"]
-max_price_cents  = 1
-budget_contracts = 1
-policy           = "confirmed_only"
-
 # Asia (KXEARNINGSMENTIONDUOL-26AUG05-ASIA) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONDUOL-26AUG05-ASIA"
 phrase           = "asia"
 variants         = ["asia", "asias"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # ChatGPT (KXEARNINGSMENTIONDUOL-26AUG05-CHAT) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONDUOL-26AUG05-CHAT"
 phrase           = "chatgpt"
 variants = ["chatgpt", "chatgpts", "chat gpt", "chat g p t", "chat jee pee tee"]  # widened 2026-08-05 (study confirmed:0; the CTC splits these compounds — the spaced forms are what it actually emits; proven live this morning on SHOP openai + UBER nvidia/zoox/lyft)
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Chess (KXEARNINGSMENTIONDUOL-26AUG05-CHES) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONDUOL-26AUG05-CHES"
 phrase           = "chess"
 variants         = ["chess"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # China / Chinese (KXEARNINGSMENTIONDUOL-26AUG05-CHIN) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONDUOL-26AUG05-CHIN"
 phrase           = "china"
 variants         = ["china", "chinas", "chinese", "chineses"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Flashcard (KXEARNINGSMENTIONDUOL-26AUG05-FLAS) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONDUOL-26AUG05-FLAS"
 phrase           = "flashcard"
 variants         = ["flashcard", "flashcards"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Free Trial (KXEARNINGSMENTIONDUOL-26AUG05-FREE) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONDUOL-26AUG05-FREE"
 phrase           = "free trial"
 variants         = ["free trial"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # LinkedIn (KXEARNINGSMENTIONDUOL-26AUG05-LINK) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONDUOL-26AUG05-LINK"
 phrase           = "linkedin"
 variants         = ["linkedin", "linkedins"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Luckin Coffee (KXEARNINGSMENTIONDUOL-26AUG05-LUCK) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONDUOL-26AUG05-LUCK"
 phrase           = "luckin coffee"
 variants         = ["luckin coffee"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # McDonald's (KXEARNINGSMENTIONDUOL-26AUG05-MCDO) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONDUOL-26AUG05-MCDO"
 phrase           = "mcdonalds"
 variants         = ["mcdonalds"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Music (KXEARNINGSMENTIONDUOL-26AUG05-MUSI) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONDUOL-26AUG05-MUSI"
 phrase           = "music"
 variants         = ["music", "musics"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Speaking Adventure (KXEARNINGSMENTIONDUOL-26AUG05-SPEAK) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONDUOL-26AUG05-SPEAK"
 phrase           = "speaking adventure"
 variants         = ["speaking adventure"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Spotify (KXEARNINGSMENTIONDUOL-26AUG05-SPOT) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONDUOL-26AUG05-SPOT"
 phrase           = "spotify"
 variants         = ["spotify", "spotifys"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Tutor (KXEARNINGSMENTIONDUOL-26AUG05-TUTO) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONDUOL-26AUG05-TUTO"
 phrase           = "tutor"
 variants         = ["tutor", "tutors"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # --- prepare summary: 14 tradeable, 0 skipped (said-N-times), 0 skipped (unencodable), 0 variants dropped of 14 markets ---

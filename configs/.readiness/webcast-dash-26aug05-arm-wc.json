@@ -1,0 +1,177 @@
+{
+ "config": "webcast-dash-26aug05-arm-wc",
+ "keywords_sha256": "14078492b6a04baec592a0b458c5b6c11781036e1f67f3966d01b8130e98d3eb",
+ "date": "2026-08-05",
+ "engine": "streaming_ctc",
+ "voices": [
+  "Samantha",
+  "Daniel",
+  "Paulina"
+ ],
+ "carriers": 2,
+ "keywords": [
+  {
+   "ticker": "KXEARNINGSMENTIONDASH-26AUG05-AFFO",
+   "phrase": "afford",
+   "variants": [
+    "afford",
+    "affords",
+    "affordable",
+    "affordables",
+    "affordability",
+    "affordabilitys"
+   ],
+   "clips": 54,
+   "confirmed": 98
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONDASH-26AUG05-AUTO",
+   "phrase": "autonomous",
+   "variants": [
+    "autonomous"
+   ],
+   "clips": 9,
+   "confirmed": 8
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONDASH-26AUG05-DASH",
+   "phrase": "dashmart",
+   "variants": [
+    "dashmart",
+    "dashmarts"
+   ],
+   "clips": 18,
+   "confirmed": 20
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONDASH-26AUG05-DELI",
+   "phrase": "delivery hero",
+   "variants": [
+    "delivery hero"
+   ],
+   "clips": 9,
+   "confirmed": 16
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONDASH-26AUG05-DRON",
+   "phrase": "drone",
+   "variants": [
+    "drone",
+    "drones"
+   ],
+   "clips": 18,
+   "confirmed": 30
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONDASH-26AUG05-HEAD",
+   "phrase": "headwind",
+   "variants": [
+    "headwind",
+    "headwinds"
+   ],
+   "clips": 18,
+   "confirmed": 8
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONDASH-26AUG05-KROG",
+   "phrase": "kroger",
+   "variants": [
+    "kroger",
+    "krogers"
+   ],
+   "clips": 18,
+   "confirmed": 32
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONDASH-26AUG05-LOCA",
+   "phrase": "local commerce",
+   "variants": [
+    "local commerce"
+   ],
+   "clips": 9,
+   "confirmed": 20
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONDASH-26AUG05-NEW",
+   "phrase": "new york",
+   "variants": [
+    "new york"
+   ],
+   "clips": 9,
+   "confirmed": 24
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONDASH-26AUG05-PHYS",
+   "phrase": "physical retailer",
+   "variants": [
+    "physical retailer"
+   ],
+   "clips": 9,
+   "confirmed": 20
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONDASH-26AUG05-ROBO",
+   "phrase": "robot",
+   "variants": [
+    "robot",
+    "robots",
+    "robotic",
+    "robotics"
+   ],
+   "clips": 36,
+   "confirmed": 106
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONDASH-26AUG05-SHOP",
+   "phrase": "shopify",
+   "variants": [
+    "shopify",
+    "shopifys"
+   ],
+   "clips": 18,
+   "confirmed": 8
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONDASH-26AUG05-TAIL",
+   "phrase": "tailwind",
+   "variants": [
+    "tailwind",
+    "tailwinds",
+    "tail wind",
+    "tail winds"
+   ],
+   "clips": 36,
+   "confirmed": 66
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONDASH-26AUG05-UBER",
+   "phrase": "uber",
+   "variants": [
+    "uber",
+    "ubers"
+   ],
+   "clips": 18,
+   "confirmed": 18
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONDASH-26AUG05-WAYM",
+   "phrase": "waymo",
+   "variants": [
+    "waymo",
+    "waymos"
+   ],
+   "clips": 18,
+   "confirmed": 6
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONDASH-26AUG05-WING",
+   "phrase": "wingstop",
+   "variants": [
+    "wingstop",
+    "wingstops"
+   ],
+   "clips": 18,
+   "confirmed": 48
+  }
+ ]
+}

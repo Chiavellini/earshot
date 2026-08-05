@@ -19,6 +19,19 @@
 # listener; TLS lives entirely here.
 
 media.{$EARSHOT_DOMAIN} {
+	# Per-event routes 8080-8098. The range is enumerated, not matched by a
+	# path regexp, on purpose: Twilio signs the EXACT stream URL (Q-M3), and a
+	# matcher that captured the port would be one refactor away from rewriting
+	# the path. These blocks are behaviourally identical to the six that
+	# existed before 2026-08-05.
+	#
+	# WIDENED 2026-08-05. slate-stage.sh allocates BIND_PORT monotonically
+	# across the whole slate (it reached 8103 by 26AUG07), while this file
+	# routed only 8080-8085 — so any phone lane staged after the sixth event
+	# got a port the ingress answers with `respond 404`, and no media would
+	# ever arrive. TLN 26AUG05 was bound to 8093 for exactly this reason.
+	# scripts/phone-lane-derive.py now refuses an unrouted port and
+	# scripts/box-ready.sh checks the INSTALLED table on the box.
 	@e8080 path /e/8080 /e/8080/*
 	handle @e8080 {
 		reverse_proxy 127.0.0.1:8080
@@ -42,6 +55,58 @@ media.{$EARSHOT_DOMAIN} {
 	@e8085 path /e/8085 /e/8085/*
 	handle @e8085 {
 		reverse_proxy 127.0.0.1:8085
+	}
+	@e8086 path /e/8086 /e/8086/*
+	handle @e8086 {
+		reverse_proxy 127.0.0.1:8086
+	}
+	@e8087 path /e/8087 /e/8087/*
+	handle @e8087 {
+		reverse_proxy 127.0.0.1:8087
+	}
+	@e8088 path /e/8088 /e/8088/*
+	handle @e8088 {
+		reverse_proxy 127.0.0.1:8088
+	}
+	@e8089 path /e/8089 /e/8089/*
+	handle @e8089 {
+		reverse_proxy 127.0.0.1:8089
+	}
+	@e8090 path /e/8090 /e/8090/*
+	handle @e8090 {
+		reverse_proxy 127.0.0.1:8090
+	}
+	@e8091 path /e/8091 /e/8091/*
+	handle @e8091 {
+		reverse_proxy 127.0.0.1:8091
+	}
+	@e8092 path /e/8092 /e/8092/*
+	handle @e8092 {
+		reverse_proxy 127.0.0.1:8092
+	}
+	@e8093 path /e/8093 /e/8093/*
+	handle @e8093 {
+		reverse_proxy 127.0.0.1:8093
+	}
+	@e8094 path /e/8094 /e/8094/*
+	handle @e8094 {
+		reverse_proxy 127.0.0.1:8094
+	}
+	@e8095 path /e/8095 /e/8095/*
+	handle @e8095 {
+		reverse_proxy 127.0.0.1:8095
+	}
+	@e8096 path /e/8096 /e/8096/*
+	handle @e8096 {
+		reverse_proxy 127.0.0.1:8096
+	}
+	@e8097 path /e/8097 /e/8097/*
+	handle @e8097 {
+		reverse_proxy 127.0.0.1:8097
+	}
+	@e8098 path /e/8098 /e/8098/*
+	handle @e8098 {
+		reverse_proxy 127.0.0.1:8098
 	}
 	# bridge-probe's default bind (scripts/bridge-probe.sh) — probes ride the
 	# same ingress so a probe also exercises the production TLS path.

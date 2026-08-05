@@ -240,6 +240,32 @@ else
   MODE="LIVE mention-fill"
 fi
 
+# ── Per-event launch parameters (2026-08-05) ──────────────────────────────
+# BIND_PORT was DECLARED in every configs/*-autorun.env that slate-stage.sh
+# writes and then IGNORED here: the launch line hardcoded 8080. Two consequences,
+# both silent. (1) An event whose config binds elsewhere got --bind-port 8080,
+# so on the tunnel-free box the composed ingress path and the listener disagreed
+# and no media arrived. (2) Two concurrent phone events both claimed 8080, and
+# the loop's stale-port cleanup would kill the other event's listener. Honor the
+# env; fall back to 8080 only when it is genuinely absent.
+LAUNCH_PORT="${BIND_PORT:-8080}"
+if [[ ! "$LAUNCH_PORT" =~ ^[0-9]+$ ]] || (( LAUNCH_PORT < 8080 )); then
+  log "BIND_PORT='$LAUNCH_PORT' is not a port >= 8080 — falling back to 8080"
+  LAUNCH_PORT=8080
+fi
+# A bridge that ANSWERS while unprovisioned and then hangs up looks SUCCESSFUL
+# to Twilio (TLN 26AUG05: "the conference is not yet available", cut at 13.1 s),
+# so a phone-only event wants more first-dial attempts and a wider stream-confirm
+# window than launch-event.sh's defaults (3 / 90 s). Opt in from the event env;
+# absent = unchanged behavior for every existing event.
+LAUNCH_TUNING=()
+[[ -n "${DIAL_ATTEMPTS:-}" ]]       && LAUNCH_TUNING+=(--dial-attempts "$DIAL_ATTEMPTS")
+[[ -n "${STREAM_CONFIRM_SECS:-}" ]] && LAUNCH_TUNING+=(--stream-confirm-secs "$STREAM_CONFIRM_SECS")
+# Operator-screened (Class B) venues: page the human into the conference first.
+# Gated twice over — this flag AND [operator_handler] enabled=true in the config
+# (launch-event.sh exits 2 without the second).
+[[ "${OPERATOR_HANDLER:-0}" == 1 ]] && LAUNCH_TUNING+=(--operator-handler)
+
 # Pinned binary from the night-before preflight (scripts/preflight-event.sh):
 # run EXACTLY what was drilled, no fire-time compile (audit F7). Missing pin
 # on a live run falls back to cargo — loudly, it should never happen.
@@ -301,17 +327,19 @@ while :; do
   esac
 
   # Clean slate: no stale tunnel/arm from a previous attempt. Kill ONLY the
-  # PIDs the launch chain recorded (a bare kill-whatever-holds-:8080 can hit
+  # PIDs the launch chain recorded (a bare kill-whatever-holds-the-port can hit
   # unrelated processes — audit F9), TERM first, KILL if it survives.
   kill_recorded "$STATE_DIR/arm.pid" "arm"
   kill_recorded "$STATE_DIR/ngrok.pid" "ngrok"
   # Last resort if something unrecorded still wedges the port (an attempt
   # that died before writing pidfiles): log WHAT we kill, then escalate.
-  if lsof -ti :8080 >/dev/null 2>&1; then
-    log "port 8080 still held by: $(lsof -ti :8080 | xargs ps -o pid=,command= -p 2>/dev/null | tr '\n' ';')"
-    lsof -ti :8080 2>/dev/null | xargs kill 2>/dev/null
+  # LAUNCH_PORT is this event's OWN port — killing a hardcoded 8080 from
+  # event B would take down event A's listener.
+  if lsof -ti :"$LAUNCH_PORT" >/dev/null 2>&1; then
+    log "port $LAUNCH_PORT still held by: $(lsof -ti :"$LAUNCH_PORT" | xargs ps -o pid=,command= -p 2>/dev/null | tr '\n' ';')"
+    lsof -ti :"$LAUNCH_PORT" 2>/dev/null | xargs kill 2>/dev/null
     sleep 3
-    lsof -ti :8080 2>/dev/null | xargs kill -9 2>/dev/null
+    lsof -ti :"$LAUNCH_PORT" 2>/dev/null | xargs kill -9 2>/dev/null
   fi
   rm -f "$STATE_DIR/call.sid"
   sleep 2
@@ -326,10 +354,11 @@ while :; do
   scripts/launch-event.sh \
     --config "$CONFIG_PATH" \
     --account "$ACCOUNT_ENV" \
-    --bind-port 8080 \
+    --bind-port "$LAUNCH_PORT" \
     --to "$TO_NUMBER" --dtmf "$DTMF" \
     ${BIN_ARGS[@]+"${BIN_ARGS[@]}"} $DIAL_FLAG \
     ${STREAM_ARGS[@]+"${STREAM_ARGS[@]}"} \
+    ${LAUNCH_TUNING[@]+"${LAUNCH_TUNING[@]}"} \
     $LIVE_FLAGS &
   LAUNCH_PID=$!
 

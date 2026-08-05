@@ -1,0 +1,7 @@
+{
+  "raw_monotonic_ns": 113658699327291,
+  "utc_s": 1785964403.3454778,
+  "clock_source": "CLOCK_MONOTONIC_RAW",
+  "sampled_at_utc": "2026-08-05T21:13:23.345478+00:00",
+  "warning": "Anchor pair, not ground truth. Error grows with wall-clock time elapsed between this sample and the capture_ns being converted, and with any host sleep/hibernate in between (breaks the monotonic-clock free-running guarantee). Take a fresh sample immediately before AND after each capture session and compare the two conversions of a known shared reference point \u2014 do not assume drift is zero over a long session."
+}

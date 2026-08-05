@@ -1,0 +1,42 @@
+# Offline replay shakedown — confirms the real detection pipeline runs
+# cleanly against a capture-bakeoff recording of KNBR (Giants radio).
+# `earshot replay` is confirmed order-incapable (passes a literal `None`
+# for the intent-sender channel, src/main.rs:331/334 — see
+# pm-expansion-exploration/latency/README.md's context for the full proof)
+# — this can never place an order regardless of config content.
+#
+# path is set per-run (points at whichever leg's .wav from a capture-bakeoff
+# run this is analyzing) — this default is the dry-run shakedown recording.
+
+[event]
+id        = "MLB-KNBR-REPLAY-SHAKEDOWN"
+starts_at = "2026-08-05T21:13:23Z"
+
+[pipeline]
+chunk_ms = 80
+resample_to_hz = 16000
+
+[[sources]]
+kind  = "replay"
+path  = "/Users/bernardodelrio/Code/ear/pm-expansion-exploration/latency/mlb/captures/dryrun/tuned.wav"
+speed = 0                          # 0 = as fast as possible (offline analysis)
+
+[detector]
+engine = "streaming_ctc"
+
+[detector.streaming_ctc]
+model_dir         = "models/sherpa-onnx-streaming-zipformer-ctc-small-2024-03-18"
+num_threads       = 1
+default_threshold = 0.15
+
+[kalshi]
+series = "KXMLBMENTION"
+env    = "prod"
+
+[[keywords]]
+market_ticker    = "KXMLBMENTION-SHAKEDOWN-ERRO"
+phrase           = "error"
+variants         = ["error"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"

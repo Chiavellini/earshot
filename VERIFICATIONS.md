@@ -1724,6 +1724,99 @@ at ~1.1 req/s sustained).
 **Re-verify:** TLS-fingerprint behavior on any capture failure (Cloudflare
 rules change without notice); volumes per event at arm time.
 
+### Q-PM AMENDMENT — the 10–100× volume claim is FALSE for earnings-mention (2026-08-04)
+
+**Claim:** the "PM runs this class at 10–100× Kalshi volume" line above holds
+for the Powell / Trump / NFLX boards it was sampled from. It is **inverted**
+for earnings-mention boards, which is the class we actually arm. Measured from
+the tapes (not by hand — `scripts/xvenue-report.py`, artifacts in
+`state/xvenue/*/report.json`):
+
+| pair | Kalshi trades | PM trades | Kalshi notional | PM notional | ratio |
+|---|---:|---:|---:|---:|---:|
+| `pltr-26aug03` | 7,918 | 48 | $103,273.07 | $2,160.70 | **47.8×** |
+| `amd-26aug04`  | 4,903 | 14 | $97,893.55 | $335.22 | **292.0×** |
+
+Kalshi is the deeper and far tighter venue here (PM median spread 31¢ on PLTR,
+19¢ on AMD). PM trade counts are YES-leg only; the postmortem's "121" pooled
+both legs. Kalshi traded size reproduces the hand-typed postmortem figure
+exactly (224,142.32 contracts), which is what validates the chain.
+**Implication:** a PM price move is not a usable Kalshi signal on this class at
+these print rates. The Δt axis should be prioritized on `KXFEDMENTION`, where
+PM has the depth the original claim was sampled from.
+**Source:** `docs/POSTMORTEM-26AUG03.md` §Polymarket (first, by hand);
+reproduced from tape 2026-08-04. **Confidence:** high (n=2 events).
+
+---
+
+## Q-XVENUE-WS — Polymarket pushes a millisecond book feed (2026-08-04, live)
+
+**Claim:** Polymarket exposes a market-data **WebSocket**, so the cross-venue
+lane no longer has to poll one venue while the other pushes.
+
+- Endpoint `wss://ws-subscriptions-clob.polymarket.com/ws/market`. The host is
+  **`ws-subscriptions-clob`** — `ws-subscribe-clob.polymarket.com` does not
+  resolve (NXDOMAIN), and `clob.polymarket.com/ws/market` is a 404.
+- **Python's own TLS stack completes the handshake here** (HTTP 101). The
+  fingerprint wall pinned in Q-PM applies to `clob.polymarket.com`, not to this
+  host, so `pm-tape.py` needs no curl subprocess.
+- Subscribe frame: `{"assets_ids":[…],"type":"market"}`.
+- Delivers `book` (full snapshot: `bids`/`asks`/`hash`/`tick_size`/
+  `last_trade_price`) and `price_change` (deltas carrying `best_bid`/`best_ask`
+  inline), both with a **millisecond string `timestamp`**.
+- **`tick_size` is 0.001.** Polymarket prices a tenth of a cent — which is why
+  the canonical cross-venue schema is micro-dollars (`*_e6`) and NOT cents; a
+  cents representation silently destroys real price motion on this venue.
+- A connection **survived 100 s with no client PING** while frames kept
+  arriving (docs suggest PING every 10 s). `pm-tape.py` pings at 10 s anyway;
+  behaviour beyond 100 s is untested.
+- The newer `ws-live-data.polymarket.com` service answers CLOB topics with
+  *"CLOB messages are not supported anymore"*; its `activity/trades` topic IS
+  live (565 frames in 20 s, global firehose). Unknown topics fail loudly
+  (`leger GetTopics error … NotFound`), which is how the live set was found.
+
+**Evidence:** exercised live 2026-08-04 22:3x–22:4xZ from CDMX;
+`scripts/pm-tape.py` recorded 479 rows / 40 s over 32 AMD tokens, 0 errors,
+0 reconnects.
+**Implication:** both venues are now `feed_kind: "push"`, so a lead/lag figure
+is no longer biased by up to a full second toward the pushed side. This is the
+single change that makes a sub-second cross-venue Δt measurable at all.
+**Confidence:** high on everything exercised; medium on long-session stability
+(100 s observed).
+**Re-verify:** the handshake, on any capture failure — `scripts/xvenue-daily.sh`
+does this every day and reports a FINDING if it stops upgrading.
+
+---
+
+## Q-XTAPE — Kalshi wire facts the cross-venue recorder had to pin (2026-08-04, live)
+
+**Claim (WS carries no server clock):** `orderbook_snapshot` / `orderbook_delta`
+frames carry `seq` but **no server timestamp**. A Kalshi-side time axis
+therefore has to be our own receive stamp, which is why the canonical schema
+makes `recv_wall_ns` primary and states `venue_ts_ns: null` rather than
+substituting one clock for the other. Both feeds must run on ONE host or the
+measurement is our network asymmetry.
+**Claim (empty boards serialize empty):** a mention board with no resting
+orders sends snapshots whose `msg` carries only `market_id`/`market_ticker` —
+no `yes_dollars_fp`/`no_dollars_fp` keys at all. Observed on the whole AMD
+26AUG04 board pre-call. Not a parse failure; a genuinely empty book.
+**Claim (public trades tape is MICROSECOND, and sizes are `count_fp`):**
+`GET /markets/trades` returns `created_time` as
+`"2026-08-03T21:41:53.929037Z"` — microsecond precision, **not** whole seconds.
+Size is **`count_fp`** (fixed-point, fractional contracts); the plain `count`
+key is absent, and reading it yields a silent zero notional.
+**Implication:** the "~2 s joint quantisation floor" that
+`scripts/pm-edge-report.py` documents was only ever true of the **Polymarket
+`data-api` trades** feed; the Kalshi side was never the binding constraint.
+`scripts/xvenue-normalize.py` records each row's own
+`venue_ts_granularity_ns`, so the floor is computed per comparison instead of
+assumed.
+**Evidence:** `examples/book-tape.rs` live against
+`KXEARNINGSMENTIONAMD-26AUG04` (17 markets, 0 dropped) and three liquid boards
+(2,299 frames / 25 s → 2,145 two-sided quotes, 0 violating
+`0 < bid < ask <= $1`); `state/KXEARNINGSMENTIONPLTR-26AUG03/tape-2026-08-03.json`.
+**Confidence:** high.
+
 ---
 
 ## Q-EDGAR — SEC full-text search carries earnings dial-ins (2026-07-30)
@@ -1882,9 +1975,94 @@ row; `board-open.py --issuer BULL` agreed (exit 0).
 **Confidence:** high. **Re-verify:** after any change to `bridge-probe.sh`'s
 promote block or `registry-admit.py`'s write path.
 
+### Q-ADMIT addendum — TLN, and the two probes that meant opposite things (2026-08-05, live)
+
+**PINNED.** Talen Energy is the type specimen for why a reservation-window
+bridge needs an IN-WINDOW probe: the same number, the same PIN, dialled twice on
+the same day, produced one non-verdict and one clean `held`.
+
+- **17:21Z (T-3h09m, OUTSIDE the T-90..T-30 window) — CLASSIFIES NOTHING.**
+  The call connected and held 13.1 s / 671 frames, and the bridge said:
+  *"Please enter your dial-in pin and press pound when finished. The conference
+  is not yet available. Please reconnect closer to the scheduled start time."*
+  That is a reservation-window venue behaving correctly. Recording it as
+  `dropped` would have permanently failed the admission gate on false evidence,
+  and `dropped` is not re-testable by a later probe — the registry would simply
+  say the bridge hangs up on us.
+- **19:55Z (T-35, IN-WINDOW) — `held`.** The bridge issued the same PIN prompt
+  and then held for **119.0 s of a 120 s cap**. Capture ended on OUR cap, not a
+  bridge drop.
+
+**A bridge that ANSWERS while unprovisioned is the sharp edge.** The 17:21Z leg
+looked *successful* to Twilio — call answered, media forked, 671 frames — and
+then died at 13.1 s. A too-early unattended dial therefore consumes an attempt
+and reports success. What carries across the provisioning moment is dial
+attempts plus mid-call reconnects, which is why the phone-lane env now ships
+`DIAL_ATTEMPTS=5` and `STREAM_CONFIRM_SECS=150` against launch-event.sh's
+defaults of 3 and 90.
+
+**`--promote` did not fire, and the failure was silent.** `registry-admit.py`
+hit a `tomllib` ImportError under launchd's minimal PATH, so the `held` verdict
+had to be written by hand from the probe artifact. The laptop interpreter split
+is the cause: homebrew `python3` 3.14.6 has `tomllib` but a broken `plistlib`
+(pyexpat cannot resolve against the system libexpat), and `/usr/bin/python3`
+3.9.6 is the exact inverse — it predates `tomllib` entirely. **Pin the
+interpreter explicitly in any scheduled context.** The us-east-1 box does not
+have this split (one `python3` 3.12.3 with both modules), which
+`scripts/box-ready.sh` now verifies under the systemd user PATH rather than the
+login shell.
+
+**Implication:** read the REGISTRY after a promote, never stdout — which is what
+`scripts/tln-phone-golive.sh` did, and why the verdict survived at all.
+**Evidence:** `corpus/bridge-probes/tln_2026_08_05.{json,jsonl,wav}`;
+`configs/dial-ins.toml` `[TLN]`.
+**Confidence:** high. **Re-verify:** admission is stale after 30 days; the
+window class is a per-venue fact that does not expire.
+
+---
+
+## Q-BOX — us-east-1 execution-host readiness, measured (2026-08-05, live)
+
+**PINNED.** Read-only SSH survey of `ubuntu@3.212.174.94` at **21:15Z**, four
+hours before this entry was written and after the TLN call it explains. The box
+was NOT down — and was still not runnable.
+
+| fact | measured | consequence |
+|---|---|---|
+| `~/ear/src/risk.rs` | `MENTION_FILL_CAP_CENTS = 50` | laptop tree was 97; `mention_fill_gate` refuses any higher cap |
+| `~/ear/target/release/earshot` | built **2026-08-04 19:20:37Z**, sha256 `3d139aeb17441a95…` | older than `src/kalshi/book.rs` — the binary does not contain the tree |
+| `/etc/caddy/Caddyfile` routes | `/e/8080`…`/e/8085`, `/e/8099` **only** | TLN's config bound **8093**; every other path hits `handle { respond 404 }` |
+| `systemd --user` PATH | `/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin` | **no `~/.cargo/bin`** — a fire-time compile is impossible; `shasum` and `timeout` ARE present |
+| `python3` under that PATH | 3.12.3, `tomllib` OK | the interpreter split is a LAPTOP problem, not a box one |
+| `~/ear/state/hunt/*.env` | absent | `deploy-box.sh` excludes `state/` — digits never arrive by deploy |
+| lingering / NTP / TLS | `Linger=yes`; NTP active+synced, 1 s skew; cert to Oct 28 2026 | fine |
+| disk | 5.4 GiB free (81 % used), no `target/debug` to reclaim | preflight's ≥5 GiB gate passes barely; `target/release` is 1.6 GiB and must not be deleted |
+| host | c6a.4xlarge, 16 cores, load1 0.00, up 7 d | idle throughout the call it could have run |
+
+**Two independent blockers, not one.** The stale binary is the one that was
+found at T-60 on 26AUG05. The unrouted bind port was found only in hindsight:
+even with a fresh binary, `wss://media.3-212-174-94.sslip.io/e/8093` would have
+hit Caddy's 404 catch-all and no media would ever have arrived. The cause is a
+disagreement nothing checked — `scripts/slate-stage.sh` allocates `BIND_PORT`
+monotonically across the whole slate (it had reached 8103 by 26AUG07) while the
+ingress routed six ports. `deploy/caddy/Caddyfile` now enumerates 8080–8098.
+
+**Implication:** host readiness is a prep-time artifact, not a T-60 discovery.
+`scripts/box-ready.sh` produces it (`state/<EVENT_ID>/box-ready.json`, schema 1)
+and exits nonzero on NO-GO. Run against this config on 2026-08-05 it returns
+NO-GO with 5 blockers, reproducing both of the above.
+**Re-verify:** after any deploy, any `deploy/caddy/Caddyfile` change (the box
+copy must be re-rendered by `scripts/install-tls-ingress.sh`), any instance or
+EIP move (the sslip.io hostname encodes the IP), and before every phone event.
+
+---
+
 ## Q-CALLPATH — first-dial retry + no-stream watchdog (SCHEDULED, not yet live)
 
-**NOT YET PINNED — stub-tested, live rehearsal pending.** The call-path
+**NOT YET PINNED — stub-tested, live rehearsal pending.** (2026-08-05: the
+phone-lane event env now ships `DIAL_ATTEMPTS=5` / `STREAM_CONFIRM_SECS=150`
+and `scripts/event-autorun.sh` forwards them, so the first box-hosted phone
+arm IS this pin's live evidence — record it there, not here, until it runs.) The call-path
 hardening (2026-08-04, commit on webcast-lane) is proven by
 `tests/redial_supervisor.rs` (10), `tests/launch_event_posture.rs` (+6), and
 `tests/twilio_source.rs` (+3), all under bash 3.2 and 5. Per the CLAUDE.md

@@ -65,6 +65,9 @@ scripts/slate-stage.sh --issuer <TICKER>            # same-day restage after a p
 scripts/missed-arm-check.py --date YYYY-MM-DD       # did we capture a traded board and place nothing? (run after every event day)
 scripts/board-open.py --issuer <TICKER>             # is there an open Kalshi mention board right now
 scripts/launch-event.sh --config <cfg> --account <env> --bind-port <p> --to +1…  # one isolated event; run per event for concurrent calls (docs/MULTI-EVENT.md §8). Refuses a config with no mid-call persistence unless --one-shot-ok; classified first-dial retry (--dial-attempts, default 3); --stream-confirm-secs (default 90) arms the no-stream watchdog
+scripts/box-ready.sh --config <cfg> --account <env>  # CAN the us-east-1 box run this event NOW? read-only GO/NO-GO + state/<E>/box-ready.json; --repair deploys+rebuilds (refuses a dirty src/). Run at PREP time — on 26AUG05 a stale box binary was found at T-60 and cost the race
+scripts/phone-lane-derive.py --from <webcast-arm.toml>    # webcast twin → phone-only arm + autorun env; caps from src/risk.rs, keywords_sha256 preserved so the readiness study carries over
+scripts/box-event-install.sh --event-env <env>            # schedule one phone event on the box (systemd user timer) and VERIFY THE LOADED UNIT, not the file written
 source ~/.kalshi/earshot_env                 # credentials (never in repo)
 ```
 

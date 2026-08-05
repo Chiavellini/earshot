@@ -1,0 +1,463 @@
+{
+  "schema_version": 2,
+  "pair_id": "pltr-26aug03",
+  "pm_order_latency_ms_grid": [
+    100,
+    300,
+    1000
+  ],
+  "bridge_offset_ns": 1785563417334280834,
+  "bridge_error_s": 2.0,
+  "precision_assumed": 0.75,
+  "matched_words": 5,
+  "words_with_decision_ts": 1,
+  "entries": [
+    {
+      "word": "healthcare",
+      "kalshi_ticker": "KXEARNINGSMENTIONPLTR-26AUG03-HEAL",
+      "pm_instrument": "43193966188821779910395844529305570650248607414082230968696710106571159938423",
+      "quotes": 475,
+      "verdict": "NO_DECISION_TS",
+      "note": "matched cross-venue but never armed by production (or never fired a decision) for this word \u2014 no decision_ts exists to anchor on. Expected for most words; the reanchored figure only exists on the armed(production) ^ captured(exploration) ^ said intersection.",
+      "kalshi_reprice_anchor_ns": null,
+      "reach_anchor_ns": {},
+      "anchor_delta_s": {},
+      "bridge_offset_ns": 1785563417334280834,
+      "tiers": {}
+    },
+    {
+      "word": "anthropic",
+      "kalshi_ticker": "KXEARNINGSMENTIONPLTR-26AUG03-ANTH",
+      "pm_instrument": "70194991570092448684191873490964340298442235987829033836618022039189715338452",
+      "quotes": 257,
+      "verdict": "NO_DECISION_TS",
+      "note": "matched cross-venue but never armed by production (or never fired a decision) for this word \u2014 no decision_ts exists to anchor on. Expected for most words; the reanchored figure only exists on the armed(production) ^ captured(exploration) ^ said intersection.",
+      "kalshi_reprice_anchor_ns": null,
+      "reach_anchor_ns": {},
+      "anchor_delta_s": {},
+      "bridge_offset_ns": 1785563417334280834,
+      "tiers": {}
+    },
+    {
+      "word": "warp speed",
+      "kalshi_ticker": "KXEARNINGSMENTIONPLTR-26AUG03-WARP",
+      "pm_instrument": "105944088090954422007748226439447908441330183141975116731512443333206879471931",
+      "quotes": 458,
+      "verdict": "NO_DECISION_TS",
+      "note": "matched cross-venue but never armed by production (or never fired a decision) for this word \u2014 no decision_ts exists to anchor on. Expected for most words; the reanchored figure only exists on the armed(production) ^ captured(exploration) ^ said intersection.",
+      "kalshi_reprice_anchor_ns": null,
+      "reach_anchor_ns": {},
+      "anchor_delta_s": {},
+      "bridge_offset_ns": 1785563417334280834,
+      "tiers": {}
+    },
+    {
+      "word": "ai slop",
+      "kalshi_ticker": "KXEARNINGSMENTIONPLTR-26AUG03-SLOP",
+      "pm_instrument": "32401400297103748884336413025499688488085742490948210702628732672341038252408",
+      "quotes": 714,
+      "verdict": "RESOLVED",
+      "note": null,
+      "kalshi_reprice_anchor_ns": 1785790990784292096,
+      "reach_anchor_ns": {
+        "100ms": 1785790991284913417,
+        "300ms": 1785790991484913417,
+        "1000ms": 1785790992184913417
+      },
+      "anchor_delta_s": {
+        "100ms": -0.501,
+        "300ms": -0.701,
+        "1000ms": -1.401
+      },
+      "bridge_offset_ns": 1785563417334280834,
+      "tiers": {
+        "5c": {
+          "max_price_usd": 0.95,
+          "buy_yes": {
+            "100ms": {
+              "5s": {
+                "snapshots": 3,
+                "covered_s": 5.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              },
+              "30s": {
+                "snapshots": 5,
+                "covered_s": 30.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              },
+              "300s": {
+                "snapshots": 10,
+                "covered_s": 300.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              }
+            },
+            "300ms": {
+              "5s": {
+                "snapshots": 3,
+                "covered_s": 5.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              },
+              "30s": {
+                "snapshots": 5,
+                "covered_s": 30.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              },
+              "300s": {
+                "snapshots": 10,
+                "covered_s": 300.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              }
+            },
+            "1000ms": {
+              "5s": {
+                "snapshots": 2,
+                "covered_s": 5.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              },
+              "30s": {
+                "snapshots": 4,
+                "covered_s": 30.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              },
+              "300s": {
+                "snapshots": 9,
+                "covered_s": 300.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              }
+            }
+          },
+          "ev_positive": false
+        },
+        "10c": {
+          "max_price_usd": 0.9,
+          "buy_yes": {
+            "100ms": {
+              "5s": {
+                "snapshots": 3,
+                "covered_s": 5.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              },
+              "30s": {
+                "snapshots": 5,
+                "covered_s": 30.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              },
+              "300s": {
+                "snapshots": 10,
+                "covered_s": 300.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              }
+            },
+            "300ms": {
+              "5s": {
+                "snapshots": 3,
+                "covered_s": 5.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              },
+              "30s": {
+                "snapshots": 5,
+                "covered_s": 30.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              },
+              "300s": {
+                "snapshots": 10,
+                "covered_s": 300.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              }
+            },
+            "1000ms": {
+              "5s": {
+                "snapshots": 2,
+                "covered_s": 5.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              },
+              "30s": {
+                "snapshots": 4,
+                "covered_s": 30.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              },
+              "300s": {
+                "snapshots": 9,
+                "covered_s": 300.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              }
+            }
+          },
+          "ev_positive": false
+        },
+        "20c": {
+          "max_price_usd": 0.8,
+          "buy_yes": {
+            "100ms": {
+              "5s": {
+                "snapshots": 3,
+                "covered_s": 5.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              },
+              "30s": {
+                "snapshots": 5,
+                "covered_s": 30.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              },
+              "300s": {
+                "snapshots": 10,
+                "covered_s": 300.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              }
+            },
+            "300ms": {
+              "5s": {
+                "snapshots": 3,
+                "covered_s": 5.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              },
+              "30s": {
+                "snapshots": 5,
+                "covered_s": 30.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              },
+              "300s": {
+                "snapshots": 10,
+                "covered_s": 300.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              }
+            },
+            "1000ms": {
+              "5s": {
+                "snapshots": 2,
+                "covered_s": 5.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              },
+              "30s": {
+                "snapshots": 4,
+                "covered_s": 30.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              },
+              "300s": {
+                "snapshots": 9,
+                "covered_s": 300.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              }
+            }
+          },
+          "ev_positive": false
+        },
+        "50c": {
+          "max_price_usd": 0.5,
+          "buy_yes": {
+            "100ms": {
+              "5s": {
+                "snapshots": 3,
+                "covered_s": 5.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              },
+              "30s": {
+                "snapshots": 5,
+                "covered_s": 30.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              },
+              "300s": {
+                "snapshots": 10,
+                "covered_s": 300.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              }
+            },
+            "300ms": {
+              "5s": {
+                "snapshots": 3,
+                "covered_s": 5.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              },
+              "30s": {
+                "snapshots": 5,
+                "covered_s": 30.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              },
+              "300s": {
+                "snapshots": 10,
+                "covered_s": 300.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              }
+            },
+            "1000ms": {
+              "5s": {
+                "snapshots": 2,
+                "covered_s": 5.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              },
+              "30s": {
+                "snapshots": 4,
+                "covered_s": 30.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              },
+              "300s": {
+                "snapshots": 9,
+                "covered_s": 300.0,
+                "max_usd": 0.0,
+                "p50_usd": 0.0,
+                "persisted_s": 0.0,
+                "via_no_leg_p50_usd": 0.0,
+                "via_no_leg_max_usd": 0.0
+              }
+            }
+          },
+          "ev_positive": true
+        }
+      },
+      "depth_kind_worst": "top5"
+    },
+    {
+      "word": "international",
+      "kalshi_ticker": "KXEARNINGSMENTIONPLTR-26AUG03-INTE",
+      "pm_instrument": "58042514433701320257570481909118477709424385679510808958231638203404256757965",
+      "quotes": 286,
+      "verdict": "NO_DECISION_TS",
+      "note": "matched cross-venue but never armed by production (or never fired a decision) for this word \u2014 no decision_ts exists to anchor on. Expected for most words; the reanchored figure only exists on the armed(production) ^ captured(exploration) ^ said intersection.",
+      "kalshi_reprice_anchor_ns": null,
+      "reach_anchor_ns": {},
+      "anchor_delta_s": {},
+      "bridge_offset_ns": 1785563417334280834,
+      "tiers": {}
+    }
+  ]
+}

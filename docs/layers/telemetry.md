@@ -56,6 +56,29 @@ layer — it never sits between two stages.
   `docs/layers/executor.md`).
 - **Mechanism:** `render_table()` (terminal) and `write_json(path)`
   (`report.json`) — the replay/regression artifacts (spec P4).
+- **Run record assembly:** `build_run_json(event_id, report:
+  Option<&PipelineReport>, exec: Option<&ExecReport>, exit: &ExitRecord) ->
+  serde_json::Value` is the single assembler for an armed run's `report.json`;
+  `main.rs::finish_run` is its only production caller and writes what it
+  returns. `report = None` yields a PARTIAL record — `event_id`, `exit`,
+  `partial_report: true`, and an always-present `orders` array — because a run
+  that dies must still leave evidence. `exec = None` adds
+  `executor_report_missing: true`.
+- **Exit record:** `ExitRecord { reason: ExitReason, detail: Option<String> }`,
+  serialized under the `exit` key on EVERY terminated run.
+  `ExitReason` ∈ `clean_drain | source_error | all_legs_died | sigterm |
+  stop_file | panic_or_join` (snake_case on the wire; ops scripts branch on
+  these strings, so renaming one is a contract change). `detail` is omitted,
+  not null, when there is nothing to say.
+- **SIGTERM stub:** `sigterm_stub_json(session_order_ids, ledger_spent_cents)`
+  — an unattended kill cannot drain, so it emits the same `exit` shape plus
+  `session_order_ids` and `ledger_spent_cents`. `terminated: "SIGTERM"` is
+  retained for readers that predate `exit`.
+- **Why (2026-08-05):** `arm()` wrote a report on exactly ONE of ~14 exit
+  paths. MELI armed, took 4 detections and sent a real order, then hit the pipe
+  idle guard — the error propagated past the writer and the event's whole
+  record was lost, which on disk is indistinguishable from an event that never
+  armed. `build_run_json` exists so "no report" means "never armed" again.
 
 ## Obligations
 - New edges: add to `EDGES` (render order), record from the owning thread,
@@ -65,6 +88,11 @@ layer — it never sits between two stages.
   saturates loudly at max rather than wrapping.
 - Drop counters are part of the report contract: every bounded ring/channel
   that can drop must surface its counter here.
+- **Every terminated run writes a record.** A new exit path in `main.rs::arm`
+  must route through `finish_run`/`build_run_json` and add its `ExitReason`
+  variant; adding an exit that returns early without writing re-opens the MELI
+  failure. `ExitReason`'s wire strings are consumed by grading scripts and are
+  part of this contract.
 
 ## Failure policy
 - Recording must not panic on the hot path. Values outside the histogram
@@ -83,3 +111,15 @@ layer — it never sits between two stages.
 - Pure unit-testable: build a recorder, record, snapshot, assert stats.
   Covered indirectly by e2e (`tests/e2e_replay.rs` asserts populated edges,
   strict ts ordering, JSON round-trip) and `tests/exec_mock.rs` (exec edges).
+- Exit record / run assembly — `cargo test --lib telemetry`:
+  `exit_record_serializes_reason_as_snake_case`,
+  `clean_exit_omits_detail_entirely`,
+  `every_exit_reason_has_a_distinct_wire_name`,
+  `sigterm_stub_carries_the_same_exit_shape_as_a_full_report`,
+  `partial_record_names_its_event_and_always_has_orders`.
+- The MELI regression — `cargo test --test report_on_exit`:
+  `dead_source_still_produces_a_run_record` drives a real `PipeSource` into the
+  idle guard and asserts a complete record still comes out;
+  `clean_drain_record_keeps_pipeline_fields_and_gains_exit` guards the existing
+  report shape; `all_legs_died_is_distinguishable_from_a_single_source_error`
+  keeps the two diagnoses apart.

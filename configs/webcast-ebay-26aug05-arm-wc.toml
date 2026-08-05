@@ -16,7 +16,14 @@
 # 07-22 post-mortems #1/#2). YouTube events: do NOT use this template; keep
 # the frozen yt-dlp leg (configs/webcast-tsla.toml) until a streamlink-vs-
 # YouTube ladder number exists (capture first).
-# Posture: mention-probe observe (1¢ non-crossing) — fill posture is gated on
+# Posture: MENTION-FILL (2026-08-05 operator ruling, W7 lifted for this slate):
+# max_price_cents = 97 (MENTION_FILL_CAP_CENTS ceiling, raised 50->97 26AUG05),
+# budget_contracts = 1 (97x2=194c would exceed max_order_notional_cents=100),
+# min_confidence_confirmed = 0.22 (26AUG05 tape: all 5 NO markets fired
+#   0.152-0.217, everything >=0.24 settled YES; IN-SAMPLE n=26, NOT validated)
+# => orders MAY cross and fill, ONE ~97c contract per event. Spend double-bound per event
+# by [risk].max_event_notional_cents=100 and the per-event $1 probe ledger.
+# Prior posture: mention-probe observe (1¢ non-crossing) — fill posture was gated on
 # the Phase-4 precision verdict (docs/RACE-STRATEGY.md).
 
 [event]
@@ -120,143 +127,143 @@ allowlist_tickers = [
 market_ticker    = "KXEARNINGSMENTIONEBAY-26AUG05-AI"
 phrase           = "a i"
 variants         = ["a i", "artificial intelligence"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Australia (KXEARNINGSMENTIONEBAY-26AUG05-AUST) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONEBAY-26AUG05-AUST"
 phrase           = "australia"
 variants         = ["australia", "australias"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Bullion (KXEARNINGSMENTIONEBAY-26AUG05-BULL) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONEBAY-26AUG05-BULL"
 phrase           = "bullion"
 variants         = ["bullion", "bullions"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Circular Economy (KXEARNINGSMENTIONEBAY-26AUG05-CIRC) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONEBAY-26AUG05-CIRC"
 phrase           = "circular economy"
 variants         = ["circular economy"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Depop (KXEARNINGSMENTIONEBAY-26AUG05-DEPO) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONEBAY-26AUG05-DEPO"
 phrase           = "depop"
 variants         = ["depop", "depops"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Dividend (KXEARNINGSMENTIONEBAY-26AUG05-DIVI) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONEBAY-26AUG05-DIVI"
 phrase           = "dividend"
 variants         = ["dividend", "dividends"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Etsy (KXEARNINGSMENTIONEBAY-26AUG05-ETSY) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONEBAY-26AUG05-ETSY"
 phrase           = "etsy"
 variants         = ["etsy", "etsys"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # GameStop (KXEARNINGSMENTIONEBAY-26AUG05-GAME) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONEBAY-26AUG05-GAME"
 phrase           = "gamestop"
 variants         = ["gamestop", "gamestops"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Goldin (KXEARNINGSMENTIONEBAY-26AUG05-GOLD) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONEBAY-26AUG05-GOLD"
 phrase           = "goldin"
 variants         = ["goldin", "goldins"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Guaranteed Fit (KXEARNINGSMENTIONEBAY-26AUG05-GUAR) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONEBAY-26AUG05-GUAR"
 phrase           = "guaranteed fit"
 variants         = ["guaranteed fit"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # International (KXEARNINGSMENTIONEBAY-26AUG05-INTE) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONEBAY-26AUG05-INTE"
 phrase           = "international"
 variants         = ["international", "internationals"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Klarna (KXEARNINGSMENTIONEBAY-26AUG05-KLAR) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONEBAY-26AUG05-KLAR"
 phrase           = "klarna"
 variants         = ["klarna", "klarnas"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # One Piece (KXEARNINGSMENTIONEBAY-26AUG05-ONEP) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONEBAY-26AUG05-ONEP"
 phrase           = "one piece"
 variants         = ["one piece"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # OpenAI / ChatGPT (KXEARNINGSMENTIONEBAY-26AUG05-OPEN) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONEBAY-26AUG05-OPEN"
 phrase           = "openai"
 variants = ["openai", "openais", "open ai", "open a i", "chatgpt", "chat gpt"]  # widened 2026-08-05 (study confirmed:0; the CTC splits these compounds — the spaced forms are what it actually emits; proven live this morning on SHOP openai + UBER nvidia/zoox/lyft)
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Pokemon (KXEARNINGSMENTIONEBAY-26AUG05-POKE) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONEBAY-26AUG05-POKE"
 phrase           = "pokemon"
 variants         = ["pokemon", "pokemons"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Sneaker (KXEARNINGSMENTIONEBAY-26AUG05-SNEAK) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONEBAY-26AUG05-SNEAK"
 phrase           = "sneaker"
 variants         = ["sneaker", "sneakers"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # --- prepare summary: 16 tradeable, 0 skipped (said-N-times), 0 skipped (unencodable), 0 variants dropped of 16 markets ---

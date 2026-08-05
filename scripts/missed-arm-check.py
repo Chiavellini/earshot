@@ -144,7 +144,17 @@ def captures_for(date, probe_dir="corpus/bridge-probes", state_dir="state"):
 
 
 def orders_by_issuer(state_dir="state"):
-    """issuer -> total orders placed, from every armed run's report.json."""
+    """issuer -> orders that actually reached Kalshi, from every report.json.
+
+    NOT `len(orders)`. `orders` is the list of INTENTS the executor processed,
+    including every non-fire early return (non-crossing, EV gate, dry-run, risk
+    refusal). Counting it reported "23 orders placed" on 2026-08-05 when the
+    true number was 0 — every one had short-circuited before `send_order`.
+    `send_ts` is stamped only around the wire send, so it is the honest count.
+
+    Newer reports carry a top-level `sent`; older ones are derived from the
+    records so this still grades an archived run correctly.
+    """
     out = {}
     for p in sorted(glob.glob(os.path.join(state_dir, "*", "report.json"))):
         try:
@@ -154,7 +164,10 @@ def orders_by_issuer(state_dir="state"):
         m = re.match(r"KXEARNINGSMENTION([A-Z0-9]+?)-", r.get("event_id") or "")
         if not m:
             continue
-        out[m.group(1)] = out.get(m.group(1), 0) + len(r.get("orders") or [])
+        sent = r.get("sent")
+        if sent is None:
+            sent = sum(1 for o in (r.get("orders") or []) if o.get("send_ts") is not None)
+        out[m.group(1)] = out.get(m.group(1), 0) + sent
     return out
 
 

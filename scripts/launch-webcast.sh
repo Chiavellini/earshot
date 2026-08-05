@@ -39,7 +39,7 @@
 # report), or `touch state/<event>/STOP`.
 set -euo pipefail
 
-CONFIG="" ACCOUNT="" BIN="${EARSHOT_BIN:-}" WAIT_LIVE="" WAIT_KIND="" LIVE=0
+CONFIG="" ACCOUNT="" BIN="${EARSHOT_BIN:-}" WAIT_LIVE="" WAIT_KIND="" LIVE=0 FILLABLE=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --config)    CONFIG="$2"; shift 2 ;;
@@ -48,16 +48,30 @@ while [[ $# -gt 0 ]]; do
     --wait-live) WAIT_LIVE="$2"; shift 2 ;;
     --wait-kind) WAIT_KIND="$2"; shift 2 ;;
     --i-am-live) LIVE=1; shift ;;
-    # Refused HERE rather than passed through, so the message names the gate
-    # instead of surfacing as a generic arm error 8 minutes before a call.
-    --fillable|--fill-all)
-      echo "REFUSING $1: the webcast fill posture is gated on the Phase-4 precision" >&2
-      echo "verdict (docs/BAKEOFF.md, G4 fill-tier gate — NOT yet scored). W7 lifted" >&2
-      echo "--i-am-live only. To arm fillable you must do it deliberately by hand." >&2
+    # W7 FILL-HALF LIFTED 2026-08-05 (operator ruling, for the 26AUG05 afternoon
+    # slate). This arm previously refused --fillable outright, which — combined
+    # with prepare writing max_price_cents=1 — meant the webcast lane could not
+    # place an order at all: every intent short-circuited at executor.rs's
+    # non-crossing branch and returned BEFORE send_order(). Four armed events on
+    # 26AUG05 reported "23 orders" that never reached the wire.
+    # The precision caveat W7 was built for still stands and is UNRESOLVED:
+    # docs/BAKEOFF.md G4 is not scored, and the .readiness studies measure
+    # RECALL, not precision. Money is bounded elsewhere — MENTION_FILL_CAP_CENTS
+    # (50¢/order price bound), [risk].max_event_notional_cents, and the per-event
+    # $1 probe ledger — so a false fire costs at most that event's $1.
+    --fillable)  FILLABLE="--fillable"; shift ;;
+    # --fill-all stays refused: it is the tier override, a separate decision.
+    --fill-all)
+      echo "REFUSING $1: --fill-all overrides the vetted-word tier and is not part" >&2
+      echo "of the 26AUG05 W7 ruling. Arm it deliberately by hand if you mean it." >&2
       exit 2 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
+if [[ -n "$FILLABLE" && $LIVE -eq 0 ]]; then
+  echo "--fillable requires --i-am-live (arm refuses it otherwise; fail here, not 8 min before a call)" >&2
+  exit 2
+fi
 [[ -n "$CONFIG" && -n "$ACCOUNT" ]] || {
   echo "usage: $0 --config <cfg.toml> --account <env-file> [--bin <pinned>] [--i-am-live] [--wait-live <url-or-url-file> --wait-kind youtube|hls]" >&2; exit 2
 }
@@ -224,7 +238,23 @@ source "$ACCOUNT"
 LIVE_ARGS=()
 if (( LIVE )); then
   LIVE_ARGS+=(--i-am-live)
-  POSTURE="LIVE mention-probe (orders WILL be sent; cap ≤ 1¢, non-crossing, allowlist enforced by arm)"
+  if [[ -n "$FILLABLE" ]]; then
+    LIVE_ARGS+=("$FILLABLE")
+    # State the truth: this is the posture in which an order can actually FILL.
+    # The old line claimed "orders WILL be sent" for the 1¢ probe, where in fact
+    # nothing was ever sent — never describe a posture by its flag, only by what
+    # it does at the wire.
+    # Derive the bound from THIS config rather than repeating a literal that
+    # can drift out of sync with risk.rs — a posture line that misstates the
+    # cap is the exact defect class found on 26AUG05 (see the D2 note above).
+    CFG_MAX_CAP=$(grep -oE '^max_price_cents[[:space:]]*=[[:space:]]*[0-9]+' "$CONFIG" \
+                  | grep -oE '[0-9]+$' | sort -n | tail -1)
+    CFG_MAX_SIZE=$(grep -oE '^budget_contracts[[:space:]]*=[[:space:]]*[0-9]+' "$CONFIG" \
+                   | grep -oE '[0-9]+$' | sort -n | tail -1)
+    POSTURE="LIVE mention-FILL (orders MAY cross the ask and FILL; max cap ${CFG_MAX_CAP:-?}¢ × ${CFG_MAX_SIZE:-?} contract(s) per order, spend bound by notional caps + per-event \$1 probe ledger)"
+  else
+    POSTURE="LIVE mention-probe (cap ≤ 1¢ non-crossing — an order reaches the wire ONLY if the ask is ≤ 1¢; otherwise it short-circuits unsent)"
+  fi
 else
   POSTURE="DRY RUN (no orders are sent; the risk gate is NOT exercised)"
 fi

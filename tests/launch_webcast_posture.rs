@@ -107,20 +107,53 @@ fn i_am_live_reaches_arm_and_the_posture_line_says_so() {
     );
 }
 
+/// W7's FILL half was lifted for the 2026-08-05 afternoon slate (operator
+/// ruling): the webcast lane may now arm `--fillable`, because a 1¢ cap makes
+/// `executor::handle_intent` short-circuit at the non-crossing branch before
+/// `send_order` — that morning produced 30 "orders" and zero wire sends.
+/// `--fill-all` stays refused: it overrides the vetted-word tier, which is a
+/// separate decision nobody has taken.
 #[test]
-fn fill_posture_is_still_refused() {
-    for flag in ["--fillable", "--fill-all"] {
-        let (out, ok) = run_launcher(&[flag]);
-        assert!(!ok, "{flag} must be refused (G4 fill-tier gate unscored):\n{out}");
-        assert!(
-            out.contains("REFUSING"),
-            "{flag} refusal must name the gate:\n{out}"
-        );
-        assert!(
-            !out.contains("--allow-mention"),
-            "{flag} must be refused BEFORE reaching arm:\n{out}"
-        );
-    }
+fn fill_all_is_still_refused_but_fillable_is_not() {
+    let (out, ok) = run_launcher(&["--fill-all"]);
+    assert!(!ok, "--fill-all must still be refused (tier override, undecided):\n{out}");
+    assert!(out.contains("REFUSING"), "--fill-all refusal must name itself:\n{out}");
+    assert!(
+        !out.contains("--allow-mention"),
+        "--fill-all must be refused BEFORE reaching arm:\n{out}"
+    );
+}
+
+/// `--fillable` without `--i-am-live` is meaningless (arm refuses the pair) and
+/// must fail HERE, at launch, rather than 8 minutes before a call.
+#[test]
+fn fillable_without_i_am_live_fails_early_and_says_why() {
+    let (out, ok) = run_launcher(&["--fillable"]);
+    assert!(!ok, "--fillable alone must not launch:\n{out}");
+    assert!(
+        out.contains("requires --i-am-live"),
+        "the refusal must name the missing flag, not just fail:\n{out}"
+    );
+    assert!(
+        !out.contains("--allow-mention"),
+        "it must fail before reaching arm:\n{out}"
+    );
+}
+
+/// The posture line must state what the run can actually DO. The 26AUG05
+/// morning printed "orders WILL be sent" for a 1¢ cap that could not send one.
+#[test]
+fn live_fillable_reaches_arm_and_the_posture_line_says_fill() {
+    let (out, _ok) = run_launcher(&["--i-am-live", "--fillable"]);
+    assert!(
+        out.contains("--fillable"),
+        "W7-LIFT REGRESSION: --fillable did not reach arm, so the run could not \
+         cross an ask and would repeat the 26AUG05 morning:\n{out}"
+    );
+    assert!(
+        out.contains("mention-FILL"),
+        "a fillable run must announce FILL, not probe:\n{out}"
+    );
 }
 
 #[test]

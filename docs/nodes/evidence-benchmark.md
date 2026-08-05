@@ -28,14 +28,34 @@ pre-registered acceptance bar after results are seen.
 ## Input contracts
 
 The `bench-detector` command consumes an exact event/detector config, corpus
-root/manifests, engine list, chunk sizes, split (`dev` or one-shot `holdout`),
-pacing choice, and optional call filter.
+root/manifests, engine list, chunk sizes, an optional model-directory list,
+split (`dev` or one-shot `holdout`), pacing choice, and optional call filter.
+
+The grid is engine × chunk_ms × model_dir. An EMPTY model-directory list means
+one cell that leaves the config's own `model_dir` alone, so any pre-existing
+invocation produces an identical grid and an identical rendered table.
+
+A supplied `--model-dir` that could not be applied is a REFUSAL, never a
+silent no-op: `engine = "stub"` (loads no model), a missing
+`[detector.<engine>]` section to override, or a path that is not a directory
+all return nonzero. The failure mode being excluded is two grid cells that
+unknowingly ran the same artifact and are then read as "the model made no
+difference" — indistinguishable from a genuine null result, which is precisely
+how the `chunk_ms` 40/80/160 cells turned out byte-identical
+(`docs/LATENCY-PROOF.md` §E0c).
 
 ## Output contracts
 
 It writes a benchmark report containing candidate identity, corpus/split,
 precision, recall, false alarms per hour, match details, and paced latency where
 requested. Comparisons require identical corpus and scoring policy.
+
+Each `GridCell` carries `model_dir`: the FULL path of the model that cell ran,
+or `null` when the config's own model was used and is the only one in the grid.
+The full path is recorded deliberately — a latency delta between two exports is
+not interpretable without knowing exactly which two artifacts produced it. The
+rendered table shows only the tail-elided basename, and gains the `model`
+column ONLY when the grid actually swept more than one model.
 
 `scripts/variant-study.sh` additionally writes the keyword-readiness artifact
 `configs/.readiness/<config-basename>.json` consumed by the BLOCKING gate in

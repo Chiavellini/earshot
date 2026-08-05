@@ -135,7 +135,10 @@ async fn audio_in_order_out_with_all_edges_recorded() {
     let o = &exec_report.orders[0];
     assert_eq!(o.order_id.as_deref(), Some("srv-e2e"));
     assert!(!o.dry_run && !o.lost_race);
-    assert!(o.send_ts.is_some() && o.ack_ts.unwrap() > o.send_ts.unwrap());
+    // `reached_wire()` is the one definition of "this got to Kalshi"
+    // (src/kalshi/executor.rs) — asserting send_ts by hand is how four
+    // copies of the predicate drifted apart before 2026-08-05.
+    assert!(o.reached_wire() && o.ack_ts.unwrap() > o.send_ts.unwrap());
     assert_eq!(gate.ledger_spent_cents(), 90);
     assert_eq!(report.drops.total(), 0, "clean paced replay must not drop");
 

@@ -10,9 +10,26 @@ until the run is terminal.
 Unattended lifecycle/retry logic in `scripts/event-autorun.sh`,
 `scripts/wing-autorun.sh`, and `scripts/arm-when-url.sh`, plus mid-call phone
 recovery in `scripts/redial-supervisor.sh` and event-timer installation in
-`scripts/install-event-timer.sh`. It also owns the autorun environment
+`scripts/install-event-timer.sh`, wrapped for the remote host by
+`scripts/box-event-install.sh`. It also owns the autorun environment
 templates under `configs/*-autorun.env`, `docs/RUNBOOK.md`, and the current
 phone-lane operational handoff in `PHONE-LANE-HANDOFF.md`.
+
+`scripts/box-event-install.sh` schedules exactly one phone event on the
+us-east-1 box and then **re-reads the loaded unit** rather than the file it
+wrote — editing a unit file does not update the loaded job, and a stale job
+missing a posture flag makes every order refuse with nothing said until the
+call. It also pushes the gitignored digit store over stdin (never argv, never
+git) because `scripts/deploy-box.sh` excludes `state/`, and refuses when the
+config's `bind`, the env's `BIND_PORT`, and the `/e/<port>` in
+`EARSHOT_STREAM_URL` disagree.
+
+`scripts/event-autorun.sh` honors the event env's `BIND_PORT` (2026-08-05: it
+was declared in every staged env and ignored, hardcoded to 8080 — so an event
+binding elsewhere silently received no media on the tunnel-free box, and the
+loop's stale-port cleanup could kill a concurrent event's listener). Optional
+`DIAL_ATTEMPTS`, `STREAM_CONFIRM_SECS`, and `OPERATOR_HANDLER` env keys forward
+to `scripts/launch-event.sh`; absent, behavior is unchanged.
 
 ## Does not own
 

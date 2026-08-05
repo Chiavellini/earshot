@@ -203,7 +203,7 @@ async fn executor_fires_through_fix_and_records_the_fill() {
     assert_eq!(o.order_id.as_deref(), Some("srv-fix-exec"));
     assert_eq!(o.order_status.as_deref(), Some("filled"));
     assert!(!o.lost_race);
-    assert!(o.send_ts.is_some() && o.hdrs_ts.is_some() && o.ack_ts.is_some());
+    assert!(o.reached_wire() && o.hdrs_ts.is_some() && o.ack_ts.is_some());
     assert!(o.ack_ts.unwrap() >= o.hdrs_ts.unwrap());
     assert!(o.hdrs_ts.unwrap() > o.send_ts.unwrap());
     // Ledger debited before the send (worst case at the cap), registry holds

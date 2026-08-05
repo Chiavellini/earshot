@@ -1,0 +1,53 @@
+# ── TBPN — capture-only STUDY kit sketch (NOT armed, NOT registered) ─────────
+# ILLUSTRATIVE ONLY. See ../README.md before ever running this for real.
+#
+# Candidate: TBPN (Technology Business Programming Network), @TBPNLive on
+# YouTube, confirmed LIVE weekdays 11am-2pm PT. Highest-scoring new
+# candidate found in this exploration (candidate-scoring.md: 3.35/5, no
+# hard gate) — fixed daily schedule + single confirmed official channel is
+# the lowest-source-identity-risk / lowest-operational-overhead profile
+# found across ~4 deep-surveyed candidates. Kalshi series KXTBPNMENTION
+# exists but had ZERO open events at survey time (2026-08-05) — this kit
+# cannot be run for real until a board opens; the keyword list below is a
+# PLACEHOLDER, not pulled from any real rules_primary.
+#
+# RUN (once a board is open — mirrors the WNT recipe, capture-bakeoff only):
+#   yt-dlp -g -f bestaudio "https://www.youtube.com/@TBPNLive/live" \
+#     > ~/tbpn-stream.url
+#   target/release/earshot capture-bakeoff --config \
+#     pm-expansion-exploration/other-venues/prototype-configs/tbpn-capture-sketch.toml \
+#     --secs 10800 --record-dir ~/tbpn --out ~/tbpn/report.json
+# THEN: apply the same source-identity gate wnt-daily.sh uses (cold-open
+# signature match) before trusting anything captured as representative.
+
+[event]
+id        = "STUDY-TBPN-CAPTURE"
+starts_at = "2026-08-06T18:00:00Z"   # PLACEHOLDER — 11am PT weekday; confirm live before use
+
+[pipeline]
+chunk_ms = 80
+
+[[sources]]
+kind = "pipe"
+label = "tbpn_live"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "yt-dlp -o - -f bestaudio \"$(cat $HOME/tbpn-stream.url)\" 2>>${TBPN_DIR:-$HOME/tbpn}/ytdlp.err | ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 1000000 -analyzeduration 2000000 -i - -vn -f s16le -ac 1 -ar 16000 - 2>>${TBPN_DIR:-$HOME/tbpn}/ffmpeg.err",
+]
+
+# capture-bakeoff ignores trading config; the sections below only satisfy
+# validation. NOTHING here is armed — no orders can be placed by this command.
+[kalshi]
+series = "KXTBPNMENTION"
+env    = "prod"
+
+# PLACEHOLDER words, NOT pulled from a real open board (none existed at
+# survey time). Replace with earshot prepare's output once a board opens.
+[[keywords]]
+market_ticker    = "KXTBPNMENTION-PLACEHOLDER-AI"
+phrase           = "artificial intelligence"
+variants         = ["artificial intelligence", "ai"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"

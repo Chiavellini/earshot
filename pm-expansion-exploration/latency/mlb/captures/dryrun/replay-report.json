@@ -1,0 +1,47 @@
+{
+  "event_id": "MLB-KNBR-REPLAY-SHAKEDOWN",
+  "chunk_ms": 80,
+  "frames_in": 3461,
+  "chunks_in": 866,
+  "first_capture_ts": 114209061468666,
+  "edges": {
+    "capture→preproc": {
+      "count": 866,
+      "p50_us": 840957,
+      "p90_us": 1530920,
+      "p95_us": 1872756,
+      "p99_us": 2054160,
+      "max_us": 2138046
+    },
+    "chunk→detect": {
+      "count": 866,
+      "p50_us": 857735,
+      "p90_us": 1572863,
+      "p95_us": 1902116,
+      "p99_us": 2107637,
+      "max_us": 2181038
+    },
+    "preproc→chunk": {
+      "count": 866,
+      "p50_us": 849870,
+      "p90_us": 1546649,
+      "p95_us": 1874853,
+      "p99_us": 2082471,
+      "max_us": 2178940
+    },
+    "ring_wake": {
+      "count": 1,
+      "p50_us": 38,
+      "p90_us": 38,
+      "p95_us": 38,
+      "p99_us": 38,
+      "max_us": 38
+    }
+  },
+  "detections": [],
+  "drops": {
+    "source_to_preproc": 0,
+    "preproc_to_chunker": 0,
+    "chunker_to_detector": 0
+  }
+}

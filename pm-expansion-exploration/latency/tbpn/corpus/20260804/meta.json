@@ -1,0 +1,12 @@
+{
+ "session": "20260804",
+ "video_id": "_hMRv35F-0w",
+ "title": "Spoon = Bent, Apple vs OpenAI, Snap Rips, Ads in BMW, The Most Feared (John B. Quinn) Live",
+ "url": "https://www.youtube.com/watch?v=_hMRv35F-0w",
+ "duration_secs": 9269,
+ "word_source": "youtube-auto-captions (subs.en-orig.json3)",
+ "word_count": 28263,
+ "fetched_utc": "2026-08-05T19:36:59Z",
+ "programme": "TBPN (@TBPNLive) \u2014 technology/business daily livestream",
+ "caveat": "Identified by duration-window + upload_date, NOT a title-embedded date (TBPN titles carry no date string, unlike WNT). Whether this is the FULL daily show vs. a long segment is inferred from the /streams tab + duration window, not confirmed against an explicit 'full episode' label \u2014 see script header. Captions carry ASR spellings; a market-word matcher must expect near-misses, same as the WNT pattern this was copied from."
+}

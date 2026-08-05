@@ -166,6 +166,111 @@ pub struct LegSummary {
     pub died: Option<String>,
 }
 
+/// How a run ended. Written on EVERY terminated run, not only the clean ones.
+///
+/// 2026-08-05: `arm()` wrote `report.json` on exactly one of ~14 exit paths, so
+/// a run that died left nothing behind — MELI ended on the pipe idle guard
+/// (`src/source/pipe.rs`) and its whole record was lost, which is
+/// indistinguishable from an event that never armed. A run must always be able
+/// to say how it ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExitReason {
+    /// Source reached end-of-stream and every stage drained normally.
+    CleanDrain,
+    /// The source returned an error (idle guard, WS/pipe read failure, dial
+    /// never landed). The MELI 2026-08-05 class.
+    SourceError,
+    /// Fanout mode: every leg died, so the pipeline had nothing left to read.
+    AllLegsDied,
+    /// SIGTERM — the unattended kill (launchd, launcher trap, supervisor).
+    Sigterm,
+    /// `<state-dir>/STOP` or SIGINT: gate disarmed, pipeline winds down.
+    StopFile,
+    /// A stage thread panicked or a join failed.
+    PanicOrJoin,
+}
+
+/// `reason` plus whatever the failure said, so a post-mortem does not have to
+/// go back to the log to learn *why* a run stopped.
+#[derive(Debug, Clone, Serialize)]
+pub struct ExitRecord {
+    pub reason: ExitReason,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+impl ExitRecord {
+    pub fn clean() -> Self {
+        ExitRecord { reason: ExitReason::CleanDrain, detail: None }
+    }
+
+    pub fn with(reason: ExitReason, detail: impl Into<String>) -> Self {
+        ExitRecord { reason, detail: Some(detail.into()) }
+    }
+}
+
+/// The SIGTERM last-words record.
+///
+/// A killed run cannot drain, so it cannot produce a `PipelineReport` — but it
+/// must still say how it ended, and in the SAME shape as a full report, so
+/// post-event grading can ask one question of every run instead of
+/// special-casing the stub. `terminated` is retained for readers that predate
+/// `exit`.
+pub fn sigterm_stub_json(session_order_ids: &[String], ledger_spent_cents: u64) -> serde_json::Value {
+    serde_json::json!({
+        "terminated": "SIGTERM",
+        "exit": ExitRecord::with(ExitReason::Sigterm, "kill watcher: SIGTERM"),
+        "partial_report": true,
+        "session_order_ids": session_order_ids,
+        "ledger_spent_cents": ledger_spent_cents,
+    })
+}
+
+/// Assemble the run record that reaches `report.json`.
+///
+/// Split out of `main.rs::arm` so the assembly is testable without a binary:
+/// the failure it guards against is a run that ends and leaves NOTHING on
+/// disk, which is exactly what happened to MELI on 2026-08-05. `report` is
+/// `None` when the pipeline never produced one — the record is still emitted,
+/// carrying the event, the exit and whatever orders the executor managed.
+pub fn build_run_json(
+    event_id: &str,
+    report: Option<&PipelineReport>,
+    exec: Option<&crate::kalshi::executor::ExecReport>,
+    exit: &ExitRecord,
+) -> Result<serde_json::Value, serde_json::Error> {
+    let mut json = match report {
+        Some(r) => serde_json::to_value(r)?,
+        None => serde_json::json!({ "event_id": event_id, "partial_report": true }),
+    };
+    // Written here rather than trusted from the struct so both the full and the
+    // partial record carry it in the same place.
+    json["exit"] = serde_json::to_value(exit)?;
+    match exec {
+        Some(e) => {
+            // `orders` is a list of INTENTS; these three say what actually
+            // happened to them. Emitted as first-class keys so no reader has to
+            // re-derive the distinction that produced the false "23 orders
+            // placed" on 2026-08-05 (the true number was 0).
+            json["intents"] = e.orders.len().into();
+            json["sent"] = e.orders.iter().filter(|o| o.reached_wire()).count().into();
+            json["acked"] = e.orders.iter().filter(|o| o.acked()).count().into();
+            json["orders"] = serde_json::to_value(&e.orders)?;
+            json["lost_races"] = e.lost_races.into();
+            json["observe_noncross"] = e.observe_noncross.into();
+        }
+        None => {
+            json["intents"] = 0.into();
+            json["sent"] = 0.into();
+            json["acked"] = 0.into();
+            json["orders"] = serde_json::json!([]);
+            json["executor_report_missing"] = true.into();
+        }
+    }
+    Ok(json)
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct PipelineReport {
     pub event_id: String,
@@ -260,6 +365,84 @@ pub fn init_logging(json: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 2026-08-05: MELI died on the pipe idle guard and wrote no report, which
+    /// on disk is indistinguishable from an event that never armed. Every
+    /// terminated run must be able to state its exit, and the reason must
+    /// survive serialization in a form an ops script can match on.
+    #[test]
+    fn exit_record_serializes_reason_as_snake_case() {
+        let v = serde_json::to_value(ExitRecord::with(
+            ExitReason::SourceError,
+            "pipe source idle past 30s — dead webcast stream",
+        ))
+        .unwrap();
+        assert_eq!(v["reason"], "source_error");
+        assert!(v["detail"].as_str().unwrap().contains("idle past 30s"));
+    }
+
+    /// A clean drain carries no detail — and the key must be ABSENT rather
+    /// than null, so `jq 'has("detail")'` distinguishes "ended cleanly" from
+    /// "ended badly but nobody recorded why".
+    #[test]
+    fn clean_exit_omits_detail_entirely() {
+        let v = serde_json::to_value(ExitRecord::clean()).unwrap();
+        assert_eq!(v["reason"], "clean_drain");
+        assert!(v.get("detail").is_none(), "detail must be omitted, got {v}");
+    }
+
+    /// Every reason an ops script may branch on must round-trip to a distinct,
+    /// stable string; renaming one silently breaks post-event grading.
+    #[test]
+    fn every_exit_reason_has_a_distinct_wire_name() {
+        let all = [
+            ExitReason::CleanDrain,
+            ExitReason::SourceError,
+            ExitReason::AllLegsDied,
+            ExitReason::Sigterm,
+            ExitReason::StopFile,
+            ExitReason::PanicOrJoin,
+        ];
+        let names: Vec<String> =
+            all.iter().map(|r| serde_json::to_value(r).unwrap().as_str().unwrap().to_string()).collect();
+        let mut sorted = names.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(sorted.len(), all.len(), "duplicate wire names in {names:?}");
+        assert!(names.contains(&"all_legs_died".to_string()));
+    }
+
+    /// The SIGTERM stub is the only record an unattended kill leaves behind.
+    /// It must answer the same question a full report answers — "how did this
+    /// end?" — in the same place, or grading has to special-case it and will
+    /// eventually forget to.
+    #[test]
+    fn sigterm_stub_carries_the_same_exit_shape_as_a_full_report() {
+        let v = sigterm_stub_json(&["ord-1".to_string(), "ord-2".to_string()], 97);
+        assert_eq!(v["exit"]["reason"], "sigterm");
+        assert_eq!(v["partial_report"], true);
+        assert_eq!(v["ledger_spent_cents"], 97);
+        assert_eq!(v["session_order_ids"].as_array().unwrap().len(), 2);
+        // Retained for readers that predate `exit`.
+        assert_eq!(v["terminated"], "SIGTERM");
+    }
+
+    /// A run that dies before the pipeline yields anything still has to name
+    /// its event and keep `orders` an array — ops scripts index it directly.
+    #[test]
+    fn partial_record_names_its_event_and_always_has_orders() {
+        let v = build_run_json(
+            "KX-EVENT",
+            None,
+            None,
+            &ExitRecord::with(ExitReason::SourceError, "dead stream"),
+        )
+        .unwrap();
+        assert_eq!(v["event_id"], "KX-EVENT");
+        assert_eq!(v["partial_report"], true);
+        assert!(v["orders"].is_array() && v["orders"].as_array().unwrap().is_empty());
+        assert_eq!(v["executor_report_missing"], true);
+    }
 
     /// hdrhistogram guarantees 3 significant digits — quantile values may be
     /// off by up to 0.1%, so assert within that.

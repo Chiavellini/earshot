@@ -53,6 +53,19 @@ verdict is never a no-go.
   [risk]` + one `[[keywords]]` per tradeable market, with `allowlist_tickers`
   = the tradeable tickers. The file is a starting point the operator REVIEWS
   (dial-in, `starts_at`, and any best-effort variants) before arming.
+- **Phone-lane derivation:** `scripts/phone-lane-derive.py` turns a staged
+  webcast arm into a phone-only one — exactly one `twilio_stream` source with
+  the Q-REDIAL parameters, no `[arbiter]` (fanout requires >= 2 sources), a
+  bind port `deploy/caddy/Caddyfile` actually routes, and the matching
+  `configs/<ev>-phone-autorun.env`. It rewrites only `max_price_cents`,
+  `budget_contracts`, and `min_confidence_confirmed`, leaving ticker/phrase/
+  variants byte-identical, so `keywords_sha256` is preserved and the twin's
+  readiness study and dead-word ack carry over instead of forcing a
+  laptop-only TTS restudy on event morning. Caps come from `src/risk.rs`
+  (`MENTION_FILL_CAP_CENTS`) and the config's
+  `[risk].max_order_notional_cents`, never from memory: exceeding the first
+  makes `mention_fill_gate` refuse the run, and exceeding the second returns
+  `Refusal::OrderNotional` on every order.
 
 ## Obligations
 - Parse each market's rules into `{phrase, variants, said_n_times,

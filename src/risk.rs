@@ -21,11 +21,27 @@ pub const PROBE_LEDGER_CAP_CENTS: u64 = 100;
 /// a single order's price may cross a real ask up to this ceiling so the
 /// executor can actually fill. This is a per-order PRICE bound only — real
 /// spend stays clamped by the config notional caps AND the $1 probe ledger
-/// (`PROBE_LEDGER_CAP_CENTS`), which remain the money backstops. Chosen to
-/// cover the cheap mention strikes (~20–30¢ asks) while staying far under the
-/// $500 hard order cap. Gated behind `arm --i-am-live --allow-mention
-/// --fillable`; never reached by the default probe posture.
-pub const MENTION_FILL_CAP_CENTS: u64 = 50;
+/// (`PROBE_LEDGER_CAP_CENTS`), which remain the money backstops. Gated behind
+/// `arm --i-am-live --allow-mention --fillable`; never reached by the default
+/// probe posture.
+///
+/// RAISED 50 → 97 on 2026-08-05 (operator ruling). 50¢ was chosen to "cover the
+/// cheap mention strikes (~20–30¢ asks)", but the 26AUG05 morning tape refuted
+/// that premise: of 15 genuinely contested markets, the two we provably BEAT
+/// were resting at 60¢ (UBER-ZOOX, +1.73 s) and 72¢ (SHOP-OPEN, +0.68 s) —
+/// both above the old ceiling — while the only row a 50¢ cap would have crossed
+/// was DIS-TRUM at 39¢, a word never said on the call, which settled NO. The
+/// old ceiling excluded every win and admitted only the loss.
+///
+/// 97 is not arbitrary: it is where `ev_gate` cuts out on its own. At 1
+/// contract, cap 97 leaves gross 3¢ − 1¢ fee = 2¢ = `min_ev_cents` (pass);
+/// cap 98 leaves 1¢ (refused). Ceiling and EV gate now agree, so EV — not an
+/// arbitrary price bound — is the binding constraint.
+///
+/// Still a per-order PRICE bound only. At 97¢ with `max_order_notional_cents`
+/// = 100, `budget_contracts` MUST be 1 (97×2 = 194¢ → `Refusal::OrderNotional`),
+/// so this buys ONE ~97¢ contract per event, not a larger position.
+pub const MENTION_FILL_CAP_CENTS: u64 = 97;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]

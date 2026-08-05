@@ -1,5 +1,5 @@
 ---
-as_of: 2026-08-01
+as_of: 2026-08-05
 authority: architecture/claims.toml
 ---
 
@@ -30,6 +30,14 @@ The 2026-08-04 SPOT/PGR work extended four existing claims rather than opening
 new ones (doc-lint permits one open claim per node) and opened exactly one new
 claim, `missed_arm.reconcile` on `control.grade`. See
 `docs/POSTMORTEM-26AUG04.md`.
+
+The 2026-08-05 phone-lane-on-the-box work did the same: it extended
+`tls.deploy`, `phone.prepare`, `phone.supervise`, and `admission.capture`, and
+opened one new claim, `risk.mention_fill_ceiling` on `runtime.risk` (the
+`MENTION_FILL_CAP_CENTS` 50→97 raise had no claim at all). Its subject is host
+readiness moving from T-60 to prep time — see `VERIFICATIONS.md` Q-BOX for what
+the box actually looked like while TLN ran on the laptop, and
+`.claude/skills/phone-event-prep/` for the procedure that consumes it.
 
 Two of those deserve a note, because "active" understates how differently they
 are unfinished:

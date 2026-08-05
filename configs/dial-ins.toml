@@ -983,7 +983,7 @@ number_src    = "none published"
 confidence    = "high"
 last_verified = "2026-08-05"
 webcast_platform = "open-exchange"
-webcast_note  = "OpenExchange = the Ford 2026-07-28 login/session-gated class — resolve the m3u8 from a LOGGED-IN browser; top frame may never request it (iframe)"
+webcast_note  = "OpenExchange = the Ford 2026-07-28 login/session-gated class — resolve the m3u8 from a LOGGED-IN browser; top frame may never request it (iframe). RESOLVED METHOD, rehearsed live 2026-08-05T18:5xZ: the OpenExchange page only embeds a KnowledgeVision player. Do NOT try to read the m3u8 from the OpenExchange page — navigate the logged-in browser DIRECTLY to https://view.knowledgevision.com/presentation/redirect/{KVID}?email=<identity> so the player becomes the TOP frame, then read network requests. The player polls live/broadcasting.txt and live/player_config.txt (signed CloudFront); the HLS manifest only appears once the broadcast leaves stand_by, so this is a T-5 harvest, never advance. KVID=bee3398bfefd48479f9486f62deff008. passport-api.open-exchange.net 401s on every path unauthenticated — there is no headless route."
 
 [EBAY]
 tier          = "bridge_unpublished"
@@ -995,7 +995,7 @@ number_src    = "none published"
 confidence    = "high"
 last_verified = "2026-08-05"
 webcast_platform = "open-exchange"
-webcast_note  = "same Ford-class caution as DUOL; the per-event subdomain is already live — harvest the session tonight"
+webcast_note  = "OpenExchange = the Ford 2026-07-28 login/session-gated class — resolve the m3u8 from a LOGGED-IN browser; top frame may never request it (iframe). RESOLVED METHOD, rehearsed live 2026-08-05T18:5xZ: the OpenExchange page only embeds a KnowledgeVision player. Do NOT try to read the m3u8 from the OpenExchange page — navigate the logged-in browser DIRECTLY to https://view.knowledgevision.com/presentation/redirect/{KVID}?email=<identity> so the player becomes the TOP frame, then read network requests. The player polls live/broadcasting.txt and live/player_config.txt (signed CloudFront); the HLS manifest only appears once the broadcast leaves stand_by, so this is a T-5 harvest, never advance. KVID=6a4d96baa4c14d1588fcb4c09fb4e432. passport-api.open-exchange.net 401s on every path unauthenticated — there is no headless route."
 
 [FIG]
 tier          = "bridge_unpublished"
@@ -1041,11 +1041,31 @@ webcast_note  = "proprietary player — DevTools m3u8 read tonight if page opens
 tier          = "bridge_unpublished"
 qa_mechanism  = "phone_present"
 listen_access = "unknown"
+admission        = "held"
+admission_detail = "held 119.0s of a 120s probe cap at 2026-08-05T19:55Z, IN-WINDOW (T-35): bridge prompted 'Please enter your dial-in pin and press pound when finished' and then held us for the full cap. Auto-promote did not fire because registry-admit hit a tomllib ImportError under launchd's PATH; recorded by hand from the probe artifact."
+admission_probed = "2026-08-05"
+probe_artifact   = "corpus/bridge-probes/tln_2026_08_05.wav"
 evidence      = "Q2 2026 announcement (GlobeNewswire 2026-07-15, raw HTML read directly): 4:30 p.m. ET Aug 5 AFTER close (the 10:00 a.m. hypothesis is REFUTED); webcast via Notified/edge.media-server.com; 'For participants joining the call via phone, please register here prior to the start time to receive dial-in information' — a REGISTRATION-UNLOCKED dial-in (GRAB-class): register tonight, harvest number+passcode from the confirmation."
 evidence_src  = "GlobeNewswire 2026-07-15 (Talen Energy Q2 2026 announcement)"
-number_src    = "phone-registration confirmation (pending tonight's registration)"
+number_src    = "phone-registration confirmation, registered as bdelriom@actinver.com.mx 2026-08-05 — REGISTRATION-UNLOCKED as predicted. US toll-free + a per-registrant dial-in PIN; the page warns only one person may use a PIN at a time (register again for a second seat). Digits + PIN are gitignored in state/hunt/numbers.env, NEVER here."
 confidence    = "high"
 last_verified = "2026-08-05"
+reservation_window = true
+# WHY reservation_window: TWO probes on 2026-08-05, same number, same PIN, and
+# they meant opposite things.
+#   17:21Z (T-3h09m, OUTSIDE T-90..T-30) — connected, held 13.1s / 671 frames:
+#     "Please enter your dial-in pin and press pound when finished. The
+#      conference is not yet available. Please reconnect closer to the
+#      scheduled start time."
+#     Proves the NUMBER is live and the PIN format is <pin>#. Classifies
+#     NOTHING about admission. Recording "dropped" here would have been false
+#     evidence that permanently fails the preflight gate.
+#   19:55Z (T-35, IN-WINDOW) — the `admission = "held"` above.
+# The field stays set so a FUTURE quarter's untested probe degrades to a WARN
+# naming the window instead of a FAIL the operator cannot act on
+# (scripts/preflight-event.sh; scripts/admission-window-probe.sh refuses to dial
+# outside it). Full account: VERIFICATIONS.md Q-ADMIT addendum 2026-08-05.
+admission_note = "off-window probe 2026-08-05T17:21Z: number live, PIN prompt confirmed (<pin>#), conference not yet provisioned; artifact corpus/bridge-probes/tln_2026_08_05.wav"
 webcast_platform = "notified"
 webcast_note  = "edge.media-server.com direct event frame — historically resolvable without login; webcast registration also required"
 

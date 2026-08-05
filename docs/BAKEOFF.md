@@ -510,6 +510,67 @@ this table; the question was why it doesn't fire early), **P4** GPU
 finetune go/no-go on the P1–P3 evidence. Holdout remains UNRUN per
 protocol (no frozen config to one-shot).
 
+### ⚠ P1 IS MISLABELLED EVERYWHERE — "chunk-16" is what we ALREADY run (2026-08-05)
+
+`P1 chunk-16 re-export (160 ms quantum)` cannot deliver anything: **the armed
+model already IS the chunk-16 export, and chunk-16 is 320 ms, not 160 ms.**
+Evidence, all local and checkable:
+
+- the encoder on disk is `models/sherpa-onnx-streaming-zipformer-ctc-small-2024-03-18/`
+  **`ctc-epoch-30-avg-3-chunk-16-left-128.onnx`** — the chunk size is in the filename;
+- its metadata is `decode_chunk_len=32` → 320 ms (`VERIFICATIONS.md`), i.e. icefall's
+  `decode_chunk_len = chunk_size × 2` in 10 ms fbank frames;
+- upstream publishes only this one export for the checkpoint
+  (`csukuangfj/icefall-asr-librispeech-streaming-zipformer-small-2024-03-18`).
+
+Re-exporting at chunk-16 would reproduce the current artifact byte-for-byte.
+**A 160 ms quantum requires `--chunk-size 8` (`decode_chunk_len=16`).** This doc's
+own G2 section already had the convention right for the KWS lane ("chunk-8
+(160 ms)"); the CTC lane text did not. Same correction is owed in
+`docs/CTC-MODEL-SOURCING.md:15`, `docs/RACE-CHECKLIST.md:67`, and
+`docs/RACE-STRATEGY.md:61`, which are other nodes' files.
+
+**The catch that makes P1 a real experiment rather than a build step:** the
+checkpoint's trained chunk grid is 16/32/64 — **8 is below it**. A chunk-8 export
+runs the encoder at a chunk size it never saw in training, so quality is an open
+question, not a given. That is precisely what the interleaved bench below is for;
+do not promote a chunk-8 export on the latency number alone.
+
+### How to run P1 once a chunk-8 export exists (harness ready 2026-08-05)
+
+`bench-detector` grids engine × chunk_ms × **model_dir**. Sweep both exports
+in ONE invocation so the cells share machine state — a latency delta measured
+across two separate runs is not defensible on a laptop with 3.5× wall-clock
+variance (the E0c method, `docs/LATENCY-PROOF.md`):
+
+```
+cargo run --release -- bench-detector \
+  --config <cfg> --engines streaming_ctc --chunk-ms 80 --paced \
+  --model-dir models/sherpa-onnx-streaming-zipformer-ctc-small-2024-03-18,models/<chunk8-export> \
+  --calls <one-call> --out bench-p1.json
+```
+
+Read `consumed_lag_p50_ms` — it is the cross-engine-comparable column;
+`emit_lag_*` is engine-defined. The pre-registered expectation is a
+**−160 ms** shift in decode lag (320 ms quantum → 160 ms) at unchanged
+recall/FA; a lag cut bought with a recall drop is a FAIL, not a win. Because
+chunk-8 is outside the trained grid, a recall drop is a live possibility and
+the accuracy columns are the gate, not a formality.
+
+Omitting `--model-dir` leaves the config's model alone and produces exactly
+the pre-2026-08-05 grid and table. A `--model-dir` that cannot be applied
+(engine `stub`, no matching `[detector.<engine>]` section, or a non-directory
+path) REFUSES rather than silently running the configured model twice — two
+identical cells would read as "the model made no difference," which is the
+same shape as the genuine E0c null result and would be indistinguishable
+from it.
+
+**Harness validated 2026-08-05**, not the export (which does not exist yet):
+sweeping the *same* model via two path spellings produced byte-identical
+`rows` and `fa_autopsy`, and `--model-dir <the config's own path>` reproduced
+the no-flag cell exactly. Determinism is the property the interleaved
+comparison depends on, so it is checked rather than assumed.
+
 ### streaming_ctc prefix-fire diagnosis (P3, 2026-07-21) — prefix-firing is NOT the overtake lever for this vocabulary
 
 The paced table above already contains the prefix number: streaming_ctc's

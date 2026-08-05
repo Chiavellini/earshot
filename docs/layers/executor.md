@@ -49,6 +49,21 @@ layer), or the wire itself (transport seam — see
   `best_ask` book snapshot + `book_age_ns` snapshot age) aggregated into
   `ExecReport { orders, lost_races, observe_noncross, recorder }`, returned
   when the channel closes.
+- **`orders` is a list of INTENTS, not of orders placed.** Every one of the
+  five non-fire early returns (non-crossing, EV gate, dry-run, risk refusal,
+  send-failed-and-proven-absent) pushes a record into it. The only honest
+  answers are the two predicates on `OrderRecord`:
+  - `reached_wire()` ⇔ `send_ts.is_some()` — stamped at exactly one place,
+    around `transport.send_order`.
+  - `acked()` ⇔ `order_id.is_some()` — strictly stronger; also true for an
+    order recovered by the ambiguous-outcome status query, which is why it
+    keys on the id rather than `ack_ts`.
+  `telemetry::build_run_json` emits `intents`/`sent`/`acked` from these so no
+  reader re-derives them. Counting `orders.len()` reported "23 orders placed"
+  on 2026-08-05 when the true number was 0 — every record had short-circuited
+  at the non-crossing branch. `scripts/missed-arm-check.py` and
+  `scripts/run-verdict.sh` count `sent`, falling back to `send_ts != null` for
+  reports written before that key existed.
 - Every acked `order_id` is pushed into `kalshi::OrderRegistry` — the kill
   switch's cancel set.
 
@@ -117,4 +132,10 @@ layer), or the wire itself (transport seam — see
 - `tests/exec_fix_mock.rs`: the same executor through `OrderTransport::Fix`
   against an in-process mock FIX server — fill mapping, gates upstream of the
   wire, and the dual-wire ambiguous path (no ER → REST status query).
+- Wire truth — `cargo test --lib executor`:
+  `no_early_return_counts_as_having_reached_the_wire` walks all five non-fire
+  exits and asserts none is `reached_wire()`/`acked()`;
+  `sent_and_acked_are_distinct_and_both_reachable` covers the success path and
+  the recovered-after-ambiguous-send case;
+  `run_json_counts_intents_sent_and_acked_separately` pins the report counters.
 - Live: `earshot probe-order` (1¢/1-contract, non-mention, $1 ledger).

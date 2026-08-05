@@ -76,7 +76,14 @@ chunks = d.get("chunks_in") or 0
 first  = d.get("first_capture_ts")
 legs   = d.get("per_leg") or []
 dets   = len(d.get("detections") or [])
-orders = len(d.get("orders") or [])
+# INTENTS vs SENT. `orders` lists every intent the executor processed, most of
+# which never reach Kalshi (non-crossing, EV gate, dry-run, risk refusal).
+# Reporting len(orders) as "orders" said 23 on 2026-08-05 when 0 had been sent.
+# Prefer the report's own `sent`; derive it for runs written before that key.
+intents = len(d.get("orders") or [])
+orders  = d.get("sent")
+if orders is None:
+    orders = sum(1 for o in (d.get("orders") or []) if o.get("send_ts") is not None)
 ev     = d.get("event_id", "?")
 
 dead = [l for l in legs if l.get("died")]
@@ -108,12 +115,12 @@ if dead or mute:
     lost = ", ".join(label(l) for l in (dead or mute))
     print(f"WARN\taudio OK, {len(dead or mute)}/{len(legs)} leg(s) lost ({lost})\t"
           f"{ev}: frames_in={frames} chunks_in={chunks} detections={dets} "
-          f"orders={orders}. legs: {legdesc}. Fanout survived; check the dead leg "
+          f"intents={intents} sent={orders}. legs: {legdesc}. Fanout survived; check the dead leg "
           f"before pooling any latency from this run.")
     raise SystemExit(0)
 
 print(f"PASS\theard audio on every leg\t{ev}: frames_in={frames} "
-      f"chunks_in={chunks} detections={dets} orders={orders}. legs: {legdesc}.")
+      f"chunks_in={chunks} detections={dets} intents={intents} sent={orders}. legs: {legdesc}.")
 PY
 }
 

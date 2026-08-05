@@ -1,0 +1,12 @@
+{
+ "session": "20260723",
+ "video_id": "8Jqi1yCniHk",
+ "title": "AMD CEO Lisa Su Live on TBPN",
+ "url": "https://www.youtube.com/watch?v=8Jqi1yCniHk",
+ "duration_secs": 6566,
+ "word_source": "youtube-auto-captions (subs.en-orig.json3)",
+ "word_count": 19670,
+ "fetched_utc": "2026-08-05T22:34:55Z",
+ "programme": "TBPN (@TBPNLive) \u2014 technology/business daily livestream",
+ "caveat": "Identified by duration-window + upload_date, NOT a title-embedded date (TBPN titles carry no date string, unlike WNT). Whether this is the FULL daily show vs. a long segment is inferred from the /streams tab + duration window, not confirmed against an explicit 'full episode' label \u2014 see script header. Captions carry ASR spellings; a market-word matcher must expect near-misses, same as the WNT pattern this was copied from."
+}

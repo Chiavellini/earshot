@@ -1,0 +1,153 @@
+{
+ "config": "webcast-you-26aug05-arm-wc",
+ "keywords_sha256": "2a2e057f09ba9ea70e9f9ba542652ffc1bba9966fc3452d05c753097b7dc7c35",
+ "date": "2026-08-05",
+ "engine": "streaming_ctc",
+ "voices": [
+  "Samantha",
+  "Daniel",
+  "Paulina"
+ ],
+ "carriers": 2,
+ "keywords": [
+  {
+   "ticker": "KXEARNINGSMENTIONYOU-26AUG05-AGEN",
+   "phrase": "agent",
+   "variants": [
+    "agent",
+    "agents",
+    "agentic",
+    "agentics"
+   ],
+   "clips": 36,
+   "confirmed": 138
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONYOU-26AUG05-AMEX",
+   "phrase": "amex",
+   "variants": [
+    "amex",
+    "amexs",
+    "a m e x",
+    "american express"
+   ],
+   "clips": 36,
+   "confirmed": 36
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONYOU-26AUG05-EPIC",
+   "phrase": "epic",
+   "variants": [
+    "epic",
+    "epics"
+   ],
+   "clips": 18,
+   "confirmed": 28
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONYOU-26AUG05-FEDR",
+   "phrase": "fedramp",
+   "variants": [
+    "fedramp",
+    "fedramps"
+   ],
+   "clips": 18,
+   "confirmed": 28
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONYOU-26AUG05-GOVT",
+   "phrase": "govtech",
+   "variants": [
+    "govtech",
+    "govtechs",
+    "gov tech",
+    "gov techs"
+   ],
+   "clips": 36,
+   "confirmed": 0
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONYOU-26AUG05-HOME",
+   "phrase": "home depot",
+   "variants": [
+    "home depot"
+   ],
+   "clips": 9,
+   "confirmed": 6
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONYOU-26AUG05-MEDI",
+   "phrase": "medicare",
+   "variants": [
+    "medicare",
+    "medicares",
+    "medicaid",
+    "medicaids"
+   ],
+   "clips": 36,
+   "confirmed": 20
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONYOU-26AUG05-REAL",
+   "phrase": "real id",
+   "variants": [
+    "real id",
+    "real i d",
+    "real eye dee"
+   ],
+   "clips": 27,
+   "confirmed": 24
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONYOU-26AUG05-SAMS",
+   "phrase": "samsung",
+   "variants": [
+    "samsung",
+    "samsungs"
+   ],
+   "clips": 18,
+   "confirmed": 18
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONYOU-26AUG05-SHUT",
+   "phrase": "shutdown",
+   "variants": [
+    "shutdown",
+    "shutdowns",
+    "shut down"
+   ],
+   "clips": 27,
+   "confirmed": 34
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONYOU-26AUG05-SOCI",
+   "phrase": "social security",
+   "variants": [
+    "social security"
+   ],
+   "clips": 9,
+   "confirmed": 24
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONYOU-26AUG05-TSAP",
+   "phrase": "tsa precheck",
+   "variants": [
+    "tsa precheck",
+    "t s a precheck",
+    "tsa pre check",
+    "t s a pre check"
+   ],
+   "clips": 36,
+   "confirmed": 20
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONYOU-26AUG05-WORL",
+   "phrase": "world cup",
+   "variants": [
+    "world cup"
+   ],
+   "clips": 9,
+   "confirmed": 8
+  }
+ ]
+}

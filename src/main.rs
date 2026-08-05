@@ -17,7 +17,7 @@ use earshot::detector::Detector as _;
 use earshot::fixture::FixtureSpec;
 use earshot::kalshi::auth::{Presigner, Signer};
 use earshot::kalshi::book::{run_ws, BookCache};
-use earshot::kalshi::executor::{prestage_orders, run_executor, ExecCtx};
+use earshot::kalshi::executor::{prestage_orders, run_executor, ExecCtx, ExecReport};
 use earshot::kalshi::rest::{OrderBodyV2, RestClient, ORDERS_ENDPOINT};
 use earshot::kalshi::transport::OrderTransport;
 use earshot::kalshi::validator::{
@@ -31,6 +31,7 @@ use earshot::source::pipe::PipeSource;
 use earshot::source::replay::ReplaySource;
 use earshot::source::twilio_ws::TwilioWsSource;
 use earshot::telemetry;
+use earshot::telemetry::{ExitReason, ExitRecord, PipelineReport};
 use earshot::types::SourceId;
 
 #[derive(Parser)]
@@ -163,12 +164,19 @@ enum Command {
         /// Corpus root containing manifests/ and the audio they reference.
         #[arg(long, default_value = "corpus")]
         corpus: PathBuf,
-        /// Comma-separated: stub,sherpa_kws
+        /// Comma-separated: stub,sherpa_kws,streaming_ctc
         #[arg(long, value_delimiter = ',', default_value = "sherpa_kws")]
         engines: Vec<String>,
         /// Comma-separated chunk sizes in ms.
         #[arg(long, value_delimiter = ',', default_value = "160")]
         chunk_ms: Vec<u32>,
+        /// Comma-separated model dirs to sweep, overriding the engine's
+        /// `model_dir`. Omit to use the config's own model. Two exports
+        /// compared this way run INTERLEAVED in one invocation, so they share
+        /// machine state — the only defensible way to measure a latency delta
+        /// on a box with 3.5x run variance (docs/LATENCY-PROOF.md §E0c).
+        #[arg(long, value_delimiter = ',')]
+        model_dir: Vec<PathBuf>,
         /// dev = tuning surface; holdout = run ONCE with the frozen config.
         #[arg(long, default_value = "dev")]
         split: String,
@@ -395,7 +403,17 @@ fn run(command: Command) -> Result<(), AnyErr> {
             println!("cancelled: {}", serde_json::to_string_pretty(&resp)?);
             Ok(())
         }),
-        Command::BenchDetector { config, corpus, engines, chunk_ms, split, paced, calls, out } => {
+        Command::BenchDetector {
+            config,
+            corpus,
+            engines,
+            chunk_ms,
+            model_dir,
+            split,
+            paced,
+            calls,
+            out,
+        } => {
             let engines = engines
                 .iter()
                 .map(|e| match e.as_str() {
@@ -418,6 +436,7 @@ fn run(command: Command) -> Result<(), AnyErr> {
                 split,
                 paced,
                 calls,
+                model_dirs: model_dir,
             })?;
             print!("\n{}", report.render_table());
             std::fs::write(&out, serde_json::to_string_pretty(&report)?)?;
@@ -1233,11 +1252,10 @@ async fn arm(
             if report_for_term.exists() {
                 return;
             }
-            let json = serde_json::json!({
-                "terminated": "SIGTERM",
-                "session_order_ids": registry_for_term.ids(),
-                "ledger_spent_cents": gate_for_term.ledger_spent_cents(),
-            });
+            let json = telemetry::sigterm_stub_json(
+                &registry_for_term.ids(),
+                gate_for_term.ledger_spent_cents(),
+            );
             if let Ok(s) = serde_json::to_string_pretty(&json) {
                 let _ = earshot::fsio::write_atomic(&report_for_term, s.as_bytes());
             }
@@ -1264,6 +1282,10 @@ async fn arm(
         Ok(Some(_)) => tracing::warn!("warm-fire id unexpectedly matched an order — ignoring"),
         Err(e) => tracing::warn!("warm-fire query failed (non-fatal): {e}"),
     }
+    // Remembered before `built` moves: a fanout pipeline only returns Err once
+    // EVERY leg has died (pipeline/mod.rs), which is a different diagnosis from
+    // a single source failing, and the report should say which.
+    let is_fanout = matches!(built, BuiltPipeline::Fanout { .. });
     let pipeline_task = tokio::task::spawn_blocking(move || match built {
         BuiltPipeline::Single { source, detector } => {
             run_pipeline(&event_id, chunk_ms, preproc_cfg, source, detector, table, Some(intent_tx), perf)
@@ -1281,10 +1303,14 @@ async fn arm(
     // when the config has no Twilio source — the launcher only consumes it
     // for phone events); never written by the replay path.
     write_listener_ready(state_dir, twilio_port.unwrap_or(0))?;
-    let mut report = pipeline_task.await??;
+    // Deliberately NOT `??`. The pipeline's outcome decides the exit REASON;
+    // it must never decide whether a report exists. Before 2026-08-05 an
+    // errored pipeline skipped every line below and the run vanished (MELI).
+    let pipeline_outcome = pipeline_task.await;
 
-    // Pipeline done → intent_tx dropped → executor drains and returns.
-    let exec_report = exec_task.await?;
+    // Pipeline finished or died → `intent_tx` dropped either way → the
+    // executor drains and returns whatever it managed to do.
+    let exec_outcome = exec_task.await;
     watcher.abort();
     ws.abort();
     // All debits are in; force a final durable ledger write, then stop the
@@ -1293,31 +1319,116 @@ async fn arm(
     persister.abort();
     conn_warmer.abort();
 
-    report.edges.extend(exec_report.recorder.snapshot());
-    print!("\n{}", report.render_table());
-    println!(
-        "\norders ({} total, {} LOST_RACE, {} observe non-crossing by design):",
-        exec_report.orders.len(),
-        exec_report.lost_races,
-        exec_report.observe_noncross
-    );
-    for o in &exec_report.orders {
-        println!(
-            "  {} {} x{} @≤{}¢ [{}] {}",
-            o.client_order_id,
-            o.ticker,
-            o.count,
-            o.price_cents,
-            if o.dry_run { "dry" } else { "LIVE" },
-            o.refusal.clone().or(o.order_status.clone()).unwrap_or_default(),
-        );
+    let exec_report = exec_outcome.as_ref().ok();
+    let (report, exit, failure): (Option<PipelineReport>, ExitRecord, Option<AnyErr>) =
+        match pipeline_outcome {
+            Ok(Ok(mut r)) => {
+                if let Some(e) = exec_report {
+                    r.edges.extend(e.recorder.snapshot());
+                }
+                (Some(r), ExitRecord::clean(), None)
+            }
+            Ok(Err(e)) => {
+                // Fanout only surfaces Err when every leg is gone.
+                let reason =
+                    if is_fanout { ExitReason::AllLegsDied } else { ExitReason::SourceError };
+                let rec = ExitRecord::with(reason, e.to_string());
+                (None, rec, Some(Box::new(e) as AnyErr))
+            }
+            Err(join) => {
+                let rec = ExitRecord::with(ExitReason::PanicOrJoin, join.to_string());
+                (None, rec, Some(Box::new(join) as AnyErr))
+            }
+        };
+
+    finish_run(&report_path, &cfg.event.id, report, exec_report, exit)?;
+
+    match failure {
+        // The report is on disk; now fail loudly so the exit code is honest.
+        Some(e) => Err(e),
+        None => match exec_outcome {
+            Ok(_) => Ok(()),
+            Err(join) => Err(Box::new(join) as AnyErr),
+        },
+    }
+}
+
+/// The ONE place an armed run's report reaches disk, and the one place its
+/// summary is printed. Called on every terminated path — clean drain, source
+/// error, all-legs-died, panic — so "no report" once again means "never
+/// armed" rather than "died and told nobody".
+///
+/// `report` is `None` when the pipeline never produced one; the run still
+/// records its event, its exit and any orders the executor managed, because a
+/// partial record beats silence (2026-08-05 MELI).
+fn finish_run(
+    report_path: &Path,
+    event_id: &str,
+    report: Option<PipelineReport>,
+    exec: Option<&ExecReport>,
+    exit: ExitRecord,
+) -> Result<(), AnyErr> {
+    match &report {
+        Some(r) => print!("\n{}", r.render_table()),
+        None => println!(
+            "\nno pipeline report — run ended as {:?}: {}",
+            exit.reason,
+            exit.detail.clone().unwrap_or_default()
+        ),
+    }
+    match exec {
+        Some(e) => {
+            // Lead with what reached Kalshi. The old line printed
+            // `orders.len()` — an INTENT count — and tagged every row [LIVE]
+            // from `!dry_run`, so a run that sent nothing read as 23 orders
+            // placed (2026-08-05). Never describe a posture by its flag.
+            let sent = e.orders.iter().filter(|o| o.reached_wire()).count();
+            let acked = e.orders.iter().filter(|o| o.acked()).count();
+            println!(
+                "\nintents {} — SENT to Kalshi {} ({} acked), {} never sent \
+                 ({} LOST_RACE, {} observe non-crossing by design):",
+                e.orders.len(),
+                sent,
+                acked,
+                e.orders.len() - sent,
+                e.lost_races,
+                e.observe_noncross
+            );
+            for o in &e.orders {
+                let wire = if o.dry_run {
+                    "dry"
+                } else if o.acked() {
+                    "ACKED"
+                } else if o.reached_wire() {
+                    "SENT"
+                } else {
+                    "not-sent"
+                };
+                // A LOST_RACE sets neither refusal nor order_status and used to
+                // print as an empty string — visually identical to an accepted
+                // order with no status yet.
+                let why = o
+                    .refusal
+                    .clone()
+                    .or_else(|| o.order_status.clone())
+                    .unwrap_or_else(|| {
+                        if o.lost_race {
+                            format!("no ask at or under {}¢", o.price_cents)
+                        } else {
+                            String::new()
+                        }
+                    });
+                println!(
+                    "  {} {} x{} @≤{}¢ [{}] {}",
+                    o.client_order_id, o.ticker, o.count, o.price_cents, wire, why,
+                );
+            }
+        }
+        None => println!("\nexecutor produced no report (task failed) — orders unknown"),
     }
 
-    let mut json = serde_json::to_value(&report)?;
-    json["orders"] = serde_json::to_value(&exec_report.orders)?;
-    json["lost_races"] = exec_report.lost_races.into();
-    json["observe_noncross"] = exec_report.observe_noncross.into();
-    earshot::fsio::write_atomic(&report_path, serde_json::to_string_pretty(&json)?.as_bytes())?;
+    let json = telemetry::build_run_json(event_id, report.as_ref(), exec, &exit)?;
+    earshot::fsio::write_atomic(report_path, serde_json::to_string_pretty(&json)?.as_bytes())?;
     println!("\nreport written to {}", report_path.display());
     Ok(())
 }

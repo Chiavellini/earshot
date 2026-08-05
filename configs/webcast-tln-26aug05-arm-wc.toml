@@ -16,7 +16,14 @@
 # 07-22 post-mortems #1/#2). YouTube events: do NOT use this template; keep
 # the frozen yt-dlp leg (configs/webcast-tsla.toml) until a streamlink-vs-
 # YouTube ladder number exists (capture first).
-# Posture: mention-probe observe (1¢ non-crossing) — fill posture is gated on
+# Posture: MENTION-FILL (2026-08-05 operator ruling, W7 lifted for this slate):
+# max_price_cents = 97 (MENTION_FILL_CAP_CENTS ceiling, raised 50->97 26AUG05),
+# budget_contracts = 1 (97x2=194c would exceed max_order_notional_cents=100),
+# min_confidence_confirmed = 0.22 (26AUG05 tape: all 5 NO markets fired
+#   0.152-0.217, everything >=0.24 settled YES; IN-SAMPLE n=26, NOT validated)
+# => orders MAY cross and fill, ONE ~97c contract per event. Spend double-bound per event
+# by [risk].max_event_notional_cents=100 and the per-event $1 probe ledger.
+# Prior posture: mention-probe observe (1¢ non-crossing) — fill posture was gated on
 # the Phase-4 precision verdict (docs/RACE-STRATEGY.md).
 
 [event]
@@ -114,108 +121,109 @@ allowlist_tickers = [
 market_ticker    = "KXEARNINGSMENTIONTLN-26AUG05-AFFO"
 phrase           = "afford"
 variants         = ["afford", "affords", "affordable", "affordables", "affordability", "affordabilitys"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Amazon (KXEARNINGSMENTIONTLN-26AUG05-AMAZ) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONTLN-26AUG05-AMAZ"
 phrase           = "amazon"
 variants         = ["amazon", "amazons"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Anthropic / Claude (KXEARNINGSMENTIONTLN-26AUG05-ANTH) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONTLN-26AUG05-ANTH"
 phrase           = "anthropic"
 variants         = ["anthropic", "anthropics", "claude", "claudes"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Behind the Meter (KXEARNINGSMENTIONTLN-26AUG05-BEHI) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONTLN-26AUG05-BEHI"
 phrase           = "behind the meter"
 variants         = ["behind the meter"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Bitcoin (KXEARNINGSMENTIONTLN-26AUG05-BITC) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONTLN-26AUG05-BITC"
 phrase           = "bitcoin"
 variants         = ["bitcoin", "bitcoins"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Fossil (KXEARNINGSMENTIONTLN-26AUG05-FOSS) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONTLN-26AUG05-FOSS"
 phrase           = "fossil"
 variants         = ["fossil", "fossils"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Headwind (KXEARNINGSMENTIONTLN-26AUG05-HEAD) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONTLN-26AUG05-HEAD"
 phrase           = "headwind"
 variants         = ["headwind", "headwinds"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Shapiro (KXEARNINGSMENTIONTLN-26AUG05-SHAP) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONTLN-26AUG05-SHAP"
 phrase           = "shapiro"
 variants = ["shapiro", "shapiros", "sha piro", "shapeero"]  # widened 2026-08-05 (study confirmed:0; the CTC splits these compounds — the spaced forms are what it actually emits; proven live this morning on SHOP openai + UBER nvidia/zoox/lyft)
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # SMR (KXEARNINGSMENTIONTLN-26AUG05-SMR) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONTLN-26AUG05-SMR"
 phrase           = "smr"
 variants         = ["smr", "smrs", "s m r"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Solar (KXEARNINGSMENTIONTLN-26AUG05-SOLA) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONTLN-26AUG05-SOLA"
 phrase           = "solar"
 variants         = ["solar", "solars"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Tailwind (KXEARNINGSMENTIONTLN-26AUG05-TAIL) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONTLN-26AUG05-TAIL"
 phrase           = "tailwind"
 variants = ["tailwind", "tailwinds", "tail wind", "tail winds"]  # widened 2026-08-05 (study confirmed:0; the CTC splits these compounds — the spaced forms are what it actually emits; proven live this morning on SHOP openai + UBER nvidia/zoox/lyft)
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
-
+min_confidence_confirmed = 0.22
 # Tariff (KXEARNINGSMENTIONTLN-26AUG05-TARI) — corpus-tuned; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONTLN-26AUG05-TARI"
 phrase           = "tariff"
 variants         = ["tariff", "tariffs"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 confirmed_threshold = 0.1
 boost            = 3.0
 

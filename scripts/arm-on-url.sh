@@ -22,7 +22,7 @@ set -uo pipefail
 REPO="${EARSHOT_REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
 cd "$REPO"
 
-SLUG="" KIND="" CONFIG="" ACCOUNT="" DEADLINE_HHMM="" LIVE="" SECS=6
+SLUG="" KIND="" CONFIG="" ACCOUNT="" DEADLINE_HHMM="" LIVE="" FILLABLE="" SECS=6
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --slug)         SLUG="${2:?}"; shift 2 ;;
@@ -32,12 +32,18 @@ while [[ $# -gt 0 ]]; do
     --deadline-utc) DEADLINE_HHMM="${2:?}"; shift 2 ;;
     --secs)         SECS="${2:?}"; shift 2 ;;
     --i-am-live)    LIVE="--i-am-live"; shift ;;
+    # Forwarded to launch-webcast.sh, which owns the W7 ruling (lifted
+    # 2026-08-05 for this slate). Requires --i-am-live; checked below so a
+    # misconfigured timer fails at install time, not at T-0.
+    --fillable)     FILLABLE="--fillable"; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
 [[ -n "$SLUG" && -n "$KIND" && -n "$CONFIG" && -n "$ACCOUNT" && -n "$DEADLINE_HHMM" ]] || {
-  echo "usage: arm-on-url.sh --slug S --kind youtube|hls --config C --account A --deadline-utc HH:MM [--i-am-live]" >&2
+  echo "usage: arm-on-url.sh --slug S --kind youtube|hls --config C --account A --deadline-utc HH:MM [--i-am-live] [--fillable]" >&2
   exit 2; }
+[[ -z "${FILLABLE:-}" || -n "$LIVE" ]] || {
+  echo "--fillable requires --i-am-live" >&2; exit 2; }
 
 URLF="$HOME/$SLUG-stream.url"
 LOG="$HOME/$SLUG-armonurl-$(date -u +%Y%m%dT%H%M%SZ).log"
@@ -115,5 +121,5 @@ jnl pcm-gate ok "decoded PCM on $(hostname -s)"
 # redundant: step 2 just decoded real PCM off this exact URL, which is a
 # strictly stronger liveness proof than an is_live poll.
 echo "ARMING $SLUG at $(date -u +%FT%TZ)"
-jnl arm-handoff info "exec launch-webcast.sh posture=${LIVE:---dry-run}"
-exec "$REPO/scripts/launch-webcast.sh" --config "$CONFIG" --account "$ACCOUNT" $LIVE
+jnl arm-handoff info "exec launch-webcast.sh posture=${LIVE:---dry-run}${FILLABLE:+ fillable}"
+exec "$REPO/scripts/launch-webcast.sh" --config "$CONFIG" --account "$ACCOUNT" $LIVE $FILLABLE

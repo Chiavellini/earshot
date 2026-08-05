@@ -1,9 +1,27 @@
 # KXEARNINGSMENTIONAMD-26AUG04 — webcast arm config, generated 2026-08-04 by scripts/stage-afternoon-26aug04.py
 #
-# VENUE: resolved at ~T-0 into $HOME/amd-stream.url. All four 2026-08-04
-# afternoon events are `bridge_unpublished` (no dial-in in any scanned 8-K, and
-# none published on the IR page), so this is the only lane. If a dial-in turns
-# up, add a twilio_stream leg -- do not replace these.
+# VENUE: webcast resolved at ~T-0 into $HOME/amd-stream.url.
+#
+# UPDATED 2026-08-04 ~19:15Z — THE DIAL-IN TURNED UP, so per this header's own
+# original instruction the twilio_stream leg is ADDED BELOW and the two pipe
+# legs are KEPT. AMD stayed `bridge_unpublished` to every automated route (EDGAR
+# 8-K sweep HUNT-NONE, IR page bare); the participant bridge arrived by direct
+# reply to the analyst registration, which is exactly the "issued privately to
+# covering analysts" case the [AMD] registry note predicted. Digits are NOT in
+# this file — they live in state/hunt/numbers-probed.env (0600, gitignored)
+# after the promoting probe, and are passed to launch-event.sh as --to/--dtmf.
+#
+# This is now a THREE-leg fanout: phone + streamlink + tuned-ffmpeg. Phone is
+# the faster lane (measured 4.1-8.2 s ahead of webcast on the same CMG call,
+# 2026-07-29), and fanout is leg-resilient (src/pipeline/mod.rs:304 — a dead leg
+# is recorded as per_leg[i].died and siblings keep running; only an all-legs-dead
+# pipeline fails). So if the webcast URL never resolves, the phone leg still
+# carries the event, and vice versa.
+#
+# LAUNCH WITH scripts/launch-event.sh (it dials), NOT launch-webcast.sh.
+# Requires [AMD] admission = "held" in configs/dial-ins.toml first — a number is
+# not admission (THE MSFT RULE). See docs/POSTMORTEM-26AUG04.md for what skipping
+# that costs.
 #
 # Posture: 1c mention-probe observe (non-crossing). Fill posture stays gated on
 # the unscored Phase-4 precision verdict.
@@ -38,6 +56,23 @@ fp32              = true
 [arbiter]
 mode = "fanout"
 
+# Leg 0 — PHONE. The participant bridge (analyst registration, 2026-08-04).
+# max_reconnects / idle_timeout_secs are the Q-REDIAL production values pinned
+# 2026-07-29 (drop -> audio in 4.03 s); scripts/slate-stage.sh:520 emits the same
+# pair for every derived phone arm. They are MANDATORY: launch-event.sh refuses a
+# twilio config without mid-call persistence (exit 2) and preflight mirrors it as
+# a FAIL, because a one-shot phone leg silently ends the event on the first drop.
+#
+# ⚠ SPACING IS LOAD-BEARING: preflight-event.sh:521,583,783 select the phone
+# gates (TLS ingress, mid-call persistence, bridge admission) with a LITERAL
+# `grep -q 'kind = "twilio'`. Aligning the `=` here makes that grep miss and all
+# three gates SILENTLY SKIP. Keep single spaces around this one `=`.
+[[sources]]
+kind = "twilio_stream"
+bind = "127.0.0.1:8080"
+max_reconnects = 2
+idle_timeout_secs = 8
+
 [[sources]]
 kind = "pipe"
 label = "streamlink"
@@ -55,6 +90,31 @@ cmd = [
   "/bin/sh", "-c",
   "ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 2000000 -analyzeduration 5000000 -live_start_index -1 -http_persistent 1 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2 -i \"$(cat $HOME/amd-stream.url)\" -vn -f s16le -ac 1 -ar 16000 -",
 ]
+
+# ── OPERATOR HANDLER (Class B admission) ───────────────────────────────────
+# Added 2026-08-04 19:25Z after the T-98m admission probe came back
+# operator_screened: +18774078037 with dtmf 13755754# does NOT self-admit —
+# InCom Conferencing routes to a human queue ("the next available conference
+# specialist will be with you momentarily", looping) and hung up on our silence
+# at 55.6 s. Evidence: corpus/bridge-probes/amd_2026_08_04.{wav,txt}.
+#
+# The ladder: launch-event.sh --operator-handler pages cell_number into an
+# `earshot`-prefixed conference FIRST, waits for the human to join (60 s), and
+# only then dials the bridge with the gated operator TwiML
+# (scripts/twilio-operator-dial.sh). The human speaks to the specialist as the
+# registered Actinver analyst; capture continues listen-only afterwards.
+# enabled=true is only HALF the gate — the dial script also demands
+# --operator-i-am-paged, which --operator-handler wires. Fail-closed: if nobody
+# joins the conference, the bridge is never dialed.
+#
+# Operator approved this fallback 2026-08-04. Re-probe at ~T-20 first: the
+# 55.6 s drop may simply be "conference not yet open" 98 min out, in which case
+# the passcode self-admits and NOBODY gets paged (the ladder is only taken when
+# the bridge actually screens us).
+[operator_handler]
+enabled           = true
+cell_number       = "+525545436717"
+conference_prefix = "earshot"
 
 [kalshi]
 series = "KXEARNINGSMENTIONAMD"
@@ -169,6 +229,30 @@ policy           = "confirmed_only"
 # MI450 / MI455X (KXEARNINGSMENTIONAMD-26AUG04-MI45) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 # DROPPED ultra-short variant "mi" — <3 chars matches a syllable, not a word (measured: 38 FA in one event set). Re-add deliberately if this phrasing matters, and own the precision cost.
 # DROPPED ultra-short variant "mis" — <3 chars matches a syllable, not a word (measured: 38 FA in one event set). Re-add deliberately if this phrasing matters, and own the precision cost.
+#
+# ⚠ KNOWN PREFLIGHT FAIL, ACCEPTED 2026-08-04 WITH EVIDENCE — do not "fix" by
+# editing variants without reading this first.
+#   preflight-event.sh (market-phrase-screen.py) FAILs this market:
+#     "market resolves on 'MI450 / MI455X' (needs mi450 OR mi455x);
+#      armed variants ['mi four fifty', ...] fire without resolving the market"
+#   That screen does a TEXTUAL match and is right about the Windows-11 class it
+#   was built for (armed "windows" cannot resolve a market needing "Windows 11").
+#   It is WRONG here, and the live rules say why — GET /markets/KXEARNINGSMENTIONAMD-26AUG04-MI45:
+#     rules_primary:   "If MI450 / MI455X is SAID by any ... representative ...
+#                       during the ... earnings call (including the Q+A)"
+#     rules_secondary: "VIDEO of the ... call will be primarily used to resolve"
+#   Resolution is on what is SPOKEN, not on a written token. A speaker saying
+#   "em-eye four fifty" IS saying MI450, and that is the only form a streaming
+#   CTC detector can ever emit from audio — "mi450" as a keyword is unspeakable
+#   and would match nothing. The armed spoken forms are therefore CORRECT and
+#   the screen is a false positive for spelled-number product names.
+#   Left armed deliberately. Posture is 1c non-crossing confirmed_only, so even
+#   if this reasoning were wrong a false fire costs the order, not a position.
+#   TODO(next session): market-phrase-screen.py needs a spoken-form exemption
+#   (or a .acks/<config>-phrase-screen.ack path, mirroring the short-token gate)
+#   so this is an ACK rather than a standing FAIL that trains people to ignore
+#   preflight. A gate everyone overrides is the flagged-but-unenforced pattern
+#   that lost WING's CITR+AI.
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONAMD-26AUG04-MI45"
 phrase           = "mi four fifty"
