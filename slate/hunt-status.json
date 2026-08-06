@@ -1,12 +1,12 @@
 {
- "generated_utc": "2026-08-05T02:31:14+00:00",
+ "generated_utc": "2026-08-06T02:30:42+00:00",
  "issuers": {
   "AAOI": {
    "evidence": "no dial-in in 2 scanned 8-K filing(s) (None..None) \u2014 webcast-only in this window; a bridge may still exist unpublished",
    "filings_scanned": 2,
    "found": false,
    "key": "AAOI",
-   "last_hunted": "2026-08-04",
+   "last_hunted": "2026-08-05",
    "number_src": null,
    "tier": "bridge_unpublished",
    "verdict": "no dial-in in 2 scanned 8-K filing(s) (None..None) \u2014 webcast-only in this window; a bridge may still exist unpublished"
@@ -22,21 +22,31 @@
    "verdict": "no dial-in in 4 scanned 8-K filing(s) (2026-01-29..2026-07-30) \u2014 webcast-only in this window; a bridge may still exist unpublished"
   },
   "ABNB": {
-   "evidence": "no dial-in in 1 scanned 8-K filing(s) (2026-02-12..2026-02-12) \u2014 webcast-only in this window; a bridge may still exist unpublished",
-   "filings_scanned": 1,
+   "evidence": "no dial-in in 2 scanned 8-K filing(s) (2026-02-12..2026-05-07) \u2014 webcast-only in this window; a bridge may still exist unpublished",
+   "filings_scanned": 2,
    "found": false,
    "key": "ABNB",
-   "last_hunted": "2026-08-04",
+   "last_hunted": "2026-08-05",
    "number_src": null,
    "tier": "bridge_unpublished",
-   "verdict": "no dial-in in 1 scanned 8-K filing(s) (2026-02-12..2026-02-12) \u2014 webcast-only in this window; a bridge may still exist unpublished"
+   "verdict": "no dial-in in 2 scanned 8-K filing(s) (2026-02-12..2026-05-07) \u2014 webcast-only in this window; a bridge may still exist unpublished"
   },
   "AC": {
    "found": false,
    "key": "AC",
-   "last_hunted": "2026-08-04",
+   "last_hunted": "2026-08-05",
    "tier": "unknown",
    "verdict": "no CIK for this key"
+  },
+  "AMAT": {
+   "evidence": "no dial-in in 1 scanned 8-K filing(s) (None..None) \u2014 webcast-only in this window; a bridge may still exist unpublished",
+   "filings_scanned": 1,
+   "found": false,
+   "key": "AMAT",
+   "last_hunted": "2026-08-05",
+   "number_src": null,
+   "tier": "bridge_unpublished",
+   "verdict": "no dial-in in 1 scanned 8-K filing(s) (None..None) \u2014 webcast-only in this window; a bridge may still exist unpublished"
   },
   "AMD": {
    "evidence": "no dial-in in 5 scanned 8-K filing(s) (2026-02-03..2026-05-05) \u2014 webcast-only in this window; a bridge may still exist unpublished",
@@ -63,7 +73,7 @@
    "filings_scanned": 2,
    "found": false,
    "key": "CAVA",
-   "last_hunted": "2026-08-04",
+   "last_hunted": "2026-08-05",
    "number_src": null,
    "tier": "bridge_unpublished",
    "verdict": "no dial-in in 2 scanned 8-K filing(s) (2026-02-24..2026-05-19) \u2014 webcast-only in this window; a bridge may still exist unpublished"
@@ -73,7 +83,7 @@
    "filings_scanned": 1,
    "found": false,
    "key": "CBRS",
-   "last_hunted": "2026-08-04",
+   "last_hunted": "2026-08-05",
    "number_src": null,
    "tier": "bridge_unpublished",
    "verdict": "no dial-in in 1 scanned 8-K filing(s) (2026-06-23..2026-06-23) \u2014 webcast-only in this window; a bridge may still exist unpublished"
@@ -83,10 +93,20 @@
    "filings_scanned": 1,
    "found": false,
    "key": "CELH",
-   "last_hunted": "2026-08-04",
+   "last_hunted": "2026-08-05",
    "number_src": null,
    "tier": "bridge_unpublished",
    "verdict": "no dial-in in 1 scanned 8-K filing(s) (2026-07-15..2026-07-15) \u2014 webcast-only in this window; a bridge may still exist unpublished"
+  },
+  "COHR": {
+   "evidence": "no dial-in in 3 scanned 8-K filing(s) (2026-02-04..2026-05-06) \u2014 webcast-only in this window; a bridge may still exist unpublished",
+   "filings_scanned": 3,
+   "found": false,
+   "key": "COHR",
+   "last_hunted": "2026-08-05",
+   "number_src": null,
+   "tier": "bridge_unpublished",
+   "verdict": "no dial-in in 3 scanned 8-K filing(s) (2026-02-04..2026-05-06) \u2014 webcast-only in this window; a bridge may still exist unpublished"
   },
   "DASH": {
    "evidence": "no dial-in in 2 scanned 8-K filing(s) (2026-02-18..2026-05-06) \u2014 webcast-only in this window; a bridge may still exist unpublished",
@@ -113,7 +133,7 @@
    "filings_scanned": 2,
    "found": false,
    "key": "DKNG",
-   "last_hunted": "2026-08-04",
+   "last_hunted": "2026-08-05",
    "number_src": null,
    "tier": "bridge_unpublished",
    "verdict": "no dial-in in 2 scanned 8-K filing(s) (2026-02-13..2026-05-08) \u2014 webcast-only in this window; a bridge may still exist unpublished"
@@ -129,14 +149,14 @@
    "verdict": "no 8-K filings matched in the scanned window"
   },
   "EBAY": {
-   "evidence": "no dial-in in 2 scanned 8-K filing(s) (2026-02-18..2026-04-29) \u2014 webcast-only in this window; a bridge may still exist unpublished",
-   "filings_scanned": 2,
+   "evidence": "no dial-in in 3 scanned 8-K filing(s) (2026-02-18..2026-08-05) \u2014 webcast-only in this window; a bridge may still exist unpublished",
+   "filings_scanned": 3,
    "found": false,
    "key": "EBAY",
-   "last_hunted": "2026-08-04",
+   "last_hunted": "2026-08-05",
    "number_src": null,
    "tier": "bridge_unpublished",
-   "verdict": "no dial-in in 2 scanned 8-K filing(s) (2026-02-18..2026-04-29) \u2014 webcast-only in this window; a bridge may still exist unpublished"
+   "verdict": "no dial-in in 3 scanned 8-K filing(s) (2026-02-18..2026-08-05) \u2014 webcast-only in this window; a bridge may still exist unpublished"
   },
   "FIG": {
    "evidence": "no dial-in in 2 scanned 8-K filing(s) (2026-02-18..2026-05-14) \u2014 webcast-only in this window; a bridge may still exist unpublished",
@@ -163,7 +183,7 @@
    "filings_scanned": 3,
    "found": true,
    "key": "HIMS",
-   "last_hunted": "2026-08-04",
+   "last_hunted": "2026-08-05",
    "number_src": "https://www.sec.gov/Archives/edgar/data/1773751/000177375126000074/hims-20260331x8xkearningsr.htm",
    "tier": "published",
    "verdict": "dial-in published in 2026-05-11 filing"
@@ -183,7 +203,7 @@
    "filings_scanned": 0,
    "found": false,
    "key": "LYFT",
-   "last_hunted": "2026-08-04",
+   "last_hunted": "2026-08-05",
    "number_src": null,
    "tier": "unknown",
    "verdict": "no 8-K filings matched in the scanned window"
@@ -213,7 +233,7 @@
    "filings_scanned": 0,
    "found": false,
    "key": "NBIS",
-   "last_hunted": "2026-08-04",
+   "last_hunted": "2026-08-05",
    "number_src": null,
    "tier": "unknown",
    "verdict": "no 8-K filings matched in the scanned window"
@@ -313,7 +333,7 @@
    "filings_scanned": 2,
    "found": true,
    "key": "TTWO",
-   "last_hunted": "2026-08-04",
+   "last_hunted": "2026-08-05",
    "number_src": "https://www.sec.gov/Archives/edgar/data/946581/000162828026037260/ttwo4q26earningsrelease.htm",
    "tier": "published",
    "verdict": "dial-in published in 2026-05-21 filing"
@@ -333,7 +353,7 @@
    "filings_scanned": 3,
    "found": false,
    "key": "VST",
-   "last_hunted": "2026-08-04",
+   "last_hunted": "2026-08-05",
    "number_src": null,
    "tier": "bridge_unpublished",
    "verdict": "no dial-in in 3 scanned 8-K filing(s) (2026-02-26..2026-06-30) \u2014 webcast-only in this window; a bridge may still exist unpublished"
@@ -343,7 +363,7 @@
    "filings_scanned": 3,
    "found": true,
    "key": "WEN",
-   "last_hunted": "2026-08-04",
+   "last_hunted": "2026-08-05",
    "number_src": "https://www.sec.gov/Archives/edgar/data/30697/000119312526213270/d70702dex991.htm",
    "tier": "published",
    "verdict": "dial-in published in 2026-05-08 filing"
