@@ -133,6 +133,21 @@ pub struct OrderRecord {
     /// while the public tape had already swept to 98¢ ~250 ms earlier — without
     /// this field the two explanations were indistinguishable post-hoc.
     pub book_age_ns: Option<u64>,
+    /// SHADOW ONLY — nothing reads this to make a decision.
+    ///
+    /// EV in cents at the price we would actually PAY (the observed ask), still
+    /// assuming the detection is correct: `100 − ask − fee`. The shipped
+    /// `ev_gate` prices at the *cap* instead, so a 34¢ opportunity is scored as
+    /// a 97¢ one; recording both makes that divergence visible in every run
+    /// rather than only under a joiner that knows the fee formula.
+    ///
+    /// It is deliberately NOT the whole answer. Settlement joined across every
+    /// banked run (`scripts/settle-score.py --bands`, n=64) shows P(YES | we
+    /// fired) is a function of the ask — 29/29 at 95–100¢, 5/19 at 20–59¢ — so
+    /// a correct gate needs a price-conditional P(wrong) term that this field
+    /// does not yet carry. At n=64 no band clears its own confidence interval,
+    /// which is why this ships as evidence and gates nothing.
+    pub ev_at_ask_cents: Option<i64>,
 }
 
 impl OrderRecord {
@@ -316,12 +331,19 @@ async fn handle_intent(
         ack_ts: None,
         best_ask: None,
         book_age_ns: None,
+        ev_at_ask_cents: None,
     };
 
     // Local book read — never a blocking REST fetch (spec §5.6).
     let book = ctx.cache.read(&staged.ticker);
     let best_ask = book.as_ref().and_then(|b| b.best_ask());
     record.best_ask = best_ask;
+    // Shadow evidence only — see `OrderRecord::ev_at_ask_cents`. Computed for
+    // every intent that saw an ask, including ones that go on to be refused,
+    // because the refused rows are exactly the counterfactual sample.
+    record.ev_at_ask_cents = best_ask.map(|(ask, _)| {
+        (100i64 - ask as i64) * staged.count as i64 - fee_cents(staged.count, ask) as i64
+    });
     // seq 0 = the placeholder Book::default() (as_of 0) — no snapshot yet, so
     // an "age" would be time-since-boot noise.
     if let Some(b) = book.as_ref().filter(|b| b.seq > 0) {
@@ -368,12 +390,20 @@ async fn handle_intent(
     }
 
     // Risk gate (kill, armed, allowlist, staleness, caps, ledger).
+    //
+    // `book_age_ns` is the age of THIS TICKER's snapshot, not
+    // `cache.feed_age_ns()`. Passing the latter was a live defect from the
+    // gate's introduction until 2026-08-07: feed age is socket-wide liveness,
+    // held under ~500 ms by the ping loop, so `Refusal::BookStale` could never
+    // fire no matter how old the quote was. DASH-UBER on a 96.8 s snapshot was
+    // refused twelve lines later for EventNotional, which proves BookStale had
+    // not fired. Unknown age stays u64::MAX — unknown is stale (P3).
     let audio_age = MonotonicNs::now().saturating_since(intent.audio_ts);
     if let Err(refusal) = ctx.gate.check_order(
         &staged.ticker,
         staged.price_cents,
         staged.count,
-        ctx.cache.feed_age_ns(),
+        record.book_age_ns.unwrap_or(u64::MAX),
         audio_age,
     ) {
         record.refusal = Some(refusal.to_string());
@@ -459,6 +489,7 @@ mod tests {
             ack_ts: None,
             best_ask: None,
             book_age_ns: None,
+            ev_at_ask_cents: None,
         }
     }
 
@@ -577,6 +608,53 @@ mod tests {
         assert!(!ev_gate(99, 100, 1, 0));
         // 1¢ probe order: gross 99¢, fee 1¢ → EV 98¢ ≥ 2¢. Passes.
         assert!(ev_gate(1, 1, 0, 2));
+    }
+
+    /// `ev_at_ask_cents` is shadow evidence, and its whole point is that it
+    /// DISAGREES with the shipped gate: `ev_gate` scores every opportunity at
+    /// the 97¢ cap, so a cheap ask is valued as if we paid 97¢ for it. Pin the
+    /// gap so a future change that silently unifies them fails here.
+    #[test]
+    fn shadow_ev_prices_at_the_ask_not_the_cap() {
+        let at = |ask: u32, count: u32| {
+            (100i64 - ask as i64) * count as i64 - fee_cents(count, ask) as i64
+        };
+
+        // At the cap the two agree: 100 − 97 − 1 = 2¢, which is exactly the
+        // min_ev_cents boundary risk.rs cites for why the ceiling is 97.
+        assert_eq!(at(97, 1), 2);
+        assert!(ev_gate(97, 1, 0, 2));
+
+        // A 34¢ ask is worth 64¢ if the detection is right (66¢ gross − 2¢
+        // fee), but the shipped gate never sees 34 — it evaluates the same
+        // order at the cap and scores it 2¢. That 62¢ gap is the measurement
+        // this field exists for.
+        assert_eq!(fee_cents(1, 34), 2);
+        assert_eq!(at(34, 1), 64);
+        assert_eq!(at(34, 1) - at(97, 1), 62);
+
+        // Fee scales with count, so the shadow value must too.
+        assert_eq!(at(50, 2), 2 * 50 - fee_cents(2, 50) as i64);
+
+        // THE LIMIT OF THIS FIELD, pinned as an assertion. Under p = 1 the
+        // value is non-negative for every ask ≤ 100 and rises monotonically as
+        // the ask falls, so price alone can NEVER make a gate refuse a
+        // crossable order. Cheapness always looks better here — which is
+        // exactly the reasoning that settlement refutes: measured P(YES | we
+        // fired) is 29/29 at 95–100¢ and 5/19 at 20–59¢, so the cheap end of
+        // this curve is where the money was actually lost. Refusing anything
+        // requires the price-conditional P(wrong) term this does not carry.
+        assert_eq!(at(100, 1), 0);
+        assert_eq!(fee_cents(1, 100), 0); // P·(100−P) vanishes at the boundary
+        for ask in 1..=100u32 {
+            assert!(at(ask, 1) >= 0, "ask {ask} scored negative under p=1");
+        }
+        for ask in 2..=100u32 {
+            assert!(at(ask - 1, 1) >= at(ask, 1), "not monotone at ask {ask}");
+        }
+        // 97 is the cap precisely because it is the last price clearing
+        // min_ev_cents = 2 (risk.rs:44): 98 leaves 1¢, 99 leaves 0¢.
+        assert_eq!((at(97, 1), at(98, 1), at(99, 1)), (2, 1, 0));
     }
 
     #[test]

@@ -54,6 +54,27 @@ pub struct RiskConfig {
     pub daily_loss_cap_cents: u64,
     #[serde(default = "d_book_stale")]
     pub book_stale_ms: u64,
+    /// Whether `book_stale_ms` REFUSES, or is only recorded. Default `false`.
+    ///
+    /// Until 2026-08-07 the executor fed `BookCache::feed_age_ns()` — a
+    /// socket-wide liveness clock the ping loop holds under ~500 ms — into the
+    /// `book_age_ns` parameter, so `Refusal::BookStale` had never fired once.
+    /// The real per-ticker age is now passed, which makes the gate live for
+    /// the first time; enabling it in the same change would have been a large
+    /// unreviewed trading change, so enforcement is opt-in.
+    ///
+    /// It defaults off because the evidence does not support refusing. Across
+    /// 56 banked intents carrying a book age, a 2000 ms limit would refuse
+    /// **43%**, including two of the three fills this system has ever made —
+    /// DASH-AFFO on a 40.6 s snapshot and FIG-CODE on a 2.7 s one, both of
+    /// which settled YES. P(YES) by age is 0.78 / 0.75 / 0.58 for
+    /// ≤2 s / 2–30 s / >30 s, and the >30 s bucket's mean ask is 62.7¢ against
+    /// 79.6¢ elsewhere, so most of that decline is the price effect, not the
+    /// staleness. The cap already bounds what a stale quote can cost us: we
+    /// send a marketable limit at `max_price_cents`, so worst case is the cap
+    /// whether the book is 6 ms or 6 minutes old.
+    #[serde(default)]
+    pub book_stale_enforce: bool,
     #[serde(default = "d_audio_stale")]
     pub audio_stale_ms: u64,
     #[serde(default = "d_min_ev")]
@@ -76,6 +97,7 @@ impl Default for RiskConfig {
             max_event_notional_cents: d_event(),
             daily_loss_cap_cents: d_loss(),
             book_stale_ms: d_book_stale(),
+            book_stale_enforce: false,
             audio_stale_ms: d_audio_stale(),
             min_ev_cents: d_min_ev(),
             allowlist_tickers: Vec::new(),
@@ -245,9 +267,25 @@ impl RiskGate {
         if !self.cfg.allowlist_tickers.iter().any(|t| t == ticker) {
             return Err(Refusal::NotAllowlisted(ticker.to_string()));
         }
+        // UNKNOWN age and KNOWN-BUT-OLD age are different failures and are
+        // treated differently. Unknown means there is no snapshot at all, and
+        // refusing on it is the P3 rule — refuse and page, never guess — which
+        // `book_stale_enforce` does NOT relax. Known-but-old is a data-quality
+        // signal whose enforcement is opt-in; see `book_stale_enforce`.
         let book_age_ms = book_age_ns / 1_000_000;
-        if book_age_ms > self.cfg.book_stale_ms {
+        if book_age_ns == u64::MAX {
             return Err(Refusal::BookStale { age_ms: book_age_ms, limit_ms: self.cfg.book_stale_ms });
+        }
+        if book_age_ms > self.cfg.book_stale_ms {
+            if self.cfg.book_stale_enforce {
+                return Err(Refusal::BookStale { age_ms: book_age_ms, limit_ms: self.cfg.book_stale_ms });
+            }
+            // Recorded, not refused. The age is already on the OrderRecord;
+            // this makes it greppable in a live log without changing the run.
+            tracing::warn!(
+                ticker, age_ms = book_age_ms, limit_ms = self.cfg.book_stale_ms,
+                "book snapshot older than book_stale_ms (not enforced)"
+            );
         }
         let audio_age_ms = audio_age_ns / 1_000_000;
         if audio_age_ms > self.cfg.audio_stale_ms {
@@ -406,6 +444,39 @@ mod tests {
         RiskConfig {
             allowlist_tickers: vec!["T".into()],
             ..Default::default()
+        }
+    }
+
+    /// 2026-08-07. The executor fed `cache.feed_age_ns()` — socket-wide
+    /// liveness, pinned under ~500 ms by the ping loop — into `book_age_ns`,
+    /// so this gate never fired once in the system's history. It now receives
+    /// the per-ticker snapshot age, which splits into two cases that must not
+    /// be collapsed.
+    #[test]
+    fn book_staleness_refuses_unknown_but_only_warns_on_old() {
+        // Known-but-old, enforcement OFF (the default): passes, warns.
+        let g = gate(permissive());
+        g.arm();
+        let old = 41_000_u64 * 1_000_000; // DASH-AFFO's real 40.6 s snapshot
+        assert_eq!(g.check_order("T", 1, 1, old, 0), Ok(()));
+
+        // Same age with enforcement ON: refuses.
+        let g = gate(RiskConfig { book_stale_enforce: true, ..permissive() });
+        g.arm();
+        assert!(matches!(
+            g.check_order("T", 1, 1, old, 0),
+            Err(Refusal::BookStale { .. })
+        ));
+
+        // UNKNOWN age refuses either way — `book_stale_enforce` must never
+        // relax P3 (refuse and page, never guess).
+        for enforce in [false, true] {
+            let g = gate(RiskConfig { book_stale_enforce: enforce, ..permissive() });
+            g.arm();
+            assert!(
+                matches!(g.check_order("T", 1, 1, u64::MAX, 0), Err(Refusal::BookStale { .. })),
+                "unknown book age must refuse with enforce={enforce}"
+            );
         }
     }
 

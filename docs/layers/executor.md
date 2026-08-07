@@ -46,7 +46,8 @@ layer), or the wire itself (transport seam — see
   (`presign_age_ns: None` on FIX — no presign step exists there).
 - **Type:** `executor::OrderRecord` per intent (ticker, price, count, tier,
   `dry_run`, `lost_race`, refusal, status, order_id, full ts chain,
-  `best_ask` book snapshot + `book_age_ns` snapshot age) aggregated into
+  `best_ask` book snapshot + `book_age_ns` snapshot age + `ev_at_ask_cents`)
+  aggregated into
   `ExecReport { orders, lost_races, observe_noncross, recorder }`, returned
   when the channel closes.
 - **`orders` is a list of INTENTS, not of orders placed.** Every one of the
@@ -82,6 +83,19 @@ layer), or the wire itself (transport seam — see
 - EV gate before risk gate: `ev_gate(cap, count, haircut, min_ev)` with
   `fee_cents` = ceil-to-cent 0.07 quadratic (conservative vs the observed
   centicent rounding — see VERIFICATIONS).
+- **`ev_gate` prices at the CAP and assumes the detection is correct.** Both
+  are known gaps, recorded rather than patched:
+  - It never sees the observed ask, so a 34¢ opportunity is scored as a 97¢
+    one (2¢ instead of 64¢). `OrderRecord::ev_at_ask_cents` records the
+    ask-priced value beside it so the divergence is visible per order.
+  - It has no P(wrong) term. That is harmless at a 1¢ observe cap and is the
+    whole question at 97¢. The fix is NOT a per-keyword precision prior:
+    replayed against every banked event that policy skips the winning 97¢
+    trades and buys the losing cheap ones (+25.0¢ → −4.0¢), because measured
+    P(YES | we fired) is a function of the **ask** — 29/29 at 95–100¢ versus
+    5/19 at 20–59¢ (`scripts/settle-score.py --bands`). Any correctness term
+    must condition on price, and at n=64 no band clears its own confidence
+    interval, so nothing gates on this yet.
 - `dry_run` short-circuits BEFORE the risk gate: shadow mode reports exactly
   what would have been sent.
 - Debit the ledger (`RiskGate::record_send`) BEFORE the send — an ambiguous

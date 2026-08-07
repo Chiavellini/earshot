@@ -43,7 +43,23 @@ for: EV/fee economics (executor) or market validation (validator).
   `MENTION_FILL_CAP_CENTS = 50` for the fill posture) are NOT
   user-overridable upward at runtime (spec §11). Raising one is a code
   change with review, never a config change.
-- Unknown staleness (`u64::MAX`) is stale — refuse (P3).
+- Unknown staleness (`u64::MAX`) is stale — refuse (P3). This is NOT relaxed by
+  `book_stale_enforce`; unknown means no snapshot exists at all.
+- **`book_age_ns` must be the per-ticker snapshot age.** From this gate's
+  introduction until 2026-08-07 the executor passed
+  `BookCache::feed_age_ns()` — socket-wide liveness, held under ~500 ms by the
+  ping loop — so `Refusal::BookStale` never fired once. Proof from the record:
+  DASH-UBER on a 96,774 ms snapshot was refused for `EventNotional`, checked
+  twelve lines later.
+- **Known-but-old is recorded, not refused, unless `book_stale_enforce`.**
+  Enforcement is opt-in (default `false`) because the evidence does not support
+  refusing: over 56 banked intents carrying a book age, the configured 2000 ms
+  limit would refuse **43%**, including two of the three fills ever made
+  (DASH-AFFO at 40.6 s, FIG-CODE at 2.7 s — both settled YES). P(YES) by age is
+  0.78 / 0.75 / 0.58 across ≤2 s / 2–30 s / >30 s, and the oldest bucket's mean
+  ask is 62.7¢ versus 79.6¢ elsewhere, so most of that decline is the price
+  effect rather than staleness. A stale quote also cannot cost more than the
+  cap: the order is a marketable limit at `max_price_cents`.
 - The in-memory ledger debit (`record_send`) is synchronous and BEFORE every
   send — the authoritative in-session cap; an ambiguous order outcome still
   counts as spent. The DISK write is OFF the fire path: `record_send` only
