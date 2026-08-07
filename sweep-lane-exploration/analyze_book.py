@@ -168,6 +168,43 @@ def liftable_history(path, ticker, cap_cents):
     return out
 
 
+def window_state(hist_for_ticker, t0, t1, subscribed, span_lo, span_hi):
+    """Resting size in [t0, t1], with the ladder carried FORWARD across the edge.
+
+    Split out of at_triggers so the §R9 kill switch's arithmetic is testable
+    without a tape+settlement fixture. Returns
+    (covered, not_covered_reason, peak_contracts, dwell_seconds, n_updates,
+     seeded).
+
+    The defect this exists to prevent: a book that rests untouched emits no
+    frames, so `[t for t in hist if t0 <= t <= t1]` is EMPTY exactly when a real
+    offer sat there the whole window. Reading that emptiness as "no size" makes
+    §R9 fire ABANDON on the arm's best case.
+    """
+    h = hist_for_ticker or []
+    prior = [(t, s) for t, s in h if t <= t0]
+    seg = [(t, s) for t, s in h if t0 < t <= t1]
+
+    if not subscribed:
+        covered, why = False, "not_subscribed"
+    elif span_lo is None or t0 < span_lo or t0 > span_hi:
+        covered, why = False, "outside_tape_span"
+    elif not prior:
+        covered, why = False, "no_snapshot_before_window"
+    else:
+        covered, why = True, None
+
+    timeline = ([(t0, prior[-1][1])] if prior else []) + seg
+    dwell, peak = 0.0, 0.0
+    for i, (t, s) in enumerate(timeline):
+        peak = max(peak, s)
+        if s > 0:
+            nxt = timeline[i + 1][0] if i + 1 < len(timeline) else t1
+            dwell += (nxt - t).total_seconds()
+    return (covered, why, round(peak, 2), round(dwell, 3),
+            len(seg), bool(prior) and not seg)
+
+
 def at_triggers(path, event, cap_cents=70, window_s=60):
     """For each wave-1 trigger: was there resting size at <= cap, and for how long?
 
@@ -184,10 +221,16 @@ def at_triggers(path, event, cap_cents=70, window_s=60):
     start, end, why = windows.window(event)
     win = None if start is None else (start, end)
 
-    hist = {}
+    hist, subscribed, span_lo, span_hi = {}, set(), None, None
     for ts, tk, b in replay(path):
+        if ts == "session":
+            subscribed = set(tk.get("tickers") or [])
+            continue
         if not isinstance(ts, datetime):
             continue
+        if span_lo is None:
+            span_lo = ts
+        span_hi = ts
         hist.setdefault(tk, []).append((ts, b.size_at_or_below(cap_cents)))
 
     rows = []
@@ -195,21 +238,19 @@ def at_triggers(path, event, cap_cents=70, window_s=60):
         for w in WL.triggers(ticker, raw, window=win):
             h = hist.get(ticker, [])
             t0, t1 = w.decision_ts, w.decision_ts + timedelta(seconds=window_s)
-            seg = [(t, s) for t, s in h if t0 <= t <= t1]
-            dwell, peak = 0.0, 0.0
-            for i, (t, s) in enumerate(seg):
-                peak = max(peak, s)
-                if s > 0:
-                    nxt = seg[i + 1][0] if i + 1 < len(seg) else t1
-                    dwell += (nxt - t).total_seconds()
+
+            covered, why_not, peak, dwell, n_upd, seeded = window_state(
+                h, t0, t1, ticker in subscribed, span_lo, span_hi)
             rows.append({
                 "ticker": ticker, "result": labels.get(ticker),
                 "wave_top": w.top, "decision_ts": w.decision_ts.isoformat(),
-                "book_updates_in_window": len(seg),
-                "peak_liftable_contracts": round(peak, 2),
-                "seconds_available": round(dwell, 3),
-                "had_size": peak > 0,
-                "covered": bool(seg),      # did the tape actually cover this instant
+                "book_updates_in_window": n_upd,
+                "seeded_from_carry_forward": seeded,
+                "peak_liftable_contracts": peak,
+                "seconds_available": dwell,
+                "had_size": covered and peak > 0,
+                "covered": covered,
+                "not_covered_reason": why_not,
             })
     return rows, None
 
@@ -342,6 +383,52 @@ def self_test():
     hist = liftable_history(tmp, "T", 65)
     chk("liftable_history returns one point for one update", 1, len(hist))
     os.unlink(tmp)
+
+    # --- §R9 coverage arithmetic: the carry-forward that keeps the kill
+    # --- switch honest. Each case is a shape that used to score wrong.
+    T0 = datetime(2026, 8, 7, 12, 0, 0, tzinfo=timezone.utc)
+    T1 = T0 + timedelta(seconds=60)
+    LO, HI = T0 - timedelta(minutes=30), T0 + timedelta(minutes=30)
+
+    # THE REGRESSION. A ladder that rested untouched across the whole window
+    # emits NO frames inside it. The old `covered = bool(seg)` scored this
+    # exact §R8 case as "not covered, no size" — an ABANDON vote manufactured
+    # by the analyzer.
+    rested = [(T0 - timedelta(seconds=90), 500.0)]
+    cov, why, peak, dwell, n, seeded = window_state(rested, T0, T1, True, LO, HI)
+    chk("a book resting untouched IS covered", True, cov)
+    chk("...and its size is seen", 500.0, peak)
+    chk("...for the whole 60 s window", 60.0, dwell)
+    chk("...with zero in-window updates", 0, n)
+    chk("...flagged as carried forward", True, seeded)
+
+    # Emptied before the window: covered, and honestly no size.
+    cov, why, peak, dwell, n, seeded = window_state(
+        [(T0 - timedelta(seconds=90), 500.0), (T0 - timedelta(seconds=10), 0.0)],
+        T0, T1, True, LO, HI)
+    chk("a ladder emptied before t0 is covered but sizeless", (True, 0.0), (cov, peak))
+
+    # Size arrives 20 s in and stays: dwell is the remaining 40 s, not 60.
+    cov, why, peak, dwell, n, seeded = window_state(
+        [(T0 - timedelta(seconds=5), 0.0), (T0 + timedelta(seconds=20), 300.0)],
+        T0, T1, True, LO, HI)
+    chk("size arriving 20 s in dwells 40 s", 40.0, dwell)
+
+    # Dwell must run from t0, not from the first in-window update.
+    cov, why, peak, dwell, n, seeded = window_state(
+        [(T0 - timedelta(seconds=5), 100.0), (T0 + timedelta(seconds=45), 0.0)],
+        T0, T1, True, LO, HI)
+    chk("dwell starts at t0, not at the first update", 45.0, dwell)
+
+    # The three not-covered shapes are distinct, and none of them is "no size".
+    chk("an unsubscribed ticker is not covered", (False, "not_subscribed"),
+        window_state(rested, T0, T1, False, LO, HI)[:2])
+    chk("a trigger before the tape started is not covered",
+        (False, "outside_tape_span"),
+        window_state(rested, T0, T1, True, T0 + timedelta(seconds=1), HI)[:2])
+    chk("a market that never snapshotted is not covered",
+        (False, "no_snapshot_before_window"),
+        window_state([(T0 + timedelta(seconds=5), 9.0)], T0, T1, True, LO, HI)[:2])
 
     print()
     if f:
