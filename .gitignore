@@ -27,5 +27,9 @@ corpus-quiet/
 .env.*
 state/
 vendor/
-scripts/__pycache__/
+# Python bytecode. Was `scripts/__pycache__/` — path-specific, so every other
+# lane (pm-expansion-exploration/, sweep-lane-exploration/) leaked .pyc into the
+# tree and five were committed. Global from 2026-08-07.
+__pycache__/
+*.pyc
 slate/latest-timed.json
