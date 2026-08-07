@@ -654,6 +654,8 @@ owns = [
   "scripts/study-nightly.sh",
   "scripts/stage-nightly.sh",
   "scripts/event-status.sh",
+  "scripts/green-guardian.sh",
+  "scripts/night-before-sweep.sh",
 ]
 inputs = []
 outputs = []
@@ -671,6 +673,7 @@ owns = [
   "scripts/market-phrase-screen.py",
   "scripts/preflight-event.sh",
   "scripts/preflight-nightly.sh",
+  "scripts/posture-from-study.py",
 ]
 inputs = [
   "control.event.prepared",
@@ -876,6 +879,7 @@ owns = [
   "scripts/missed-arm-daily.sh",
   "scripts/run-verdict.sh",
   "scripts/validate-from-log.py",
+  "scripts/post-event-report.sh",
 ]
 inputs = [
   "control.session.completed",
@@ -1011,6 +1015,7 @@ owns = [
   "scripts/study-afternoon-26aug04.sh",
   "scripts/variant-audit.py",
   "scripts/variant-study.sh",
+  "scripts/variant-widen.py",
   "scripts/verify-occurrences.py",
   "tests/bench_fixture.rs",
 ]
@@ -1032,6 +1037,9 @@ owns = [
   "HANDOFF-26AUG04-MISSED-ARM.md",
   "HANDOFF-RACE-PROGRAM.md",
   "VERIFICATIONS.md",
+  # 2026-08-06 session handoff: the TLN 26AUG05 phone-race latency decomposition
+  # and the P1 chunk-8 verdict. Same class as the two handoffs above.
+  "chiavellini.md",
   "docs/COMPETITOR-ANATOMY.md",
   "docs/INGRESS-BAKEOFF.md",
   "docs/LATENCY-PROOF.md",
@@ -1059,6 +1067,7 @@ owns = [
   "scripts/prefetch-gate.sh",
   "scripts/prefetch-verdict.py",
   "scripts/rival-decompose.py",
+  "scripts/settle-score.py",
   "scripts/spec-probe.py",
 ]
 inputs = [

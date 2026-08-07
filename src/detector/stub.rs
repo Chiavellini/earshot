@@ -36,6 +36,10 @@ impl EnergyStubDetector {
 }
 
 impl Detector for EnergyStubDetector {
+    fn engine_name(&self) -> &'static str {
+        "stub"
+    }
+
     fn process(&mut self, chunk: &AudioChunk) -> SmallVec<[Detection; 2]> {
         let chunk_start_ms = self.samples_seen * 1000 / chunk.sample_rate_hz.max(1) as u64;
         self.samples_seen += chunk.pcm.len() as u64;

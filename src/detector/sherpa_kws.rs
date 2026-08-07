@@ -164,6 +164,10 @@ fn render_owned(entries: &[&CompiledEntry]) -> String {
 }
 
 impl Detector for SherpaKwsDetector {
+    fn engine_name(&self) -> &'static str {
+        "sherpa_kws"
+    }
+
     fn process(&mut self, chunk: &AudioChunk) -> SmallVec<[Detection; 2]> {
         // Wiring bug, not a runtime condition: the preproc resampler (or a
         // 16 kHz-native source) must feed this engine. Loud per failure policy.

@@ -1328,12 +1328,24 @@ async fn arm(
                 }
                 (Some(r), ExitRecord::clean(), None)
             }
-            Ok(Err(e)) => {
+            Ok(Err(mut f)) => {
                 // Fanout only surfaces Err when every leg is gone.
                 let reason =
                     if is_fanout { ExitReason::AllLegsDied } else { ExitReason::SourceError };
-                let rec = ExitRecord::with(reason, e.to_string());
-                (None, rec, Some(Box::new(e) as AnyErr))
+                let rec = ExitRecord::with(reason, f.to_string());
+                // A dead run still describes itself: fanout hands up the per-leg
+                // frames/chunks/drops it had already accounted. Before 2026-08-07
+                // this arm passed `None` and AAOI-26AUG06 wrote a report with no
+                // frame count at all, which every downstream grader then read as
+                // benign. Merge executor edges the same way the clean arm does.
+                let partial = f.partial.take().map(|b| {
+                    let mut r = *b;
+                    if let Some(e) = exec_report {
+                        r.edges.extend(e.recorder.snapshot());
+                    }
+                    r
+                });
+                (partial, rec, Some(Box::new(f) as AnyErr))
             }
             Err(join) => {
                 let rec = ExitRecord::with(ExitReason::PanicOrJoin, join.to_string());

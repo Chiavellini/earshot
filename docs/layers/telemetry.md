@@ -39,7 +39,12 @@ layer — it never sits between two stages.
   not use it to construct or gate the Twilio adapter.
 
 ## Exit door
-- **Type:** `PipelineReport` — event id, frame/chunk counts,
+- **Type:** `PipelineReport` — event id, frame/chunk counts, `engine`
+  (`Option<String>`, the detector that produced `detections`, from
+  `Detector::engine_name`; a fanout run carries the distinct set joined by
+  `+`. Without it `confidence` cannot be read at all — sherpa_kws emits a
+  constant 1.0 sentinel and streaming_ctc a real posterior. `None`/omitted on
+  reports written before the field existed, so those keep their exact shape),
   `first_capture_ts` (capture time of chunk seq 0 — anchors wall clock to
   the content timeline for the bench's paced onset→emit latency), per-edge
   `EdgeStats` (count + p50/p90/p95/p99/max in µs; zero-count edges omitted

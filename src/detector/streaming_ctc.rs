@@ -395,6 +395,10 @@ impl StreamingCtcDetector {
 }
 
 impl Detector for StreamingCtcDetector {
+    fn engine_name(&self) -> &'static str {
+        "streaming_ctc"
+    }
+
     fn process(&mut self, chunk: &AudioChunk) -> SmallVec<[Detection; 2]> {
         // Wiring bug, not a runtime condition: preproc must feed 16 kHz.
         assert_eq!(

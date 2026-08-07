@@ -30,6 +30,49 @@ use crate::types::{AudioChunk, AudioFrame, DecisionIntent, Detection};
 const FRAME_RING_CAP: usize = 256;
 const CHUNK_RING_CAP: usize = 64;
 
+/// A pipeline failure, carrying whatever evidence the run had already gathered.
+///
+/// WHY (2026-08-07). `run_pipeline_fanout` computes `per_leg`, `frames_total`,
+/// `chunks_total` and the drop counters for every leg, and then — when the last
+/// leg dies — threw all of it away with a bare `return Err(e)`. That is the
+/// mechanical reason AAOI-26AUG06's `report.json` carries no `frames_in` at
+/// all: the run armed, heard 32 s of a dying stream, and its own summary was
+/// discarded one line after being built, so the report degraded to
+/// `{"partial_report": true}`. Every grader downstream then had to infer what
+/// happened, and `post-event-report.sh` concluded it was fine.
+///
+/// A run that died is exactly the run whose frame counts you want. The failure
+/// still propagates — `replay` and `bench` keep failing on `?` — but the
+/// evidence now travels with it.
+#[derive(Debug)]
+pub struct PipelineFailure {
+    pub error: SourceError,
+    /// Per-leg frames/chunks/drops accounted before the failure. `Some` when a
+    /// fanout run lost every leg; `None` when the failure preceded any
+    /// accounting (a single source, or a build-time error).
+    pub partial: Option<Box<PipelineReport>>,
+}
+
+impl From<SourceError> for PipelineFailure {
+    fn from(error: SourceError) -> Self {
+        PipelineFailure { error, partial: None }
+    }
+}
+
+impl std::fmt::Display for PipelineFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Delegates, so existing `e.to_string()` callers (the ExitRecord detail
+        // in main.rs::arm) read exactly as they did before.
+        write!(f, "{}", self.error)
+    }
+}
+
+impl std::error::Error for PipelineFailure {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.error)
+    }
+}
+
 /// One audio leg of a fanout pipeline: its own source and its own detector
 /// instance (model memory is deliberately duplicated per leg — sharing one
 /// sherpa recognizer across threads via the FFI is an unforced risk for a few
@@ -249,7 +292,9 @@ pub fn run_pipeline(
     mut table: DecisionTable,
     intent_tx: Option<tokio::sync::mpsc::Sender<crate::types::DecisionIntent>>,
     perf: crate::perf::PerfSection,
-) -> Result<PipelineReport, SourceError> {
+) -> Result<PipelineReport, PipelineFailure> {
+    // Read before the detector is moved into its thread.
+    let engine = detector.engine_name();
     let (src_tx, stages) = spawn_stages(
         "",
         chunk_ms,
@@ -278,19 +323,22 @@ pub fn run_pipeline(
     debug_assert_eq!(chunks_from_chunker, out.chunks);
 
     use std::sync::atomic::Ordering;
+    let drops = DropCounters {
+        source_to_preproc: stages.src_drops.load(Ordering::Relaxed),
+        preproc_to_chunker: stages.preproc_drops.load(Ordering::Relaxed),
+        chunker_to_detector: stages.chunker_drops.load(Ordering::Relaxed),
+    };
     Ok(PipelineReport {
         event_id: event_id.to_string(),
         chunk_ms,
+        engine: Some(engine.to_string()),
         frames_in,
         chunks_in: out.chunks,
         first_capture_ts: out.first_capture_ts,
         edges: out.recorder.snapshot(),
         detections: out.records,
-        drops: DropCounters {
-            source_to_preproc: stages.src_drops.load(Ordering::Relaxed),
-            preproc_to_chunker: stages.preproc_drops.load(Ordering::Relaxed),
-            chunker_to_detector: stages.chunker_drops.load(Ordering::Relaxed),
-        },
+        drops: drops.clone(),
+        drop_pct: drops.pct_of(frames_in),
         per_leg: None,
     })
 }
@@ -312,7 +360,7 @@ pub fn run_pipeline_fanout(
     table: DecisionTable,
     intent_tx: Option<tokio::sync::mpsc::Sender<DecisionIntent>>,
     perf: crate::perf::PerfSection,
-) -> Result<PipelineReport, SourceError> {
+) -> Result<PipelineReport, PipelineFailure> {
     assert!(legs.len() >= 2, "fanout requires >= 2 legs (config validation)");
     let shared = Arc::new(Mutex::new(table));
 
@@ -323,8 +371,17 @@ pub fn run_pipeline_fanout(
     }
 
     let mut runs = Vec::with_capacity(legs.len());
+    // Legs each carry their own detector. In every shipped fanout config they
+    // are the same engine, but nothing enforces that, so report the distinct
+    // set rather than asserting one — a mixed run must not be recorded as if
+    // one engine produced every detection.
+    let mut engines: Vec<&'static str> = Vec::new();
     for (i, leg) in legs.into_iter().enumerate() {
         let shared = shared.clone();
+        let e = leg.detector.engine_name();
+        if !engines.contains(&e) {
+            engines.push(e);
+        }
         let (src_tx, stages) = spawn_stages(
             &format!("-{i}"),
             chunk_ms,
@@ -410,32 +467,41 @@ pub fn run_pipeline_fanout(
             frames_in: frames,
             chunks_in: out.chunks,
             detections: out.records.len() as u64,
+            drop_pct: drops.pct_of(frames),
             drops,
             died,
         });
         records.extend(out.records);
     }
 
-    if died_count == n_legs {
-        // No leg produced audio to the end — surface the failure instead of
-        // an empty "successful" report.
-        if let Some(e) = first_err {
-            return Err(e);
-        }
-    }
-
     // Interleave legs chronologically so the report reads as one timeline.
     records.sort_by_key(|r| r.detection.emit_ts);
 
-    Ok(PipelineReport {
+    // Built BEFORE the all-legs-died check so a dead run keeps its evidence.
+    // The old order returned Err here and discarded per_leg/frames_total — see
+    // `PipelineFailure`.
+    let report = PipelineReport {
         event_id: event_id.to_string(),
         chunk_ms,
+        engine: Some(engines.join("+")),
         frames_in: frames_total,
         chunks_in: chunks_total,
         first_capture_ts,
         edges: recorder.snapshot(),
         detections: records,
+        drop_pct: drops_total.pct_of(frames_total),
         drops: drops_total,
         per_leg: Some(per_leg),
-    })
+    };
+
+    if died_count == n_legs {
+        // No leg produced audio to the end — surface the failure instead of an
+        // empty "successful" report, but hand the summary up with it so the
+        // run can still describe itself on disk.
+        if let Some(error) = first_err {
+            return Err(PipelineFailure { error, partial: Some(Box::new(report)) });
+        }
+    }
+
+    Ok(report)
 }

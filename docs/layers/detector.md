@@ -15,6 +15,14 @@ sizing — a `Detection` is a pure acoustic event.
   behind this synchronous surface (internal thread + channel).
 - **Cadence:** one call per chunk (every `chunk_ms` at real-time speed). The
   call may take up to ~chunk_ms before it becomes the bottleneck.
+- **Identity:** `Detector::engine_name(&self) -> &'static str` returns the name
+  as it appears in `[detector].engine`. Both composers in `pipeline` read it
+  before the detector moves into its thread and stamp it on `PipelineReport`;
+  a fanout run reports the distinct set joined by `+`, because nothing forces a
+  config's legs to agree. This exists because `Detection::confidence` is NOT
+  comparable across engines (see Exit door), roughly half the arm configs run
+  each engine, and no banked report recorded which one produced its detections
+  — the first settlement study had to infer it from the sentinel value.
 
 ## Exit door
 - **Type:** `types::Detection` — `keyword: KeywordId` (index into the
@@ -26,6 +34,14 @@ sizing — a `Detection` is a pure acoustic event.
   `audio_consumed_ms: u64` (engine-independent audio fed before emission).
   The two audio-position fields are wall-clock-free so bench scoring works in
   lossless speed=0 replays.
+- **`confidence` is engine-relative and is NOT a probability of correctness.**
+  sherpa_kws emits a constant 1.0 sentinel; streaming_ctc emits
+  `exp(score / k)`, a geometric mean over BPE pieces. Neither predicts whether
+  the word was really said: joined against settlement over every banked run
+  (`scripts/settle-score.py`), mean confidence on *wrong* fires below a 60¢ ask
+  was **higher** than on right ones (0.411 vs 0.331), while 0.50-confidence
+  fires against a 95–100¢ book were right 29 times out of 29. Read it as a
+  detector-internal gate input only, and always alongside `engine_name`.
 - **Mechanism:** function return value; the detect-thread loop feeds each
   `Detection` straight into the decision layer.
 

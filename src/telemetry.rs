@@ -149,6 +149,20 @@ impl DropCounters {
     pub fn total(&self) -> u64 {
         self.source_to_preproc + self.preproc_to_chunker + self.chunker_to_detector
     }
+
+    /// Dropped share of ingress frames, 0.0–100.0. `None` when no frame ever
+    /// arrived, which is a DIFFERENT failure (armed but deaf) and must not be
+    /// reported as a clean 0%.
+    ///
+    /// Only the ingress ring can drop — interior stages backpressure
+    /// (`ring.rs`, `chunker.rs`) — so `frames_in` is the right denominator.
+    /// Until 2026-08-07 no rate existed anywhere in the crate: the 3.3 / 4.1 /
+    /// 11.3% figures in the 26AUG05 post-mortem were computed by hand from
+    /// `report.json`, and the live `arm` path had no drop gate at all while
+    /// `replay` and `bench` both hard-fail on a single dropped frame.
+    pub fn pct_of(&self, frames_in: u64) -> Option<f64> {
+        (frames_in > 0).then(|| self.total() as f64 * 100.0 / frames_in as f64)
+    }
 }
 
 /// Per-leg rollup for fanout mode: one entry per audio leg, so a dead or
@@ -161,6 +175,10 @@ pub struct LegSummary {
     pub chunks_in: u64,
     pub detections: u64,
     pub drops: DropCounters,
+    /// `drops.total() / frames_in` as a percentage; omitted when no frame
+    /// arrived. Serialized so graders never have to recompute it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub drop_pct: Option<f64>,
     /// `Some(reason)` when this leg's source ended with an error (leg-local
     /// failure policy: siblings keep running).
     pub died: Option<String>,
@@ -275,6 +293,16 @@ pub fn build_run_json(
 pub struct PipelineReport {
     pub event_id: String,
     pub chunk_ms: u32,
+    /// Which detector produced `detections`, so `confidence` can be read at
+    /// all. `sherpa_kws` reports a constant 1.0 sentinel while `streaming_ctc`
+    /// reports a real posterior; without this field the two are
+    /// indistinguishable in a banked report, and roughly half the arm configs
+    /// run each. A 2026-08-07 settlement study had to infer the engine from
+    /// the sentinel value to avoid pooling them. `None` on reports written
+    /// before this field existed, and omitted from JSON so those keep their
+    /// exact shape.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub engine: Option<String>,
     pub frames_in: u64,
     pub chunks_in: u64,
     /// Capture time of the stream's first frame (chunk seq 0). In paced
@@ -284,6 +312,10 @@ pub struct PipelineReport {
     pub edges: BTreeMap<String, EdgeStats>,
     pub detections: Vec<DetectionRecord>,
     pub drops: DropCounters,
+    /// Run-wide `drops.total() / frames_in` as a percentage; omitted when no
+    /// frame arrived. See `DropCounters::pct_of`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub drop_pct: Option<f64>,
     /// Fanout mode only (`None` in single-source mode, omitted from JSON so
     /// existing reports keep their exact shape).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -296,26 +328,38 @@ impl PipelineReport {
         f.write_all(serde_json::to_string_pretty(self)?.as_bytes())
     }
 
+    /// `" (4.13%)"`, or empty when no frame arrived. A blank is deliberate:
+    /// "0.00%" on a run that heard nothing would read as clean.
+    fn render_table_pct_suffix(p: Option<f64>) -> String {
+        match p {
+            Some(p) => format!(" ({p:.2}%)"),
+            None => String::new(),
+        }
+    }
+
     pub fn render_table(&self) -> String {
+        let pct_suffix = Self::render_table_pct_suffix;
         let mut out = String::new();
         out.push_str(&format!(
-            "event {}  chunk {} ms  frames {}  chunks {}  detections {}  drops {}\n\n",
+            "event {}  chunk {} ms  frames {}  chunks {}  detections {}  drops {}{}\n\n",
             self.event_id,
             self.chunk_ms,
             self.frames_in,
             self.chunks_in,
             self.detections.len(),
             self.drops.total(),
+            pct_suffix(self.drop_pct),
         ));
         if let Some(legs) = &self.per_leg {
             for l in legs {
                 out.push_str(&format!(
-                    "leg {:<14} frames {:>8}  chunks {:>6}  detections {:>3}  drops {:>4}{}\n",
+                    "leg {:<14} frames {:>8}  chunks {:>6}  detections {:>3}  drops {:>4}{}{}\n",
                     l.label,
                     l.frames_in,
                     l.chunks_in,
                     l.detections,
                     l.drops.total(),
+                    pct_suffix(l.drop_pct),
                     l.died.as_deref().map(|d| format!("  DIED: {d}")).unwrap_or_default(),
                 ));
             }
@@ -446,6 +490,36 @@ mod tests {
 
     /// hdrhistogram guarantees 3 significant digits — quantile values may be
     /// off by up to 0.1%, so assert within that.
+    /// 2026-08-07. The 3.3 / 4.1 / 11.3% figures in the 26AUG05 post-mortem
+    /// were hand arithmetic because no rate existed in the crate. The one that
+    /// matters is the None case: a run that heard NOTHING must not report a
+    /// clean 0%, because "armed but deaf" is a different failure from "armed
+    /// and lossless" and AAOI-26AUG06 was graded benign on exactly that
+    /// confusion.
+    #[test]
+    fn drop_pct_is_none_when_no_frame_arrived() {
+        let none = DropCounters { source_to_preproc: 0, preproc_to_chunker: 0, chunker_to_detector: 0 };
+        assert_eq!(none.pct_of(0), None, "no frames must not read as 0%");
+        assert_eq!(none.pct_of(1000), Some(0.0));
+        assert_eq!(PipelineReport::render_table_pct_suffix(None), "");
+        assert_eq!(PipelineReport::render_table_pct_suffix(Some(0.0)), " (0.00%)");
+
+        // The real TLN-26AUG05 numbers: 9,395 dropped of 227,209 = 4.13%.
+        let tln = DropCounters {
+            source_to_preproc: 9_395,
+            preproc_to_chunker: 0,
+            chunker_to_detector: 0,
+        };
+        let pct = tln.pct_of(227_209).expect("frames present");
+        assert!((pct - 4.135).abs() < 0.01, "got {pct}, want ~4.13");
+        assert_eq!(PipelineReport::render_table_pct_suffix(Some(pct)), " (4.13%)");
+
+        // Only the ingress ring can drop, but the rate sums all three stages.
+        let all = DropCounters { source_to_preproc: 1, preproc_to_chunker: 2, chunker_to_detector: 3 };
+        assert_eq!(all.total(), 6);
+        assert_eq!(all.pct_of(600), Some(1.0));
+    }
+
     fn close(got: u64, want: u64) -> bool {
         let tol = (want / 500).max(1); // ±0.2% (two sig-digit buckets), min 1 µs
         got.abs_diff(want) <= tol

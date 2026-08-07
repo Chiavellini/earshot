@@ -18,4 +18,11 @@ use crate::types::{AudioChunk, Detection};
 
 pub trait Detector: Send {
     fn process(&mut self, chunk: &AudioChunk) -> SmallVec<[Detection; 2]>;
+
+    /// Engine name as it appears in `[detector].engine`, recorded into the run
+    /// report. `Detection::confidence` means different things per engine —
+    /// `sherpa_kws` emits a constant 1.0 sentinel, `streaming_ctc` a real
+    /// posterior — so a banked report without this cannot be scored without
+    /// guessing which one produced it.
+    fn engine_name(&self) -> &'static str;
 }

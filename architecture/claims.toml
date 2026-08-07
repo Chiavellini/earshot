@@ -53,6 +53,11 @@ paths = [
   # canonical OrderRecord::reached_wire() so the predicate has ONE definition.
   "tests/e2e_full_chain.rs",
   "tests/perf_budget.rs",
+  # 2026-08-07: both composers read Detector::engine_name() before the detector
+  # moves into its thread and stamp it on PipelineReport. Fanout reports the
+  # DISTINCT set joined by "+" rather than asserting one engine, since nothing
+  # forces a config's legs to agree.
+  "src/pipeline/mod.rs",
 ]
 verification = [
   "cargo test --test e2e_full_chain",
@@ -263,6 +268,16 @@ paths = [
   "configs/you-26aug05-raw.toml",
   "scripts/slate-time-merge.py",
   "slate/call-times.json",
+  # 2026-08-07: HIMS 08-10 staged untimed (midnight-UTC + TODO). Real call time
+  # 21:00Z (15:00 CDMX) supplied by the operator and written in; the scheduler
+  # half of that class is guarded in control.operate/ops.traceability.
+  "configs/hims-26aug10-raw.toml",
+  "configs/webcast-hims-26aug10-arm-wc.toml",
+  # 2026-08-07: the widener's lexicon. It lives under configs/ (so this node's
+  # glob owns it) but its content is study evidence — live-validated variant
+  # sets, propagated across issuers. Its consumer, scripts/variant-widen.py,
+  # sits with variant-study.sh under evidence.benchmark.
+  "configs/variant-lexicon.toml",
 ]
 verification = [
   "cargo test --lib prepare",
@@ -434,10 +449,25 @@ contract_change = true
 paths = [
   "docs/nodes/control-preflight.md",
   "scripts/preflight-event.sh",
+  # 2026-08-06 (latency-lane): P1's "chunk-16 re-export (160 ms)" label is
+  # wrong — chunk-16 IS the armed export and is 320 ms. One-line correction to
+  # the checklist item. Added here rather than as a second claim because
+  # doc-lint permits one open claim per node and this lane already holds
+  # control.preflight. See claim `detector.quantum_label_correction`.
+  "docs/RACE-CHECKLIST.md",
+  # 2026-08-07: landed untracked on 08-06 with no owning node. It derives money
+  # posture from the readiness artifact and refuses on a keywords_sha256
+  # mismatch, so it can never disagree with this node's blocking gate — which
+  # is why it belongs here rather than with the study that produces the input.
+  "scripts/posture-from-study.py",
+  # Dirty since the 08-06 prep night with no claim covering it; this is the
+  # digit-strip screen that refused DUOL's -100 market.
+  "scripts/market-phrase-screen.py",
 ]
 verification = [
   "bash -n scripts/preflight-event.sh",
   "scripts/preflight-event.sh --help",
+  "scripts/doc-lint.sh",
 ]
 evidence = ["VERIFICATIONS.md"]
 
@@ -580,6 +610,14 @@ paths = [
   "VERIFICATIONS.md",
   "docs/COMPETITOR-ANATOMY.md",
   "docs/INGRESS-BAKEOFF.md",
+  # 2026-08-06 (latency-lane): same P1 label correction as in
+  # `detector.quantum_label_correction` — RACE-STRATEGY's follow-on ladder
+  # names "chunk-16 re-export → 160 ms", which is the artifact already armed.
+  "docs/RACE-STRATEGY.md",
+  # 2026-08-06 session handoff (TLN phone-race decomposition + P1 verdict).
+  # Registered to evidence.measure in nodes.toml alongside the other two
+  # race handoffs.
+  "chiavellini.md",
   # 2026-08-03 (webcast-lane): PLTR/SNAP measurements — Δrace on the three
   # genuine races, recall decomposed by coverage window, and the Kalshi-vs-PM
   # venue-scale result. Added to this claim because doc-lint permits one open
@@ -602,6 +640,11 @@ paths = [
   # wnt-source-lane: is the WNT pack reachable from a delayed feed at all?
   "scripts/wnt-pack-lag.py",
   "scripts/wnt-score.py",
+  # 2026-08-07: the settlement join. First tool that can say whether a
+  # detection was RIGHT; every accuracy figure before it was hand-graded into
+  # a postmortem. Its price-band table corrects this node's own 26AUG05 EV
+  # claim, which is why the correction and the tool land under one claim.
+  "scripts/settle-score.py",
   # read-quantum-lane (2026-07-30, INTERRUPTED — see the note below). Claimed
   # here rather than as its own [[claim]] because doc-lint allows exactly one
   # open claim per node and evidence.measure already has this one.
@@ -820,6 +863,34 @@ evidence = [
 # open claim per node, so the retirement had to precede the new claim.
 
 [[claim]]
+id = "detector.quantum_label_correction"
+node = "runtime.detector.streaming_ctc"
+worker = "latency-lane"
+branch = "webcast-lane"
+state = "active"
+contract_change = false
+# P1 is mislabelled across four docs: "chunk-16 re-export (160 ms quantum)".
+# The armed encoder IS the chunk-16 export
+# (models/…-ctc-small-2024-03-18/ctc-epoch-30-avg-3-chunk-16-left-128.onnx) and
+# chunk-16 is 320 ms — upstream computes `decode_chunk_len = chunk_size * 2`
+# (icefall export-onnx-streaming-ctc.py) and its docstring gives T=45 for
+# chunk-16, matching the T=45/decode_chunk_len=32 pinned in VERIFICATIONS.md.
+# 160 ms requires --chunk-size 8, which is BELOW the trained 16/32/64 grid.
+# Doc-only correction; no code and no contract change.
+paths = [
+  "docs/CTC-MODEL-SOURCING.md",
+  # 2026-08-07: implements Detector::engine_name() -> "streaming_ctc". Needed
+  # because this engine's `confidence` is a real posterior while sherpa_kws
+  # emits a constant 1.0 sentinel, and a banked report recorded neither.
+  "src/detector/streaming_ctc.rs",
+]
+verification = [
+  "scripts/doc-lint.sh",
+  "cargo test --lib detector",
+]
+evidence = ["docs/CTC-MODEL-SOURCING.md"]
+
+[[claim]]
 id = "bench.model_dir_grid"
 node = "evidence.benchmark"
 worker = "latency-lane"
@@ -840,6 +911,14 @@ paths = [
   "docs/BAKEOFF.md",
   "docs/nodes/evidence-benchmark.md",
   "src/bench/mod.rs",
+  # 2026-08-07: the variant WIDENER and its lexicon. `variant-study.sh` (this
+  # node) measures whether a keyword is reachable; nothing proposed a fix, so a
+  # dead word was a manual job and on 08-07 nobody was awake — TTWO forfeited a
+  # 69,658-contract board over 3 words of 12. The widener proposes only:
+  # measurement stays the gate, so a bad candidate scores 0 and changes
+  # nothing. The lexicon carries live-validated sets (nvidia 0/18 -> 122/45 on
+  # LYFT, and UBER's NVID fired and placed a real order on that set).
+  "scripts/variant-widen.py",
 ]
 verification = [
   "cargo test --release --lib bench::",
@@ -872,6 +951,9 @@ paths = [
   # graded as 23 orders when 0 had reached Kalshi. Both now count `sent`
   # (send_ts != null), which is the only field a wire send sets.
   "scripts/run-verdict.sh",
+  # 2026-08-07: landed untracked on 08-06 with no owning node. It is a grader,
+  # so it belongs beside run-verdict.sh and missed-arm-check.py.
+  "scripts/post-event-report.sh",
 ]
 verification = [
   "python3 scripts/missed-arm-check.py --check",
@@ -928,6 +1010,12 @@ paths = [
   "scripts/stage-nightly.sh",
   "scripts/event-status.sh",
   "docs/runbooks/RUNBOOK-2026-08-05.md",
+  # 2026-08-07: both landed untracked on 08-05/06 with no owning node, so
+  # doc-lint was red and every runtime path was ungoverned — the 08-04 finding
+  # verbatim. Registered on control.operate, where the rest of the green-gate
+  # and prep-night machinery already lives.
+  "scripts/green-guardian.sh",
+  "scripts/night-before-sweep.sh",
 ]
 verification = [
   "bash -n scripts/journal.sh scripts/assert-ready.sh scripts/descope-event.sh scripts/watcher-liveness.sh scripts/install-t0-agents.sh scripts/study-nightly.sh",
@@ -990,3 +1078,45 @@ verification = [
   "cargo test --test kill_sigterm",
 ]
 evidence = ["docs/layers/risk.md"]
+
+[[claim]]
+id = "detector.engine_name"
+node = "runtime.detector.port"
+worker = "settlement-lane"
+branch = "webcast-lane"
+state = "active"
+contract_change = true
+# 2026-08-07: `Detection.confidence` is not comparable across engines —
+# sherpa_kws emits a constant 1.0 sentinel, streaming_ctc a real posterior —
+# and roughly half the arm configs run each. No banked report recorded which
+# ran, so the first settlement study (scripts/settle-score.py) had to INFER the
+# engine from the sentinel value to avoid pooling the two. The port gains
+# `engine_name()` so a report can say what produced its detections.
+paths = [
+  "docs/layers/detector.md",
+  "src/detector/mod.rs",
+  "src/detector/stub.rs",
+]
+verification = [
+  "cargo test --lib detector",
+  "cargo test --test e2e_full_chain",
+]
+evidence = ["docs/layers/detector.md"]
+
+[[claim]]
+id = "detector.sherpa_engine_name"
+node = "runtime.detector.sherpa"
+worker = "settlement-lane"
+branch = "webcast-lane"
+state = "active"
+contract_change = false
+# Implements Detector::engine_name() -> "sherpa_kws". This is the engine whose
+# confidence is the 1.0 sentinel, so it is the reason the field exists.
+# See claim `detector.engine_name`.
+paths = [
+  "src/detector/sherpa_kws.rs",
+]
+verification = [
+  "cargo test --lib detector",
+]
+evidence = ["docs/layers/detector.md"]
