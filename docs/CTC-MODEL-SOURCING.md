@@ -12,8 +12,25 @@ green against it on this box. REMAINING GATE: the corpus bake-off
 (`bench-detector --engines streaming_ctc`, docs/BAKEOFF.md bars) — the CTC
 head was an auxiliary loss (scale 0.2) with no published WER, so quality is
 unproven until benched. Known latency-trim follow-on: re-export the HF
-checkpoint at chunk 16 (160 ms quantum; trained chunk grid 16/32/64) via
+checkpoint at **`--chunk-size 8`** (160 ms quantum) via
 `export-onnx-streaming-ctc.py` if the paced bench lands near the 350 ms bar.
+
+> **CORRECTED 2026-08-06 — this line used to say "chunk 16 (160 ms quantum)",
+> which is wrong twice over and would have produced the artifact we already
+> run.** The armed encoder is
+> `ctc-epoch-30-avg-3-chunk-16-left-128.onnx` — chunk-16 is in the filename —
+> and upstream computes `decode_chunk_len = chunk_size * 2`
+> (`export-onnx-streaming-ctc.py`), whose docstring gives `T = 32+7+2*3 = 45`
+> for chunk-16. That matches the `T=45`, `decode_chunk_len=32` → **320 ms**
+> pinned in `VERIFICATIONS.md`. So chunk-16 = 320 ms, and 160 ms needs
+> `--chunk-size 8` (`decode_chunk_len=16`, `T = 16+7+6 = 29` — the acceptance
+> check on any new export).
+>
+> **`8` is BELOW the trained chunk grid 16/32/64**, so a chunk-8 export runs the
+> encoder at a chunk size it never saw in training. Quality is an open question,
+> not a given: this is an experiment gated on the accuracy columns of the
+> interleaved bench (`bench-detector --model-dir <chunk16>,<chunk8>`,
+> `docs/BAKEOFF.md`), not a build step.
 Tier 1 (CTC-head finetune, GPU) stays the fallback ONLY if this model fails
 the bars; recommended base: `Zengwei/icefall-asr-librispeech-streaming-
 zipformer-2023-05-17`.

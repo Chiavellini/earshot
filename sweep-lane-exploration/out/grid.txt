@@ -1,0 +1,51 @@
+ROBUSTNESS BATTERY — split=TEST
+
+S1  METHOD SANITY — the 90-100c bucket must price at ~0
+    (a sweep that ran to 99c is right ~97% of the time and correctly priced;
+     edge THERE would mean the pipeline is manufacturing it)
+    follow   n=2    per-trade -55.0c
+    fade     n=0  (no trades in bucket — check not informative)
+
+S4  BASKET DISCRIMINATOR (exploratory — cannot promote an arm this round)
+    isolated (basket_n=1)    n=69   P(YES)=48%  per-trade -3.9c
+    basket (basket_n>=2)     n=0
+
+S6  FADE / LEVEL OVERLAP — are they the same trades wearing two names?
+    fade markets 43, level markets 137, overlap 25 (58% of fade)
+
+LOEO  LEAVE-ONE-EVENT-OUT — no single event may carry a result
+    follow   full  -22.5c   LOEO range [-30.5 (drop KXWORLDNEWSMENTION-26JUL29), -17.7 (drop PLTR-26AUG03)]   sign flips: 0/7
+    fade     full   +0.9c   LOEO range [-6.0 (drop SPCX-26AUG04), +4.6 (drop VZ-26JUL24)]   sign flips: 7/17
+    level    full   -0.5c   LOEO range [-1.8 (drop SHOP-26AUG05), +1.1 (drop LYFT-26AUG06)]   sign flips: 4/26
+
+NULL  EFFICIENT-MARKET NULL — under efficiency a trade pays exactly -fee
+    follow   real  -22.5c   efficient null -1.9c 95%[-22.5,+20.4]   p=0.977  indistinguishable from an efficient market
+    fade     real   +0.9c   efficient null -1.8c 95%[-13.7,+10.0]   p=0.386  indistinguishable from an efficient market
+    level    real   -0.5c   efficient null -1.7c 95%[-8.5,+5.4]   p=0.399  indistinguishable from an efficient market
+
+S5  SETTLEMENT LAG — capital is tied up from entry to settlement
+    (not computed: settlement timestamps are only banked for 3 events;
+     AAL swept 12:33Z and settled 17:08Z, so the order of magnitude is HOURS.
+     Any EV figure here ignores capital cost and overstates efficiency.)
+
+S2  WINDOW-FREE VARIANT — no call window, size floor alone
+    follow   fills=31    per-trade   -12.7c  95% CI [-31.4,+8.8]
+    fade     fills=144   per-trade    +0.7c  95% CI [-9.3,+8.5]
+    level    fills=137   per-trade    -0.5c  95% CI [-6.9,+5.9]
+
+S3  PARAMETER GRID — an arm surviving only one cell is NOT-RESOLVED
+     min_term min_jump  min_ct  wait_s            follow              fade             level
+           40       10      25     120     -5.5c n=24        -1.2c n=84        -0.5c n=137  
+           40       15      25     120    -17.5c n=15        -0.6c n=59        -0.5c n=137  
+           40       25      25     120    -19.9c n=14        +5.8c n=30        -0.5c n=137  
+           50       10      25     120     -9.6c n=21        -0.8c n=79        -0.5c n=137  
+           50       15      25     120    -22.5c n=14        +0.9c n=55        -0.5c n=137  
+           50       25      25     120    -25.3c n=12        +7.3c n=28        -0.5c n=137  
+           60       10      25     120    -19.9c n=17        +1.4c n=65        -0.5c n=137  
+           60       15      25     120    -34.6c n=12        +3.6c n=46        -0.5c n=137  
+           60       25      25     120    -32.8c n=11       +10.6c n=25        -0.5c n=137  
+
+    cells evaluated: 81
+    follow   cells meeting the promotion EV+CI bar: 0/81
+    fade     cells meeting the promotion EV+CI bar: 0/81
+    level    cells meeting the promotion EV+CI bar: 0/81

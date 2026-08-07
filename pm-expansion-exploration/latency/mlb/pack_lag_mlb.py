@@ -30,10 +30,51 @@ RAW RESULT for the one matched point (ERRO, this game):
   Kalshi ERRO sweep onset (leg 2) : see live run output below
   raw offset                      : sweep_onset - play_end, in seconds
 
+POOLED, 2026-08-07, via pool_more_games.py — 121 settled KXMLBMENTION events
+scanned (essentially the full available history; 1 skipped, a Home Run Derby
+special event with no per-game date). GRAN/WALK/BUNT stayed excluded per the
+matcher table above.
+
+  ERRO: 80 attempts -> 16 clean single-point matches (20.0% hit rate).
+    54 "no play matches" (word said, no real error -- GAMED, same shape as
+    GRAN/WALK), 10 pre-priced entirely before the game started (also GAMED).
+    So ERRO is NOT uniformly clean either: ~80% of its settlements show the
+    same GAMED characteristics as GRAN/WALK/BUNT. Only the remaining ~20%
+    are genuine reactions to a real, matched Error play -- confirmed via a
+    real counter-example this pooling run surfaced: KXMLBMENTION-26AUG01AZCLE
+    settled ERRO=yes with real volume, but gamePk 824405's play-by-play
+    contains ZERO plays of type "Error" at all (distinct event types:
+    Double, Fielders Choice Out, Flyout, Forceout, Groundout, Hit By Pitch,
+    Home Run, Lineout, Pop Out, Sac Bunt, Sac Fly, Single, Strikeout, Walk)
+    -- the word was said without the event occurring, exactly like GRAN/WALK.
+
+    Among the 16 clean points, the raw offsets are BIMODAL, not one
+    population: a "fast" cluster of 12 (9.98-140.56s, median 45.17s, mean
+    49.83s) and a "slow" cluster of 4 (428.65-1757.91s, median 789.65s, mean
+    941.47s). Full n=16 stats: median 56.15s, mean 272.74s, stdev 461.27s --
+    the mean/stdev are dominated by the slow cluster and are not a fair
+    single summary. The slow cluster is flagged, not explained: MLB errors
+    are sometimes assigned retroactively by the official scorer after a
+    delay, which is a plausible mechanism, but this is unconfirmed --
+    needs more data before trusting either cluster as a program verdict.
+
+  WILD: 34 attempts -> 0 clean matches (0% hit rate). Every single WILD
+    settlement checked shows "no play matches" -- unlike ERRO, WILD looks
+    ENTIRELY GAMED at the class level on this sample, not just occasionally.
+    Should be treated the same as GRAN/WALK/BUNT going forward, not as a
+    second verified-live strike code.
+
+Practical upshot: MLB's CONTESTABLE verdict survives pooling, but narrower
+and noisier than the n=1 finding suggested -- it applies to a ~20% minority
+of ERRO settlements (the ones with a real matched Error play), split across
+two very different reaction-speed regimes, and does NOT extend to WILD.
+
 Usage:
   pack_lag_mlb.py <event_ticker> <strike_code> <game_pk>
     e.g. pack_lag_mlb.py KXMLBMENTION-26AUG01NYYCHC ERRO 824649
   pack_lag_mlb.py --self-test
+  pool_more_games.py [--target N] [--max-events N] [--strikes ERRO,WILD]
+    # re-run the full pooling sweep across all settled events
 """
 
 from __future__ import annotations

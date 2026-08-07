@@ -510,6 +510,58 @@ this table; the question was why it doesn't fire early), **P4** GPU
 finetune go/no-go on the P1–P3 evidence. Holdout remains UNRUN per
 protocol (no frozen config to one-shot).
 
+### P1 RESULT — chunk-8 (160 ms quantum) RUN 2026-08-06: **−101 ms, but recall FAILS the gate**
+
+**The export existed the whole time.** `models/streaming-ctc-en-20260723-chunk8` has been
+staged on the us-east-1 box since 2026-07-23, alongside a matched
+`streaming-ctc-en-20260723-chunk16` control from the same toolchain and checkpoint. Verified
+geometry: chunk8 `T=29, decode_chunk_len=16` (160 ms) vs chunk16 `T=45, decode_chunk_len=32`
+(320 ms). P1 was never blocked on producing a model — it was blocked on nobody running the
+bench, and until 2026-08-05 the harness could not put two models in one run.
+
+Run: `bench-detector --config configs/bakeoff-webcast-ctc16.toml --engines streaming_ctc
+--chunk-ms 80 --model-dir <chunk16>,<chunk8> --split dev`, lossless, **interleaved in ONE
+invocation** (both cells share machine state). us-east-1 box, 16 cores, idle. Dev split,
+**5.15 h**, calls AXP/intc/lmt/VZ. 41 keywords. Exit 0.
+
+**Latency — real, but ~60% of the predicted cut.** Per-phrase `consumed_lag_p50_ms`
+(cross-engine-comparable), Confirmed tier, phrases scoring in both cells (n=10):
+
+| | Δ |
+|---|---|
+| **TP-weighted mean** | **−101 ms** |
+| median | −75 ms |
+| best / worst | security −190 ms · nasa **+160 ms** (tp=1) |
+
+Halving the quantum (320→160) returns ~100 ms, not 160 — consistent with the ~130 ms
+right-context term being unchanged and part of the lag being phrase-alignment, not quantum.
+
+**Accuracy — FAILS the pre-registered bar.** Headline recall is identical (0.818 both,
+TP=63 / miss=14) but that is an artifact: `panther lake` carries **2,354 false alarms** and
+its +3 TP masks losses elsewhere. Excluding that one pathological phrase:
+
+| | chunk16 | chunk8 |
+|---|---|---|
+| recall | **0.842** | **0.789** |
+| TP / miss | 48 / 9 | 45 / 12 |
+| FA/h | 15.0 | 14.4 |
+
+Per-phrase: `sikorsky` **2/2 → 0/2 (lost entirely)**, `security` 7→6. FA cost is nil.
+
+**VERDICT: FAIL.** The gate was "−160 ms at unchanged recall/FA"; this is −101 ms *with* a
+5.3-point recall drop. That is the "lag cut bought with a recall drop" case, called in
+advance. Chunk-8 is below the trained 16/32/64 grid and the regression is exactly where that
+predicts. **Do not promote.**
+
+**Caveats, stated:** thin sample — 5.15 h, 63 TPs, and `sikorsky` is n=2, so the sharpest
+single signal rests on two occurrences. Lossless run, so `consumed_lag` is audio-domain
+(correct for a quantum question) and no wall-clock claim is made. Holdout remains UNRUN.
+
+**Consequence:** −101 ms does not change a race that needs −340 ms to place an order at all
+(`docs/RACE-STRATEGY.md`, TLN 26AUG05). Combined with the recall cost, quantum reduction *on
+this checkpoint* is not the lever. The open path is a model **trained** for a small quantum
+(G2 shortlist: NVIDIA Parakeet-Realtime-EOU-120M-v1, 80 ms), not a smaller export of this one.
+
 ### ⚠ P1 IS MISLABELLED EVERYWHERE — "chunk-16" is what we ALREADY run (2026-08-05)
 
 `P1 chunk-16 re-export (160 ms quantum)` cannot deliver anything: **the armed

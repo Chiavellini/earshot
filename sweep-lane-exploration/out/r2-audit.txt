@@ -1,0 +1,48 @@
+QUANT-AUDIT — round 2, split=TRAIN
+  arm as frozen: +21.0c over 22 fills, 17/22 YES
+
+GATE 3a  PLACEBO / TIMING — same markets, random instant AFTER wave-1
+  1987 draws over 183 markets (~4 fills each)
+  placebo : -22.6c  95%[-49.0,+1.2]  best draw +33.0c
+  arm     : +21.0c   -> acting AT wave-1 beats acting later on the same markets
+
+         (the INVALID first version of this test, kept visible:
+          drawing from the WHOLE window scores +31.9c and
+          'beats' the arm — because it can fire BEFORE the sweep, i.e.
+          buy at 40c a market it already knows will reprice to 99c.
+          That is lookahead, not evidence. Fixed above.)
+
+GATE 3b  PLACEBO / SELECTION — same rule on markets that NEVER swept
+  338 non-triggering markets in the same events
+  placebo : -23.5c  95%[-33.2,-14.0]
+  arm     : +21.0c   -> wave-1 selects genuinely better markets
+
+GATE 1  SHIFT — delay every decision; lookahead collapses, structure decays
+    offset  fills     yes   per-trade
+        0s     22  17/22       +21.0c  <-- as frozen
+        1s     22  17/22       +21.0c
+        5s     18  12/18        +9.3c
+       15s     13   7/13        -2.4c
+       60s      9   3/9        -21.8c
+  A one-second shift that destroys the result would mean we are reading
+  the decision instant itself. A multi-second give-back should not care.
+
+GATE 4  COST — must clear 2x. Stands in for slippage and for the
+        capital cost of holding to settlement, which nothing here models.
+   1.0x fees : +21.0c
+   1.5x fees : +20.0c
+   2.0x fees : +19.0c  <-- HARD GATE
+   3.0x fees : +17.0c
+
+GATE 4  STABILITY BY DAY — a result carried by one session is not robust
+  26AUG04      8 fills    +22.4c
+  26AUG06      5 fills    +40.4c
+  26JUL22      4 fills    -40.5c
+  26JUL23      1 fills    +87.0c
+  26JUL24      3 fills    +42.0c
+  26JUL30      1 fills    +29.0c
+  positive on 5/6 days
+
+GATE 5  SACRED HOLDOUT — forward-only, code-enforced
+  score_r2.py --split holdout refuses until 36 events or 2026-10-30.
+  TRAIN is fully contaminated and declared as such; it specifies only.

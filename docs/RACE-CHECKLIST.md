@@ -64,8 +64,19 @@ one falsifiable outcome with one evidence destination.
       `docs/DIAL-INS.md` with date + access class.
       Evidence →: configs/dial-ins.toml + docs/DIAL-INS.md.
 
-- [ ] **P1.** chunk-16 re-export of the streaming-CTC model (160 ms decode
-      quantum, per CTC-MODEL-SOURCING follow-on) + re-run the paced bench.
+- [x] **P1. DONE 2026-08-06 — NEGATIVE, do not promote.** chunk-8 (160 ms
+      quantum) vs chunk-16 (320 ms), interleaved in one lossless dev run
+      (5.15 h, box): **−101 ms TP-weighted** decode-lag (not the −160 ms
+      predicted) **and a recall drop 0.842 → 0.789** excluding the pathological
+      `panther lake`; `sikorsky` lost outright 2/2 → 0/2. Fails the
+      pre-registered "unchanged recall" bar. Full result + caveats in
+      `docs/BAKEOFF.md` §P1 RESULT.
+      **Two corrections this closed:** (a) the item said *chunk-16*, which is
+      the export already armed — executing it as written would have produced
+      the current artifact and no cut; 160 ms needs `--chunk-size 8`, below the
+      trained 16/32/64 grid. (b) The export had existed on the box since
+      2026-07-23; P1 was never blocked on producing a model, only on running
+      the bench.
       **Re-scoped 2026-07-21:** a modest absolute-latency trim (~150 ms), NOT
       an overtake (P3 showed prefix can't fire early); lower priority than G2b.
       Gate: none (laptop-runnable; ~2 h detached real-time replay).

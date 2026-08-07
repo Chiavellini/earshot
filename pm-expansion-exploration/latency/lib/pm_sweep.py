@@ -10,8 +10,34 @@ a 22-month-old settled market, no truncation).
 
 PM's price field is already a 0..1 decimal (same convention as Kalshi's
 yes_price_dollars), so the sweep-onset threshold logic transfers directly —
-only the transport (unix-seconds `timestamp`, no cursor pagination observed
-needed at this scale) differs from Kalshi's cursor-paginated, ISO8601 tape.
+only the transport (unix-seconds `timestamp`) differs from Kalshi's
+cursor-paginated, ISO8601 tape.
+
+SECOND BUG FOUND AND FIXED 2026-08-07: "no cursor pagination observed
+needed at this scale" was wrong for a high-volume market. The endpoint
+returns NEWEST-first and silently truncates at `limit` with no error --
+confirmed live: SOTU's ALIEN condition has 548 total trades, but
+`trades(cid)` with the old unpaginated default (limit=500) silently
+dropped the OLDEST 48 (fetchable only via `&offset=500`). Worse, the
+retained batch's earliest trade then LOOKS LIKE a real sweep onset to
+sweep_onset() (it's the first data point available), when it may just be
+the truncation boundary -- a false onset, not a refusal. Fixed via
+offset-paginated fetching until a page returns fewer than `limit` rows.
+
+BUG FOUND AND FIXED 2026-08-07: each trade also carries an `outcome` field
+("Yes" or "No") -- Polymarket's binary markets trade two complementary
+token sides, and a "No" trade's own `price` is the price of the NO token,
+NOT the market's implied YES probability. A No trade at price=0.28 means
+YES is implied ~72% likely (1 - 0.28), the OPPOSITE of what `price` alone
+suggests. `trades()` previously used `price` directly regardless of
+`outcome`, corrupting `_yes` for every No-side trade -- confirmed live
+against KEYNOTE-TSMC's tape: 86 of 116 trades were No-side, and the raw
+(uncorrected) `_yes` series flickered nonsensically between ~0.001 and
+~0.96 second-to-second; the corrected (outcome-aware) series is a coherent,
+slowly-evolving price. This affected every Polymarket venue built on this
+module (rogan/, sotu/, keynote/) -- their sweep_onset()-derived verdicts
+were computed on this corrupted `_yes` and need re-verification, not just
+today's fill-window check.
 """
 
 from __future__ import annotations
@@ -29,13 +55,29 @@ def get(url: str):
         return json.load(r)
 
 
-def trades(condition_id: str, limit: int = 500) -> list[dict]:
-    """All public trades for one Polymarket condition, oldest first."""
-    url = f"{API}?market={condition_id}&limit={limit}"
-    out = get(url)
+def implied_yes(price: float, outcome: str) -> float:
+    """A trade's own `price` is only the market's implied YES probability
+    when outcome == "Yes"; a No-side trade at `price` implies YES ~= 1 -
+    price. See module docstring's 2026-08-07 bug note."""
+    return price if outcome == "Yes" else 1.0 - price
+
+
+def trades(condition_id: str, page_size: int = 500) -> list[dict]:
+    """All public trades for one Polymarket condition, oldest first. Pages
+    via `offset` until a page comes back short (endpoint returns
+    newest-first internally; the full set is sorted oldest-first below
+    regardless)."""
+    out, offset = [], 0
+    while True:
+        url = f"{API}?market={condition_id}&limit={page_size}&offset={offset}"
+        batch = get(url)
+        out.extend(batch)
+        if len(batch) < page_size:
+            break
+        offset += page_size
     for t in out:
         t["_ts"] = datetime.fromtimestamp(t["timestamp"], tz=timezone.utc)
-        t["_yes"] = float(t["price"])
+        t["_yes"] = implied_yes(float(t["price"]), t.get("outcome"))
     out.sort(key=lambda t: t["_ts"])
     return out
 
@@ -95,6 +137,12 @@ def self_test():
             f += 1
 
     print("pm_sweep self-test:")
+
+    chk("Yes-side trade: price IS the implied YES price", 0.73, implied_yes(0.73, "Yes"))
+    chk("No-side trade: implied YES is 1 - price, not price itself",
+        0.72, round(implied_yes(0.28, "No"), 2))
+    chk("No-side trade at a near-zero No price implies YES near-certain",
+        True, implied_yes(0.001, "No") > 0.99)
 
     def tr(px, t_offset_s, t0):
         ts = t0 + timedelta(seconds=t_offset_s)

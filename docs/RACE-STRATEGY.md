@@ -58,7 +58,10 @@ exactly as sherpa's does.
 
 **Pre-declared follow-on ladder** (each is a checklist item):
 
-1. **P1** chunk-16 re-export → 160 ms decode quantum → re-run the paced bench.
+1. **P1** **chunk-8** re-export → 160 ms decode quantum → re-run the paced bench.
+   *(Relabelled 2026-08-06: was "chunk-16", which is the export already armed at
+   320 ms — `decode_chunk_len = chunk_size × 2`. Chunk-8 is below the trained
+   16/32/64 grid, so it is an experiment gated on accuracy, not a build step.)*
 2. **P2** scorer-side keyword boost (attacks the tariff telephony-domain gap).
 3. **P3** prefix-fire diagnosis — **DONE 2026-07-21, negative**: prefix-firing
    is not the overtake lever for this vocabulary (§2b).

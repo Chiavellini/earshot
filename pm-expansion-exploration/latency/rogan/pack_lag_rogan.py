@@ -78,16 +78,15 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
-sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import slope_fit as sf  # noqa: E402
 import pm_sweep as pms  # noqa: E402
+from phrase_match import first_occurrence  # noqa: E402
 
 CORPUS = Path(__file__).resolve().parent / "corpus" / "20260728"
 
@@ -98,23 +97,14 @@ TARGETS = [
     ("CRAZY", "0xcf0f1ff41b65d4e357368b03278cb2a0b1b3880442125cb7497a4eacfd21b1be", ["crazy"]),
 ]
 
-WORD_RE = re.compile(r"[a-z]+")
-
-
-def norm(tok: str) -> str:
-    return "".join(WORD_RE.findall(tok.lower()))
-
-
-def first_occurrence(words: list[dict], alternatives: list[str]) -> float | None:
-    """Programme-time (seconds) of the FIRST utterance of any alternative
-    word — these are all "any usage" strikes, not Nth-occurrence count
-    strikes, so first occurrence is the correct anchor (verified against
-    each strike's own rules text before being added to TARGETS)."""
-    alts = {norm(a) for a in alternatives}
-    for w in words:
-        if norm(w["word"]) in alts:
-            return w["start"]
-    return None
+# first_occurrence() now comes from lib/phrase_match.py (the consolidated
+# matcher — this script used to carry its own simpler norm()/first_occurrence()
+# copy, with no possessive/plural handling; switching to the shared,
+# fuller version is behavior-preserving for these 3 targets specifically
+# (none of "spy"/"alien"/"crazy" trip norm()'s trailing-s/possessive rules),
+# confirmed by re-running live post-refactor and reproducing the original
+# banked result bit-for-bit. fuzzy stays False (this script's original
+# default) — these are common, unambiguous words with no ASR-spelling risk.
 
 
 def run(video_upload_utc: datetime):

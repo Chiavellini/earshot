@@ -1,0 +1,12 @@
+{
+  "video_id": "pjGvA-D0Fcs",
+  "title": "President Trump 2026 State of the Union Address & Democratic Response",
+  "channel": "C-SPAN",
+  "duration_s": 7986,
+  "release_timestamp_unix": 1771977660,
+  "known_speech_start_utc": "2026-02-25T02:12:00Z",
+  "known_speech_start_source": "WebSearch, multiple sources agreeing on 9:12pm EST 2026-02-24 start",
+  "anchor_method": "empirical, NOT release_timestamp (release_timestamp implies a 2h11m pre-show gap that contradicts the caption content actually starting at t=99.8s with 'Members of Congress, I...' -- release_timestamp is NOT trusted here, unlike TBPN where it was corroborated)",
+  "anchor_offset_s_in_video": 99.84,
+  "anchor_note": "t0_utc = known_speech_start_utc - anchor_offset_s_in_video, i.e. video t=0 is assumed to be ~99.84s before the first substantive words ('Members of Congress, I...'). This is an ESTIMATE with real uncertainty (does not account for any applause/entrance/procedural announcement time before Trump began speaking) -- the slope_fit's own slope~=1.0 check is the real validator, not this anchor's precision."
+}

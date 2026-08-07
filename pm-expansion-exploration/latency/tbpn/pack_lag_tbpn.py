@@ -32,12 +32,13 @@ and testable via the same slope=1.0 check every other join in this program
 uses: if release_timestamp were wrong, the fitted slope would not land near
 1.0, and the script would refuse rather than report a number.
 
-PHRASE MATCHING: reuses wnt-pack-lag.py's exact idea (word-level normalize:
-lowercase, strip punctuation, drop a trailing possessive/plural 's' on
-words >3 chars — Kalshi's settlement rule counts "the exact phrase/word, or
-a plural or possessive form"), applied to first-occurrence-of-any-alternative
-(none of these 4 strikes are count-strikes, confirmed via yes_sub_title —
-no "N+ times" suffix on any of them).
+PHRASE MATCHING: uses lib/phrase_match.py's all_occurrences() (the
+consolidated, canonical matcher — see that module's docstring; this script
+used to carry its own partial copy of this logic, now imports it instead
+so it can't silently drift from TBPN/Rogan/future venues' matching
+behavior). None of these 4 strikes are count-strikes (confirmed via
+yes_sub_title — no "N+ times" suffix on any of them), so first/all
+occurrence matching is correct, not Nth-occurrence.
 
 Usage:
   pack_lag_tbpn.py                    # re-run the join against banked corpus
@@ -48,7 +49,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -57,6 +57,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 
 import kalshi_sweep as ks  # noqa: E402
 import slope_fit as sf  # noqa: E402
+from phrase_match import all_occurrences, norm  # noqa: E402
 
 CORPUS = Path(__file__).resolve().parent / "corpus" / "20260723"
 KALSHI_EVENT = "KXTBPNMENTION-26JUL23"
@@ -72,33 +73,10 @@ TARGET_STRIKES = {
     "OPEN": ["openai", "chatgpt"],
 }
 
-WORD_RE = re.compile(r"[a-z0-9]+")
-
-
-def norm(tok: str) -> str:
-    """Same rule as wnt-pack-lag.py's norm(): lowercase, strip punctuation,
-    collapse a trailing possessive/plural 's' on words >3 chars."""
-    t = tok.lower()
-    t = re.sub(r"['’]s$", "", t)
-    t = "".join(WORD_RE.findall(t))
-    return t[:-1] if len(t) > 3 and t.endswith("s") else t
-
 
 def load_words(path=None):
     path = path or (CORPUS / "words.json")
     return json.load(open(path))
-
-
-def all_occurrences(words, alternatives):
-    """-> sorted list of programme_offset_s for EVERY occurrence of any
-    alternative (word END timestamp, matching wnt-pack-lag.py's anchor
-    convention). Alternatives are normalized through the SAME norm() as
-    caption words — without this, a target word that itself ends in a bare
-    's' (e.g. "helios") would compare unnormalized ("helios") against a
-    normalized caption hit ("helio", after norm()'s trailing-s strip), and
-    silently never match. Both sides must go through norm() identically."""
-    alt_set = {norm(a) for a in alternatives}
-    return sorted(w["end"] for w in words if norm(w["word"]) in alt_set)
 
 
 def matched_pairs(words=None, t0=None):

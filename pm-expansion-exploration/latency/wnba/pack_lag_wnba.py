@@ -43,20 +43,53 @@ cluster. This is NOT_RESOLVABLE-at-n=3 in the technical sense (`n` this
 small is not a confident population estimate) but it is a genuinely
 different, more encouraging shape than WNT's finding, on real settled data.
 
+POOLED, 2026-08-07 — KNOWN_GAMES grown from 2 to 12 of the 14 total settled
+KXWNBAMENTION games (2 dropped: DALPDX/CONNIND/CONNPHX had no unambiguous
+ESPN scoreboard match on the ticker date or date+1, refused rather than
+guessed; NYDAL's ESPN payload had zero plays, also refused). This run also
+fixed a real bug this pooling surfaced: when a detected sweep predates EVERY
+trusted anchor in a game, the old code fell back to anchors[0] regardless of
+distance, producing multi-thousand-second negative deltas (a market
+pre-pricing off base rate, same shape as MLB's GRAN/WALK GAMED strikes) —
+now refused explicitly instead of silently mispaired. 4 games were dropped
+this way (NYLV-TECH, GSPHX-TRAV, INDSEA-TRAV, CHIATL-TECH): plausibly GAMED,
+not investigated further.
+
+That leaves n=9 clean pairs across 8 games. The pooled slope_fit REFUSES at
+face value (slope=1.153, outside the 0.02 tolerance) — dragged entirely by
+ONE outlier, KXWNBAMENTION-26JUL13PHXMIN-TRAV, delta=+3240.6s (54 min,
+vs. every other point's 12-71s). Dropping that single point: slope=1.0034,
+n=8, span_s=5054.0, offset_s (intercept)=+17.19, offset_mean_s=+25.23,
+offset_spread_s=59.43 (deltas 12.03 to 71.46) — a clean, verified fit that
+TIGHTENS the original n=3 finding (+12 to +26s) rather than contradicting
+it. Both numbers are reported here deliberately: run() itself still returns
+the raw, undoctored n=9 fit (REFUSES) — no outlier-trimming is baked into
+the algorithm — this docstring's n=8 trimmed number is a stated, disclosed
+secondary analysis, not what a fresh `pack_lag_wnba.py` invocation prints.
+
+The PHXMIN-TRAV outlier is flagged, not explained: a genuinely slower
+reaction (batch/delayed settlement, echoing the bimodal fast/slow split
+pooling also found in MLB's ERRO strike, see pack_lag_mlb.py) is plausible
+but unconfirmed — it could equally be a mismatched anchor or another GAMED
+case. Needs more data, not a guess.
+
 CAVEATS, stated plainly, not hidden:
-  - n=3, from 2 games, both from the same date (2026-08-01) — no
-    cross-day variance is captured yet. More settled games with a
-    TRAV/TECH strike would tighten this before trusting it as a program
-    verdict.
+  - Trimmed n=8 is still not a large population estimate; one bad point
+    swings the fit entirely out of tolerance, which is itself informative
+    about how thin this sample still is.
   - Only "Traveling" and "Technical Foul" strikes are used — the trusted
     map deliberately excludes strikes without a reliable structured-event
     proxy (most WNBA mention-market strikes: player names, "MVP", "Draft",
     "Rookie", arena names — these need a transcript/ASR leg-1 like WNT's,
     not this structured-feed shortcut).
   - `wallclock`'s absolute precision (on-court instant vs. stat-entry lag)
-    is unverified — see leg1_playbyplay.py's docstring. The slope=0.997
+    is unverified — see leg1_playbyplay.py's docstring. The slope≈1.0
     result is evidence the TWO clocks move together, not proof either one
     is accurate in an absolute sense.
+  - 4 of 12 pooled games' matched strikes were dropped as "sweep predates
+    all trusted anchors" (likely GAMED) — that is itself a meaningful
+    finding (roughly a third of TRAV/TECH settlements checked this way did
+    NOT reflect a live reaction), not just noise to discard.
 
 Usage:
   pack_lag_wnba.py                    # re-fetch and re-run the live join
@@ -78,11 +111,26 @@ import kalshi_sweep as ks  # noqa: E402
 import slope_fit as sf  # noqa: E402
 import leg1_playbyplay as l1  # noqa: E402
 
-# (espn_event_id, kalshi_event_ticker) pairs known (2026-08-05) to be
-# settled WNBA games with at least one trusted-strike match.
+# (espn_event_id, kalshi_event_ticker) pairs known to be settled WNBA games
+# with at least one trusted-strike match (TRAV/TECH, result=yes, real
+# volume). Pooled 2026-08-07 via discover_games.py against the full settled
+# KXWNBAMENTION history (14 events total); 3 dropped for ambiguous ESPN
+# event resolution (DALPDX/CONNIND/CONNPHX 2026-07-19/22 — no unambiguous
+# scoreboard match on the ticker date or date+1, refused rather than
+# guessed).
 KNOWN_GAMES = [
     ("401857106", "KXWNBAMENTION-26AUG01NYPHX"),
     ("401857105", "KXWNBAMENTION-26AUG01LVCHI"),
+    ("401857101", "KXWNBAMENTION-26JUL30NYLV"),
+    ("401857098", "KXWNBAMENTION-26JUL29GSPHX"),
+    ("401857097", "KXWNBAMENTION-26JUL29ATLDAL"),
+    ("401857094", "KXWNBAMENTION-26JUL28INDSEA"),
+    ("401857085", "KXWNBAMENTION-26JUL20MINSEA"),
+    ("401857083", "KXWNBAMENTION-26JUL20LVTOR"),
+    ("401857081", "KXWNBAMENTION-26JUL19CHIATL"),
+    ("401857077", "KXWNBAMENTION-26JUL18NYIND"),
+    ("401857072", "KXWNBAMENTION-26JUL16NYDAL"),
+    ("401857065", "KXWNBAMENTION-26JUL13PHXMIN"),
 ]
 
 
@@ -112,7 +160,18 @@ def matched_pairs_for_game(espn_event_id: str, kalshi_event_ticker: str):
         # did). Picking the anchor closest to (and before) the sweep is
         # the fairest reading of "which real event this reaction was to."
         prior = [a for a in anchors if a <= onset]
-        anchor = prior[-1] if prior else anchors[0]
+        if not prior:
+            # The detected sweep predates EVERY trusted occurrence of this
+            # play type in the game -- there is no real event for it to be
+            # reacting to yet. Found via pooling 2026-08-07: falling back to
+            # anchors[0] here previously produced multi-thousand-second
+            # negative deltas (the market pre-pricing off base rate, same
+            # shape as MLB's GRAN/WALK GAMED strikes) that broke the pooled
+            # slope-fit (slope=0.37). Refuse rather than fabricate a pairing.
+            out.append((f"{kalshi_event_ticker}-{strike_code}", None, None, None,
+                        "sweep predates all trusted anchors -- likely pre-priced/GAMED, not a reaction"))
+            continue
+        anchor = prior[-1]
         delta = (onset - anchor).total_seconds()
         out.append((f"{kalshi_event_ticker}-{strike_code}", anchor, onset, delta, "ok"))
     return t0, out
@@ -122,7 +181,15 @@ def run():
     all_pairs = []
     rows = []
     for espn_id, kalshi_ticker in KNOWN_GAMES:
-        t0, matched = matched_pairs_for_game(espn_id, kalshi_ticker)
+        try:
+            t0, matched = matched_pairs_for_game(espn_id, kalshi_ticker)
+        except Exception as e:
+            # A bad/empty ESPN payload for one game is a per-game data gap,
+            # not grounds to abort the whole pooled run -- record and move
+            # on, same discipline as every other refusal in this file.
+            rows.append({"label": kalshi_ticker, "anchor_utc": None, "sweep_utc": None,
+                         "delta_s": None, "reason": f"matched_pairs_for_game raised: {e}"})
+            continue
         for label, anchor, onset, delta, why in matched:
             rows.append({"label": label, "anchor_utc": anchor.isoformat() if anchor else None,
                          "sweep_utc": onset.isoformat() if onset else None,
@@ -158,7 +225,9 @@ def self_test():
             f += 1
 
     print("pack_lag_wnba self-test:")
-    chk("KNOWN_GAMES has real-looking (espn_id, kalshi_ticker) pairs", 2, len(KNOWN_GAMES))
+    chk("KNOWN_GAMES is non-empty", True, len(KNOWN_GAMES) > 0)
+    chk("every espn_event_id looks numeric", True,
+        all(eid.isdigit() for eid, _ in KNOWN_GAMES))
     for espn_id, kt in KNOWN_GAMES:
         chk(f"{kt} ticker looks like a KXWNBAMENTION event", True, kt.startswith("KXWNBAMENTION-"))
 
