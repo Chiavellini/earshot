@@ -167,6 +167,87 @@ TEXT_DATE_RE = re.compile(
     r"November|December)\s+(\d{1,2}),\s+(20\d\d)\b")
 QUARTER_RE = re.compile(r"\b(q[1-4])[-_ ]?(20\d\d)\b", re.I)
 
+# ── clock time on an IR page ────────────────────────────────────────────────
+# The gcal link carries time of day; page text carries it too, and until
+# 2026-08-07 this file read the date out of that text and threw the time away.
+# That is what staged 9 of 10 events across 08-06/08-07 at midnight UTC, which
+# install-t0-agents.sh then turned into launchd jobs dated the PREVIOUS day.
+#
+# ⚠ ANCHORED, never bare. A loose `\d{1,2}(:\d{2})?\s*[ap]m` fires on financial
+# tables ("229.4 Amortization"), so a match REQUIRES an am/pm token, and a bare
+# hour with no minutes still requires it.
+# Three guards, each earning its place against a string that really occurs:
+#   (?<![\d.:])  — "229.4 Amortization" otherwise matches as "4 AM". The digit
+#                  after a decimal point is not an hour.
+#   (?:-|to)…    — "8:00 - 9:00 a.m. EDT" prints the meridiem ONCE, after the
+#                  range. Consume the range so the hour taken is 8, not 9.
+#   (?![a-z])    — "Amortization" is not "a.m."; the m must end the token.
+TIME_RE = re.compile(
+    r"(?<![\d.:])(\d{1,2})(?::(\d{2}))?\s*"
+    r"(?:(?:-|–|to)\s*\d{1,2}(?::(?:\d{2}))?\s*)?"
+    r"([ap])\.?\s*m\.?(?![a-z])", re.I)
+# 24-hour "at 13:00 UTC" — only accepted WITH an explicit zone, because a bare
+# "13:00" on an IR page is as often a table cell as a call time.
+TIME24_RE = re.compile(r"(?<![\d.:])([01]?\d|2[0-3]):([0-5]\d)\s*\(?(UTC|GMT|Z)\)?(?![\d\w])")
+# A zone may sit a few characters past the time ("9:00am - 10:00am CDT"), so it
+# is searched for separately rather than glued onto the time match.
+TZ_RE = re.compile(r"\b(ET|EST|EDT|CT|CST|CDT|MT|MST|MDT|PT|PST|PDT|UTC|GMT)\b")
+
+# Abbreviation → IANA zone. We resolve DST from the zone ON THE CALL DATE and
+# never trust the abbreviation's own S/D letter: PYPL's IR page rendered
+# "08:00 AM EST" for a JULY call (configs/dial-ins.toml), and believing the
+# "EST" would have put us an hour late, after the prepared remarks.
+_TZ = {
+    "ET": "America/New_York", "EST": "America/New_York", "EDT": "America/New_York",
+    "CT": "America/Chicago", "CST": "America/Chicago", "CDT": "America/Chicago",
+    "MT": "America/Denver", "MST": "America/Denver", "MDT": "America/Denver",
+    "PT": "America/Los_Angeles", "PST": "America/Los_Angeles",
+    "PDT": "America/Los_Angeles",
+    "UTC": "UTC", "GMT": "UTC", "Z": "UTC",
+}
+
+
+def parse_clock(text, on_date):
+    """Earliest anchored clock time in `text` → (aware UTC datetime, tz_label).
+
+    `on_date` is the confirmed call date (a date), needed because DST is a
+    property of the instant, not of the abbreviation.
+
+    Returns (None, None) when nothing anchored is found. A missing zone yields
+    tz_label "ET?" — the caller marks that an ESTIMATE rather than silently
+    assuming Eastern is right.
+    """
+    from zoneinfo import ZoneInfo
+
+    m24 = TIME24_RE.search(text)
+    m = TIME_RE.search(text)
+    # Whichever comes first wins, so a 24-hour stamp later in the line cannot
+    # shadow the am/pm time that actually labels the call.
+    if m24 and (not m or m24.start() < m.start()):
+        hh, mm, end = int(m24.group(1)), int(m24.group(2)), m24.end()
+        label = m24.group(3).upper()
+    elif m:
+        hh, mm, end = int(m.group(1)), int(m.group(2) or 0), m.end()
+        if not 1 <= hh <= 12:            # "13:00 PM" is not a time, it is noise
+            return None, None
+        if hh == 12:
+            hh = 0
+        if m.group(3).lower() == "p":
+            hh += 12
+        # Zone token within a short reach of the time, uppercase only so a
+        # word like "Add" (from "Add to Calendar") cannot pose as one.
+        z = TZ_RE.search(text[end:end + 24])
+        label = z.group(1) if z else ""
+    else:
+        return None, None
+    if not (0 <= hh <= 23 and 0 <= mm <= 59):
+        return None, None
+
+    est = label not in _TZ
+    zone = ZoneInfo(_TZ.get(label, "America/New_York"))
+    local = datetime(on_date.year, on_date.month, on_date.day, hh, mm, tzinfo=zone)
+    return local.astimezone(timezone.utc), (f"{label or 'ET'}?" if est else label)
+
 
 def fetch_page(url, timeout=20):
     """Fetch an arbitrary issuer page as HTML text.
@@ -206,13 +287,13 @@ def ir_page_dates(html):
         days = sorted({s[:8] for s in uniq})
         if len(days) == 1:
             dt = datetime.strptime(uniq[0], "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
-            return [dt.strftime("%Y-%m-%d")], "gcal_link", f"dates={uniq[0]}", dt
-        return [f"{d[:4]}-{d[4:6]}-{d[6:8]}" for d in days], "gcal_link_ambiguous", "", None
+            return [dt.strftime("%Y-%m-%d")], "gcal_link", f"dates={uniq[0]}", dt, "UTC"
+        return [f"{d[:4]}-{d[4:6]}-{d[6:8]}" for d in days], "gcal_link_ambiguous", "", None, None
 
     text = _strip_html(html)
     hits = TEXT_DATE_RE.findall(text)
     if not hits:
-        return [], "none", "", None
+        return [], "none", "", None, None
     seen, quote = [], ""
     for mon, day, year in hits:
         try:
@@ -226,8 +307,13 @@ def ir_page_dates(html):
         m = TEXT_DATE_RE.search(text)
         i = max(0, m.start() - 70)
         quote = text[i:m.end() + 70].strip()
-        return seen, "page_text", quote, None
-    return sorted(seen), "page_text_ambiguous", "", None
+        # The time lives in this same window — "…Earnings Call August 7, 2026
+        # 8:30 AM ET…". Search from the date match forward so a clock time
+        # belonging to an earlier, unrelated line cannot be picked up.
+        d = datetime.strptime(seen[0], "%Y-%m-%d").date()
+        dt, tzl = parse_clock(text[m.end():m.end() + 70], d)
+        return seen, "page_text", quote, dt, tzl
+    return sorted(seen), "page_text_ambiguous", "", None, None
 
 
 def confirm_call_date(ev, d, fetch=fetch_page):
@@ -260,7 +346,7 @@ def confirm_call_date(ev, d, fetch=fetch_page):
         out["call_date_evidence"] = f"fetch failed: {type(e).__name__}: {e}"
         return out
 
-    dates, source, quote, dt = ir_page_dates(html)
+    dates, source, quote, dt, tz_label = ir_page_dates(html)
     if not dates or source.endswith("ambiguous"):
         out["call_date_evidence"] = (
             f"unconfirmable ({source}"
@@ -270,11 +356,28 @@ def confirm_call_date(ev, d, fetch=fetch_page):
 
     page_date = dates[0]
     out["ir_page_date"] = page_date
-    if dt is not None:
-        out["call_time_utc"] = dt.strftime("%Y-%m-%dT%H:%M:%SZ")
     ours = d.strftime("%Y-%m-%d") if d else None
     agrees = (page_date == ours)
     slug_note = f" | slug {slug_q}" if slug_q else ""
+
+    # A gcal stamp is machine-readable and authoritative, so it sets the time
+    # even while DISPUTING the date — that is the HOOD case, and the whole
+    # reason the dispute path exists.
+    #
+    # A page_text time may only be trusted when the page is describing OUR
+    # call. URBN's page carries "5:00 PM EDT" against a 2026-05-20 page date
+    # and a 2026-08-26 Kalshi date: a real time, belonging to a different
+    # event. Taking it would schedule the arm confidently and wrongly, which
+    # is worse than leaving it null and paging.
+    if dt is not None and (source == "gcal_link" or agrees):
+        out["call_time_utc"] = dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        out["call_time_source"] = source
+        # "ET?" means no zone was printed and Eastern was assumed. Carried so
+        # slate-time-merge.py can shout rather than silently accept a guess.
+        if tz_label:
+            out["call_time_tz"] = tz_label
+            if tz_label.endswith("?"):
+                out["call_time_estimated"] = True
 
     # ⚠ ONLY A GCAL LINK MAY DISPUTE. Measured on the live 2026-07-29 slate:
     #   gcal_link disputes  1/1 correct  (HOOD — the real misdating)
@@ -518,6 +621,71 @@ def self_test():
     # The gcal link is the only signal that recovers TIME OF DAY; call_date()
     # alone yields midnight and the runsheet needs T-20.
     assert r["call_time_utc"] == "2026-07-29T21:00:00Z", f"HOOD time wrong: {r}"
+
+    # ── clock recovery from PAGE TEXT (2026-08-07) ──────────────────────────
+    # Until this landed, only the gcal branch returned a time; page_text
+    # returned None even though the ±70-char quote it hands back contains the
+    # clock. 25 of 30 slate events were untimed, so slate-stage.sh staged them
+    # at midnight UTC and install-t0-agents.sh wrote launchd jobs dated the
+    # PREVIOUS day: runs=0, never fires. That is how DKNG/LLY/VST/WEN were all
+    # lost on 08-07 and all 5 of the 08-06 slate before them.
+    #
+    # Strings are verbatim from slate/latest-timed.json's call_date_evidence.
+    import datetime as _dt
+    for name, txt, on, want, want_tz in [
+        ("DKNG, no zone printed",
+         "Earnings Call August 7, 2026 8:30 AM Add to Calendar",
+         _dt.date(2026, 8, 7), "2026-08-07T12:30:00Z", "ET?"),
+        ("VST, range with the zone after it",
+         "Q2 2026 Results Call Friday, August 7, 2026 9:00am - 10:00am CDT",
+         _dt.date(2026, 8, 7), "2026-08-07T14:00:00Z", "CDT"),
+        ("WEN",
+         "Earnings Conference Call August 7, 2026 8:30 AM ET",
+         _dt.date(2026, 8, 7), "2026-08-07T12:30:00Z", "ET"),
+        ("HIMS — corroborates the hand-typed 21:00Z",
+         "Second Quarter 2026 Earnings Call August 10, 2026 5:00 PM ET",
+         _dt.date(2026, 8, 10), "2026-08-10T21:00:00Z", "ET"),
+        ("TGT, meridiem printed once AFTER the range",
+         "Earnings Conference Call Wednesday, August 19, 2026 8:00 - 9:00 a.m. EDT",
+         _dt.date(2026, 8, 19), "2026-08-19T12:00:00Z", "EDT"),
+        ("NVDA, Pacific",
+         "earnings call August 26, 2026 02:00 PM PT",
+         _dt.date(2026, 8, 26), "2026-08-26T21:00:00Z", "PT"),
+        ("TTWO, 24-hour with explicit UTC",
+         "Take-Two earnings August 7, 2026 at 12:00 PM UTC",
+         _dt.date(2026, 8, 7), "2026-08-07T12:00:00Z", "UTC"),
+        # THE PYPL TRAP (configs/dial-ins.toml): the page says EST for a JULY
+        # call. July is EDT. Believing the abbreviation puts the arm an hour
+        # late, after the prepared remarks. DST is resolved from the DATE.
+        ("PYPL, 'EST' printed in July",
+         "PayPal call July 28, 2026 08:00 AM EST",
+         _dt.date(2026, 7, 28), "2026-07-28T12:00:00Z", "EST"),
+    ]:
+        got, tzl = parse_clock(txt, on)
+        assert got and got.strftime("%Y-%m-%dT%H:%M:%SZ") == want, \
+            f"parse_clock({name}) = {got}, want {want}"
+        assert tzl == want_tz, f"parse_clock({name}) tz = {tzl}, want {want_tz}"
+
+    # Noise must yield NOTHING. A loose matcher reads "229.4 Amortization" as
+    # "4 AM" and schedules the arm at 08:00Z with total confidence.
+    for name, txt in [
+        ("a financial table", "229.4 Amortization 412.8 333.8 Total"),
+        ("a bare decimal", "Revenue rose 8.30 in the quarter"),
+        ("a date with no clock", "Earnings Call August 7, 2026 Add to Calendar"),
+    ]:
+        got, _ = parse_clock(txt, _dt.date(2026, 8, 7))
+        assert got is None, f"parse_clock({name}) invented {got}"
+
+    # A page_text time is only trustworthy when the page is describing OUR
+    # call. URBN's page carries a real 5:00 PM EDT against a May page date and
+    # an August Kalshi date — a correct time for a DIFFERENT event.
+    urbn_page = ("<div>Urban Outfitters Q1 2027 Earnings Call "
+                 "May 20, 2026 5:00 PM EDT</div>")
+    urbn_ev = {"sub_title": "On Aug 26, 2026", "settlement_sources": [
+        {"name": "URBN", "url": "https://investor.urbn.com/events"}]}
+    r = confirm_call_date(urbn_ev, call_date(urbn_ev), fetch=lambda u: urbn_page)
+    assert r.get("call_time_utc") is None, \
+        f"a time from a DISAGREEING page must be refused, got {r.get('call_time_utc')}"
 
     # A generic IR LANDING page lists many events. It must degrade to
     # "unconfirmable", NEVER to "disputed" — that is the cry-wolf guard, and the
