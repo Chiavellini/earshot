@@ -53,4 +53,22 @@ if ! scripts/install-t0-agents.sh --date "$DATE"; then
   page "T0-AGENT INSTALL PROBLEMS for $DATE" "install-t0-agents.sh reported problems — run 'launchctl print gui/$(id -u)' and re-install by hand. A missing watcher is a missed event."
 fi
 
+# 5. PROVE tomorrow will actually fire. Everything above reports on what it
+#    INTENDED to do; this is the only step that reads back what launchd
+#    actually loaded.
+#
+#    This is the check that both lost days needed and did not have.
+#    install-t0-agents.sh happily wrote plists whose calendar time had already
+#    passed — launchd accepts them, `launchctl list` shows the label, runs=0,
+#    and they fire in August 2027. A green install log said nothing.
+#    night-before-sweep.sh was written on 2026-08-05 for exactly this and was
+#    then scheduled by NOTHING, so it never ran on 08-06 or 08-07.
+#
+#    Read-only, so it is safe to run unconditionally; it never repairs, only
+#    reports. Non-fatal to the staging run — the events are staged either way
+#    and the operator needs the detail, not an abort.
+if ! scripts/night-before-sweep.sh "$DATE"; then
+  page "SLATE WILL NOT FIRE for $DATE" "night-before-sweep.sh found problems: a loaded launchd descriptor in the past, a missing pinned binary, a stale stream URL, or a red green-gate. Read its output — every FAIL is an event that will silently not arm."
+fi
+
 echo "stage-nightly done for $DATE"
