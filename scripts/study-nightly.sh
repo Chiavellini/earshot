@@ -153,7 +153,14 @@ account_env_for() {  # account_env_for <cfg> -> path, or empty
     IFS=$'\x1f' read -r cp ae <<<"$rec" || true
     if [[ "$cp" == "$cfg" ]]; then printf '%s\x1f%s' "$ae" "$f"; return 0; fi
   done
-  printf '\x1f'
+  # No autorun env names this config. That is the NORMAL state for an event
+  # whose call time never resolved, because slate-stage.sh only writes the env
+  # when it has a time — so an untimed event silently poisoned preflight too,
+  # on top of never getting a timer. Fall back to the same default account
+  # install-t0-agents.sh and slate-stage.sh already use, so a verdict artifact
+  # always gets written. The event env stays empty: that part genuinely is
+  # missing, and preflight is told so rather than handed a wrong one.
+  printf '%s\x1f' "${EARSHOT_ACCOUNT_ENV:-$HOME/.earshot/ms.env}"
 }
 
 CFGS=$(ls configs/webcast-*-"$DP"-arm-wc.toml configs/twilio-*-"$DP"-arm.toml 2>/dev/null || true)
@@ -360,36 +367,44 @@ PY
         fi
       fi
 
-      # ── 5. PREFLIGHT, so a verdict artifact EXISTS either way ──────────
-      # The 08-07 chain died here: no preflight ran, so state/<E>/preflight-
-      # result.json never existed, so assert-ready.sh refused at T-75 and the
-      # launchd `&&` short-circuited arm-on-url.sh out of existence. A RED
-      # verdict is a legal outcome; a MISSING one is the third state.
-      ACCT="" ENVF=""
-      IFS=$'\x1f' read -r ACCT ENVF <<<"$(account_env_for "$cfg")" || true
-      if [[ "$DRY_RUN" == 1 ]]; then
-        echo "── [dry-run] WOULD run preflight-event.sh --config $cfg --account ${ACCT:-<none>}"
-      elif [[ -n "$ACCT" ]]; then
-        echo "════ $(date -u '+%H:%M:%SZ') preflight $base (post-resolution verdict) ════"
-        scripts/preflight-event.sh --config "$cfg" --account "$ACCT" \
-          ${ENVF:+--event-env "$ENVF"} > "/tmp/preflight-$base.log" 2>&1
-        PF_RC=$?
-        echo "preflight-event.sh exit=$PF_RC (log /tmp/preflight-$base.log)"
-        (( PF_RC == 0 )) || PROBLEMS=$((PROBLEMS+1))
-        RESOLUTION="$RESOLUTION preflight=$PF_RC"
-      else
-        # No autorun env ⇒ no account ⇒ no full verdict artifact. Run the
-        # readiness gate alone so the resolution is at least PROVEN, and page
-        # that nothing will write state/<E>/preflight-result.json.
-        scripts/preflight-event.sh --config "$cfg" --only-readiness \
-          > "/tmp/preflight-$base.log" 2>&1
-        PF_RC=$?
-        echo "preflight --only-readiness exit=$PF_RC (no account env for $cfg)"
-        page "NO PREFLIGHT VERDICT POSSIBLE: $base" \
-          "Dead words were resolved ($RESOLUTION) but no configs/*-autorun.env names this config, so there is no ACCOUNT_ENV and preflight-event.sh cannot write state/<EVENT_ID>/preflight-result.json. assert-ready.sh WILL refuse at T-75 (readiness gate alone exited $PF_RC). Stage the event env."
-        PROBLEMS=$((PROBLEMS+1))
-        RESOLUTION="$RESOLUTION preflight=NONE(no-account)"
-      fi
+    fi
+
+    # ── 5. PREFLIGHT, so a verdict artifact EXISTS either way ────────────
+    # The 08-07 chain died here: no preflight ran, so state/<E>/preflight-
+    # result.json never existed, so assert-ready.sh refused at T-75 and the
+    # launchd `&&` short-circuited arm-on-url.sh out of existence. A RED
+    # verdict is a legal outcome; a MISSING one is the third state.
+    #
+    # ⚠ THIS MUST SIT OUTSIDE the `if [[ -n "$DEAD" ]]` branch above. It was
+    # written inside it, which meant a CLEAN config — zero dead words, nothing
+    # to resolve — still got no verdict artifact and was still refused at T-75.
+    # DKNG on 2026-08-07 was exactly that shape: study ok, no dead words, no
+    # preflight-result.json, no arm.
+    [[ -n "$DEAD" ]] || RESOLUTION="no dead words"
+    ACCT="" ENVF=""
+    IFS=$'\x1f' read -r ACCT ENVF <<<"$(account_env_for "$cfg")" || true
+    if [[ "$DRY_RUN" == 1 ]]; then
+      echo "── [dry-run] WOULD run preflight-event.sh --config $cfg --account ${ACCT:-<none>}"
+    elif [[ -n "$ACCT" ]]; then
+      echo "════ $(date -u '+%H:%M:%SZ') preflight $base (post-resolution verdict) ════"
+      scripts/preflight-event.sh --config "$cfg" --account "$ACCT" \
+        ${ENVF:+--event-env "$ENVF"} > "/tmp/preflight-$base.log" 2>&1
+      PF_RC=$?
+      echo "preflight-event.sh exit=$PF_RC (log /tmp/preflight-$base.log)"
+      (( PF_RC == 0 )) || PROBLEMS=$((PROBLEMS+1))
+      RESOLUTION="$RESOLUTION preflight=$PF_RC"
+    else
+      # No autorun env ⇒ no account ⇒ no full verdict artifact. Run the
+      # readiness gate alone so the resolution is at least PROVEN, and page
+      # that nothing will write state/<E>/preflight-result.json.
+      scripts/preflight-event.sh --config "$cfg" --only-readiness \
+        > "/tmp/preflight-$base.log" 2>&1
+      PF_RC=$?
+      echo "preflight --only-readiness exit=$PF_RC (no account env for $cfg)"
+      page "NO PREFLIGHT VERDICT POSSIBLE: $base" \
+        "Resolution was ($RESOLUTION) but no configs/*-autorun.env names this config, so there is no ACCOUNT_ENV and preflight-event.sh cannot write state/<EVENT_ID>/preflight-result.json. assert-ready.sh WILL refuse at T-75 (readiness gate alone exited $PF_RC). Stage the event env."
+      PROBLEMS=$((PROBLEMS+1))
+      RESOLUTION="$RESOLUTION preflight=NONE(no-account)"
     fi
   else
     page "NO READINESS ARTIFACT: $base" "study did not produce $ready — event will be refused by the gate"
