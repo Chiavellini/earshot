@@ -16,12 +16,12 @@
 # 07-22 post-mortems #1/#2). YouTube events: do NOT use this template; keep
 # the frozen yt-dlp leg (configs/webcast-tsla.toml) until a streamlink-vs-
 # YouTube ladder number exists (capture first).
-# Posture: mention-probe observe (1¢ non-crossing) — fill posture is gated on
-# the Phase-4 precision verdict (docs/RACE-STRATEGY.md).
+# Posture: MENTION-FILL (26AUG05 ruling, reconfirmed by operator 2026-08-05 for
+# the 08-06 slate) — cap 97¢, size 1, min_confidence_confirmed 0.22.
 
 [event]
 id        = "KXEARNINGSMENTIONAAOI-26AUG06-WEBCAST"
-starts_at = "2026-08-06T00:00:00Z"  # TODO: set the real call time (UTC) — slate had none
+starts_at = "2026-08-06T20:30:00Z"  # AAOI Q2 call 4:30pm ET (press release 2026-07-30)
 
 [pipeline]
 chunk_ms       = 80
@@ -97,7 +97,6 @@ audio_stale_ms           = 2000
 allowlist_tickers = [
   "KXEARNINGSMENTIONAAOI-26AUG06-CHIN",
   "KXEARNINGSMENTIONAAOI-26AUG06-CPO",
-  "KXEARNINGSMENTIONAAOI-26AUG06-DOCS",
   "KXEARNINGSMENTIONAAOI-26AUG06-FCC",
   "KXEARNINGSMENTIONAAOI-26AUG06-FIRM",
   "KXEARNINGSMENTIONAAOI-26AUG06-INDI",
@@ -115,117 +114,126 @@ allowlist_tickers = [
 market_ticker    = "KXEARNINGSMENTIONAAOI-26AUG06-CHIN"
 phrase           = "china"
 variants         = ["china", "chinas", "chinese", "chineses"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 76/36 ratio 2.11 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # CPO / Co-Packaged Optics (KXEARNINGSMENTIONAAOI-26AUG06-CPO) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONAAOI-26AUG06-CPO"
 phrase           = "cpo"
 variants         = ["cpo", "cpos", "c p o", "co packaged optics"]
-max_price_cents  = 1
+max_price_cents  = 1  # posture: OBSERVE — study 34/36 ratio 0.94 < floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
-# DOCSIS 4.0 / DOCSIS 4 (KXEARNINGSMENTIONAAOI-26AUG06-DOCS) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
-[[keywords]]
-market_ticker    = "KXEARNINGSMENTIONAAOI-26AUG06-DOCS"
-phrase           = "docsis"
-variants         = ["docsis"]
-max_price_cents  = 1
-budget_contracts = 1
-policy           = "confirmed_only"
+# REMOVED 2026-08-06: KXEARNINGSMENTIONAAOI-26AUG06-DOCS resolves on
+# 'DOCSIS 4.0 / DOCSIS 4' but prepare strips digits, so every armed variant was
+# bare 'docsis' — the AAPL 'iPhone 18' class (market-phrase-screen.py). Firing on
+# bare 'docsis' could not resolve the market AND would consume the single 97c
+# order the 100c event cap allows. Market knowingly FORFEITED, not served.
 
 # FCC / Federal Communications Commission (KXEARNINGSMENTIONAAOI-26AUG06-FCC) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONAAOI-26AUG06-FCC"
 phrase           = "fcc"
 variants         = ["fcc", "fccs", "f c c", "federal communications commission"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 64/36 ratio 1.78 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Firmware (KXEARNINGSMENTIONAAOI-26AUG06-FIRM) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONAAOI-26AUG06-FIRM"
 phrase           = "firmware"
 variants         = ["firmware", "firmwares"]
-max_price_cents  = 1
+max_price_cents  = 1  # posture: OBSERVE — study 12/18 ratio 0.67 < floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Indium Phosphide (KXEARNINGSMENTIONAAOI-26AUG06-INDI) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONAAOI-26AUG06-INDI"
 phrase           = "indium phosphide"
-variants         = ["indium phosphide"]
-max_price_cents  = 1
+variants = ["indium phosphide", "indium fosfide", "indium phosphite", "indium phos fide"]  # widened 2026-08-05 night (study confirmed:0). Technical compound; phonetic + split forms.
+max_price_cents  = 1  # posture: OBSERVE — study 10/36 ratio 0.28 < floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Innolight (KXEARNINGSMENTIONAAOI-26AUG06-INNO) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONAAOI-26AUG06-INNO"
 phrase           = "innolight"
-variants         = ["innolight", "innolights"]
-max_price_cents  = 1
+variants = ["innolight", "innolights", "inno light", "in no light", "innolite"]  # widened 2026-08-05 night (study confirmed:0). Same compound-splitting pattern as SHOP "openai".
+max_price_cents  = 97  # posture: FILL — study 46/45 ratio 1.02 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Mediacom (KXEARNINGSMENTIONAAOI-26AUG06-MEDI) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONAAOI-26AUG06-MEDI"
 phrase           = "mediacom"
 variants         = ["mediacom", "mediacoms"]
-max_price_cents  = 1
+max_price_cents  = 1  # posture: OBSERVE — study 4/18 ratio 0.22 < floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Pearland (KXEARNINGSMENTIONAAOI-26AUG06-PEAR) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONAAOI-26AUG06-PEAR"
 phrase           = "pearland"
 variants         = ["pearland", "pearlands"]
-max_price_cents  = 1
+max_price_cents  = 1  # posture: OBSERVE — study 12/18 ratio 0.67 < floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Qualification (KXEARNINGSMENTIONAAOI-26AUG06-QUAL) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONAAOI-26AUG06-QUAL"
 phrase           = "qualification"
 variants         = ["qualification", "qualifications"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 50/18 ratio 2.78 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Quantum (KXEARNINGSMENTIONAAOI-26AUG06-QUAN) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONAAOI-26AUG06-QUAN"
 phrase           = "quantum"
 variants         = ["quantum", "quantums"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 50/18 ratio 2.78 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Refund (KXEARNINGSMENTIONAAOI-26AUG06-REFU) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONAAOI-26AUG06-REFU"
 phrase           = "refund"
 variants         = ["refund", "refunds"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 32/18 ratio 1.78 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Tariff (KXEARNINGSMENTIONAAOI-26AUG06-TARI) — corpus-tuned; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONAAOI-26AUG06-TARI"
 phrase           = "tariff"
 variants         = ["tariff", "tariffs"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 34/18 ratio 1.89 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 confirmed_threshold = 0.1
 boost            = 3.0
 

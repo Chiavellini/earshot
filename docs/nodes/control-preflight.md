@@ -14,6 +14,16 @@ live-board coverage comparison in `scripts/allowlist-diff.sh`, plus candidate
 schedule collision screening in `scripts/collision-screen.py` and the operator
 gate checklist in `docs/RACE-CHECKLIST.md`.
 
+Also `scripts/posture-from-study.py`, which derives per-keyword money posture
+from the readiness artifact — FILL at `MENTION_FILL_CAP_CENTS` where
+`confirmed / clips` clears the floor, OBSERVE at 1¢ (provably non-crossing)
+below it, and OBSERVE unconditionally for any keyword with a ≤2-BPE-token
+variant. It refuses on a `keywords_sha256` mismatch, so it can never disagree
+with this node's blocking readiness gate — which is why it lives here rather
+than with the study that produces its input. It gates **recall, not
+precision**: a high ratio means the phrase is easy to hear, not that it is
+right, so there is deliberately no upper cut.
+
 ## Does not own
 
 It does not prepare market content, produce admission evidence, resolve access,

@@ -16,12 +16,12 @@
 # 07-22 post-mortems #1/#2). YouTube events: do NOT use this template; keep
 # the frozen yt-dlp leg (configs/webcast-tsla.toml) until a streamlink-vs-
 # YouTube ladder number exists (capture first).
-# Posture: mention-probe observe (1¢ non-crossing) — fill posture is gated on
-# the Phase-4 precision verdict (docs/RACE-STRATEGY.md).
+# Posture: MENTION-FILL (26AUG05 ruling, reconfirmed by operator 2026-08-05 for
+# the 08-06 slate) — cap 97¢, size 1, min_confidence_confirmed 0.22.
 
 [event]
 id        = "KXEARNINGSMENTIONLYFT-26AUG06-WEBCAST"
-starts_at = "2026-08-06T00:00:00Z"  # TODO: set the real call time (UTC) — slate had none
+starts_at = "2026-08-06T21:00:00Z"  # LYFT Q2 call 2:00pm PT / 5:00pm ET (press release)
 
 [pipeline]
 chunk_ms       = 80
@@ -120,153 +120,170 @@ allowlist_tickers = [
 market_ticker    = "KXEARNINGSMENTIONLYFT-26AUG06-ANTH"
 phrase           = "anthropic"
 variants         = ["anthropic", "anthropics", "claude", "claudes"]
-max_price_cents  = 1
+max_price_cents  = 1  # posture: OBSERVE — study 32/36 ratio 0.89 < floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Baidu (KXEARNINGSMENTIONLYFT-26AUG06-BAID) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONLYFT-26AUG06-BAID"
 phrase           = "baidu"
 variants         = ["baidu", "baidus"]
-max_price_cents  = 1
+max_price_cents  = 1  # posture: OBSERVE — study 4/18 ratio 0.22 < floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Competition (KXEARNINGSMENTIONLYFT-26AUG06-COMP) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONLYFT-26AUG06-COMP"
 phrase           = "competition"
 variants         = ["competition", "competitions"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 38/18 ratio 2.11 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # DoorDash (KXEARNINGSMENTIONLYFT-26AUG06-DOOR) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONLYFT-26AUG06-DOOR"
 phrase           = "doordash"
 variants         = ["doordash", "doordashs"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 34/18 ratio 1.89 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Expansion (KXEARNINGSMENTIONLYFT-26AUG06-EXPA) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONLYFT-26AUG06-EXPA"
 phrase           = "expansion"
 variants         = ["expansion", "expansions"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 80/18 ratio 4.44 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Innovation (KXEARNINGSMENTIONLYFT-26AUG06-INNO) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONLYFT-26AUG06-INNO"
 phrase           = "innovation"
 variants         = ["innovation", "innovations"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 56/18 ratio 3.11 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # International (KXEARNINGSMENTIONLYFT-26AUG06-INTE) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONLYFT-26AUG06-INTE"
 phrase           = "international"
 variants         = ["international", "internationals"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 58/18 ratio 3.22 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Iran / Middle East (KXEARNINGSMENTIONLYFT-26AUG06-IRAN) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONLYFT-26AUG06-IRAN"
 phrase           = "iran"
 variants         = ["iran", "irans", "middle east"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 28/27 ratio 1.04 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Membership (KXEARNINGSMENTIONLYFT-26AUG06-MEMB) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONLYFT-26AUG06-MEMB"
 phrase           = "membership"
 variants         = ["membership", "memberships"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 68/18 ratio 3.78 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Mobileye (KXEARNINGSMENTIONLYFT-26AUG06-MOBI) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONLYFT-26AUG06-MOBI"
 phrase           = "mobileye"
 variants         = ["mobileye", "mobileyes"]
-max_price_cents  = 1
+max_price_cents  = 1  # posture: OBSERVE — study 4/18 ratio 0.22 < floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Nashville (KXEARNINGSMENTIONLYFT-26AUG06-NASH) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONLYFT-26AUG06-NASH"
 phrase           = "nashville"
 variants         = ["nashville", "nashvilles"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 48/18 ratio 2.67 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Nvidia (KXEARNINGSMENTIONLYFT-26AUG06-NVID) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONLYFT-26AUG06-NVID"
 phrase           = "nvidia"
-variants         = ["nvidia", "nvidias"]
-max_price_cents  = 1
+variants = ["nvidia", "nvidias", "invidia", "in vidia", "en vidia"]  # widened 2026-08-05 night (study confirmed:0). Exact variant set that made UBER-26AUG05-NVID fire and place live.
+max_price_cents  = 97  # posture: FILL — study 122/45 ratio 2.71 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # NYC / New York (KXEARNINGSMENTIONLYFT-26AUG06-NYC) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONLYFT-26AUG06-NYC"
 phrase           = "nyc"
 variants         = ["nyc", "nycs", "n y c", "new york"]
-max_price_cents  = 1
+max_price_cents  = 1  # posture: OBSERVE — study 20/36 ratio 0.56 < floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Oil / Gas / Gasoline (KXEARNINGSMENTIONLYFT-26AUG06-OIL) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONLYFT-26AUG06-OIL"
 phrase           = "oil"
 variants         = ["oil", "oils", "gas", "gasoline", "gasolines"]
-max_price_cents  = 1
+max_price_cents  = 1  # posture: OBSERVE (k<=2 OVERRIDE) — study 118/45 ratio 2.62 would have earned FILL, but variant(s) gas=2tok, oil=2tok assemble from partial audio at near-ceiling confidence (SNAP "game" class); no confidence gate reaches them, so this word does not get real money
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Revenue (KXEARNINGSMENTIONLYFT-26AUG06-REVE) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONLYFT-26AUG06-REVE"
 phrase           = "revenue"
 variants         = ["revenue", "revenues"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 62/18 ratio 3.44 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Safety (KXEARNINGSMENTIONLYFT-26AUG06-SAFE) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONLYFT-26AUG06-SAFE"
 phrase           = "safety"
 variants         = ["safety", "safetys"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 36/18 ratio 2.00 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Tariff (KXEARNINGSMENTIONLYFT-26AUG06-TARI) — corpus-tuned; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONLYFT-26AUG06-TARI"
 phrase           = "tariff"
 variants         = ["tariff", "tariffs"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 34/18 ratio 1.89 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 confirmed_threshold = 0.1
 boost            = 3.0
 
@@ -275,8 +292,9 @@ boost            = 3.0
 market_ticker    = "KXEARNINGSMENTIONLYFT-26AUG06-WAYM"
 phrase           = "waymo"
 variants         = ["waymo", "waymos"]
-max_price_cents  = 1
+max_price_cents  = 1  # posture: OBSERVE — study 6/18 ratio 0.33 < floor 1.00; also k<=2 (waymo)
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # --- prepare summary: 18 tradeable, 0 skipped (said-N-times), 0 skipped (unencodable), 0 variants dropped of 18 markets ---

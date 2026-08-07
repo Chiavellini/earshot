@@ -1,0 +1,168 @@
+# variant-lexicon.toml — curated, MEASURED variant sets, keyed by market phrase.
+#
+# WHY THIS EXISTS (2026-08-07, TTWO). TTWO's board traded 69,658 contracts and
+# we placed nothing on it. Three of twelve keywords (`gta`, `playstation`,
+# `tailwind`) scored confirmed:0 in the night's study; study-nightly.sh paged
+# and CONTINUED, so preflight never ran, assert-ready.sh refused at T-75 with
+# "no preflight verdict", the launchd `&&` short-circuited, and arm-on-url.sh
+# was never exec'd. Twelve markets forfeited to protect three words that could
+# not have fired anyway.
+#
+# `tailwind` is the indictment: the exact set that scores 66/36 had been sitting
+# in five other configs since 2026-08-05, and TTWO/LLY still carried the bare
+# two-variant `prepare` output and scored 0/18. Every widening in this repo was
+# hand-propagated, issuer by issuer, from memory. This file is that memory,
+# written down, so scripts/variant-widen.py can propagate it without a human.
+#
+# WHAT BELONGS HERE. Only sets whose numbers were MEASURED by
+# scripts/variant-study.sh (configs/.readiness/<base>.json: confirmed/clips) or
+# proven on a live fill. Every entry carries the date and the artifact that
+# validated it. Nothing goes in here on the strength of an argument.
+#
+# WHAT IT IS SAFE TO PROPOSE. A wrong variant costs nothing: variant-study.sh
+# re-scores every candidate against the real detector, so a bad one comes back
+# 0 and changes no behaviour. The lexicon is an accelerator over the rule
+# generator, not an authority over it — measurement is still the gate.
+#
+# THE ONE REAL RISK is a variant that is heard perfectly but resolves the WRONG
+# market (the AAPL "iPhone 18" class — a perfectly-heard wrong word scores
+# 16/16). scripts/market-phrase-screen.py is the check for that, and it runs
+# against the LIVE board, not against this file. Widened sets that trade
+# specificity for recall (`lyft` -> `lift`, `fortnite` -> `fortnight`) are
+# marked `collision = true`: they are recall wins that the 1c OBSERVE posture
+# pays for. scripts/posture-from-study.py decides the cap, not this file.
+#
+# THE DELIBERATE OMISSION. CELH `nfl` does NOT list "national football league",
+# even though the detector would hear it: rules_primary resolves on the letters
+# "NFL" being SAID. A synonym would fire without resolving the market. Widen
+# TRANSCRIPTIONS of the phrase, never SYNONYMS for the concept.
+
+[meta]
+updated = "2026-08-07"
+# Bump when an entry is added or a set is re-measured. Consumers do not branch
+# on this; it is for humans reading a diff.
+
+# ── Compound splits ────────────────────────────────────────────────────────
+# The dominant pattern, and the one that made 2026-08-05 night work: the
+# streaming-CTC encoder emits the PIECES of an unspaced compound, so the spaced
+# form is what it actually hears. Confidence is exp(score/k), a geometric mean
+# over k pieces, so one never-emitted piece drags the whole entry to ~0 —
+# unreachable by any threshold (docs: scripts/dead-word-autopsy.sh NO-EVIDENCE).
+
+[phrases."tailwind"]
+variants = ["tailwind", "tailwinds", "tail wind", "tail winds"]
+evidence = "0/18 bare -> 66/36 widened. TLN/DASH/MELI 26AUG05 (configs/.readiness/webcast-tln-26aug05-arm-wc.json); 19/12 on GRAB 26AUG03. STILL 0/18 on TTWO+LLY 26AUG06 because the set was never propagated — the miss this lexicon exists to stop."
+
+[phrases."openai"]
+variants = ["openai", "openais", "open ai", "open a i", "open eye"]
+evidence = "0/9 bare (MSFT 26JUL29) -> 4/36 with spaced forms (AMD/ZETA 26AUG04) -> 20/45 once 'open eye' was added (SHOP 26AUG05, configs/.readiness/webcast-shop-26aug05-arm-wc.json). The homophone earns most of the recall; the spaced forms alone are marginal."
+
+[phrases."chatgpt"]
+variants = ["chatgpt", "chatgpts", "chat gpt", "chat g p t", "chat jee pee tee"]
+evidence = "0 bare -> 12/45. DUOL 26AUG05 (configs/.readiness/webcast-duol-26aug05-arm-wc.json). Compound split PLUS letter-spelling of the acronym half, in both spelled and letter-NAME forms."
+
+[phrases."stablecoin"]
+variants = ["stablecoin", "stablecoins", "stable coin", "stable coins"]
+evidence = "0 bare -> 50/36. SHOP 26AUG05 (configs/.readiness/webcast-shop-26aug05-arm-wc.json)."
+
+[phrases."govtech"]
+variants = ["govtech", "govtechs", "gov tech", "gov techs"]
+dead = true
+evidence = "0/36 EVEN WIDENED. YOU 26AUG05 — acked as knowingly unserved (configs/.acks/webcast-you-26aug05-arm-wc-dead-word.ack). Kept here so the widener does not burn a second study round rediscovering it: propose these, expect 0, go straight to the ack."
+
+[phrases."innolight"]
+variants = ["innolight", "innolights", "inno light", "in no light", "innolite"]
+evidence = "0 bare -> 46/45. AAOI 26AUG06. Split at the compound seam AND at the syllable inside the first half ('in no light'), plus the -ight/-ite orthographic homophone."
+
+[phrases."indium phosphide"]
+variants = ["indium phosphide", "indium fosfide", "indium phosphite", "indium phos fide"]
+evidence = "0 bare -> 10/36. AAOI 26AUG06. Technical compound: ph->f substitution, -ide/-ite, and a split inside the second word. Weakest surviving set in the lexicon — 0.28 ratio, so posture-from-study.py pins it to 1c OBSERVE."
+
+[phrases."clickhouse"]
+variants = ["clickhouse", "clickhouses", "click house"]
+evidence = "38/27. NBIS 26AUG05 — widened at prepare time and never dead, so this is a set that WORKED first try, banked as the shape to copy."
+
+[phrases."tripleten"]
+variants = ["tripleten", "tripletens", "triple ten"]
+evidence = "14/27. NBIS 26AUG05."
+
+[phrases."input cost"]
+variants = ["input cost", "input costs", "in put cost"]
+evidence = "4/9 WEAK -> 38/27. CELH 26AUG06. Splitting a word that is ALREADY spaced still helped; both widened forms still contain the literal resolving phrase."
+
+[phrases."world cup"]
+variants = ["world cup", "world cups", "worldcup"]
+evidence = "8/9 (just under the fill floor) -> 54/27. CELH 26AUG06. The reverse direction: GLUING a spaced phrase, not splitting a glued one."
+
+# ── Prothetic vowel / illegal onset ────────────────────────────────────────
+# English does not begin words with /nv/, so the encoder never emits a bare
+# leading `nv` piece. It hears a vowel that was never spoken.
+
+[phrases."nvidia"]
+variants = ["nvidia", "nvidias", "invidia", "in vidia", "en vidia"]
+evidence = "0/18 -> 122/45, the largest measured swing in the repo. LYFT 26AUG06 (configs/webcast-lyft-26aug06-arm-wc.toml:232) and UBER 26AUG05, where NVID fired and PLACED LIVE (docs/runbooks/RUNBOOK-2026-08-05.md:106). SPCX 26AUG04 scored 58/45 on a near-identical set that used 'in video' instead of 'in vidia' — prefer this one. Dead at 0/18 on NBIS 26AUG05 and LLY 26AUG06 for want of propagation."
+
+# ── Acronyms: spaced letters AND letter names ──────────────────────────────
+# Two systematically different transcriptions of the same spoken letters. The
+# detector emits one or the other depending on the letter; arm both.
+
+[phrases."nfl"]
+variants = ["nfl", "nfls", "n f l", "en f l", "en ef el"]
+evidence = "10/27 WEAK -> 32/45. CELH 26AUG06. Deliberately WITHOUT 'national football league': rules_primary resolves on the letters being said, so the synonym would fire without resolving the market."
+
+[phrases."iss"]
+variants = ["iss", "i s s", "international space station"]
+expansion_resolves = true
+evidence = "16/27. SPCX 26AUG04. Here the expansion IS safe — the market's yes_sub_title carries both forms, so market-phrase-screen.py covers it. Contrast `nfl`; check the board, never assume."
+
+[phrases."mrv"]
+variants = ["mrv", "mrvs", "m r v", "mission robotic vehicle"]
+expansion_resolves = true
+evidence = "58/36. SPCX 26AUG04."
+
+[phrases."nasa"]
+variants = ["nasa", "nasas", "n a s a"]
+evidence = "24/27. SPCX 26AUG04. A pronounceable acronym: the bare form already works, letters are cheap insurance."
+
+[phrases."cpo"]
+variants = ["cpo", "cpos", "c p o", "co packaged optics"]
+expansion_resolves = true
+evidence = "34/36. AAOI 26AUG06."
+
+[phrases."fcc"]
+variants = ["fcc", "fccs", "f c c", "federal communications commission"]
+expansion_resolves = true
+evidence = "64/36. AAOI 26AUG06."
+
+[phrases."real id"]
+variants = ["real id", "real i d", "real eye dee"]
+evidence = "0 bare -> 24/27. YOU 26AUG05. Letter-NAME spelling ('eye dee') is what carried it."
+
+[phrases."tsa precheck"]
+variants = ["tsa precheck", "t s a precheck", "tsa pre check", "t s a pre check"]
+evidence = "0 bare -> 20/36. YOU 26AUG05. The cross product of both fixes: letters on the acronym, split on the compound."
+
+# ── Homophones bought with a collision ─────────────────────────────────────
+# These trade specificity for recall. Every one of them can fire on a word the
+# speaker did not mean. That is ACCEPTED at the 1c OBSERVE cap and must be
+# re-decided if posture-from-study.py ever promotes the keyword to FILL.
+
+[phrases."lyft"]
+variants = ["lyft", "lyfts", "lift", "lifts"]
+collision = true
+evidence = "0 -> 94/36. UBER 26AUG05. 'lift' is a common English verb on a rideshare call — this set is a recall win paid for with precision, and only defensible while the cap is 1c."
+
+[phrases."fortnite"]
+variants = ["fortnite", "fortnites", "fort nite", "fort night", "fortnight"]
+collision = true
+evidence = "0 -> 144/45, the second-largest swing measured. DIS 26AUG04. The CTC simply hears the real English word 'fortnight'."
+
+[phrases."zoox"]
+variants = ["zoox", "zooxs", "zooks", "zoo x"]
+collision = true
+evidence = "0 -> 12/36. UBER 26AUG05. Lowest-yield widening that still moved off zero; AMZN 26JUL30 reached 12/21 by adding 'robotaxi', which is a SYNONYM — check the board before copying that."
+
+[phrases."shapiro"]
+variants = ["shapiro", "shapiros", "sha piro", "shapeero"]
+dead = true
+evidence = "0/36 EVEN WIDENED. TLN 26AUG05 (configs/.readiness/webcast-tln-26aug05-arm-wc.json). Second known-dead entry: a proper noun the model's vocab does not carry. Recorded so the widener proposes and moves on rather than a human re-deriving the same four forms."

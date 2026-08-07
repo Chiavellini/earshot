@@ -11,13 +11,31 @@ Manifest loading and scoring in `src/bench/`, frozen fixture generation in
 `src/fixture.rs`, and benchmark-oriented study helpers:
 `scripts/dead-word-autopsy.sh`, `scripts/miss-autopsy.py`,
 `scripts/variant-study.sh`, `scripts/keywords-extract.py`,
-`scripts/variant-audit.py`, `scripts/prefix-gate-score.py`, and
-`scripts/verify-occurrences.py`.
+`scripts/variant-audit.py`, `scripts/prefix-gate-score.py`,
+`scripts/variant-widen.py`, and `scripts/verify-occurrences.py`.
 The benchmark target in `benches/hot_path.rs` and protocol in
 `docs/BAKEOFF.md` are part of the same gate.
 `scripts/keywords-extract.py` is the shared `[[keywords]]` extraction (TSV +
 `--sha256`) that both `variant-study.sh` and preflight's readiness gate call,
 so the artifact hash and the gate's recomputed hash can never drift.
+
+`scripts/variant-widen.py` is the other half of the study loop: given a keyword
+the study killed, it PROPOSES a wider variant set — `configs/variant-lexicon.toml`
+first (curated sets with MEASURED provenance, so a fix proven on one issuer
+propagates to the next), then a rule generator for unseen phrases
+(compound-split, prothetic vowel, letter-spelling, homophone, plural). It never
+decides: `variant-study.sh` re-scores every candidate against the real detector,
+so a bad candidate comes back `confirmed:0` and changes nothing. This is why
+proposing aggressively is safe — the gate is measurement, not assertion.
+`--write` rewrites a config's `variants` in place and deliberately invalidates
+`keywords_sha256`, because the widened set is unstudied until the re-run.
+`--check` is an offline self-test that pins the two facts the loop rests on: the
+lexicon still reproduces the LYFT `nvidia` set exactly (0/18 → 122/45; UBER
+NVID fired and placed live 2026-08-05), and the generator still finds `open ai`
+for `openai` unaided. It is called from `scripts/study-nightly.sh`
+(`control.operate`), which owns the decision of what to do with the proposal.
+Measured 2026-08-07, interleaved on one binary: NBIS `nvidia` 0/18 FAIL with
+`["nvidia","nvidias"]`, 122/45 OK with the lexicon set.
 
 ## Does not own
 

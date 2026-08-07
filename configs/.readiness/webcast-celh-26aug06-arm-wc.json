@@ -1,0 +1,167 @@
+{
+ "config": "webcast-celh-26aug06-arm-wc",
+ "keywords_sha256": "329d5634cebd79166fb1124477a5da126a6f8b1eeff8410904da45d0665de2fd",
+ "date": "2026-08-06",
+ "engine": "streaming_ctc",
+ "voices": [
+  "Samantha",
+  "Daniel",
+  "Paulina"
+ ],
+ "carriers": 2,
+ "keywords": [
+  {
+   "ticker": "KXEARNINGSMENTIONCELH-26AUG06-ALCO",
+   "phrase": "alcohol",
+   "variants": [
+    "alcohol",
+    "alcohols"
+   ],
+   "clips": 18,
+   "confirmed": 62
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCELH-26AUG06-COMP",
+   "phrase": "competition",
+   "variants": [
+    "competition",
+    "competitions"
+   ],
+   "clips": 18,
+   "confirmed": 38
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCELH-26AUG06-ELEC",
+   "phrase": "electric vibe",
+   "variants": [
+    "electric vibe"
+   ],
+   "clips": 9,
+   "confirmed": 16
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCELH-26AUG06-ESSE",
+   "phrase": "essential",
+   "variants": [
+    "essential",
+    "essentials"
+   ],
+   "clips": 18,
+   "confirmed": 50
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCELH-26AUG06-FEMA",
+   "phrase": "female",
+   "variants": [
+    "female",
+    "females"
+   ],
+   "clips": 18,
+   "confirmed": 42
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCELH-26AUG06-INFL",
+   "phrase": "influencer",
+   "variants": [
+    "influencer",
+    "influencers"
+   ],
+   "clips": 18,
+   "confirmed": 46
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCELH-26AUG06-INPU",
+   "phrase": "input cost",
+   "variants": [
+    "input cost",
+    "input costs",
+    "in put cost"
+   ],
+   "clips": 27,
+   "confirmed": 38
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCELH-26AUG06-NFL",
+   "phrase": "nfl",
+   "variants": [
+    "nfl",
+    "nfls",
+    "n f l",
+    "en f l",
+    "en ef el"
+   ],
+   "clips": 45,
+   "confirmed": 32
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCELH-26AUG06-PEPS",
+   "phrase": "pepsico",
+   "variants": [
+    "pepsico",
+    "pepsicos"
+   ],
+   "clips": 18,
+   "confirmed": 28
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCELH-26AUG06-RECA",
+   "phrase": "recall",
+   "variants": [
+    "recall",
+    "recalls"
+   ],
+   "clips": 18,
+   "confirmed": 40
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCELH-26AUG06-TARI",
+   "phrase": "tariff",
+   "variants": [
+    "tariff",
+    "tariffs"
+   ],
+   "clips": 18,
+   "confirmed": 34
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCELH-26AUG06-TEXA",
+   "phrase": "texas",
+   "variants": [
+    "texas"
+   ],
+   "clips": 9,
+   "confirmed": 12
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCELH-26AUG06-VIBE",
+   "phrase": "vibe",
+   "variants": [
+    "vibe",
+    "vibes"
+   ],
+   "clips": 18,
+   "confirmed": 20
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCELH-26AUG06-VITA",
+   "phrase": "vitamin",
+   "variants": [
+    "vitamin",
+    "vitamins"
+   ],
+   "clips": 18,
+   "confirmed": 20
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCELH-26AUG06-WORL",
+   "phrase": "world cup",
+   "variants": [
+    "world cup",
+    "world cups",
+    "worldcup"
+   ],
+   "clips": 27,
+   "confirmed": 54
+  }
+ ]
+}

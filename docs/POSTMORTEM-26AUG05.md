@@ -47,6 +47,46 @@ this — it computes `(100−cap−haircut)·count − fee`, which assumes the d
 is *correct*, and has no term for P(wrong). Harmless at a 1¢ cap; not harmless
 at 97¢.
 
+> **AMENDED 2026-08-07 — the paragraph above is wrong, and its error is the one
+> it was warning about.** It applies a *pooled* precision to a bet whose price
+> already encodes the answer. `scripts/settle-score.py` joins real settlement to
+> every banked run record (n=64 first-intents) and conditions on the observed
+> ask:
+>
+> | ask band | n | YES | P | 95% CI | EV@mid | EV@CIlow |
+> |---|---|---|---|---|---|---|
+> | 0–19¢ | 3 | 1 | 0.33 | [0.06, 0.79] | +22.3¢ | −4.9¢ |
+> | 20–39¢ | 11 | 2 | **0.18** | [0.05, 0.48] | −13.8¢ | −26.9¢ |
+> | 40–59¢ | 8 | 3 | 0.38 | [0.14, 0.69] | −14.5¢ | −38.3¢ |
+> | 60–79¢ | 6 | 5 | 0.83 | [0.44, 0.97] | +11.3¢ | −28.4¢ |
+> | 80–94¢ | 7 | 4 | 0.57 | [0.25, 0.84] | −30.9¢ | −63.0¢ |
+> | 95–100¢ | 29 | 29 | **1.00** | [0.88, 1.00] | +1.0¢ | −10.7¢ |
+>
+> **Precision is a function of price, not a constant.** Where the market is at
+> 95–100¢ this system has been right 29 times out of 29; where it is at 20–59¢,
+> 5 of 19. AFFO at 95¢ and MELI-AI at 90¢ were not negative-EV bets that won.
+> The genuinely lucky fill was CODE at **57¢** — that band settles YES 38% of
+> the time. And the cheap asks this postmortem implies we should have preferred
+> were losers: DASH-ROBO at 37¢ and CELH-ESSE at 39¢ both settled **NO**.
+>
+> What survives is the *conclusion*, not the reasoning. **Do not raise the
+> notional envelope** — but because nothing is proven, not because 97¢ is
+> negative. Every `EV@CIlow` in that table is negative. Break-even at 97¢ needs
+> p ≥ 0.98, and 29/29 with an interval floor of 0.88 cannot separate 0.98 from
+> 0.90, where one NO costs 97¢ and erases ~48 winners. Sixty-four scored
+> decisions is not a sample you can tune a money policy on.
+>
+> What survives intact is that `ev_gate` has no P(wrong) term. The fix is *not*
+> a per-keyword precision prior — replayed against these events that policy
+> skips the winning 97¢ trades and buys the losing cheap ones, turning +25.0¢
+> into −4.0¢. Any correctness term has to condition on price. Until there are
+> enough samples to fit one, EV is recorded in shadow and gates nothing.
+>
+> The lead worth chasing: 2 of the 11 intents at 20–39¢ **did** settle YES —
+> real early calls the market had not priced. Alpha is in separating those two
+> from the other nine, which is a targeted precision question about which words
+> false-fire against a disagreeing market, not an argument for a new model.
+
 ## What the enforced prep chain caught
 
 The stage→study→preflight→green-gate chain earned its keep:
@@ -157,3 +197,11 @@ with no webcast to fall back to.
 Do **not** raise the notional envelope yet. At 90–95¢ fills with 81% precision,
 more orders per event mostly buys more negative-EV fills. Price discipline
 first, then size.
+
+> **AMENDED 2026-08-07.** The ruling stands; the reason does not. Conditioned on
+> price, 90–95¢ fills are not negative-EV — see the amendment under "The fills".
+> Hold the envelope because **no price band is proven** at n=64, not because the
+> expensive ones are bad. And read "price discipline" carefully: the measured
+> loser is the *cheap* end (20–59¢ settles YES 5 times in 19), so discipline
+> here means declining low-priced disagreement with the market, which is the
+> opposite of what this line reads like at a glance.

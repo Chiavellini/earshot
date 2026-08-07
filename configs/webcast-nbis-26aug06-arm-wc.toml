@@ -21,7 +21,7 @@
 
 [event]
 id        = "KXEARNINGSMENTIONNBIS-26AUG06-WEBCAST"
-starts_at = "2026-08-06T00:00:00Z"  # TODO: set the real call time (UTC) — slate had none
+starts_at = "2026-08-12T12:00:00Z"  # NBIS call is 2026-08-12 08:00 ET per issuer newsroom + the registration page — NOT Aug 6
 
 [pipeline]
 chunk_ms       = 80
@@ -208,7 +208,7 @@ policy           = "confirmed_only"
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONNBIS-26AUG06-NVID"
 phrase           = "nvidia"
-variants         = ["nvidia", "nvidias"]
+variants         = ["nvidia", "nvidias", "invidia", "in vidia", "en vidia"]  # widened 2026-08-07 by variant-widen.py (lexicon; study confirmed:0) — UNSTUDIED until variant-study.sh re-scores it
 max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"

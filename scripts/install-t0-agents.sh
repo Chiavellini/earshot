@@ -101,6 +101,50 @@ print(f"{t.hour:02d}:{t.minute:02d}")
 PY
 }
 
+# ── the untimed-slate guard ─────────────────────────────────────────────────
+# An event whose call time never resolved is staged at midnight UTC with the
+# TODO marker still on the line. Its T−<lead> job is then ALREADY IN THE PAST
+# at install time, so launchd accepts the plist, reports runs=0, and never
+# fires: a silent total miss behind a green install log. All 5 of the
+# 2026-08-06 slate went this way, then 4 of the 2026-08-07 slate (DKNG/LLY/
+# VST/WEN, installed 02:50Z against a 00:00Z "call"). Refuse both shapes — a
+# job that cannot fire is worse than no job, because it reads as scheduled.
+# Prints a reason on stdout; empty output means schedulable.
+unschedulable_reason() { # <cfg> <starts_at_iso_z> <lead_min>
+  local cfg="$1" starts="$2" lead="$3"
+  if sed -n '/^\[event\]/,/^\[/p' "$cfg" | grep -qE '^[[:space:]]*starts_at.*TODO'; then
+    echo "[event].starts_at still carries its TODO placeholder — the call time never resolved"
+    return 0
+  fi
+  python3 - "$starts" "$lead" <<'PY'
+import sys
+from datetime import datetime, timedelta, timezone
+lead = int(sys.argv[2])
+try:
+    t = datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00"))
+except ValueError as e:
+    print(f"[event].starts_at {sys.argv[1]!r} is not ISO-8601 ({e})")
+    sys.exit(0)
+fire = t - timedelta(minutes=lead)
+now = datetime.now(timezone.utc)
+if fire <= now:
+    late = (now - fire).total_seconds() / 60
+    print(f"T-{lead} fire time {fire:%Y-%m-%dT%H:%MZ} is {late:.0f} min IN THE PAST "
+          f"(call {t:%Y-%m-%dT%H:%MZ}) — launchd would load it and never run it")
+PY
+}
+
+# Refuse + journal + count. Returns 1 when the caller should `continue`.
+refuse_if_unschedulable() { # <cfg> <starts> <lead_min> <slug> <event_id>
+  local reason
+  reason=$(unschedulable_reason "$1" "$2" "$3")
+  [[ -n "$reason" ]] || return 0
+  echo "REFUSED $4: $reason" >&2
+  [[ -n "$5" ]] && scripts/journal.sh --event "$5" --actor install-t0-agents.sh \
+    --action timer-install --outcome fail --detail "REFUSED: $reason" >/dev/null || true
+  return 1
+}
+
 if [[ "$REHEARSAL" -eq 1 ]]; then
   [[ -n "$RCONFIG" && -f "$RCONFIG" ]] || { echo "--rehearsal needs --config <rehearsal-cfg>" >&2; exit 2; }
   NOW_PLUS_2=$(python3 -c "
@@ -140,6 +184,7 @@ for cfg in configs/webcast-*-"$DP"-arm-wc.toml; do
   starts=$(sed -n '/^\[event\]/,/^\[/s/^[[:space:]]*starts_at[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$cfg" | head -1)
   ev=$(sed -n '/^\[event\]/,/^\[/s/^[[:space:]]*id[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$cfg" | head -1)
   [[ -n "$starts" ]] || { echo "SKIP $slug: no [event].starts_at in $cfg" >&2; PROBLEMS=$((PROBLEMS+1)); continue; }
+  refuse_if_unschedulable "$cfg" "$starts" 75 "$slug" "$ev" || { PROBLEMS=$((PROBLEMS+1)); continue; }
   acct=$(map_lookup "$ACCOUNT_MAP" "$slug" "$HOME/.earshot/ms.env")
   kind=$(map_lookup "$KIND_MAP" "$slug" "hls")
   read -r WH WM WMO WD <<<"$(local_hm "$starts" -75)"
@@ -163,6 +208,7 @@ for cfg in configs/twilio-*-"$DP"-arm.toml; do
   starts=$(sed -n '/^\[event\]/,/^\[/s/^[[:space:]]*starts_at[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$cfg" | head -1)
   ev=$(sed -n '/^\[event\]/,/^\[/s/^[[:space:]]*id[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$cfg" | head -1)
   [[ -n "$starts" ]] || continue
+  refuse_if_unschedulable "$cfg" "$starts" 35 "$slug" "$ev" || { PROBLEMS=$((PROBLEMS+1)); continue; }
   key=$(python3 -c "
 import re
 m = re.match(r'KXEARNINGSMENTION([A-Z0-9]+)', '$ev')

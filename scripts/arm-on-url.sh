@@ -120,6 +120,79 @@ jnl pcm-gate ok "decoded PCM on $(hostname -s)"
 # and never see True, hanging forever 20 s before the call. It is also
 # redundant: step 2 just decoded real PCM off this exact URL, which is a
 # strictly stronger liveness proof than an is_live poll.
-echo "ARMING $SLUG at $(date -u +%FT%TZ)"
-jnl arm-handoff info "exec launch-webcast.sh posture=${LIVE:---dry-run}${FILLABLE:+ fillable}"
-exec "$REPO/scripts/launch-webcast.sh" --config "$CONFIG" --account "$ACCOUNT" $LIVE $FILLABLE
+# WHY THIS IS A LOOP AND NOT AN `exec` (2026-08-07). It used to end with
+# `exec launch-webcast.sh`, which replaces the process image — so there was no
+# child, no `wait`, no trap, and NOTHING could observe the arm dying. AAOI
+# 26AUG06 armed at 19:58:00Z and lost every leg at 19:58:36Z with not one
+# journal line recording it; the stream was live again at 21:04 and a human
+# re-armed at 21:06, 36 minutes into the call. `$DEADLINE` was already an
+# absolute epoch here, read only by the URL-wait loop above.
+#
+# Bounded by the SAME deadline, so this cannot outlive the call window.
+REARMS=0
+MAX_REARMS="${MAX_REARMS:-6}"
+# An attempt that dies faster than this never really started — re-gating
+# immediately would just spin. redial-supervisor.sh:183 uses the same bar for
+# the phone lane; AAOI died at 32 s, right on it.
+MEDIA_CONFIRM_SECS="${MEDIA_CONFIRM_SECS:-30}"
+
+while :; do
+  echo "ARMING $SLUG at $(date -u +%FT%TZ) (attempt $((REARMS + 1)))"
+  jnl arm-handoff info "launch-webcast.sh posture=${LIVE:---dry-run}${FILLABLE:+ fillable} attempt=$((REARMS + 1))"
+
+  T0=$(date -u +%s)
+  "$REPO/scripts/launch-webcast.sh" --config "$CONFIG" --account "$ACCOUNT" $LIVE $FILLABLE &
+  ARM_PID=$!
+  # Forward a stop to the child so a SIGTERM'd watcher does not orphan an arm.
+  trap 'kill "$ARM_PID" 2>/dev/null; exit 143' TERM INT
+  wait "$ARM_PID"; RC=$?
+  trap - TERM INT
+  DUR=$(( $(date -u +%s) - T0 ))
+  REARMS=$((REARMS + 1))
+
+  jnl arm-exit info "attempt=$REARMS rc=$RC after ${DUR}s"
+  echo "ARM ENDED: $SLUG rc=$RC after ${DUR}s (attempt $REARMS)"
+
+  # A deliberate disarm wins over any re-arm.
+  if [[ -f "$REPO/state/$EVENT_ID/STOP" ]]; then
+    echo "STOP file present — not re-arming."
+    jnl arm-exit ok "STOP file present after attempt $REARMS — done"
+    exit "$RC"
+  fi
+
+  NOW=$(date -u +%s)
+  if (( NOW >= DEADLINE )); then
+    echo "past arm deadline — not re-arming."
+    jnl arm-exit info "past deadline after attempt $REARMS (rc=$RC) — done"
+    exit "$RC"
+  fi
+  if (( REARMS >= MAX_REARMS )); then
+    page "$SLUG re-arm budget exhausted" \
+         "$MAX_REARMS attempts, last rc=$RC after ${DUR}s, deadline not yet reached. See $LOG"
+    jnl arm-exit fail "re-arm budget $MAX_REARMS exhausted (last rc=$RC)"
+    exit "$RC"
+  fi
+  # rc=0 before the deadline means the stream ended early, which for a webcast
+  # is usually the call ending — but it is also what a dead leg looks like, so
+  # re-gate rather than guess. The PCM gate below decides.
+  if (( DUR <= MEDIA_CONFIRM_SECS )); then
+    page "$SLUG ARM-NO-MEDIA" \
+         "attempt $REARMS died after only ${DUR}s (rc=$RC) — the stream is not holdable. See $LOG"
+    jnl arm-exit fail "ARM-NO-MEDIA: attempt $REARMS died in ${DUR}s"
+  fi
+
+  sleep 20
+  # Re-gate before re-arming: the URL may have rotated, and re-arming into a
+  # stream that is still dead is what burns the budget.
+  if [[ ! -s "$URLF" ]]; then
+    echo "url file vanished — not re-arming."
+    jnl arm-exit fail "url file $URLF empty/absent at re-arm"
+    exit "$RC"
+  fi
+  if ! "$REPO/scripts/pcm-gate.sh" --kind "$KIND" --url-file "$URLF" --secs "$SECS" --label "$SLUG"; then
+    echo "re-gate FAILED — stream still dead, waiting."
+    jnl pcm-gate fail "re-gate failed before attempt $((REARMS + 1))"
+    continue
+  fi
+  jnl pcm-gate ok "re-gate passed before attempt $((REARMS + 1))"
+done

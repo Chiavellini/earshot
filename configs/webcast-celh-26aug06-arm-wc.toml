@@ -16,12 +16,13 @@
 # 07-22 post-mortems #1/#2). YouTube events: do NOT use this template; keep
 # the frozen yt-dlp leg (configs/webcast-tsla.toml) until a streamlink-vs-
 # YouTube ladder number exists (capture first).
-# Posture: mention-probe observe (1¢ non-crossing) — fill posture is gated on
-# the Phase-4 precision verdict (docs/RACE-STRATEGY.md).
+# Posture: MENTION-FILL (26AUG05 ruling) — cap 97¢ = MENTION_FILL_CAP_CENTS,
+# size 1, min_confidence_confirmed 0.22. Real spend stays clamped by the
+# [risk] notional caps AND the $1 probe ledger.
 
 [event]
 id        = "KXEARNINGSMENTIONCELH-26AUG06-WEBCAST"
-starts_at = "2026-08-06T00:00:00Z"  # TODO: set the real call time (UTC) — slate had none
+starts_at = "2026-08-06T12:00:00Z"  # Q4 attendee API event 277956573: eventStart 2026-08-06T12:00:00.000Z (8:00 ET)
 
 [pipeline]
 chunk_ms       = 80
@@ -117,99 +118,110 @@ allowlist_tickers = [
 market_ticker    = "KXEARNINGSMENTIONCELH-26AUG06-ALCO"
 phrase           = "alcohol"
 variants         = ["alcohol", "alcohols"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 62/18 ratio 3.44 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Competition (KXEARNINGSMENTIONCELH-26AUG06-COMP) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONCELH-26AUG06-COMP"
 phrase           = "competition"
 variants         = ["competition", "competitions"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 38/18 ratio 2.11 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Electric Vibe (KXEARNINGSMENTIONCELH-26AUG06-ELEC) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONCELH-26AUG06-ELEC"
 phrase           = "electric vibe"
 variants         = ["electric vibe"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 16/9 ratio 1.78 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Essential (KXEARNINGSMENTIONCELH-26AUG06-ESSE) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONCELH-26AUG06-ESSE"
 phrase           = "essential"
 variants         = ["essential", "essentials"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 50/18 ratio 2.78 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Female (KXEARNINGSMENTIONCELH-26AUG06-FEMA) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONCELH-26AUG06-FEMA"
 phrase           = "female"
 variants         = ["female", "females"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 42/18 ratio 2.33 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Influencer (KXEARNINGSMENTIONCELH-26AUG06-INFL) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONCELH-26AUG06-INFL"
 phrase           = "influencer"
 variants         = ["influencer", "influencers"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 46/18 ratio 2.56 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Input Cost (KXEARNINGSMENTIONCELH-26AUG06-INPU) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONCELH-26AUG06-INPU"
 phrase           = "input cost"
-variants         = ["input cost"]
-max_price_cents  = 1
+variants = ["input cost", "input costs", "in put cost"]  # widened 2026-08-06 (study 4/9=0.44 WEAK). Plural + compound-split; both still contain the literal resolving phrase.
+max_price_cents  = 97  # posture: FILL — study 38/27 ratio 1.41 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # NFL (KXEARNINGSMENTIONCELH-26AUG06-NFL) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONCELH-26AUG06-NFL"
 phrase           = "nfl"
-variants         = ["nfl", "nfls", "n f l"]
-max_price_cents  = 1
+variants = ["nfl", "nfls", "n f l", "en f l", "en ef el"]  # widened 2026-08-06 (study 10/27=0.37 WEAK). Alternate TRANSCRIPTIONS of the spoken letters only — "national football league" deliberately NOT added: rules_primary resolves on "NFL" being said, so a synonym would fire without resolving.
+max_price_cents  = 1  # posture: OBSERVE — study 32/45 ratio 0.71 < floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # PepsiCo (KXEARNINGSMENTIONCELH-26AUG06-PEPS) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONCELH-26AUG06-PEPS"
 phrase           = "pepsico"
 variants         = ["pepsico", "pepsicos"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 28/18 ratio 1.56 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Recall (KXEARNINGSMENTIONCELH-26AUG06-RECA) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONCELH-26AUG06-RECA"
 phrase           = "recall"
 variants         = ["recall", "recalls"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 40/18 ratio 2.22 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Tariff (KXEARNINGSMENTIONCELH-26AUG06-TARI) — corpus-tuned; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONCELH-26AUG06-TARI"
 phrase           = "tariff"
 variants         = ["tariff", "tariffs"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 34/18 ratio 1.89 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 confirmed_threshold = 0.1
 boost            = 3.0
 
@@ -218,35 +230,39 @@ boost            = 3.0
 market_ticker    = "KXEARNINGSMENTIONCELH-26AUG06-TEXA"
 phrase           = "texas"
 variants         = ["texas"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 12/9 ratio 1.33 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Vibe (KXEARNINGSMENTIONCELH-26AUG06-VIBE) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONCELH-26AUG06-VIBE"
 phrase           = "vibe"
 variants         = ["vibe", "vibes"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 20/18 ratio 1.11 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Vitamin (KXEARNINGSMENTIONCELH-26AUG06-VITA) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONCELH-26AUG06-VITA"
 phrase           = "vitamin"
 variants         = ["vitamin", "vitamins"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 20/18 ratio 1.11 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # World Cup (KXEARNINGSMENTIONCELH-26AUG06-WORL) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONCELH-26AUG06-WORL"
 phrase           = "world cup"
-variants         = ["world cup"]
-max_price_cents  = 1
+variants = ["world cup", "world cups", "worldcup"]  # widened 2026-08-06 (study 8/9=0.89, just under the fill floor). Plural + unspaced compound.
+max_price_cents  = 97  # posture: FILL — study 54/27 ratio 2.00 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # --- prepare summary: 15 tradeable, 0 skipped (said-N-times), 0 skipped (unencodable), 0 variants dropped of 15 markets ---

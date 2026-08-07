@@ -16,12 +16,12 @@
 # 07-22 post-mortems #1/#2). YouTube events: do NOT use this template; keep
 # the frozen yt-dlp leg (configs/webcast-tsla.toml) until a streamlink-vs-
 # YouTube ladder number exists (capture first).
-# Posture: mention-probe observe (1¢ non-crossing) — fill posture is gated on
-# the Phase-4 precision verdict (docs/RACE-STRATEGY.md).
+# Posture: MENTION-FILL (26AUG05 ruling, reconfirmed by operator 2026-08-05 for
+# the 08-06 slate) — cap 97¢, size 1, min_confidence_confirmed 0.22.
 
 [event]
 id        = "KXEARNINGSMENTIONABNB-26AUG06-WEBCAST"
-starts_at = "2026-08-06T00:00:00Z"  # TODO: set the real call time (UTC) — slate had none
+starts_at = "2026-08-06T21:00:00Z"  # ABNB Q2 call 2:00pm PT / 5:00pm ET (press release)
 
 [pipeline]
 chunk_ms       = 80
@@ -116,9 +116,10 @@ allowlist_tickers = [
 market_ticker    = "KXEARNINGSMENTIONABNB-26AUG06-ACQU"
 phrase           = "acquisition"
 variants         = ["acquisition", "acquisitions"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 62/18 ratio 3.44 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 confirmed_threshold = 0.15
 boost            = 2.0
 
@@ -127,116 +128,129 @@ boost            = 2.0
 market_ticker    = "KXEARNINGSMENTIONABNB-26AUG06-BOUT"
 phrase           = "boutique"
 variants         = ["boutique", "boutiques"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 18/18 ratio 1.00 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Code / Coding (KXEARNINGSMENTIONABNB-26AUG06-CODE) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONABNB-26AUG06-CODE"
 phrase           = "code"
 variants         = ["code", "codes", "coding", "codings"]
-max_price_cents  = 1
+max_price_cents  = 1  # posture: OBSERVE (k<=2 OVERRIDE) — study 68/36 ratio 1.89 would have earned FILL, but variant(s) code=2tok assemble from partial audio at near-ceiling confidence (SNAP "game" class); no confidence gate reaches them, so this word does not get real money
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Delta (KXEARNINGSMENTIONABNB-26AUG06-DELT) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONABNB-26AUG06-DELT"
 phrase           = "delta"
 variants         = ["delta", "deltas"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 20/18 ratio 1.11 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Domestic (KXEARNINGSMENTIONABNB-26AUG06-DOME) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONABNB-26AUG06-DOME"
 phrase           = "domestic"
 variants         = ["domestic", "domestics"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 60/18 ratio 3.33 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Holiday (KXEARNINGSMENTIONABNB-26AUG06-HOLI) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONABNB-26AUG06-HOLI"
 phrase           = "holiday"
 variants         = ["holiday", "holidays"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 52/18 ratio 2.89 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Home Sharing (KXEARNINGSMENTIONABNB-26AUG06-HOME) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONABNB-26AUG06-HOME"
 phrase           = "home sharing"
 variants         = ["home sharing"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 16/9 ratio 1.78 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # International (KXEARNINGSMENTIONABNB-26AUG06-INTE) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONABNB-26AUG06-INTE"
 phrase           = "international"
 variants         = ["international", "internationals"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 58/18 ratio 3.22 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Project Hawaii (KXEARNINGSMENTIONABNB-26AUG06-PROJ) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONABNB-26AUG06-PROJ"
 phrase           = "project hawaii"
 variants         = ["project hawaii"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 16/9 ratio 1.78 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Service Agent (KXEARNINGSMENTIONABNB-26AUG06-SERV) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONABNB-26AUG06-SERV"
 phrase           = "service agent"
 variants         = ["service agent"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 18/9 ratio 2.00 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Social Media (KXEARNINGSMENTIONABNB-26AUG06-SOCI) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONABNB-26AUG06-SOCI"
 phrase           = "social media"
 variants         = ["social media"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 22/9 ratio 2.44 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Take Rate (KXEARNINGSMENTIONABNB-26AUG06-TAKE) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONABNB-26AUG06-TAKE"
 phrase           = "take rate"
 variants         = ["take rate"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 12/9 ratio 1.33 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # Third Party (KXEARNINGSMENTIONABNB-26AUG06-THIR) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONABNB-26AUG06-THIR"
 phrase           = "third party"
 variants         = ["third party"]
-max_price_cents  = 1
+max_price_cents  = 97  # posture: FILL — study 16/9 ratio 1.78 >= floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # World Cup (KXEARNINGSMENTIONABNB-26AUG06-WORL) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONABNB-26AUG06-WORL"
 phrase           = "world cup"
 variants         = ["world cup"]
-max_price_cents  = 1
+max_price_cents  = 1  # posture: OBSERVE — study 8/9 ratio 0.89 < floor 1.00
 budget_contracts = 1
 policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
 
 # --- prepare summary: 14 tradeable, 0 skipped (said-N-times), 0 skipped (unencodable), 0 variants dropped of 14 markets ---

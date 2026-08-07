@@ -190,7 +190,7 @@ policy           = "confirmed_only"
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONLLY-26AUG07-NVID"
 phrase           = "nvidia"
-variants         = ["nvidia", "nvidias"]
+variants         = ["nvidia", "nvidias", "invidia", "in vidia", "en vidia"]  # widened 2026-08-07 by variant-widen.py (lexicon; study confirmed:0) — UNSTUDIED until variant-study.sh re-scores it
 max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"
@@ -208,7 +208,7 @@ policy           = "confirmed_only"
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONLLY-26AUG07-TAIL"
 phrase           = "tailwind"
-variants         = ["tailwind", "tailwinds"]
+variants         = ["tailwind", "tailwinds", "tail wind", "tail winds"]  # widened 2026-08-07 by variant-widen.py (lexicon; study confirmed:0) — UNSTUDIED until variant-study.sh re-scores it
 max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"

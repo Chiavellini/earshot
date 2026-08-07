@@ -109,13 +109,36 @@ def event_ticker_of(config_text, override):
     return re.sub(r"-(WEBCAST|CAPTURE|CAPT)$", "", m.group(1))
 
 
-def live_subtitles(event_ticker):
+def _markets_raw(event_ticker):
     req = urllib.request.Request(
         f"{API}/markets?event_ticker={event_ticker}", headers={"User-Agent": UA}
     )
     with urllib.request.urlopen(req, timeout=30) as r:
         d = json.load(r)
-    return {m["ticker"]: (m.get("yes_sub_title") or "") for m in d.get("markets", [])}
+    return d.get("markets", [])
+
+
+def live_subtitles(event_ticker):
+    return {m["ticker"]: (m.get("yes_sub_title") or "") for m in _markets_raw(event_ticker)}
+
+
+def live_market_detail(event_ticker):
+    """Like live_subtitles(), but keeps the full per-strike detail (not just
+    yes_sub_title) needed to judge rare-discrete-event vs. predictable-word —
+    see pm-expansion-exploration/latency/mention-market-exploitability-scoreboard.md.
+    Not used by the phrase-screen gate itself; live_subtitles() above is
+    unchanged and remains the one that gate calls."""
+    out = {}
+    for m in _markets_raw(event_ticker):
+        out[m["ticker"]] = {
+            "yes_sub_title": m.get("yes_sub_title") or "",
+            "rules_primary": m.get("rules_primary") or "",
+            "volume_fp": m.get("volume_fp"),
+            "volume_24h_fp": m.get("volume_24h_fp"),
+            "open_interest_fp": m.get("open_interest_fp"),
+            "result": m.get("result"),
+        }
+    return out
 
 
 def self_test():

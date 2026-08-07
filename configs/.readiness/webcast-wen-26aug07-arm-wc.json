@@ -1,0 +1,170 @@
+{
+ "config": "webcast-wen-26aug07-arm-wc",
+ "keywords_sha256": "3d332f1d234fd6a19955fb58628b1dadf9f16473483c5ec7aa922efd5f590a2a",
+ "date": "2026-08-06",
+ "engine": "streaming_ctc",
+ "voices": [
+  "Samantha",
+  "Daniel",
+  "Paulina"
+ ],
+ "carriers": 2,
+ "keywords": [
+  {
+   "ticker": "KXEARNINGSMENTIONWEN-26AUG07-APP",
+   "phrase": "app",
+   "variants": [
+    "app",
+    "apps"
+   ],
+   "clips": 18,
+   "confirmed": 8
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONWEN-26AUG07-BACO",
+   "phrase": "baconator",
+   "variants": [
+    "baconator",
+    "baconators"
+   ],
+   "clips": 18,
+   "confirmed": 38
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONWEN-26AUG07-BIGG",
+   "phrase": "biggie bundle",
+   "variants": [
+    "biggie bundle"
+   ],
+   "clips": 9,
+   "confirmed": 4
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONWEN-26AUG07-CLOS",
+   "phrase": "closure",
+   "variants": [
+    "closure",
+    "closures"
+   ],
+   "clips": 18,
+   "confirmed": 42
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONWEN-26AUG07-DELI",
+   "phrase": "delivery",
+   "variants": [
+    "delivery",
+    "deliverys"
+   ],
+   "clips": 18,
+   "confirmed": 28
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONWEN-26AUG07-FRES",
+   "phrase": "freshai",
+   "variants": [
+    "freshai",
+    "freshais"
+   ],
+   "clips": 18,
+   "confirmed": 0
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONWEN-26AUG07-FROS",
+   "phrase": "frosty",
+   "variants": [
+    "frosty",
+    "frostys"
+   ],
+   "clips": 18,
+   "confirmed": 52
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONWEN-26AUG07-INFL",
+   "phrase": "inflation",
+   "variants": [
+    "inflation",
+    "inflations"
+   ],
+   "clips": 18,
+   "confirmed": 60
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONWEN-26AUG07-LOYA",
+   "phrase": "loyalty",
+   "variants": [
+    "loyalty",
+    "loyaltys"
+   ],
+   "clips": 18,
+   "confirmed": 18
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONWEN-26AUG07-MINI",
+   "phrase": "minions",
+   "variants": [
+    "minions"
+   ],
+   "clips": 9,
+   "confirmed": 20
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONWEN-26AUG07-PICK",
+   "phrase": "pickle",
+   "variants": [
+    "pickle",
+    "pickles"
+   ],
+   "clips": 18,
+   "confirmed": 26
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONWEN-26AUG07-PROJ",
+   "phrase": "project fresh",
+   "variants": [
+    "project fresh"
+   ],
+   "clips": 9,
+   "confirmed": 20
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONWEN-26AUG07-RANC",
+   "phrase": "ranch",
+   "variants": [
+    "ranch",
+    "ranchs"
+   ],
+   "clips": 18,
+   "confirmed": 50
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONWEN-26AUG07-SONI",
+   "phrase": "sonic",
+   "variants": [
+    "sonic",
+    "sonics"
+   ],
+   "clips": 18,
+   "confirmed": 22
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONWEN-26AUG07-SPIC",
+   "phrase": "spicy chicken",
+   "variants": [
+    "spicy chicken"
+   ],
+   "clips": 9,
+   "confirmed": 16
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONWEN-26AUG07-TARI",
+   "phrase": "tariff",
+   "variants": [
+    "tariff",
+    "tariffs"
+   ],
+   "clips": 18,
+   "confirmed": 34
+  }
+ ]
+}

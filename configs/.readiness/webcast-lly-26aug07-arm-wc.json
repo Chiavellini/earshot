@@ -1,0 +1,163 @@
+{
+ "config": "webcast-lly-26aug07-arm-wc",
+ "keywords_sha256": "b26b12de14080d6837a77568f72a049f7ca9fb08f65dc3345b776ab8a46a2d0f",
+ "date": "2026-08-06",
+ "engine": "streaming_ctc",
+ "voices": [
+  "Samantha",
+  "Daniel",
+  "Paulina"
+ ],
+ "carriers": 2,
+ "keywords": [
+  {
+   "ticker": "KXEARNINGSMENTIONLLY-26AUG07-AI",
+   "phrase": "a i",
+   "variants": [
+    "a i",
+    "artificial intelligence"
+   ],
+   "clips": 18,
+   "confirmed": 20
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONLLY-26AUG07-ALZH",
+   "phrase": "alzheimer",
+   "variants": [
+    "alzheimer",
+    "alzheimers"
+   ],
+   "clips": 18,
+   "confirmed": 10
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONLLY-26AUG07-CHIN",
+   "phrase": "china",
+   "variants": [
+    "china",
+    "chinas"
+   ],
+   "clips": 18,
+   "confirmed": 56
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONLLY-26AUG07-FOUN",
+   "phrase": "foundayo",
+   "variants": [
+    "foundayo",
+    "foundayos"
+   ],
+   "clips": 18,
+   "confirmed": 0
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONLLY-26AUG07-HEAD",
+   "phrase": "headwind",
+   "variants": [
+    "headwind",
+    "headwinds"
+   ],
+   "clips": 18,
+   "confirmed": 8
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONLLY-26AUG07-INLU",
+   "phrase": "inluriyo",
+   "variants": [
+    "inluriyo",
+    "inluriyos"
+   ],
+   "clips": 18,
+   "confirmed": 0
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONLLY-26AUG07-LILL",
+   "phrase": "lillydirect",
+   "variants": [
+    "lillydirect",
+    "lillydirects"
+   ],
+   "clips": 18,
+   "confirmed": 0
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONLLY-26AUG07-NOVO",
+   "phrase": "novo nordisk",
+   "variants": [
+    "novo nordisk"
+   ],
+   "clips": 9,
+   "confirmed": 2
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONLLY-26AUG07-NVID",
+   "phrase": "nvidia",
+   "variants": [
+    "nvidia",
+    "nvidias"
+   ],
+   "clips": 18,
+   "confirmed": 0
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONLLY-26AUG07-PENN",
+   "phrase": "pennsylvania",
+   "variants": [
+    "pennsylvania",
+    "pennsylvanias"
+   ],
+   "clips": 18,
+   "confirmed": 60
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONLLY-26AUG07-TAIL",
+   "phrase": "tailwind",
+   "variants": [
+    "tailwind",
+    "tailwinds"
+   ],
+   "clips": 18,
+   "confirmed": 0
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONLLY-26AUG07-TARI",
+   "phrase": "tariff",
+   "variants": [
+    "tariff",
+    "tariffs"
+   ],
+   "clips": 18,
+   "confirmed": 34
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONLLY-26AUG07-VENT",
+   "phrase": "ventyx",
+   "variants": [
+    "ventyx",
+    "ventyxs"
+   ],
+   "clips": 18,
+   "confirmed": 38
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONLLY-26AUG07-VIAL",
+   "phrase": "vial",
+   "variants": [
+    "vial",
+    "vials"
+   ],
+   "clips": 18,
+   "confirmed": 38
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONLLY-26AUG07-WALM",
+   "phrase": "walmart",
+   "variants": [
+    "walmart",
+    "walmarts"
+   ],
+   "clips": 18,
+   "confirmed": 20
+  }
+ ]
+}
