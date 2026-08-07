@@ -8,12 +8,57 @@ quality verdict without changing future posture.
 ## Owns
 
 Operational PASS/WARN/FAIL rules in `scripts/run-verdict.sh`, log/transcript
-comparison in `scripts/validate-from-log.py`, and the missed-arm reconciliation
-in `scripts/missed-arm-check.py`.
+comparison in `scripts/validate-from-log.py`, the missed-arm reconciliation
+in `scripts/missed-arm-check.py`, and the always-speaks post-event verdict mail
+in `scripts/post-event-report.sh`.
+
+**The post-event report exists to make silence unambiguous.** Unattended runs
+page only on failure paths, so no email reads identically as "it worked" and as
+"the watcher never fired". This job always mails, from `state/` alone — no live
+session, no interactive agent — and always exits 0, because a reporting job
+that can fail closed would reintroduce the silence it was built to remove.
+
+**The denominator is the day's STAGED CONFIGS, not the surviving captures.**
+Until 2026-08-07 reconciliation iterated over captures, so an event that never
+armed had no row to be missing from — it was invisible, not flagged. On
+2026-08-06 ABNB and LYFT both died on a venue registration wall and the tool
+reported **0 MISSED-ARM** for a day that missed two outright and armed a third
+into a dead stream. A grader whose denominator is its own successes cannot
+report a total failure. Staging is the commitment, so it is the population.
+
+Silence now resolves to one of six verdicts rather than two, because "placed
+nothing" has several causes and only some are benign:
+
+| verdict | meaning |
+|---|---|
+| `MISSED-ARM` | staged, board traded, nothing on disk at all |
+| `ARMED-DIED` | armed, then lost every leg — it could not hear the call |
+| `ARMED-NO-FILL` | a crossable ask existed and nothing reached the wire |
+| `ARMED-NO-RECORD` | armed fillable, left no `report.json` — unknowable from disk |
+| `ARMED-OBSERVING` | every intent was priced above its cap, or the posture is 1¢ |
+| `DESCOPED` | a recorded decision, not a failure |
+
+Three rules keep those honest. **Posture is read from the config**, never
+assumed — the old code justified an observing verdict with "1¢ non-crossing
+posture" wording for events armed at a 97¢ fill cap, citing a posture the
+config did not have. **A run that died did not observe**: job liveness is not
+run liveness, and AAOI-26AUG06 armed twice, lost its stream within 32 s both
+times, and was graded benign. **Unknown is never reported as fine**:
+MELI-26AUG05 filled at 90¢ and its record died with the run, so it grades
+`ARMED-NO-RECORD` rather than passing silently.
+
+And two guard against crying wolf, which is how a grader gets ignored. A
+descope is honoured in **either** form — `DESCOPED.json` or a journal
+`action=descope` line — and matched on the issuer+date prefix, because
+`descope-event.sh` keys EBAY's record to the bare event ticker while the
+webcast twin is `…-WEBCAST`; an exact-path lookup reported both of
+2026-08-05's legitimate descopes as misses. And an intent that found no ask at
+or under its cap is a **correct decline**, not a defect: TLN-26AUG05's one
+intent saw a 99¢ ask against a 97¢ cap, exactly where `ev_gate` refuses.
 
 **Missed-arm reconciliation grades the run that never happened.** Its question
-is one line — *we have capture audio for issuer X, X's board traded, we placed
-no orders* — and it is deliberately INDEPENDENT of which upstream node broke.
+is one line — *issuer X's board traded, we placed no orders* — and it is
+deliberately INDEPENDENT of which upstream node broke.
 It fires whether `control.discover` lost the event, `control.qualify` lost the
 bridge, or the wrong tool was pointed at the call, because it reads only the
 evidence on disk. An execution verdict on a run that was never launched is

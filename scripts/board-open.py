@@ -30,6 +30,7 @@ Usage:
 """
 import argparse
 import json
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -74,6 +75,35 @@ def any_board(issuer, fetch=fetch):
         except (TypeError, ValueError):
             pass
     return {"traded": bool(markets) and vol > 0, "series": series,
+            "markets": len(markets), "volume": vol}
+
+
+def event_board(event_ticker, fetch=fetch):
+    """→ dict(traded, series, markets, volume) for ONE event, not the series.
+
+    `any_board` queries by SERIES, so it sums volume across every mention event
+    that issuer has ever had. That is right when all we know is an issuer (a
+    bridge-probe capture names no event), and badly wrong when we do know the
+    event: on 2026-08-07 the DKNG 26AUG07 board carried volume 0 while the
+    series carried 135,341 from prior weeks, so grading the staged set against
+    the series turned a board nobody traded into a six-figure "miss". A grader
+    that inflates the stake is the same cry-wolf failure as one that invents
+    the miss.
+
+    `event_ticker` is the config's `[event].id` with any lane suffix stripped
+    (`…DKNG-26AUG07-WEBCAST` → `…DKNG-26AUG07`).
+    """
+    et = re.sub(r"-(WEBCAST|PHONE|ACOUSTIC)$", "", event_ticker)
+    mk = fetch(f"{BASE}/markets?event_ticker={et}&limit=200")
+    markets = mk.get("markets") or []
+    vol = 0.0
+    for m in markets:
+        v = m.get("volume_fp", m.get("volume")) or 0
+        try:
+            vol += float(v)
+        except (TypeError, ValueError):
+            pass
+    return {"traded": bool(markets) and vol > 0, "series": et,
             "markets": len(markets), "volume": vol}
 
 

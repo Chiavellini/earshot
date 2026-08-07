@@ -56,14 +56,22 @@ done
 
 page() {  # page <subject> <body>
   [[ "$NOTIFY" == 1 ]] || return 0
-  bash "$REPO/scripts/notify.sh" "$1" "$2" $QUIET >/dev/null 2>&1 || true
+  # Overridable so grading an ARCHIVED run cannot mail. Both this and
+  # post-event-report.sh paged for real while being tested against 2026-08-05/06
+  # reports on 2026-08-07 — seven messages about events days in the past.
+  # `redial-supervisor.sh:189` already used this convention; these two did not.
+  if [[ -n "${EARSHOT_NOTIFY:-}" ]]; then
+    "$EARSHOT_NOTIFY" "$1" "$2" $QUIET >/dev/null 2>&1 || true
+  else
+    bash "$REPO/scripts/notify.sh" "$1" "$2" $QUIET >/dev/null 2>&1 || true
+  fi
 }
 
 # The whole verdict, as one python filter: stdin=report.json, stdout=one line
 # "VERDICT<TAB>headline<TAB>detail", exit 0 always (the caller owns exit codes).
 grade() {
   python3 - "$1" <<'PY'
-import json, sys
+import json, os, sys
 
 try:
     d = json.load(open(sys.argv[1]))
@@ -85,6 +93,16 @@ orders  = d.get("sent")
 if orders is None:
     orders = sum(1 for o in (d.get("orders") or []) if o.get("send_ts") is not None)
 ev     = d.get("event_id", "?")
+
+# Dropped-frame rate. Written by the runtime since 2026-08-07; derived here for
+# runs banked before that so an archived report still grades. `None` means no
+# frame arrived at all, which the deaf-FAIL below already owns — it must NOT
+# become 0.0, or "heard nothing" reads as "lossless".
+drop_pct = d.get("drop_pct")
+if drop_pct is None and frames:
+    dr = d.get("drops") or {}
+    drop_pct = sum(dr.get(k) or 0 for k in
+                   ("source_to_preproc", "preproc_to_chunker", "chunker_to_detector")) * 100.0 / frames
 
 dead = [l for l in legs if l.get("died")]
 # A leg that reported 0 frames is useless whether or not it set `died`.
@@ -108,6 +126,26 @@ if frames == 0 or chunks == 0 or first is None:
     for l in dead:
         detail += f" {label(l)} died: {str(l.get('died'))[:160]}"
     print(f"FAIL\tARMED BUT DEAF — captured no audio\t{detail}")
+    raise SystemExit(0)
+
+# ── WARN: audio flowed but we lost frames ────────────────────────────────────
+# Only the ingress ring can drop; interior stages backpressure. So a non-zero
+# rate is host starvation, not a pipeline bug: on 2026-08-05 the CDMX laptop hit
+# load 150 on 8 cores and FIG lost 11.3% of frames, TLN 4.1%, DASH 3.3%, with
+# capture->decision p95 reaching 42 s and three demonstrably-spoken words never
+# heard. Those percentages were computed BY HAND for the post-mortem; nothing
+# in the live path measured them. `replay` and `bench` refuse a single dropped
+# frame, but an event run cannot — a live call has no rerun — so this warns
+# loudly rather than failing.
+DROP_WARN_PCT = float(os.environ.get("EARSHOT_DROP_WARN_PCT", "0.5"))
+if drop_pct is not None and drop_pct > DROP_WARN_PCT:
+    worst = sorted(legs, key=lambda l: -(l.get("drop_pct") or 0.0))[:2]
+    per = ", ".join(f"{label(l)}={(l.get('drop_pct') or 0.0):.2f}%" for l in worst) or "n/a"
+    print(f"WARN\tLOST AUDIO — {drop_pct:.2f}% of frames dropped\t"
+          f"{ev}: frames_in={frames} dropped={int(round(drop_pct * frames / 100))} "
+          f"(warn above {DROP_WARN_PCT}%). worst legs: {per}. "
+          f"Ingress-only drops mean the HOST was starved, not the pipeline — "
+          f"check what else was running, and prefer the box.")
     raise SystemExit(0)
 
 # ── WARN: audio flowed, but not every leg made it ────────────────────────────
