@@ -33,13 +33,28 @@ pub const HARD_DAILY_LOSS_CENTS: u64 = 100_000; // $1,000
 /// config's `max_event_notional_cents`; this constant only stops the CUMULATIVE
 /// total from silently becoming the binding cap on a multi-market board.
 ///
-/// RAISED 2000 → 7000 on 2026-08-11 (operator ruling: size FILL words by the
-/// study ratio instead of one flat per-word number — `posture-from-study.py
-/// --size-tiers`). The top tier is 10 contracts × 97¢ = 970¢ in ONE order, and
-/// CAVA 26AUG11's full board prices out at 6116¢ if every word fires and fills.
-/// At 2000 the ledger would have refused that board's tail on
+/// RAISED 2000 → 7000 → 13000 on 2026-08-11 (two operator rulings the same
+/// day). The first sized FILL words by study ratio; the second replaced that
+/// with TWO BANDS — $10 for high-accuracy words, $1 for low-accuracy ones —
+/// via `posture-from-study.py --size-tiers "1.0:10" --low-band-budget 1`.
+///
+/// The second ruling is the expensive one, and not because of the $10: it made
+/// the LOW band REAL. Sub-floor words used to carry `max_price_cents = 1`,
+/// which is not "a 1¢ bet" — nothing rests at 1¢ on a mention board, so those
+/// orders were non-crossing and took no position at all. They now cross at the
+/// same 97¢ ceiling with 1 contract. CAVA 26AUG11 prices out at 12125¢ if every
+/// word fires and fills (12 HIGH ×10 = 11640¢, plus 5 LOW ×1 = 485¢).
+///
+/// At 7000 the ledger would have refused that board's tail on
 /// `Refusal::ProbeLedger` — the same silent-truncation failure the 100 → 2000
-/// raise was meant to end, just at a higher number.
+/// raise was meant to end, twice removed.
+///
+/// SIZE DOES NOT CHANGE THE SIGN. At a 97¢ ceiling a word must be right >97% of
+/// the time to break even (10 contracts: correct = +30¢, wrong = −970¢), and
+/// that ratio is identical at 1 contract. Raising this constant scales whatever
+/// the precision already is; it does not improve it. Lifetime settled record
+/// when this was raised: 3 YES / 1 NO, and the only large win (FIG +43¢) filled
+/// at 57¢, where the break-even is 57%.
 ///
 /// Scope note, because the number only makes sense with it: this ledger is
 /// loaded from `state_dir.join("probe_ledger.json")` (see `RiskGate::new`), so
@@ -48,7 +63,7 @@ pub const HARD_DAILY_LOSS_CENTS: u64 = 100_000; // $1,000
 /// matches the "cumulative across ALL live drills/sessions" intent stated above
 /// is an OPEN question the operator deferred on 2026-08-11; do not read this
 /// constant as a global spend bound until that is settled.
-pub const PROBE_LEDGER_CAP_CENTS: u64 = 7_000;
+pub const PROBE_LEDGER_CAP_CENTS: u64 = 13_000;
 /// Fillable mention posture (the deliberate step past the 1¢ no-fill probe):
 /// a single order's price may cross a real ask up to this ceiling so the
 /// executor can actually fill. This is a per-order PRICE bound only — real
