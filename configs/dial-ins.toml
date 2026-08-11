@@ -446,14 +446,39 @@ last_verified = "2026-07-16"
 notes         = "⚠⚠ THE UAL TRAP — the highest-risk misread in the project. UAL's 8-K language ('live, listen-only webcast') is IDENTICAL IN KIND to Tesla's, but means the opposite: UAL runs a real phone Q&A, Tesla has no phone at all. docs/RUNBOOK.md:5-6 groups 'UAL and TSLA confirmed webcast-only in their own 8-K exhibits' — literally true, and acting on it would forfeit a tradeable event. 8-K silence is NOT evidence of absence. ⚠ ir.united.com geo-blocks from Mexico (Akamai)."
 
 [CAVA]
-tier          = "bridge_unpublished"
+tier          = "published"
 qa_mechanism  = "hybrid"
-listen_access = "unknown"
-evidence      = "Operator, Q1'26: 'If you would like to ask a question, please press Star one to raise your hand. To withdraw your question, please press Star one again.' 8-K publishes webcast only."
-evidence_src  = "https://www.benzinga.com/insights/news/26/05/52682229/cava-group-q1-2026-earnings-call-transcript"
-number_src    = "https://investor.cava.com/"
-confidence    = "medium-high"
-last_verified = "2026-07-16"
+listen_access = "yes"
+reservation_window = true
+# WHY reservation_window: the bridge refuses to admit before T-30 and SAYS so.
+# Probed 2026-08-11 ~15:11Z (T-5h49m), DTMF 411798645#, CallSid
+# CA5776f791ec8991cc46b490c9804ed67a, held 21.1s:
+#   "CAVA Q2 2026 earnings call has not yet started. This event is scheduled to
+#    start at Tuesday, August 11th at 5 p.m. EDT. Please reconnect up to 30
+#    minutes before 5 p.m. EDT."
+# So `admission` stays UNTESTED on purpose — an off-hours probe classifies
+# nothing here. Decide it in-window (>= 20:30Z) with admission-window-probe.sh.
+evidence      = "Q4-native webcast; the phone lane comes from the attendee REST twin's data.conference.conferenceCallIntake (public, no credential) — see VERIFICATIONS.md Q-Q4PHONE. One shared AWS Chime bridge serves every Q4 webcast; the per-event discriminator is the Meeting ID, which IS the public attendee-URL number (411798645). Registration confirmation lists a Meeting ID and NO passcode. Prior evidence retained: Operator, Q1'26: 'If you would like to ask a question, please press Star one to raise your hand.' 8-K publishes webcast only."
+evidence_src  = "https://attendees.events.q4inc.com/rest/v1/event/411798645"
+number_src    = "https://help.events.q4inc.com/eahc/international-dial-in-numbers"
+confidence    = "high"
+last_verified = "2026-08-11"
+
+[CRWV]
+tier          = "published"
+qa_mechanism  = "unknown"
+listen_access = "yes"
+reservation_window = true
+# Same shared Q4/Chime bridge as CAVA — identical six numbers, only the Meeting
+# ID differs (683023279 = the public attendee-URL number). Not separately dialled
+# before the window; the CAVA probe of 2026-08-11 establishes the bridge's
+# behaviour and the T-30 rule for the venue CLASS, not this issuer's admission.
+# `admission` therefore stays UNTESTED until an in-window probe decides it.
+evidence      = "Q4-native webcast; phone lane from the attendee REST twin's data.conference.conferenceCallIntake (public, no credential) — VERIFICATIONS.md Q-Q4PHONE. conferenceCallIntake.q4Hosted=false and dialIn.operatorLine=null, which do NOT mean 'no dial-in' — the conference block is the field that matters. Registration confirmation lists Meeting ID 683 023 279 and NO passcode."
+evidence_src  = "https://attendees.events.q4inc.com/rest/v1/event/683023279"
+number_src    = "https://help.events.q4inc.com/eahc/international-dial-in-numbers"
+confidence    = "high"
+last_verified = "2026-08-11"
 
 [RKLB]
 tier          = "bridge_unpublished"
@@ -1097,3 +1122,19 @@ confidence    = "high"
 last_verified = "2026-08-05"
 webcast_platform = "chorus-call"
 webcast_note  = "choruscall-resolve.py CAN auto-resolve (webcastid in slate/call-times.json source field) — this is the MORNING auto-resolver win; no registration"
+
+[HIMS]
+tier          = "published"
+qa_mechanism  = "unknown"
+listen_access = "yes"
+admission        = "operator_screened"
+admission_detail = "LIVE PROBE 2026-08-10T21:07Z, mid-call: the bridge offers TWO doors and we held the wrong credential for the automated one. IVR verbatim: 'If you know your unique passcode, please enter it now. Otherwise to speak to the next available operator, stay on the line... Please hold while you are transferred to an operator for assistance... Please have your first and last name... Hello, I am actually not able to hear anything.' The published Meeting ID is the REFERENCE spoken to the screener, not a passcode - the release said 'referencing', and that verb was the whole tell (scripts/dial-in-intake.py now lints it). Unattended silent legs are hung up by the screener at 80-150s: 17 legs over 31m47s on 26AUG10, zero coverage until a human was paged into the conference at 21:16:50, after which admission took 10s and the leg held 2817s unbroken."
+admission_probed = "2026-08-10"
+probe_artifact   = "corpus/bridge-probes/hims-live_2026_08_10.wav + corpus/transcripts/bridge-hims-live.txt"
+reservation_window = true
+evidence      = "Earnings release names a US toll-free participant line, a separate international participant line, and a Meeting ID to reference; a live audio webcast is offered in parallel. Digits live in state/hunt/numbers.env, never here."
+evidence_src  = "operator-supplied 2026-08-10 (Hims & Hers Q2 2026 earnings release / IR page)"
+number_src    = "operator-supplied 2026-08-10; the US toll-free is a SHARED conference-provider line already on file for TTWO and WEN, so the Meeting ID — not the number — is what routes the call"
+confidence    = "high"
+last_verified = "2026-08-10"
+notes         = "REPLACES a stale Q1 line (from the May 11 bridge) that was still sitting in state/hunt/numbers.env; it would have dialled a dead conference silently rather than failing loudly. NOTE the repo's T-90..T-30 probe window is WRONG for this venue: the bridge does not provision until T-30, exactly when admission-window-probe.sh stops allowing a probe, so an in-window probe here has to run at T-30..T-0."

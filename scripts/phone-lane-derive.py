@@ -39,6 +39,7 @@ Exit 0 wrote (or would write); 1 refused; 2 could not run.
 
 import argparse
 import datetime
+import glob
 import json
 import os
 import re
@@ -244,6 +245,77 @@ bind = "127.0.0.1:{port}"
 max_reconnects = 2
 idle_timeout_secs = 8"""
 
+# Emitted on EVERY generated phone config. This block is a CAPABILITY
+# DECLARATION, not an action: nothing pages until scripts/event-autorun.sh
+# decides to pass --operator-handler (it does so when the venue's registry
+# `admission` is operator_screened), and even then operator-page.sh refuses to
+# dial the bridge unless the page is answered. scripts/preflight-event.sh reads
+# this block ONLY when admission == "operator_screened", so it is inert
+# everywhere else.
+#
+# WHY IT IS ALWAYS PRESENT: HIMS 26AUG10. The venue turned out to be
+# operator-screened, the config had no block, and adding one mid-call changed
+# config_sha256 — which made the green gate refuse and forced an
+# EARSHOT_GREEN_OVERRIDE while a live call was running. A block that costs
+# nothing when unused removes that whole failure mode.
+OPERATOR_BLOCK = """\
+[operator_handler]
+# Human-first admission for operator-screened bridges (docs/OPERATOR-HANDLER.md,
+# Q-CONF 2026-07-30). Pages cell_number into a Twilio <Conference>, THEN dials
+# the bridge into the same room with a <Start><Stream track="inbound_track"/>
+# fork — the human's voice stays off the detector's track.
+#
+# Arming an operator_screened venue needs BOTH halves: enabled=true here AND
+# operator_handler = "rehearsed-YYYY-MM-DD" for the venue in configs/dial-ins.toml
+# (written only by a passed scripts/fake-operator rehearsal, never by hand).
+enabled           = {enabled}
+cell_number       = "{cell}"
+conference_prefix = "earshot\""""
+
+OPERATOR_TBD = """\
+[operator_handler]
+# NO CELL RESOLVED. Pass --operator-cell +E164, set EARSHOT_OPERATOR_CELL, or
+# carry [operator_handler] over from the source config. Left disabled: a pager
+# leg with no valid destination is refused by operator-page.sh (exit 2) anyway,
+# and a silent wrong number is worse than an explicit gap.
+enabled           = false
+# cell_number     = "+<E164>"
+conference_prefix = "earshot\""""
+
+
+def resolve_operator_cell(args, src_text, configs_dir="configs"):
+    """Find the pager destination without making the caller retype it.
+
+    Order: --operator-cell, then the source config's own block (a webcast twin
+    that already had one), then EARSHOT_OPERATOR_CELL, then the most recently
+    modified tracked config that carries one. Returns None if nothing resolves.
+    """
+    pat = re.compile(
+        r'^\[operator_handler\]\s*$(.*?)(?=^\[|\Z)', re.S | re.M)
+    cell_pat = re.compile(r'^\s*cell_number\s*=\s*"(\+[1-9][0-9]{7,14})"', re.M)
+
+    if getattr(args, "operator_cell", None):
+        return args.operator_cell, "--operator-cell"
+    if m := pat.search(src_text):
+        if c := cell_pat.search(m.group(1)):
+            return c.group(1), f"carried from {args.src}"
+    if env := os.environ.get("EARSHOT_OPERATOR_CELL"):
+        if re.fullmatch(r"\+[1-9][0-9]{7,14}", env):
+            return env, "EARSHOT_OPERATOR_CELL"
+    try:
+        cands = sorted(glob.glob(os.path.join(configs_dir, "*.toml")),
+                       key=os.path.getmtime, reverse=True)
+    except OSError:
+        cands = []
+    for p in cands:
+        try:
+            t = open(p, errors="replace").read()
+        except OSError:
+            continue
+        if (m := pat.search(t)) and (c := cell_pat.search(m.group(1))):
+            return c.group(1), f"repo convention (most recent: {p})"
+    return None, "unresolved"
+
 
 def build_config(args, src_text, cap, budget, min_conf, port, stream_host, out_path):
     head, tail = split_at_keywords(src_text)
@@ -251,6 +323,22 @@ def build_config(args, src_text, cap, budget, min_conf, port, stream_host, out_p
         refuse(f"{args.src} has no [[keywords]] — nothing to arm (capture-only configs are not a phone lane)")
 
     event = take_sections(head, "event")
+    # THE LANE MUST OWN ITS OWN STATE DIR. `[event]` is copied verbatim from the
+    # webcast twin, so the derived phone config used to inherit the twin's
+    # `id` — and the state dir, OrderRegistry and probe ledger are all parsed
+    # from it. TLN 26AUG05 shipped exactly that: both
+    # `configs/tln-26aug05-phone-arm.toml` and `webcast-tln-26aug05-arm-wc.toml`
+    # declare `KXEARNINGSMENTIONTLN-26AUG05-WEBCAST`, and there is exactly ONE
+    # `state/KXEARNINGSMENTIONTLN-26AUG05-WEBCAST/` — two arms, one ledger, two
+    # writers. HIMS 26AUG10 only escaped because the id was hand-edited.
+    if event:
+        src_id = re.search(r'^\s*id\s*=\s*"([^"]+)"', event, re.M)
+        if src_id:
+            lane_id = re.sub(r"-(WEBCAST|PHONE|ACOUSTIC)$", "", src_id.group(1)) + "-PHONE"
+            swapped = set_kv(event, "id", f'"{lane_id}"')
+            if swapped is None:
+                refuse(f"could not rewrite [event].id in {args.src} to the -PHONE lane")
+            event = swapped
     pipeline = take_sections(head, "pipeline")
     detector = take_sections(head, "detector")
     kalshi = take_sections(head, "kalshi")
@@ -298,8 +386,13 @@ def build_config(args, src_text, cap, budget, min_conf, port, stream_host, out_p
         parts += [pipeline, ""]
     if detector:
         parts += [detector, ""]
-    parts += [SOURCE_BLOCK.format(port=port), "", kalshi, "", risk, "", tail.rstrip("\n"), ""]
-    return "\n".join(parts), n_kw
+    cell, cell_src = resolve_operator_cell(args, src_text)
+    op_block = (OPERATOR_BLOCK.format(enabled="true", cell=cell)
+                if cell else OPERATOR_TBD)
+
+    parts += [SOURCE_BLOCK.format(port=port), "", op_block, "",
+              kalshi, "", risk, "", tail.rstrip("\n"), ""]
+    return "\n".join(parts), n_kw, cell, cell_src
 
 
 # ── the autorun env (tracked; must never contain digits) ───────────────────
@@ -321,17 +414,46 @@ EVENT_NAME="{name}"
 EVENT_TICKER="{event_ticker}"          # informational
 CONFIG_PATH="{config}"
 EARSHOT_NUMBERS="${{EARSHOT_NUMBERS:-$(for d in "${{EARSHOT_REPO:-}}" "$HOME/ear" "$HOME/Code/ear"; do [ -f "$d/state/hunt/numbers.env" ] && echo "$d/state/hunt/numbers.env" && break; done)}}"
-TO_NUMBER="$(sed -n 's/^{key}=\\([^,]*\\).*/\\1/p' "$EARSHOT_NUMBERS" 2>/dev/null | head -1)"
-PASSCODE="$(sed -n 's/^{key}=[^,]*,\\(.*\\)/\\1/p' "$EARSHOT_NUMBERS" 2>/dev/null | head -1)"
-# Empty is NOT a safe default: preflight's dial-in gate only FAILs on a literal
-# TBD, so an unresolved lookup would sail through as "resolved" with no number.
+_LINE="$(sed -n 's/^{key}=//p' "$EARSHOT_NUMBERS" 2>/dev/null | head -1)"
+TO_NUMBER="${{_LINE%%,*}}"
+# THREE states, not two. Empty is NOT a safe default for an unresolved lookup
+# (preflight's dial-in gate only FAILs on a literal TBD, so a blank would sail
+# through as "resolved" with no number) — but empty IS the correct answer for a
+# venue with no keyable credential, and conflating them broke the operator path:
+#   "{key}=+1...,1234#"  -> DTMF path, passcode 1234#
+#   "{key}=+1..."        -> NO keyable credential. An operator-screened bridge
+#                           takes a reference SPOKEN to a screener, not digits.
+#                           Coercing this to TBD made event-autorun refuse to
+#                           launch the very venues the operator handler exists
+#                           for (HIMS 26AUG10).
+#   <line absent>        -> TBD. The hunt never resolved this venue; fail loud.
+case "$_LINE" in
+  *,*) PASSCODE="${{_LINE#*,}}" ;;
+  ?*)  PASSCODE="" ;;
+  *)   PASSCODE="TBD" ;;
+esac
 TO_NUMBER="${{TO_NUMBER:-TBD}}"
-PASSCODE="${{PASSCODE:-TBD}}"
+unset _LINE
 LABEL="com.earshot.{slug}"
 EVENT_DATE="{event_date}"
 END_HHMM_LIVE={end_hhmm}             # call + 150 min UTC
 COMPLETE_EARLIEST_HHMM={complete_hhmm}     # call + 45 min UTC
-ACCOUNT_ENV="{account}"
+# ACCOUNT_ENV is resolved by BASENAME, never by the absolute path this script
+# was invoked with. Derivation runs on the LAPTOP ($HOME/Code/ear, creds in
+# /Users/bernardodelrio/.earshot/) but this file is only ever SOURCED on the BOX
+# ($HOME/ear, creds in /home/ubuntu/.earshot/). Writing the laptop path here is
+# what killed CAVA+CRWV on 2026-08-11: event-autorun printed
+#   account env file not found: /Users/bernardodelrio/.earshot/ms.env
+# and every one of 25 dial attempts died rc=2 in ZERO seconds, 20:35 -> 20:44,
+# then reported "max attempts reached" and stopped. Both events were dead for
+# the entire pre-call window and nobody noticed, because the only alarm was an
+# email. EARSHOT_NUMBERS above already had this exact fix; ACCOUNT_ENV did not.
+_ACCT_BASE="{account_base}"
+for _d in "$HOME/.earshot" "/home/ubuntu/.earshot" "/Users/bernardodelrio/.earshot"; do
+  [ -f "$_d/$_ACCT_BASE" ] && ACCOUNT_ENV="$_d/$_ACCT_BASE" && break
+done
+ACCOUNT_ENV="${{ACCOUNT_ENV:-$HOME/.earshot/$_ACCT_BASE}}"
+unset _ACCT_BASE
 BIND_PORT={port}
 FIRE_HHMM={fire_hhmm}                # timer fire = call - 25 min, zero-padded HHMM UTC
 # Tunnel-free production ingress: launch-event.sh takes this verbatim and skips
@@ -363,6 +485,10 @@ def main():
     ap.add_argument("--event-env")
     ap.add_argument("--account", default="$HOME/.earshot/ms.env")
     ap.add_argument("--stream-host", default=os.environ.get("EARSHOT_TLS_HOST", "media.3-212-174-94.sslip.io"))
+    ap.add_argument("--operator-cell", dest="operator_cell",
+                    help="E.164 pager destination for [operator_handler]; "
+                         "default resolves from the source config, then "
+                         "EARSHOT_OPERATOR_CELL, then repo convention")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--check", action="store_true")
     ap.add_argument("-h", "--help", action="store_true")
@@ -471,7 +597,8 @@ def main():
         )
     min_conf = None if args.min_conf in ("", "none") else args.min_conf
 
-    text, n_kw = build_config(args, src_text, cap, budget, min_conf, port, args.stream_host, out_path)
+    text, n_kw, op_cell, op_cell_src = build_config(
+        args, src_text, cap, budget, min_conf, port, args.stream_host, out_path)
 
     # ── the autorun env ────────────────────────────────────────────────────
     env_path = args.event_env or f"configs/{key.lower()}-{datepart.lower()}-phone-autorun.env"
@@ -487,6 +614,7 @@ def main():
         end_hhmm=hhmm(call + datetime.timedelta(minutes=150)),
         complete_hhmm=hhmm(call + datetime.timedelta(minutes=45)),
         account=args.account,
+        account_base=os.path.basename(args.account or ""),
         port=port,
         fire_hhmm=hhmm(call - datetime.timedelta(minutes=25)),
         stream_host=args.stream_host,
@@ -506,6 +634,13 @@ def main():
     print(f"  config     {out_path}   ({n_kw} keyword blocks, posture {cap}c x{budget})")
     print(f"  event env  {env_path}   (FIRE_HHMM {hhmm(call - datetime.timedelta(minutes=25))}Z)")
     print(f"  ingress    wss://{args.stream_host}/e/{port}   (routed: {routed})")
+    if op_cell:
+        print(f"  operator   [operator_handler] enabled=true, cell resolved from {op_cell_src}")
+        print(f"             inert unless the venue's registry admission is operator_screened")
+    else:
+        print(f"  operator   [operator_handler] enabled=FALSE — no cell resolved ({op_cell_src}).")
+        print(f"             If this venue turns out to be operator-screened, it CANNOT be armed")
+        print(f"             without a config edit. Pass --operator-cell +E164 to close that.")
     print(f"  probe window (Q-ADMIT, T-90..T-30): "
           f"{(call - datetime.timedelta(minutes=90)).strftime('%H:%MZ')}.."
           f"{(call - datetime.timedelta(minutes=30)).strftime('%H:%MZ')} on {(call - datetime.timedelta(minutes=90)).date()}")
@@ -601,6 +736,23 @@ def self_test():
     for probe in ("market_ticker", "phrase", "variants"):
         assert new.count(probe) == tail.count(probe)
     assert 8099 in RESERVED_PORTS
+
+    # The derived lane must own its own state dir. TLN 26AUG05 shipped a phone
+    # config declaring the WEBCAST twin's event id, so both arms shared one
+    # state dir, one OrderRegistry and one probe ledger.
+    ev = take_sections(head, "event")
+    swapped = set_kv(ev, "id", '"%s-PHONE"' % re.sub(
+        r"-(WEBCAST|PHONE|ACOUSTIC)$", "",
+        re.search(r'^\s*id\s*=\s*"([^"]+)"', ev, re.M).group(1)))
+    assert 'id = "KXEARNINGSMENTIONXYZ-26AUG05-PHONE"' in swapped, swapped
+    # …and swapping an already-suffixed twin must not double-suffix it.
+    ev2 = ev.replace("KXEARNINGSMENTIONXYZ-26AUG05",
+                     "KXEARNINGSMENTIONXYZ-26AUG05-WEBCAST")
+    again = set_kv(ev2, "id", '"%s-PHONE"' % re.sub(
+        r"-(WEBCAST|PHONE|ACOUSTIC)$", "",
+        re.search(r'^\s*id\s*=\s*"([^"]+)"', ev2, re.M).group(1)))
+    assert 'id = "KXEARNINGSMENTIONXYZ-26AUG05-PHONE"' in again, again
+
     print("self-test OK")
     return 0
 

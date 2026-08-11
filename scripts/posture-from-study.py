@@ -76,6 +76,14 @@ def study_path(cfg: str) -> str:
     return os.path.join("configs/.readiness", os.path.basename(cfg)[:-5] + ".json")
 
 
+def tier_for(r: float, tiers) -> int | None:
+    """budget_contracts for study ratio `r`; None when no tier matches or none given."""
+    for lo, n in tiers:
+        if r >= lo:
+            return n
+    return None
+
+
 def keywords_sha(cfg: str) -> str:
     here = os.path.dirname(os.path.abspath(__file__))
     out = subprocess.run(
@@ -97,7 +105,36 @@ def main() -> int:
                     help="also list the highest-ratio words (calibration only, not a gate)")
     ap.add_argument("--compile-with", help="path to the pinned earshot binary (enables the k<=2 rule)")
     ap.add_argument("--model-dir", help="detector model dir for compile-keywords")
+    ap.add_argument("--size-tiers", default="",
+                    help='size FILL words by study ratio, e.g. "3.0:10,2.0:5,1.0:2" = '
+                         "ratio>=3.0 gets budget_contracts 10, >=2.0 gets 5, >=1.0 gets 2. "
+                         "Omit to leave budget_contracts untouched (every FILL word keeps "
+                         "whatever the config already says).")
+    ap.add_argument("--low-band-budget", type=int, default=0,
+                    help="TRADEABLE low band: give sub-floor words max_price_cents = "
+                         "--fill-cap and this many contracts, instead of the 1c "
+                         "non-crossing OBSERVE default. 0 (default) keeps OBSERVE.")
     a = ap.parse_args()
+
+    # ── size tiers (2026-08-11 operator ruling) ─────────────────────────────
+    # A flat per-word size spends the same on the word the detector nails and
+    # the word it barely clears the floor with. The study already ranks them,
+    # so size follows the same evidence the FILL/OBSERVE split does.
+    tiers = []
+    if a.size_tiers:
+        try:
+            for part in a.size_tiers.split(","):
+                lo, n = part.split(":")
+                tiers.append((float(lo), int(n)))
+        except ValueError:
+            print(f"REFUSING: --size-tiers must look like '3.0:10,2.0:5,1.0:2', got {a.size_tiers!r}",
+                  file=sys.stderr)
+            return 2
+        tiers.sort(key=lambda t: -t[0])
+        if tiers[-1][0] < a.floor:
+            print(f"REFUSING: lowest tier {tiers[-1][0]} is below --floor {a.floor} — a word "
+                  f"under the floor is OBSERVE and cannot be sized at all.", file=sys.stderr)
+            return 2
 
     cfg = a.config
     sp = study_path(cfg)
@@ -164,20 +201,35 @@ def main() -> int:
         vlist = re.findall(r'"([^"]+)"', vs.group(1)) if vs else [phrase]
         hits = {v: short_variants[v.lower()] for v in vlist if v.lower() in short_variants}
 
+        # TWO BANDS (2026-08-11 operator ruling): a HIGH band sized by the study
+        # ratio, and a LOW band that still TRADES at a small budget rather than
+        # sitting at 1¢ where it provably cannot fill.
+        #
+        # The distinction that matters: max_price_cents = 1 is NOT "a $0.01 bet".
+        # Nothing rests at 1¢ on a mention board, so a 1¢ order is non-crossing
+        # and takes NO position at all — it is pure instrumentation. Only
+        # --low-band-budget makes the low band real money.
+        low_trades = a.low_band_budget > 0
         is_fill = r >= a.floor
         if hits and is_fill:
             is_fill = False
-            note = (f"{MARK} OBSERVE (k<=2 OVERRIDE) — study {conf}/{clips} ratio {r:.2f} "
-                    f"would have earned FILL, but variant(s) "
-                    f"{', '.join(f'{v}={n}tok' for v, n in sorted(hits.items()))} "
-                    f"assemble from partial audio at near-ceiling confidence (SNAP \"game\" class); "
-                    f"no confidence gate reaches them, so this word does not get real money")
+            note = (f"{MARK} {'LOW BAND' if low_trades else 'OBSERVE'} (k<=2 OVERRIDE) — "
+                    f"study {conf}/{clips} ratio {r:.2f} would have earned the HIGH band, but "
+                    f"variant(s) {', '.join(f'{v}={n}tok' for v, n in sorted(hits.items()))} "
+                    f"assemble from partial audio at near-ceiling confidence (SNAP \"game\" class). "
+                    f"The study measures RECALL, not precision, so a high ratio here is exactly "
+                    f"the misleading case — demoted to the small band")
             short_forced.append((phrase, r, hits))
         else:
-            note = (f"{MARK} {'FILL' if is_fill else 'OBSERVE'} — study {conf}/{clips} "
+            band = "HIGH" if is_fill else ("LOW BAND" if low_trades else "OBSERVE")
+            note = (f"{MARK} {band} — study {conf}/{clips} "
                     f"ratio {r:.2f} {'>=' if is_fill else '<'} floor {a.floor:.2f}"
                     + (f"; also k<=2 ({', '.join(sorted(hits))})" if hits else ""))
-        cap = a.fill_cap if is_fill else OBSERVE_CAP
+        # A low-band word crosses at the SAME per-contract ceiling as a high-band
+        # one; only the contract count differs. That is deliberate — the ceiling
+        # is a price bound, and lowering it below the ask just recreates the
+        # non-crossing case under a different name.
+        cap = a.fill_cap if (is_fill or low_trades) else OBSERVE_CAP
 
         # NOTE: an unchanged body is the IDEMPOTENT case (posture already
         # correct), NOT a failure. Detect "line absent" by counting the match,
@@ -188,28 +240,79 @@ def main() -> int:
             missing.append(ticker + " (no max_price_cents line)")
             continue
         new = pat.sub(lambda mm: f"{mm.group(1)}{cap}  {note}", body, count=1)
-        (fill if is_fill else observe).append((phrase, conf, clips, r))
+
+        # Size follows the same study evidence as the FILL/OBSERVE split. An
+        # OBSERVE word is always 1 contract: at a 1¢ non-crossing cap it cannot
+        # fill, so a larger budget would be noise in the config, not exposure.
+        if is_fill and tiers:
+            size = tier_for(r, tiers)
+        elif not is_fill and low_trades:
+            size = a.low_band_budget
+        elif tiers or low_trades:
+            size = 1
+        else:
+            size = None
+        if size is not None:
+            bpat = re.compile(r"^(budget_contracts\s*=\s*)(\d+)(?:\s+#.*?)?$", re.M)
+            if not bpat.search(new):
+                missing.append(ticker + " (no budget_contracts line)")
+                continue
+            if is_fill:
+                bnote = f"{MARK} size {size} — ratio {r:.2f} tier, max {cap*size}¢"
+            elif low_trades:
+                bnote = (f"{MARK} size {size} — LOW BAND, max {cap*size}¢ of REAL money "
+                         f"(this word CAN fill; it is not the old 1¢ non-crossing observe)")
+            else:
+                bnote = f"{MARK} size 1 — OBSERVE cannot fill"
+            new = bpat.sub(lambda mm: f"{mm.group(1)}{size}  {bnote}", new, count=1)
+        contracts = size if size is not None else None
+        (fill if is_fill else observe).append((phrase, conf, clips, r, contracts))
         out.append(text[last:m.start(1)]); out.append(new); last = m.end(1)
     out.append(text[last:])
     newtext = "".join(out)
 
     print(f"── {os.path.basename(cfg)}  (floor {a.floor:.2f}, fill cap {a.fill_cap}¢)")
-    for phrase, c, cl, r in sorted(observe, key=lambda x: x[3]):
-        print(f"   OBSERVE 1¢   {phrase:24s} {c:4d}/{cl:<4d} ratio {r:.2f}")
-    for phrase, c, cl, r in sorted(fill, key=lambda x: x[3]):
-        print(f"   FILL   {a.fill_cap}¢   {phrase:24s} {c:4d}/{cl:<4d} ratio {r:.2f}")
+    low_cap = a.fill_cap if a.low_band_budget else OBSERVE_CAP
+    low_label = "LOW " if a.low_band_budget else "OBS "
+    for phrase, c, cl, r, n in sorted(observe, key=lambda x: x[3]):
+        print(f"   {low_label} {low_cap:2d}¢   {phrase:24s} {c:4d}/{cl:<4d} ratio {r:.2f}"
+              + (f"  ×{n} = {low_cap * n:>5d}¢" if n else ""))
+    for phrase, c, cl, r, n in sorted(fill, key=lambda x: x[3]):
+        print(f"   HIGH   {a.fill_cap}¢   {phrase:24s} {c:4d}/{cl:<4d} ratio {r:.2f}"
+              + (f"  ×{n} = {a.fill_cap * n:>5d}¢" if n else ""))
     if a.overfire_report and fill:
         top = sorted(fill, key=lambda x: -x[3])[:3]
         print("   [calibration only — NOT gated] highest ratios: "
-              + ", ".join(f"{p} {r:.2f}" for p, _, _, r in top))
+              + ", ".join(f"{p} {r:.2f}" for p, _, _, r, _n in top))
     if short_forced:
-        print("   k<=2 OVERRIDE (scored well enough to fill, denied real money anyway):")
+        print("   k<=2 OVERRIDE (scored into the HIGH band, demoted to "
+              + ("the LOW band — still real money, just small):" if a.low_band_budget
+                 else "1¢ OBSERVE — no real money):"))
         for phrase, r, hits in short_forced:
             print(f"      {phrase:24s} ratio {r:.2f}  [{', '.join(f'{v}={n}tok' for v, n in sorted(hits.items()))}]")
     if missing:
         print(f"   ⚠ no study score for: {' '.join(missing)}", file=sys.stderr)
     print(f"   => {len(fill)} FILL / {len(observe)} OBSERVE of {len(fill)+len(observe)}"
           + (f"  ({len(short_forced)} forced down by the k<=2 rule)" if short_forced else ""))
+
+    # The worst case the CONFIG must admit. Printed because the event cap going
+    # unraised is a SILENT failure, not a loud one: on 26AUG06 CELH a 100¢
+    # max_event_notional_cents against a 97¢ fill cap let exactly ONE order
+    # reach the wire and refused the rest on EventNotional, so the board looked
+    # like a detection problem when it was a config arithmetic problem.
+    if tiers or a.low_band_budget:
+        worst_hi = sum(a.fill_cap * n for _, _, _, _, n in fill if n)
+        worst_lo = sum(low_cap * n for _, _, _, _, n in observe if n)
+        worst = worst_hi + worst_lo
+        print(f"   WORST-CASE event notional if every word fires and fills: {worst}¢ "
+              f"(${worst/100:.2f})   [high band {worst_hi}¢ + low band {worst_lo}¢]")
+        if a.low_band_budget:
+            print(f"   NOTE: the low band is REAL money now ({len(observe)} words × "
+                  f"{low_cap * a.low_band_budget}¢). At a {a.fill_cap}¢ ceiling a word must be "
+                  f"right >{a.fill_cap}% of the time to break even, in EITHER band.")
+        print(f"   -> [risk] max_event_notional_cents must be >= {worst}, and "
+              f"PROBE_LEDGER_CAP_CENTS (src/risk.rs, per-event) >= {worst}, "
+              f"or the tail of this posture silently refuses.")
 
     if a.dry_run:
         print("   (dry-run — nothing written)")

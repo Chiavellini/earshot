@@ -2127,3 +2127,285 @@ load-order dependent). Observed live 2026-08-04 on the laptop. Run gates as
 `ORT_DYLIB_PATH=vendor/onnxruntime/<platform>/lib/libonnxruntime.dylib cargo
 test`, and never judge a suite through `| tail` — the 07-25 masked-exit-code
 defect hid exactly this.
+
+## Q-WSTRADE — the Kalshi WS `trade` channel, pinned for the sweep lane (2026-08-07, live)
+
+**Why this had to be pinned before any code.** The sweep lane's trigger is
+defined on **taker-YES prints** (`sweep-lane-exploration/lib/wave_ladder.py`:
+burst of `taker == "yes"` prints, top ≥ 95¢, size floor). `orderbook_delta` —
+the only channel `src/kalshi/book.rs` subscribes to — carries no taker side and
+therefore cannot supply that trigger. Line 311 of this file had left channel
+enumeration as an open re-verify since M2. Done now.
+
+**Claim:** Five channels subscribe successfully on production
+`wss://api.elections.kalshi.com/trade-api/ws/v2` with the standard three signed
+headers (Q3 scheme, path `/trade-api/ws/v2`): **`trade`**, **`ticker`**,
+**`orderbook_delta`**, **`market_lifecycle_v2`**, **`fill`**. Each returns a
+`subscribed` ack with its own `sid`. **`ticker_v2` does NOT exist** — it returns
+`{"code": 8, "msg": "Unknown channel name"}`.
+**Evidence:** live probe 2026-08-07, 300 highest-open-interest open markets.
+**Confidence:** high (observed acks + one negative control).
+
+**Claim:** A `trade` message is
+`{"type":"trade","sid":N,"seq":N,"msg":{...}}` and `msg` carries exactly ten
+fields, **all present on every message observed**:
+
+```json
+{"trade_id": "c72b8e69-…", "market_ticker": "KX…",
+ "yes_price_dollars": "0.0090", "no_price_dollars": "0.9910",
+ "count_fp": "103.09", "taker_side": "yes",
+ "taker_outcome_side": "yes", "taker_book_side": "bid",
+ "ts": 1786135600, "ts_ms": 1786135600115}
+```
+
+**Implication — the live feed is field-identical to the REST tape the backtest
+was built on.** `yes_price_dollars`, `count_fp` and `taker_side` are the three
+the trigger reads, named the same as in `GET /markets/trades`, so the Rust port
+consumes WS trades with the same semantics as the Python backtest and no
+translation layer.
+**Confidence:** high. **Re-verify:** if a `trade` field ever arrives absent —
+the probe asserted all-ten-on-every-message, so a partial message is a schema
+change.
+
+**Claim:** **`count` (non-fp) is absent from the WS `trade` message too**, not
+just from the REST tape. Reading it yields a silent zero notional.
+**Implication:** Q-XTAPE's warning extends to the live feed. `count_fp` only.
+**Confidence:** high.
+
+**Claim:** `ts_ms` gives **millisecond** trade timestamps, against the REST
+tape's microsecond `created_time`.
+**Implication:** Coarser than the archive, and irrelevant at the sweep lane's
+scale — the burst gap is 2.0 s and the freshness gate is 1 s. Do not reuse this
+channel for anything needing sub-millisecond Δt; that is what
+`examples/book-tape.rs` receive stamps are for.
+**Confidence:** high.
+
+**Claim:** The connection drops with `ConnectionClosedError: no close frame`
+inside 45 s if the client does not ping, even while subscribed to 300 markets.
+**Implication:** the `trade` channel needs the same liveness discipline
+`book.rs` already applies to `orderbook_delta` (ping every 500 ms; pongs refresh
+`feed_age`, so staleness measures CONNECTION health, not trading activity). A
+sweep watcher that inherits `book.rs`'s loop gets this for free; one written
+fresh will silently go deaf in a quiet market.
+**Confidence:** high (reproduced; the probe sent no pings).
+
+**Not established:** only `taker_side: "yes"` was observed live (3 trades in the
+window). `"no"` is inferred from the REST tape's identical field and is NOT
+pinned here.
+
+## Q-BOOKFAN — one `orderbook_delta` subscription carries at least 203 markets (2026-08-07, live)
+
+**Why this needed pinning.** The sweep lane's §R8/§R9 book evidence has to be
+banked across every live mention market at once, and nothing in
+`src/kalshi/book.rs`, `examples/book-tape.rs` or this file stated whether one
+subscribe frame has a `market_tickers` ceiling. The harvester's whole shape —
+one process vs sharding into N — turns on the answer, and guessing a shard size
+would have been an unmeasured constant baked into the design.
+
+**Claim:** A single signed WS subscription to `orderbook_delta` accepts **203
+market tickers in one `market_tickers` array** and delivers all of them.
+**Evidence:** live 2026-08-07T20:43Z, all 203 open mention markets across 10
+series (KXFEDMENTION, KXSECPRESSMENTION, KXTRUMPSAY{,COMPANY,MONTH,NICKNAME},
+KXVANCEMENTION, KXFOXNEWSMENTION, KXMAMDANIMENTION, KXMRBEASTMENTION) in one
+`record-book.sh --tickers` run: session header `markets=203`, 90 s, **1,730
+frames, dropped 0**, `close.reason=deadline`. A 4-hour run at the same width
+sustained it (11,038 frames at the 12-minute mark, 0 dropped).
+**Confidence:** high (observed, not inferred).
+**Does NOT establish:** that 203 is the ceiling — only that the ceiling is
+above it. If a future harvest needs the full non-mention board, re-measure
+rather than assuming this scales.
+
+**Implication:** the harvester batches into ONE subscription, not one process
+per event. Per-event processes would also serialize on the cargo lock, since
+`record-book.sh` rebuilds the example on every invocation.
+
+**Claim:** throughput at that width is modest — 203 markets produced ~19
+frames/s and ~372 bytes/frame ≈ **21 MB/h uncompressed**.
+**Implication:** disk is not the binding constraint for a multi-day harvest;
+the earlier 1.5–3 GB/day estimate was extrapolated from a liquid-board ceiling
+and does not apply to the current (seasonally thin) mention board.
+**Confidence:** medium — one 4-hour sample on a quiet Friday evening; a live
+FOMC or a Trump speech will be far busier.
+
+## Q-DISCOVER — enumerate mention markets PER SERIES; paging `status=open` does not work (2026-08-07, live)
+
+**Why this is here.** The sweep lane's `universe.rs` has to answer "which mention
+markets are open right now" every refresh, and that answer sets the risk
+allowlist. Three attempts at it produced **0, 15, and 0** open mention markets
+within minutes of each other, while a concurrent harvester was successfully
+subscribed to 203 of them (Q-BOOKFAN). The method was wrong, not the market.
+
+**Claim:** `GET /markets?status=open&limit=1000` **cannot be reliably paged to
+exhaustion**. Two identical 200-page runs (200,000 markets each) minutes apart
+returned different slices — 15 mention markets, then 0. The cursor does not
+converge within any bounded page count on a universe of this size (~90k+ open
+markets, dominated by MVE sports legs).
+**Implication:** any discovery built on scanning the whole open-market list is
+non-deterministic and will silently under-report. Do not write one.
+**Confidence:** high (reproduced, contradictory results).
+
+**Claim:** `GET /markets?series_ticker=<S>&status=open&limit=1000`, iterated over
+the series in `slate/census.json`, is exact and stable: **398 series queried in
+156 s, 0 errors, 653 open mention markets across 36 series** (2026-08-07T21:2xZ).
+**Implication:** this is the discovery method. ~400 requests at 10 tokens each is
+~4,000 tokens against a Basic budget of 200/s, so a full refresh costs ~20 s of
+budget and can run every few minutes without pressure.
+**Confidence:** high.
+
+**Claim:** **A substring match on `"MENTION"` is NOT a valid mention filter.**
+`KXTRUMPSAY`, `KXTRUMPSAYMONTH`, `KXTRUMPSAYCOMPANY` and `KXTRUMPSAYNICKNAME`
+are mention-class series carrying 105 open markets between them, and none
+contains the string. Membership in `slate/census.json` is the test.
+**Implication:** `sweep-lane-exploration/probe_series.py` is unaffected — its
+population came from the census, not a substring — but any new discovery code
+that reaches for the obvious substring will silently drop whole venues.
+**Confidence:** high.
+
+**Claim:** 653 open markets against Q-BOOKFAN's measured 203-per-subscription
+means full coverage needs **at least 4 concurrent `orderbook_delta`
+subscriptions**, or a re-measure of the ceiling (Q-BOOKFAN pins 203 as a floor,
+not a limit).
+**Confidence:** high on the arithmetic; the ceiling itself is unmeasured.
+
+## Q-TAPEORDER — `GET /markets/trades` returns NEWEST-FIRST (2026-08-07, live)
+
+**Why this needed pinning.** It is a silent-corruption fact, not a
+documentation gap: a consumer that assumes ascending order gets a plausible
+wrong answer rather than an error. It cost a real defect the same day it was
+found (see below), and nothing in this file or Q-XTAPE stated it.
+
+**Claim:** The public trade tape arrives **descending by `created_time`**
+(newest first). Verified on a banked 242-print market
+(`KXEARNINGSMENTIONAAPL-26JUL30-CREA`): `ts == sorted(ts, reverse=True)` is
+true, ascending is false. The Python pipeline is safe by construction —
+`sweep-lane-exploration/lib/sweep_segment.py::normalize()` sorts — which is
+precisely why the ordering had never been noticed.
+**Confidence:** high.
+
+**Implication (the defect it caused).** `src/sweep/wave.rs::waves()` segments
+bursts with a `saturating_sub` on consecutive timestamps, so a *backwards* gap
+evaluates to `0` — "same burst". Fed the raw descending tape, 242 prints
+collapsed into **one** wave where the Python found **59**. No panic, no
+warning: just a different strategy. Every synthetic fixture happened to be
+ascending, so **only the real-wire vectors in `tests/sweep_parity.rs` exposed
+it** — the case for testing a port against banked wire data rather than against
+fixtures written by the same hand as the code.
+
+**Guard now in place:** `waves()` documents the precondition and carries a
+`debug_assert!` on ascending order; the parity test's `to_prints()` mirrors
+`normalize()` including its sort; `Tracker` (the live path) drops backwards
+prints rather than trusting them, because on a per-market-sequenced WS feed
+out-of-order means the feed is broken, not that the data needs re-sorting.
+**Re-verify:** if Kalshi ever documents or changes tape ordering — but the guard
+holds either way.
+
+## Q-Q4PHONE — every Q4-native webcast has a phone lane, and its Meeting ID is PUBLIC (2026-08-11, live)
+
+**The Q4 attendee REST twin carries a conference-call block that neither
+`q4-resolve.sh` nor `q4-register-resolve.py` reads.** Both scripts fetch
+`https://attendees.events.q4inc.com/rest/v1/event/<id>` for `status`/`msToStart`/
+`broadcastUrl` and stop there. The same public, credential-free payload also has
+`data.conference.conferenceCallIntake`:
+
+```json
+"conferenceCallIntake": {
+  "meetingId": "411798645",
+  "meetingUrl": "https://events.q4inc.com/analyst/411798645",
+  "dialInDetails": {
+    "US East Local": "+15855429983",  "US West Local": "+16268843620",
+    "US Toll Free":  "+18334615787",  "CA Local":      "+13656574084",
+    "UK Local":      "+441173890104", "UK Toll Free":  "+448081968935"
+  },
+  "password": { "encrypted": "031f6ddadfd3b9bc", "iv": "…", "tag": "…" },
+  "type": "internal", "vendor": "chime", "q4Hosted": false
+}
+```
+
+Fetched 2026-08-11 for CAVA (`411798645`) and CoreWeave (`683023279`).
+
+### The three facts that make this a lane
+
+1. **The numbers are UNIVERSAL, not per-issuer.** CAVA and CRWV return the
+   *identical* six numbers, and all six appear on Q4's own public help page
+   (`help.events.q4inc.com/eahc/international-dial-in-numbers`, 42 countries).
+   It is one shared AWS Chime bridge behind every Q4-native webcast.
+2. **The Meeting ID is the attendee-URL number — already public.** PROVEN by
+   dial, not inferred: sending `411798645#` as DTMF to `+18334615787` produced
+   an *event-specific* answer naming the company and its start time.
+3. **The passcode plaintext is NOT in the public payload** — only AES-GCM
+   ciphertext (8-byte ct ⇒ 8-char code). Q4's docs say it arrives in the
+   registration confirmation email.
+
+   ⛔ **RESOLVED 2026-08-11 DURING THE LIVE CALL, AND THE ANSWER IS "YES, YOU
+   NEED IT".** This section first read "whether a listen-only caller needs it at
+   all is UNRESOLVED: neither probe was ever asked for one." That inference was
+   WRONG and it cost the whole phone lane on 26AUG11. Both pre-window probes
+   stopped at "the event has not yet started", which is BEFORE the credential
+   prompt — absence of a passcode challenge in a pre-window recording says
+   nothing about the live call. Probed again at 21:11Z with the meeting ID,
+   mid-call (CallSid in `corpus/bridge-probes/crwv_live_2026_08_11.wav`):
+
+   ```
+   Welcome to CoreWeave's 2nd Quarter 2026 earnings call. If you know your
+   unique passcode, please enter it now. Otherwise, to speak to the next
+   available operator, stay on the line.
+   … Please hold while you are transferred to an operator for assistance.
+   ```
+
+   The Meeting ID alone reaches the issuer's own welcome — which is why it looks
+   like it worked — and then drops you in the OPERATOR QUEUE, where a silent
+   listen-only leg is hung up every ~75-90 s (Q-ADMIT Class B). Measured 26AUG11:
+   CAVA up 21:01:52, dropped 21:03:06 (74 s); CRWV 4454 frames then 8273 then
+   13272. **CRWV logged 0 detections across the whole run** — we were recording a
+   hold announcement, not the call. CAVA's 2 "detections" were `a i` (k≤2)
+   false-firing on that announcement, which is precisely what the short-token
+   override exists to stop paying for.
+
+   **The registration confirmation email does NOT carry the passcode.** Both
+   26AUG11 confirmations listed Webcast Link + Email + "Meeting ID: 411 798 645"
+   / "683 023 279" and nothing else. So the passcode is issued by some other
+   path (analyst/participant registration at `events.q4inc.com/analyst/<id>`, or
+   IR direct) and MUST be obtained before the call — there is no in-band way to
+   get it once the call is running, and the operator queue is not a substitute
+   unless a human is on the leg to answer the screener.
+
+### Evidence — two live probes, 2026-08-11
+
+**No DTMF** — CallSid `CAebb8523cc0c450788d1cda0f31a49818`, held 105.3 s, 5274
+frames (`corpus/bridge-probes/q4chime_2026_08_11.wav`):
+
+```
+Please enter your meeting ID. The meeting ID you entered is invalid. …(×5)
+A meeting ID is required to continue. … This call will be disconnected shortly.
+```
+
+**DTMF `411798645#`** — CallSid `CA5776f791ec8991cc46b490c9804ed67a`, held 21.1 s
+(`corpus/bridge-probes/q4chime_cava_mid_2026_08_11.wav`):
+
+```
+CAVA Q2 2026 earnings call has not yet started. This event is scheduled to
+start at Tuesday, August 11th at 5 p.m. EDT. Please reconnect up to 30
+minutes before 5 p.m. EDT.
+```
+
+The second transcript is the whole finding: a public URL number, dialled into a
+public phone number, returned the issuer's own event and its start time.
+
+### Operational consequences
+
+- **T-30 is a hard floor.** The bridge refuses before it and says so. The
+  webcast, by contrast, opens at T-15 ("access the webcast up to 15 minutes
+  before"), so **the phone lane is reachable 15 minutes EARLIER than the
+  webcast** — on top of the 4.1–8.2 s in-call lead measured on CMG 26JUL29.
+- **`admission` is still UNSET for this venue class.** Neither probe reached a
+  conference, so the MSFT RULE is not satisfied and nothing was promoted into
+  `configs/dial-ins.toml`. Re-probe at ≥ T-30 to classify held vs
+  operator_screened vs passcode-walled.
+- **Do not read `q4Hosted: false` as "no dial-in".** It was false on both events
+  that nonetheless carry a full `dialInDetails` block; `dialIn.operatorLine` and
+  `question.qaLine` were both `null` too. The conference block is the field that
+  matters.
+
+**Re-verify:** if Q4 rotates the shared bridge numbers, moves off Chime, or
+starts requiring the passcode before announcing event status — the first two are
+visible in the payload, the third only by dial.
