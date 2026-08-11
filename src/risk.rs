@@ -14,9 +14,41 @@ use crate::clock::MonotonicNs;
 pub const HARD_MAX_ORDER_NOTIONAL_CENTS: u64 = 50_000; // $500
 pub const HARD_MAX_EVENT_NOTIONAL_CENTS: u64 = 200_000; // $2,000
 pub const HARD_DAILY_LOSS_CENTS: u64 = 100_000; // $1,000
-/// M2 posture: cumulative real-money spend across ALL live drills/sessions
-/// is capped at $1.00, enforced here and persisted across runs.
-pub const PROBE_LEDGER_CAP_CENTS: u64 = 100;
+/// M2 posture: cumulative real-money spend across ALL live drills/sessions,
+/// enforced here and persisted across runs.
+///
+/// RAISED 100 → 2000 on 2026-08-10 (operator ruling, for the HIMS 26AUG10
+/// board). The $1.00 figure was a per-EVENT intuition, but this ledger is
+/// CUMULATIVE across every event and every posture — so with 19¢ already
+/// spent it did not mean "$1 on this call", it meant 81¢ left in total,
+/// forever. On a 19-market mention board that is not a per-word budget at
+/// all: the first confirmed detection consumed the whole allowance and every
+/// later word refused on `Refusal::ProbeLedger`, whichever word happened to
+/// fire first. The operator's intent is $1 PER SUB-MARKET, so the ledger has
+/// to clear 19 × `MENTION_FILL_CAP_CENTS` = 1843¢ plus what is already spent.
+///
+/// 2000 is the smallest round number above that (1862¢ needed). It is still a
+/// real backstop — it is NOT the M4 "remove the clamps" step. Per-order price
+/// stays bound by `MENTION_FILL_CAP_CENTS`, and per-event spend by the
+/// config's `max_event_notional_cents`; this constant only stops the CUMULATIVE
+/// total from silently becoming the binding cap on a multi-market board.
+///
+/// RAISED 2000 → 7000 on 2026-08-11 (operator ruling: size FILL words by the
+/// study ratio instead of one flat per-word number — `posture-from-study.py
+/// --size-tiers`). The top tier is 10 contracts × 97¢ = 970¢ in ONE order, and
+/// CAVA 26AUG11's full board prices out at 6116¢ if every word fires and fills.
+/// At 2000 the ledger would have refused that board's tail on
+/// `Refusal::ProbeLedger` — the same silent-truncation failure the 100 → 2000
+/// raise was meant to end, just at a higher number.
+///
+/// Scope note, because the number only makes sense with it: this ledger is
+/// loaded from `state_dir.join("probe_ledger.json")` (see `RiskGate::new`), so
+/// in practice it binds PER EVENT — each event dir starts its own file at zero.
+/// 7000 is therefore a per-event ceiling, not a lifetime one. Whether that
+/// matches the "cumulative across ALL live drills/sessions" intent stated above
+/// is an OPEN question the operator deferred on 2026-08-11; do not read this
+/// constant as a global spend bound until that is settled.
+pub const PROBE_LEDGER_CAP_CENTS: u64 = 7_000;
 /// Fillable mention posture (the deliberate step past the 1¢ no-fill probe):
 /// a single order's price may cross a real ask up to this ceiling so the
 /// executor can actually fill. This is a per-order PRICE bound only — real
@@ -515,17 +547,23 @@ mod tests {
     #[test]
     fn probe_ledger_caps_cumulative_spend() {
         // Event cap loosened so the LEDGER is the binding constraint here.
+        // Both bounds are derived from PROBE_LEDGER_CAP_CENTS rather than
+        // written as literals: this test hardcoded 99/100 until 2026-08-10,
+        // so raising the constant broke it for no behavioural reason. What is
+        // under test is "the ledger binds one cent below its cap", whatever
+        // that cap currently is.
+        let cap = PROBE_LEDGER_CAP_CENTS;
         let g = gate(RiskConfig {
-            max_event_notional_cents: 10_000,
+            max_event_notional_cents: cap * 10,
             allowlist_tickers: vec!["T".into()],
             ..Default::default()
         });
         g.arm();
-        // 99¢ spent: 1¢ order still fits, 2¢ doesn't.
-        for _ in 0..99 {
+        // One cent below the cap: a 1¢ order still fits, a 2¢ order doesn't.
+        for _ in 0..(cap - 1) {
             g.record_send(1, 1);
         }
-        assert_eq!(g.ledger_spent_cents(), 99);
+        assert_eq!(g.ledger_spent_cents(), cap - 1);
         assert_eq!(g.check_order("T", 1, 1, 0, 0), Ok(()));
         assert!(matches!(g.check_order("T", 2, 1, 0, 0), Err(Refusal::ProbeLedger { .. })));
         g.record_send(1, 1);
