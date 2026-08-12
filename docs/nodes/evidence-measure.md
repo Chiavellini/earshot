@@ -15,9 +15,7 @@ Network probes in `src/latprobe/`; absolute/relative media timing tools in
 `scripts/f2-probe.py`, `scripts/ivs-prefetch-probe.py`,
 `scripts/spec-probe.py`, `scripts/prefetch-gate.sh`, and
 `scripts/prefetch-verdict.py`. It also owns `scripts/drace-wallclock.py`,
-`scripts/rival-decompose.py`, the settlement-truth accuracy scorer
-`scripts/wnt-score.py`, the competitor-offset measurement
-`scripts/wnt-pack-lag.py`, and experimental measurement code under
+`scripts/rival-decompose.py`, and experimental measurement code under
 `scripts/experimental/`, together with the race/latency evidence documents
 `docs/history/HANDOFF-RACE-PROGRAM.md`, `VERIFICATIONS.md`,
 `docs/COMPETITOR-ANATOMY.md`, `docs/INGRESS-BAKEOFF.md`,

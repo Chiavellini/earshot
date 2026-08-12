@@ -125,7 +125,8 @@ def live_subtitles(event_ticker):
 def live_market_detail(event_ticker):
     """Like live_subtitles(), but keeps the full per-strike detail (not just
     yes_sub_title) needed to judge rare-discrete-event vs. predictable-word —
-    see pm-expansion-exploration/latency/mention-market-exploitability-scoreboard.md.
+    the 2026-08-06 mention-market exploitability scoreboard's axis (its lane
+    left the repo 2026-08-12).
     Not used by the phrase-screen gate itself; live_subtitles() above is
     unchanged and remains the one that gate calls."""
     out = {}

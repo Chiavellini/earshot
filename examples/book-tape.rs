@@ -1,4 +1,5 @@
-//! `book-tape` — Kalshi live order-book RECORDER (cross-venue lane, Q-XVENUE).
+//! `book-tape` — Kalshi live order-book RECORDER (born in the cross-venue
+//! program — lane removed 2026-08-12 — now core book evidence; Q-XTAPE).
 //!
 //! WHY THIS EXISTS (2026-08-03, PLTR). The first real cross-venue join reached
 //! "NOT RESOLVABLE" and named its own blocker: `src/kalshi/book.rs` mirrors the
@@ -16,8 +17,8 @@
 //!
 //! Output is newline-delimited JSON, UNCOMPRESSED on purpose: a recorder that
 //! dies mid-write must leave a readable tape, and an interrupted gzip window is
-//! exactly the failure this lane cannot afford. `xvenue-autorun.sh` gzips the
-//! finished file.
+//! exactly the failure evidence capture cannot afford. Gzip the finished file
+//! after a clean exit, never while recording.
 //!
 //! Rows are VERBATIM wire text plus our clocks. Nothing is parsed here — see
 //! `RawFrame` in `src/kalshi/book.rs` for why a parsed tape would be lossy.
@@ -25,7 +26,7 @@
 //! Usage:
 //!   source ~/.kalshi/earshot_env
 //!   cargo run --release --example book-tape -- \
-//!       --event KXEARNINGSMENTIONAMD-26AUG04 --out state/xvenue/AMD/kalshi.jsonl --secs 5400
+//!       --event KXEARNINGSMENTIONAMD-26AUG04 --out state/AMD/kalshi.jsonl --secs 5400
 //!   cargo run --release --example book-tape -- --tickers T1,T2 --out /tmp/k.jsonl --secs 60
 
 use std::sync::Arc;

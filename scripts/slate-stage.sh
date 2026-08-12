@@ -69,14 +69,13 @@
 # POST-PATCHES (applied to the LANE configs, never the raw audit copy):
 #   * starts_at — `prepare` still hardcodes a TODO placeholder (src/prepare.rs,
 #     `starts_at = "2026-07-15T00:00:00Z"  # TODO...`). Until prepare grows a
-#     --starts-at flag we patch the real call_time_utc in afterwards, exactly
-#     like scripts/wnt-daily.sh does. No time in the slate ⇒ the TODO stays
+#     --starts-at flag we patch the real call_time_utc in afterwards (a pattern
+#     inherited from the retired WNT daily job). No time in the slate ⇒ the TODO stays
 #     (date corrected, comment kept) and the event is NEEDS-TIME.
 #   * engine — prepare emits sherpa_kws; production runs streaming_ctc (19 of
 #     30 arm configs). Benchmarking/arming the wrong engine is exactly what
 #     made 2026-07-29's zero-recall result unactionable, so we pin the
-#     production engine here (wnt-daily.sh pattern; kws block kept for a
-#     one-line revert).
+#     production engine here (kws block kept for a one-line revert).
 #   * bind port — collision-free ACROSS runs, not just within one: every
 #     BIND_PORT= in configs/*-autorun.env and every [[sources]] bind in
 #     configs/twilio-*.toml is scanned first; a new event takes the lowest
@@ -165,7 +164,7 @@ if [[ ! -x "$BIN" ]]; then
   note "WARN: no pinned binary at $BIN — falling back to 'cargo run --release' for prepare"
 fi
 # `prepare` hits the live Kalshi API; missing creds is a hard stop, not a
-# silent skip (wnt-daily pattern).
+# silent skip.
 if [[ -f "$HOME/.kalshi/earshot_env" ]]; then
   # shellcheck disable=SC1091
   source "$HOME/.kalshi/earshot_env"

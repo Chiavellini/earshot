@@ -1,4 +1,5 @@
-//! Recording tap on the Kalshi WS book feed (cross-venue lane, Q-XVENUE).
+//! Recording tap on the Kalshi WS book feed (born in the cross-venue program,
+//! removed 2026-08-12; the tap is core book evidence — Q-XTAPE).
 //!
 //! The tape is EVIDENCE, so the properties under test are evidentiary ones:
 //! it must be byte-verbatim, it must include frames the book parser rejects,

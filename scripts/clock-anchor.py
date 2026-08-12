@@ -7,8 +7,8 @@ and `pos_to_utc()` maps a leg's monotonic `capture_ns` onto UTC with it:
 
     utc = (anchor["wall_ns"] + (capture_ns - anchor["mono_ns"])) / 1e9
 
-There are two readers of that file in the tree (`drace-wallclock.py`,
-`wnt-score.py`) and, until now, **zero writers** — no such file existed on the
+There were two readers of that file in the tree (`drace-wallclock.py`, plus
+the since-retired WNT scorer) and, until now, **zero writers** — no such file existed on the
 laptop or the box. So the project's only Δrace instrument had never run end to
 end, and the first time anyone needed it would have been during a live race.
 

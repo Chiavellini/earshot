@@ -9,9 +9,9 @@ the join could not be computed at all:
   * `report.json` stamps `audio_ts` / `decision_ts` / `send_ts` / `ack_ts` in
     MONOTONIC ns (`src/clock.rs` — CLOCK_MONOTONIC_RAW on Linux).
   * the Kalshi public tape stamps `created_time` in UTC.
-  * the file that bridges them, `clock_anchor.json`, had TWO readers in the tree
-    (`drace-wallclock.py`, `wnt-score.py`) and, until 2026-08-10, ZERO events
-    that ever wrote one.
+  * the file that bridges them, `clock_anchor.json`, had readers in the tree
+    (`drace-wallclock.py`; also the since-retired WNT scorer) and, until
+    2026-08-10, ZERO events that ever wrote one.
 
 So `drace-wallclock.py` — the project's only Δrace instrument — had never had
 its required input. This script writes the funnel and the Δrace from artifacts

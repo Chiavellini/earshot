@@ -8,26 +8,17 @@ trading decisions or execution.
 ## Owns
 
 Multi-source recording/reporting in `src/capture_bakeoff/`, raw tape fetching
-in `scripts/fetch-tape.sh`, timestamp logging in `scripts/pdt-log.py`, the
-daily unattended ABC-WNT evidence job `scripts/wnt-daily.sh` (its launchd plist
-stays with `platform.runtime`, which owns `configs/launchd/**`), the
-broadcast-VOD acquisition it calls, `scripts/wnt-vod-fetch.sh`, and the caption
-timing sidecar `scripts/wnt-captions-parse.py`.
+in `scripts/fetch-tape.sh`, and timestamp logging in `scripts/pdt-log.py`.
+(The daily ABC-WNT evidence job and its VOD/caption tooling left the repo with
+the WNT lane on 2026-08-12; the lane's verdicts stay pinned in
+`VERIFICATIONS.md` and `docs/history/`.)
 It also owns `audio_evidence::{AudioEvidenceBank, AudioEvidenceTap}`: the
 run-scoped, in-process banker for the exact post-preprocessor `AudioFrame`
 values admitted to the detector path. Runtime assembly owns the tap's placement
 and lifecycle wiring; capture owns the evidence protocol and artifacts.
 It owns the current non-audio bridge-probe evidence under
 `corpus/bridge-probes/` and the three checked-in capture reports under
-`state/`; generated WAVs and local run state remain excluded, including the
-banked broadcast audio under `corpus/wnt/` (gitignored).
-
-Acquisition here is not restricted to live sockets. `wnt-vod-fetch.sh` banks a
-published recording of a broadcast that no obtainable live feed carries
-(`VERIFICATIONS.md` Q-WNT-SRC, Q-WNT-VOD), with the same obligation as any
-capture: record what the artifact actually is. Its `meta.json` carries the
-source video identity and the standing caveat that advertisements are absent,
-so downstream offsets are programme time and not wall clock.
+`state/`; generated WAVs and local run state remain excluded.
 
 `chain-capture.sh` belongs to this node: it chains multi-leg bridge recordings
 for corpus. It is owned here rather than by `control.admission` (which owns

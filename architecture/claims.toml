@@ -230,8 +230,6 @@ paths = [
   "configs/twilio-msft-26jul29-arm.toml",
   "configs/twilio-yum-26jul30-arm.toml",
   "configs/webcast-aapl-26jul30-arm-wc.toml",
-  "configs/webcast-abcwnt-26jul29-replay.toml",
-  "configs/webcast-abcwnt-capture.toml",
   "configs/webcast-amzn-26jul30-arm-wc.toml",
   "configs/webcast-cmg-26jul29-arm-wc.toml",
   "scripts/slate-stage.sh",
@@ -721,10 +719,6 @@ paths = [
   "corpus/bridge-probes/tln_2026_08_05.json",
   "corpus/bridge-probes/tln_2026_08_05.jsonl",
   "docs/nodes/evidence-capture.md",
-  "scripts/wnt-daily.sh",
-  # wnt-source-lane: bank the real WNT broadcast (Q-WNT-SRC retargeting).
-  "scripts/wnt-captions-parse.py",
-  "scripts/wnt-vod-fetch.sh",
   "src/capture_bakeoff/mod.rs",
   # 2026-08-12 reliability handoff: the admission-evidence lane keeps
   # ownership of the planned in-process audio banker. These exact paths are
@@ -819,9 +813,6 @@ paths = [
   # recorded. Post-mortem quantification tooling, same lane as the postmortem.
   "scripts/counterfactual-26aug04.sh",
   "scripts/drace-wallclock.py",
-  # wnt-source-lane: is the WNT pack reachable from a delayed feed at all?
-  "scripts/wnt-pack-lag.py",
-  "scripts/wnt-score.py",
   # 2026-08-07: the settlement join. First tool that can say whether a
   # detection was RIGHT; every accuracy figure before it was hand-graded into
   # a postmortem. Its price-band table corrects this node's own 26AUG05 EV
@@ -1057,49 +1048,6 @@ verification = [
 evidence = ["docs/nodes/runtime-order-evidence.md"]
 
 [[claim]]
-id = "expansion.pm_measure"
-node = "evidence.expansion"
-worker = "expansion-lane"
-branch = "webcast-lane"
-state = "active"
-contract_change = true
-paths = [
-  "docs/EXPANSION.md",
-  "docs/nodes/evidence-expansion.md",
-  "scripts/pm-capture.py",
-  "configs/pm-map-26jul30.json",
-  # 2026-08-03: the map generator the Q-PM pin described as a recipe but never
-  # shipped, and the cross-venue join. First run: PLTR 26AUG03 word-overlap +
-  # GRAB release-clock (docs/history/POSTMORTEM-26AUG03.md §Polymarket).
-  "configs/pm-map-26aug03.json",
-  "scripts/pm-map-build.py",
-  "scripts/pm-edge-report.py",
-  # 2026-08-04: the lane made robust and frozen. Raw tape -> versioned
-  # normalizer -> written artifact + committed ledger, with both venues on
-  # PUSH feeds (Q-XVENUE-WS) so a lead/lag number is no longer an artifact of
-  # polling one side at 1 Hz. pm-capture.py is left untouched on purpose: it is
-  # the proven poll fallback and was live on the box when this landed.
-  "scripts/pm-tape.py",
-  "scripts/xvenue-normalize.py",
-  "scripts/xvenue-report.py",
-  "scripts/xvenue-autorun.sh",
-  "scripts/xvenue-daily.sh",
-  "slate/xvenue-ledger.json",
-]
-verification = [
-  "python3 -m py_compile scripts/pm-capture.py",
-  "python3 -m py_compile scripts/pm-map-build.py",
-  "python3 -m py_compile scripts/pm-edge-report.py",
-  "python3 scripts/pm-tape.py --self-test",
-  "python3 scripts/xvenue-normalize.py --self-test",
-  "python3 scripts/xvenue-report.py --self-test",
-  "scripts/xvenue-autorun.sh --check",
-  "scripts/xvenue-daily.sh --dry-run",
-  "scripts/doc-lint.sh",
-]
-evidence = ["VERIFICATIONS.md#q-pm", "VERIFICATIONS.md#q-xvenue-ws"]
-
-[[claim]]
 id = "hunt.bridge_acquisition"
 node = "control.hunt"
 worker = "hunt-lane"
@@ -1143,6 +1091,11 @@ paths = [
   "slate/latest.json",
   "scripts/discover-events.py",
   "docs/nodes/control-discover.md",
+  # 2026-08-12 lane retirement: the census docstring pointed its --classify
+  # triage output at docs/EXPANSION.md, which left with the expansion lane.
+  # Docstring-only reword; extended here because doc-lint permits one open
+  # claim per node.
+  "scripts/mentions-census.py",
 ]
 verification = ["python3 scripts/discover-events.py --self-test"]
 evidence = [

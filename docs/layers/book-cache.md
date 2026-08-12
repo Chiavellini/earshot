@@ -86,9 +86,11 @@ cache, never a blocking REST fetch"). NOT responsible for: deciding anything
   2026-08-04), so a cents tape could not answer a cross-venue question at all.
   The tape re-normalizes forever; a parsed tape answers only what this parser
   already anticipated.
-- **Consumer:** `examples/book-tape.rs` → `state/xvenue/<event>/kalshi-*.jsonl`,
-  normalized by `scripts/xvenue-normalize.py` (raw envelope schema 1; evidence
-  protocol 2 is frozen by `BOOK_TAPE_SCHEMA_VERSION`). The example owns only
+- **Consumer:** `examples/book-tape.rs` → `state/<dir>/<event>/kalshi-*.jsonl`
+  (raw envelope schema 1; evidence protocol 2 is frozen by
+  `BOOK_TAPE_SCHEMA_VERSION`). The cross-venue normalizer that first consumed
+  these tapes left with the Polymarket expansion lane on 2026-08-12; the raw
+  envelope stays the pinned evidence shape. The example owns only
   credential/ticker discovery, signals, and feed launch; file lifecycle and
   accounting are the reusable library task. Runtime-composer wiring is
   deliberately not part of this change.

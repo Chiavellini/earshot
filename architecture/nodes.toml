@@ -1056,9 +1056,6 @@ owns = [
   "scripts/capture-sidecar.sh",
   "scripts/fetch-tape.sh",
   "scripts/pdt-log.py",
-  "scripts/wnt-captions-parse.py",
-  "scripts/wnt-daily.sh",
-  "scripts/wnt-vod-fetch.sh",
 ]
 inputs = [
   "runtime.core",
@@ -1148,8 +1145,8 @@ owns = [
   "scripts/arrival-ab.sh",
   "scripts/arrival-lead.py",
   "scripts/arrival-profile.py",
-  # writes the clock_anchor.json that drace-wallclock.py and wnt-score.py have
-  # always read and that had no writer until 2026-07-30
+  # writes the clock_anchor.json that drace-wallclock.py has always read and
+  # that had no writer until 2026-07-30
   "scripts/clock-anchor.py",
   "scripts/counterfactual-26aug04.sh",
   "scripts/drace-wallclock.py",
@@ -1158,8 +1155,6 @@ owns = [
   "scripts/ivs-prefetch-probe.py",
   "scripts/leg-lag.py",
   "scripts/physical-bound.py",
-  "scripts/wnt-pack-lag.py",
-  "scripts/wnt-score.py",
   "scripts/prefetch-gate.sh",
   "scripts/prefetch-verdict.py",
   "scripts/rival-decompose.py",
@@ -1177,31 +1172,6 @@ inputs = [
   "evidence.benchmark.result",
 ]
 outputs = ["evidence.measurement.result"]
-
-[[node]]
-id = "evidence.expansion"
-job = "Survey adjacent mention-market surfaces (Kalshi census classes, Polymarket mirrors) read-only and rank where the capture-detect-fire infra is reusable."
-status = "active"
-doc = "docs/nodes/evidence-expansion.md"
-doc_style = "node"
-owns = [
-  "docs/EXPANSION.md",
-  "scripts/pm-capture.py",
-  "scripts/pm-edge-report.py",
-  "scripts/pm-map-build.py",
-  "scripts/pm-tape.py",
-  "scripts/xvenue-autorun.sh",
-  "scripts/xvenue-daily.sh",
-  "scripts/xvenue-normalize.py",
-  "scripts/xvenue-report.py",
-  "configs/pm-map-*.json",
-  "slate/xvenue-ledger.json",
-]
-inputs = [
-  "control.events.discovered",
-  "evidence.measurement.result",
-]
-outputs = ["evidence.pm.capture"]
 
 [[contract]]
 id = "project.node_registry"
@@ -1558,7 +1528,7 @@ kind = "artifact"
 maturity = "compatibility"
 door = "slate/latest.json plus discover-events.py and slate-daily.sh exit status"
 producer = "control.discover"
-consumers = ["control.qualify", "evidence.expansion", "control.hunt"]
+consumers = ["control.qualify", "control.hunt"]
 
 [[contract]]
 id = "control.event.qualified"
@@ -1778,12 +1748,4 @@ kind = "artifact"
 maturity = "implemented"
 door = "dated latency, arrival, bound, or competitor measurement report"
 producer = "evidence.measure"
-consumers = ["evidence.expansion"]
-
-[[contract]]
-id = "evidence.pm.capture"
-kind = "artifact"
-maturity = "implemented"
-door = "state/pm/<event>/pm-<date>.jsonl.gz book/trade rows with wall+mono+venue timestamps"
-producer = "evidence.expansion"
 consumers = []

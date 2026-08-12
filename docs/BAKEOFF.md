@@ -1336,7 +1336,8 @@ Venue: `KXWORLDNEWSMENTION-26JUL29`, 16 strikes. Engine **`streaming_ctc`**
 (`default_threshold = 0.15`) — the production engine, not `sherpa_kws`. This
 matters: `prepare` emits `engine = "sherpa_kws"`, so the first pass at this
 market benched an engine production no longer uses (19 of 30 arm configs are
-`streaming_ctc`). `scripts/wnt-daily.sh` now pins the production engine.
+`streaming_ctc`). The lane's daily job pinned the production engine after this
+(WNT lane removed 2026-08-12; the pattern lives on in `scripts/slate-stage.sh`).
 
 Two tooling fixes were required before the gate could run at all, both recorded
 because each silently disabled a gate that existed:

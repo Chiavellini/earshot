@@ -1278,7 +1278,7 @@ sent them (CVNA: digits at 10 s repeated 3× → dropped 31 s; no digits → 21 
   cannot classify venues whose bridges activate per-event — those need a
   pre-call-window probe (T-90..T-30 min) on event day.
 
-## Q-WNT — ABC World News Tonight: a DAILY mention market (2026-07-29, live)
+## Q-WNT — ABC World News Tonight: a DAILY mention market (2026-07-29, live) (lane removed 2026-08-12)
 
 **Claim:** `KXWORLDNEWSMENTION` ("World News Mention", category Mentions) is a
 **daily** market on ABC's flagship TV newscast. Event ticker
@@ -1365,7 +1365,7 @@ tape**, not absolute lag.
 **Confidence:** high (measured, n=370 polls). **Re-verify:** every venue,
 first run — a `+00:00` label is not evidence of UTC.
 
-## Q-WNT-SRC — ⛔ ABC News Live does NOT carry World News Tonight (2026-07-30)
+## Q-WNT-SRC — ⛔ ABC News Live does NOT carry World News Tonight (2026-07-30) (lane removed 2026-08-12)
 
 **Claim:** The 2026-07-29 WNT capture recorded **the wrong program**, and every
 conclusion drawn from it about detector accuracy or race latency is void.
@@ -1484,7 +1484,7 @@ corroboration in Q-WNT-SRC. The pack's absolute offset is Q-WNT-PACK.
 immediately if Kalshi changes `early_close_condition` — an actual early close
 would invert the trading model back to what Q-WNT assumed.
 
-## Q-WNT-VOD — the real broadcast IS obtainable, just late (2026-07-30, live)
+## Q-WNT-VOD — the real broadcast IS obtainable, just late (2026-07-30, live) (lane removed 2026-08-12)
 
 **Claim:** ABC publishes the actual newscast, free, two ways:
 
@@ -1516,7 +1516,7 @@ per session — `26JUL19`'s VOD is titled "July 19**th**, 2026", and YouTube
 surfaces one video under several headline titles, so match on video **id**
 plus duration, never on an exact title string.
 
-## Q-WNT-PACK — ⛔ the WNT pack is AT the broadcast (2026-07-30, 6 sessions)
+## Q-WNT-PACK — ⛔ the WNT pack is AT the broadcast (2026-07-30, 6 sessions) (lane removed 2026-08-12)
 
 **Claim:** The traders already in `KXWORLDNEWSMENTION` react to a word within a
 few seconds of it being said. Measured **offset −6.31 s (median)**, range
@@ -1580,7 +1580,7 @@ fewer than 3 first-utterance strikes (most strikes are pre-priced), 4 for a
 slope off 1.0 (`26JUL25` came out −1.491). Re-run monthly; a drift of the median
 toward +30 s would mean the pack moved to a delayed feed and the lane reopened.
 
-## Q-WNT-RECALL — detector accuracy on the REAL broadcast (2026-07-30)
+## Q-WNT-RECALL — detector accuracy on the REAL broadcast (2026-07-30) (lane removed 2026-08-12)
 
 **Claim:** On 20.1 min of the actual 2026-07-29 WNT broadcast, `streaming_ctc`
 at `chunk_ms=80`, Confirmed tier, scores **recall 0.765 (13/17)**,
@@ -1682,7 +1682,7 @@ stale by design, the mechanism does not.
 
 ---
 
-## Q-PM — Polymarket runs the same mention-market class; read APIs are public (2026-07-30)
+## Q-PM — Polymarket runs the same mention-market class; read APIs are public (2026-07-30) (lane removed 2026-08-12)
 
 **Claim:** Polymarket lists the identical event class under tag
 `mention-markets` (21 open events on 2026-07-30), **including the same
@@ -1749,7 +1749,7 @@ reproduced from tape 2026-08-04. **Confidence:** high (n=2 events).
 
 ---
 
-## Q-XVENUE-WS — Polymarket pushes a millisecond book feed (2026-08-04, live)
+## Q-XVENUE-WS — Polymarket pushes a millisecond book feed (2026-08-04, live) (lane removed 2026-08-12)
 
 **Claim:** Polymarket exposes a market-data **WebSocket**, so the cross-venue
 lane no longer has to poll one venue while the other pushes.
@@ -1806,11 +1806,12 @@ no `yes_dollars_fp`/`no_dollars_fp` keys at all. Observed on the whole AMD
 Size is **`count_fp`** (fixed-point, fractional contracts); the plain `count`
 key is absent, and reading it yields a silent zero notional.
 **Implication:** the "~2 s joint quantisation floor" that
-`scripts/pm-edge-report.py` documents was only ever true of the **Polymarket
+`scripts/pm-edge-report.py` documented was only ever true of the **Polymarket
 `data-api` trades** feed; the Kalshi side was never the binding constraint.
-`scripts/xvenue-normalize.py` records each row's own
-`venue_ts_granularity_ns`, so the floor is computed per comparison instead of
-assumed.
+`scripts/xvenue-normalize.py` recorded each row's own
+`venue_ts_granularity_ns`, so the floor was computed per comparison instead of
+assumed. (Both scripts left with the expansion lane 2026-08-12; the recorder
+`examples/book-tape.rs` and this pin's wire facts remain live.)
 **Evidence:** `examples/book-tape.rs` live against
 `KXEARNINGSMENTIONAMD-26AUG04` (17 markets, 0 dropped) and three liquid boards
 (2,299 frames / 25 s → 2,145 two-sided quotes, 0 violating

@@ -352,9 +352,10 @@ pub struct RawFrame {
 /// bounded producer-quiescence/backlog-drain phases.
 pub const BOOK_TAPE_SCHEMA_VERSION: u32 = 2;
 
-// `xvenue-normalize.py` currently consumes only the raw frame envelope and
-// ignores lifecycle rows. Keep that envelope marker at 1 while the stricter
-// evidence protocol is independently identified and verified as version 2.
+// External consumers (originally the cross-venue normalizer, retired
+// 2026-08-12) read only the raw frame envelope and ignore lifecycle rows.
+// Keep that envelope marker at 1 while the stricter evidence protocol is
+// independently identified and verified as version 2.
 const BOOK_TAPE_ENVELOPE_SCHEMA_VERSION: u32 = 1;
 const BOOK_TAPE_CAPABILITIES: [&str; 5] = [
     "sha256_bound_commit",

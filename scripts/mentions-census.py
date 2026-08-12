@@ -16,7 +16,8 @@ Two consumers:
                                                  open/unopened event in horizon)
     slate-daily greps these lines exactly like CHANGE:/UNSTAGED:.
   - W3 expansion: `--classify` adds audio-source class, cadence, and sampled
-    liquidity per series for docs/EXPANSION.md triage.
+    liquidity per series for expansion triage (the expansion lane and its
+    EXPANSION doc left the repo 2026-08-12; verdicts live in docs/history/).
 
 Read-only. Request budget ≈ 1 + N(series) paced GETs (~400 today, ~3 min);
 run it nightly-at-most (weekly wiring is the plan) — never inside an event
