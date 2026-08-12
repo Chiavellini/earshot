@@ -15,9 +15,22 @@ call-times.json contract (keyed by event_ticker):
         "source": "IR page: 'August 5, 2026 5:30 AM PT' (<url>)",
         "recorded_utc": "2026-08-05T01:00:00Z" } }
 
+An authoritative source may correct a stale discovery date, but only through
+an explicit typed record.  Merely supplying a time on another date remains a
+refusal:
+
+    "date_correction": {
+      "schema": 1,
+      "kind": "call-date-correction",
+      "from": "2026-08-06",
+      "to": "2026-08-12",
+      "source": "Issuer IR release and event registration page: ...",
+      "recorded_utc": "2026-08-11T20:00:00Z"
+    }
+
 Rules (all refusals are loud, none are silent):
-  * an override whose DATE part != the row's call_date is REFUSED
-    (the HOOD/PGR misdate class — a wrong date staged is worse than unstaged);
+  * an override whose DATE part != the effective call_date is REFUSED unless
+    the entry carries the exact typed/source-bearing correction above;
   * if discovery already carries a non-null gcal time that DISAGREES, FAIL —
     gcal sits above IR-page-reading in the evidence hierarchy;
   * --require-date YYYY-MM-DD exits 1 listing that date's still-untimed events;
@@ -34,6 +47,66 @@ import sys
 from pathlib import Path
 
 TIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+CORRECTION_FIELDS = {"schema", "kind", "from", "to", "source", "recorded_utc"}
+
+
+def valid_timestamp(value: str) -> bool:
+    if not isinstance(value, str) or not TIME_RE.fullmatch(value):
+        return False
+    try:
+        import datetime
+        datetime.datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        return False
+    return True
+
+
+def validate_correction(ticker: str, row: dict, entry: dict) -> tuple[dict | None, str | None]:
+    """Return (validated correction, refusal).  Never mutates the slate row."""
+    correction = entry.get("date_correction")
+    if correction is None:
+        return None, None
+    if not isinstance(correction, dict) or set(correction) != CORRECTION_FIELDS:
+        return None, (
+            f"REFUSED {ticker}: date_correction must contain exactly "
+            f"{sorted(CORRECTION_FIELDS)}"
+        )
+    if correction.get("schema") != 1 or correction.get("kind") != "call-date-correction":
+        return None, (
+            f"REFUSED {ticker}: date_correction must be schema=1, "
+            'kind="call-date-correction"'
+        )
+    old, new = correction.get("from"), correction.get("to")
+    try:
+        if not isinstance(old, str) or not DATE_RE.fullmatch(old):
+            raise ValueError
+        if not isinstance(new, str) or not DATE_RE.fullmatch(new):
+            raise ValueError
+        import datetime
+        datetime.date.fromisoformat(old)
+        datetime.date.fromisoformat(new)
+    except ValueError:
+        return None, f"REFUSED {ticker}: correction from/to must be real YYYY-MM-DD dates"
+    if old == new:
+        return None, f"REFUSED {ticker}: correction from/to are identical ({old})"
+    source = correction.get("source")
+    if not isinstance(source, str) or not source.strip():
+        return None, f"REFUSED {ticker}: date_correction source is empty"
+    if source.strip().upper().startswith("ESTIMATE"):
+        return None, f"REFUSED {ticker}: an ESTIMATE cannot authoritatively correct call_date"
+    if not valid_timestamp(correction.get("recorded_utc")):
+        return None, f"REFUSED {ticker}: date_correction recorded_utc is not a real UTC timestamp"
+    current = row.get("call_date")
+    prior = row.get("call_date_correction")
+    if current == new and prior == correction:
+        return correction, None  # idempotent merge of an already-corrected row
+    if current != old:
+        return None, (
+            f"REFUSED {ticker}: date_correction.from {old} does not match slate "
+            f"call_date {current!r}"
+        )
+    return correction, None
 
 
 def merge(slate: dict, times: dict, require_date: str | None) -> tuple[dict, list[str], list[str]]:
@@ -43,32 +116,57 @@ def merge(slate: dict, times: dict, require_date: str | None) -> tuple[dict, lis
     by_ticker = {e.get("event_ticker"): e for e in slate.get("events", [])}
 
     for ticker, entry in times.items():
+        if not isinstance(entry, dict):
+            errors.append(f"REFUSED {ticker}: call-times entry is not an object")
+            continue
         t = entry.get("call_time_utc", "")
         row = by_ticker.get(ticker)
         if row is None:
             notes.append(f"note: {ticker} in call-times but not on the slate — ignored")
             continue
-        if not TIME_RE.match(t):
+        correction, correction_error = validate_correction(ticker, row, entry)
+        if correction_error:
+            errors.append(correction_error)
+            continue
+        effective_date = correction["to"] if correction else row.get("call_date")
+        if not valid_timestamp(t):
             errors.append(f"REFUSED {ticker}: call_time_utc {t!r} is not YYYY-MM-DDTHH:MM:SSZ")
             continue
-        if row.get("call_date") and t[:10] != row["call_date"]:
+        if effective_date and t[:10] != effective_date:
             errors.append(
-                f"REFUSED {ticker}: override date {t[:10]} != slate call_date "
-                f"{row['call_date']} (HOOD/PGR misdate class — resolve before staging)"
+                f"REFUSED {ticker}: override date {t[:10]} != effective call_date "
+                f"{effective_date} (a cross-date time needs a matching typed date_correction)"
             )
             continue
         existing = row.get("call_time_utc")
         if existing and existing != t:
-            errors.append(
-                f"REFUSED {ticker}: discovery already has {existing} (gcal-sourced, "
-                f"outranks IR reading) but call-times says {t} — reconcile"
-            )
-            continue
+            old_date = correction.get("from") if correction else None
+            if not correction or existing[:10] != old_date:
+                errors.append(
+                    f"REFUSED {ticker}: discovery already has {existing} (gcal-sourced, "
+                    f"outranks an untyped IR reading) but call-times says {t} — reconcile"
+                )
+                continue
         src = str(entry.get("source", ""))
         if src.upper().startswith("ESTIMATE"):
             notes.append(f"⚠ ESTIMATE {ticker}: {t} ({src}) — ladders absorb ±30min; verify at first light")
+        if correction:
+            old_date = row.get("call_date")
+            row["call_date"] = correction["to"]
+            row["call_date_source"] = "authoritative_correction"
+            row["call_date_confirmed"] = True
+            row["call_date_disputed"] = False
+            row["ticker_date_misleading"] = True
+            row["stale_open_event"] = False
+            row["call_date_evidence"] = correction["source"]
+            row["call_date_correction"] = dict(correction)
+            notes.append(
+                f"CORRECTED-DATE {ticker}: {old_date} -> {correction['to']} "
+                f"({correction['source']})"
+            )
         row["call_time_utc"] = t
-        row.setdefault("call_time_evidence", src)
+        if src:
+            row["call_time_evidence"] = src
 
     if require_date:
         missing = [
@@ -92,9 +190,31 @@ def self_test() -> int:
     # good merge
     s, errs, _ = merge(json.loads(json.dumps(base)), {"T1": {"call_time_utc": "2026-08-05T21:00:00Z", "source": "x"}}, None)
     assert not errs and s["events"][0]["call_time_utc"] == "2026-08-05T21:00:00Z", errs
-    # wrong date refused
+    # wrong date refused without typed correction
     _, errs, _ = merge(json.loads(json.dumps(base)), {"T1": {"call_time_utc": "2026-08-06T21:00:00Z"}}, None)
-    assert errs and "misdate" in errs[0], errs
+    assert errs and "typed date_correction" in errs[0], errs
+    # exact typed, source-bearing correction supersedes a stale date
+    corrected = {
+        "call_time_utc": "2026-08-06T21:00:00Z",
+        "source": "Issuer event page: 5 PM ET",
+        "date_correction": {
+            "schema": 1,
+            "kind": "call-date-correction",
+            "from": "2026-08-05",
+            "to": "2026-08-06",
+            "source": "Issuer IR release plus event registration page",
+            "recorded_utc": "2026-08-04T21:00:00Z",
+        },
+    }
+    s, errs, notes = merge(json.loads(json.dumps(base)), {"T1": corrected}, None)
+    assert not errs and s["events"][0]["call_date"] == "2026-08-06", errs
+    assert s["events"][0]["call_date_source"] == "authoritative_correction"
+    assert any("CORRECTED-DATE" in n for n in notes), notes
+    # malformed/un sourced correction cannot change the date
+    bad = json.loads(json.dumps(corrected))
+    bad["date_correction"]["source"] = ""
+    s, errs, _ = merge(json.loads(json.dumps(base)), {"T1": bad}, None)
+    assert errs and s["events"][0]["call_date"] == "2026-08-05", (s, errs)
     # gcal disagreement refused
     _, errs, _ = merge(json.loads(json.dumps(base)), {"T2": {"call_time_utc": "2026-08-05T13:00:00Z"}}, None)
     assert errs and "outranks" in errs[0], errs
@@ -104,7 +224,7 @@ def self_test() -> int:
     # require-date names the untimed
     _, errs, _ = merge(json.loads(json.dumps(base)), {"T1": {"call_time_utc": "2026-08-05T21:00:00Z"}}, "2026-08-05")
     assert len(errs) == 1 and "T3" in errs[0], errs
-    print("slate-time-merge: self-test PASS (5 cases)")
+    print("slate-time-merge: self-test PASS (7 cases)")
     return 0
 
 

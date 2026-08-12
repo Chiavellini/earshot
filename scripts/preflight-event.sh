@@ -21,6 +21,20 @@
 set -uo pipefail
 
 CONFIG="" ACCOUNT="" FIRE_HHMM="" EVENT_ENV="" ONLY_READINESS=0 RESULT_JSON=""
+RUN_DIR_OVERRIDE="" ACCESS_PLAN=""
+usage() {
+  cat <<'EOF'
+usage: scripts/preflight-event.sh --config <cfg.toml> --account <env-file>
+       [--event-env <autorun.env>] [--fire-hhmm HHMM]
+       [--run-dir <var/runs/EVENT/RUN>] [--access-plan <access-plan.json>]
+       [--result-json <state/EVENT/preflight-result.json>]
+       scripts/preflight-event.sh --config <cfg.toml> --only-readiness
+
+Full preflight requires exactly one active schema-3 RunPlan. Webcast runs also
+require a run-scoped AccessPlan; it proves acquisition strategy, never current
+media. --only-readiness remains local and side-effect-free.
+EOF
+}
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --config)    CONFIG="$2"; shift 2 ;;
@@ -28,7 +42,10 @@ while [[ $# -gt 0 ]]; do
     --fire-hhmm) FIRE_HHMM="$2"; shift 2 ;;
     --event-env) EVENT_ENV="$2"; shift 2 ;;
     --result-json) RESULT_JSON="$2"; shift 2 ;;  # structured verdict artifact (Phase D door); default state/<EVENT_ID>/preflight-result.json
+    --run-dir) RUN_DIR_OVERRIDE="$2"; shift 2 ;;
+    --access-plan) ACCESS_PLAN="$2"; shift 2 ;;
     --only-readiness) ONLY_READINESS=1; shift ;;  # dev: run ONLY the keyword-readiness gate (no build/probes/mail)
+    -h|--help) usage; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -36,9 +53,7 @@ if [[ "$ONLY_READINESS" == 1 ]]; then
   [[ -n "$CONFIG" ]] || { echo "usage: $0 --config <cfg.toml> --only-readiness" >&2; exit 2; }
 else
   [[ -n "$CONFIG" && -n "$ACCOUNT" ]] || {
-    echo "usage: $0 --config <cfg.toml> --account <env-file> [--fire-hhmm 0605]" >&2
-    echo "          [--event-env configs/<event>-autorun.env]   # dial-in go/no-go gate" >&2
-    echo "          [--only-readiness]   # dev: keyword-readiness gate only, nothing else" >&2
+    usage >&2
     exit 2
   }
 fi
@@ -264,6 +279,42 @@ else
 fi
 STATE_DIR="state/${EVENT_ID:-preflight-unknown}"
 mkdir -p "$STATE_DIR"
+
+# ── Typed RunPlan + lane-strategy proof ────────────────────────────────────
+# This is deliberately a STRATEGY gate.  For webcast, AccessPlan proves the
+# exact resolver/source/url-file/host contract while leaving current PCM false
+# until T0 capture_ready.  For phone, AdmissionStrategy proves one fail-closed
+# route while leaving the current-stream admission interlock closed.  Neither
+# artifact is permission to claim a live source before it exists.
+PREFLIGHT_BINDING=""
+PREFLIGHT_RUN_DIR=""
+PREFLIGHT_STRATEGY=""
+if [[ -n "${EVENT_ID:-}" && -f "$CONFIG" ]]; then
+  PROOF_ARGS=(inspect --config "$CONFIG")
+  [[ -n "$RUN_DIR_OVERRIDE" ]] && PROOF_ARGS+=(--run-dir "$RUN_DIR_OVERRIDE")
+  [[ -n "$ACCESS_PLAN" ]] && PROOF_ARGS+=(--access-plan "$ACCESS_PLAN")
+  if PROOF_OUT=$(python3 "$(dirname "$0")/preflight-proof.py" "${PROOF_ARGS[@]}" 2>&1); then
+    PROOF_FIELDS=$(python3 -c '
+import json, sys
+p=json.loads(sys.argv[1])
+print(p["binding"])
+print(p["run_dir"])
+print(p["strategy_mode"])
+' "$PROOF_OUT" 2>/dev/null) || PROOF_FIELDS=""
+    if [[ -n "$PROOF_FIELDS" ]]; then
+      PREFLIGHT_BINDING=$(sed -n '1p' <<<"$PROOF_FIELDS")
+      PREFLIGHT_RUN_DIR=$(sed -n '2p' <<<"$PROOF_FIELDS")
+      PREFLIGHT_STRATEGY=$(sed -n '3p' <<<"$PROOF_FIELDS")
+      check PASS "schema-3 RunPlan + lane strategy bound: run=$PREFLIGHT_RUN_DIR mode=$PREFLIGHT_STRATEGY (no current media/stream admission claimed)"
+    else
+      check FAIL "preflight proof adapter returned an unreadable success payload"
+    fi
+  else
+    check FAIL "RunPlan/lane strategy proof refused: $(tail -1 <<<"$PROOF_OUT")"
+  fi
+else
+  check FAIL "RunPlan/lane strategy proof skipped because event/config identity is unavailable"
+fi
 
 # ⚠ PORTABILITY (fixed 2026-07-27). This script was written for the CDMX macOS
 # laptop. Run unchanged on the us-east Linux box it produced FIVE failures, of
@@ -845,115 +896,14 @@ else
   check WARN "no --event-env given — dial-in go/no-go gate SKIPPED. Pass --event-env configs/<event>-autorun.env to enforce it."
 fi
 
-# ── Bridge admission gate (VERIFICATIONS Q-ADMIT, 2026-07-29) ──────────────
-# A number that resolves is NOT a bridge that admits us: MSFT's registry entry
-# said listen_access="yes" ("no password required") and the live bridge is an
-# operator screen that dropped the silent caller in 42 s. Every one of the
-# 2026-07-29 phone failures was knowable the night before with one ~$0.02
-# probe call. So: a phone arm requires a probe-observed `admission = "held"`
-# in configs/dial-ins.toml for this venue (scripts/bridge-probe.sh sets it).
-# Twilio-source configs only — a webcast arm dials nothing (don't cry wolf).
-if grep -qE '^[[:space:]]*kind[[:space:]]*=[[:space:]]*"twilio' "$CONFIG" 2>/dev/null; then
-  ADMIT_OUT=$(EVENT_ID="$EVENT_ID" CONFIG="$CONFIG" python3 - <<'PY'
-import os, re, sys, tomllib
-
-event_id = os.environ.get("EVENT_ID", "")
-m = re.match(r"KXEARNINGSMENTION([A-Z0-9]+)", event_id)
-if not m:
-    print(f"SKIP cannot derive series key from event id {event_id!r}")
-    sys.exit(0)
-key = m.group(1)
-try:
-    with open("configs/dial-ins.toml", "rb") as f:
-        reg = tomllib.load(f)
-except Exception as e:
-    print(f"FAIL configs/dial-ins.toml unreadable: {e}")
-    sys.exit(0)
-entry = reg.get(key)
-if entry is None:
-    print(f"FAIL venue {key} not in configs/dial-ins.toml — probe it: scripts/bridge-probe.sh --to <number> --label {key.lower()}-<date>")
-    sys.exit(0)
-admission = entry.get("admission", "untested")
-probed = entry.get("admission_probed", "never")
-detail = entry.get("admission_detail", "")
-if admission == "held":
-    from datetime import date, datetime
-    try:
-        age = (date.today() - datetime.strptime(probed, "%Y-%m-%d").date()).days
-    except ValueError:
-        age = 9999
-    if age <= 30:
-        print(f"PASS {key} admission=held (probed {probed}: {detail})")
-    else:
-        print(f"WARN {key} admission=held but STALE (probed {probed}, {age}d ago) — re-probe: scripts/bridge-probe.sh (~$0.02)")
-elif admission == "operator_screened":
-    # Default: NO-GO. Downgrade to PASS-with-note ONLY when BOTH sides of the
-    # gated operator path are in place (docs/OPERATOR-HANDLER.md §Registry
-    # interaction): (a) THIS config opts in via [operator_handler] enabled=true,
-    # and (b) the venue's registry entry carries operator_handler =
-    # "rehearsed-<date>" — a field written ONLY after a successful end-to-end
-    # rehearsal against the fake operator (never pre-filled by hand).
-    cfg_text = ""
-    try:
-        cfg_text = open(os.environ.get("CONFIG", "")).read()
-    except OSError:
-        pass
-    oh_block = re.search(r'^\[operator_handler\]\s*$(.*?)(?=^\[|\Z)',
-                         cfg_text, re.S | re.M)
-    handler_enabled = bool(oh_block and re.search(
-        r'^\s*enabled\s*=\s*true\b', oh_block.group(1), re.M))
-    rehearsed = re.fullmatch(r"rehearsed-(\d{4}-\d{2}-\d{2})",
-                             str(entry.get("operator_handler", "")))
-    if handler_enabled and rehearsed:
-        print(f"PASS {key} operator-screened venue armed via gated human-first handler (rehearsed {rehearsed.group(1)}) — {detail}")
-    else:
-        missing = []
-        if not handler_enabled:
-            missing.append("config lacks [operator_handler] enabled=true")
-        if not rehearsed:
-            missing.append(f'venue lacks operator_handler="rehearsed-<date>" in configs/dial-ins.toml (set only by a passed rehearsal)')
-        print(f"FAIL {key} admission=operator_screened ({detail}) — a live human drops silent callers; unattended-infeasible on the pure listen-only posture. NO-GO for a phone arm. Gated operator path not ready: {'; '.join(missing)}.")
-elif admission == "dropped":
-    print(f"FAIL {key} admission=dropped ({detail}) — the bridge hangs up on us. NO-GO until the drop cause is understood.")
-elif entry.get("reservation_window"):
-    # Q-ADMIT addendum: this venue's bridge does not EXIST outside its event
-    # window, so "untested" here does not mean nobody bothered — it means the
-    # only probe that could decide it has not become possible yet. A bare FAIL
-    # tells the operator to do something they cannot do, which is how a gate
-    # gets ignored. Name the window and the command instead.
-    import datetime as _dt
-    starts = ""
-    try:
-        with open(os.environ.get("CONFIG", ""), "rb") as f:
-            starts = str(tomllib.load(f).get("event", {}).get("starts_at", ""))
-    except Exception:
-        pass
-    window = ""
-    try:
-        call = _dt.datetime.fromisoformat(starts.replace("Z", "+00:00"))
-        if call.tzinfo is None:
-            call = call.replace(tzinfo=_dt.timezone.utc)
-        fmt = lambda d: d.strftime("%H:%MZ")
-        window = (f" Window {fmt(call - _dt.timedelta(minutes=90))}.."
-                  f"{fmt(call - _dt.timedelta(minutes=30))} on "
-                  f"{(call - _dt.timedelta(minutes=90)).date()}.")
-    except ValueError:
-        pass
-    print(f"WARN {key} admission untested and the bridge is reservation-window "
-          f"only — an off-hours probe returns a no-answer that classifies "
-          f"nothing (Q-ADMIT addendum).{window} Probe in-window: "
-          f"scripts/admission-window-probe.sh --config {os.environ.get('CONFIG','<cfg>')} --run")
-else:
-    print(f"FAIL {key} admission untested — one ~$0.02 call decides this: scripts/bridge-probe.sh --to <number> --label {key.lower()}-<date>")
-PY
-  )
-  case "$ADMIT_OUT" in
-    PASS*) check PASS "${ADMIT_OUT#PASS }" ;;
-    WARN*) check WARN "${ADMIT_OUT#WARN }" ;;
-    SKIP*) check WARN "bridge admission gate: ${ADMIT_OUT#SKIP }" ;;
-    *)     check FAIL "${ADMIT_OUT#FAIL }" ;;
-  esac
-fi
+# ── Phone admission strategy ───────────────────────────────────────────────
+# Evaluated once, structurally, by preflight-proof.py above.  The old gate in
+# this location treated stale `held` as a WARN and reservation-window
+# `untested` as sufficient to pass.  Neither can prove `admission_resolved`.
+# The typed strategy instead distinguishes fresh held, rehearsed operator-first,
+# first-drop operator fallback, and reservation-window fallback.  Pending probe
+# state never underwrites the receipt; a verified fallback does, while the
+# current-stream runtime interlock remains closed until its own receipt exists.
 
 # ── Keyword readiness gate ─────────────────────────────────────────────────
 # Every config being preflighted, every lane (phone AND webcast — WING's lost
@@ -989,24 +939,29 @@ else
 fi
 
 echo
-# ── Structured verdict artifact (Phase D door; consumed by assert-ready.sh
-# and preflight-nightly.sh's feature-detect). Written on PASS AND FAIL, as the
-# last act, via tmp+mv; a write failure must never convert a PASS into a
-# crash-exit — hence the || WARN, never a FAIL increment after the verdict.
-if [[ -z "$RESULT_JSON" && -n "${EVENT_ID:-}" ]]; then
-  RESULT_JSON="state/${EVENT_ID}/preflight-result.json"
+# ── Durable verdict + typed lifecycle receipts ─────────────────────────────
+# Build a non-authoritative draft first. preflight-proof.py is the sole
+# publisher: on red it durably writes the report and advances nothing; on
+# green it appends the truthful preparation receipts, durably publishes the
+# report, then appends preflight_passed.  A report write failure is therefore
+# nonzero and can never become a warning/PASS (the old behavior here).
+if [[ -z "$RESULT_JSON" ]]; then
+  RESULT_JSON="state/${EVENT_ID:-preflight-unknown}/preflight-result.json"
 fi
-if [[ -n "$RESULT_JSON" ]]; then
-  SKIPPED=""
-  [[ -z "$EVENT_ENV" ]] && SKIPPED="dial-in"
-  [[ -z "$FIRE_HHMM" ]] && SKIPPED="${SKIPPED:+$SKIPPED,}fire-mechanism"
-  if mkdir -p "$(dirname "$RESULT_JSON")" 2>/dev/null && \
-     PF_LINES=$(printf '%s\n' "${REPORT_LINES[@]}") \
+SKIPPED=""
+[[ -z "$EVENT_ENV" ]] && SKIPPED="dial-in"
+[[ -z "$FIRE_HHMM" ]] && SKIPPED="${SKIPPED:+$SKIPPED,}fire-mechanism"
+REPORT_DRAFT=$(mktemp "$STATE_DIR/.preflight-report.XXXXXX" 2>/dev/null || true)
+if [[ -z "$REPORT_DRAFT" ]]; then
+  echo "[FAIL] could not create a local preflight report draft in $STATE_DIR" >&2
+  FAILS=$((FAILS+1))
+else
+  if PF_LINES=$(printf '%s\n' "${REPORT_LINES[@]}") \
      PF_EVENT="${EVENT_ID:-}" PF_CONFIG="$CONFIG" PF_FAILS="$FAILS" PF_WARNS="$WARNS" \
      PF_FIRE="$FIRE_HHMM" PF_ENV="$EVENT_ENV" PF_SKIPPED="$SKIPPED" \
      PF_CFG_SHA="$(shasum -a 256 "$CONFIG" 2>/dev/null | cut -d' ' -f1)" \
      PF_KW_SHA="$(python3 "$(dirname "$0")/keywords-extract.py" "$CONFIG" --sha256 2>/dev/null || true)" \
-     python3 - > "${RESULT_JSON}.tmp" <<'PY' && mv "${RESULT_JSON}.tmp" "$RESULT_JSON"
+     python3 - > "$REPORT_DRAFT" <<'PY'
 import json, os, socket
 from datetime import datetime, timezone
 gates = []
@@ -1032,11 +987,27 @@ print(json.dumps({
 }, indent=1))
 PY
   then
-    echo "preflight-result: $RESULT_JSON"
+    :
   else
-    echo "[WARN] could not write $RESULT_JSON — assert-ready.sh will refuse until a preflight writes it" >&2
-    rm -f "${RESULT_JSON}.tmp" 2>/dev/null || true
+    echo "[FAIL] could not construct the preflight report draft" >&2
+    FAILS=$((FAILS+1))
   fi
+
+  # A failed draft does not claim PASS, but is not structurally safe to feed
+  # the finalizer; leave the result absent/stale and return nonzero below.
+  if python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$REPORT_DRAFT" 2>/dev/null; then
+    BINDING_ARG="${PREFLIGHT_BINDING:-$STATE_DIR/.missing-preflight-binding}"
+    if FINALIZE_OUT=$(python3 "$(dirname "$0")/preflight-proof.py" finalize \
+        --binding "$BINDING_ARG" --report-draft "$REPORT_DRAFT" \
+        --result-json "$RESULT_JSON" 2>&1); then
+      echo "preflight-result: $RESULT_JSON"
+      [[ "$FAILS" -eq 0 ]] && echo "preflight-proof: $FINALIZE_OUT"
+    else
+      echo "[FAIL] preflight proof/report publication refused: $(tail -1 <<<"$FINALIZE_OUT")" >&2
+      FAILS=$((FAILS+1))
+    fi
+  fi
+  rm -f "$REPORT_DRAFT"
 fi
 if [[ -n "${EVENT_ID:-}" ]]; then
   "$(dirname "$0")/journal.sh" --event "$EVENT_ID" --actor preflight-event.sh --action preflight \

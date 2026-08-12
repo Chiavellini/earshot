@@ -20,7 +20,10 @@ pub struct MatchWindow {
 
 impl Default for MatchWindow {
     fn default() -> Self {
-        MatchWindow { pre_ms: 250, post_ms: 1500 }
+        MatchWindow {
+            pre_ms: 250,
+            post_ms: 1500,
+        }
     }
 }
 
@@ -117,19 +120,18 @@ pub fn score_phrase(
             for occ in occurrences {
                 let lo = occ.onset_ms.saturating_sub(window.pre_ms);
                 let hi = occ.end_ms + window.post_ms;
-                let hit = dets.iter().enumerate().find(|(i, d)| {
-                    !matched[*i] && (lo..=hi).contains(&d.detection.audio_pos_ms)
-                });
+                let hit = dets
+                    .iter()
+                    .enumerate()
+                    .find(|(i, d)| !matched[*i] && (lo..=hi).contains(&d.detection.audio_pos_ms));
                 if let Some((i, d)) = hit {
                     matched[i] = true;
                     tp += 1;
                     // Signed on purpose: a negative value means the engine fired
                     // BEFORE the word finished (prefix-style firing), which is a
                     // real and desirable outcome, not an error to clamp away.
-                    emit_lag_ms
-                        .push(d.detection.audio_pos_ms as i64 - occ.end_ms as i64);
-                    consumed_lag_ms
-                        .push(d.detection.audio_consumed_ms as i64 - occ.end_ms as i64);
+                    emit_lag_ms.push(d.detection.audio_pos_ms as i64 - occ.end_ms as i64);
+                    consumed_lag_ms.push(d.detection.audio_consumed_ms as i64 - occ.end_ms as i64);
                     if let Some(t0) = first_capture_ts {
                         let emit_since_start_ms =
                             d.detection.emit_ts.saturating_since(t0) as i64 / 1_000_000;
@@ -186,13 +188,18 @@ mod tests {
                 source: crate::types::SourceId(0),
             },
             intent: None,
+            suppression: None,
             detect_latency_us: 0,
             leg: String::new(),
         }
     }
 
     fn occ(onset_ms: u64, end_ms: u64) -> Occurrence {
-        Occurrence { phrase: "kw".into(), onset_ms, end_ms }
+        Occurrence {
+            phrase: "kw".into(),
+            onset_ms,
+            end_ms,
+        }
     }
 
     fn score<'a>(
@@ -215,11 +222,17 @@ mod tests {
         let occs = vec![occ(2_000, 2_500), occ(60_000, 60_600)];
         let s = score(&dets, &occs, None);
         let fast = &s[0];
-        assert_eq!((fast.true_positives, fast.misses, fast.false_alarms), (1, 1, 1));
+        assert_eq!(
+            (fast.true_positives, fast.misses, fast.false_alarms),
+            (1, 1, 1)
+        );
         assert_eq!(fast.recall(), 0.5);
         assert_eq!(fast.precision(), 0.5);
         let conf = &s[1];
-        assert_eq!((conf.true_positives, conf.misses, conf.false_alarms), (1, 1, 0));
+        assert_eq!(
+            (conf.true_positives, conf.misses, conf.false_alarms),
+            (1, 1, 0)
+        );
     }
 
     #[test]
@@ -228,7 +241,10 @@ mod tests {
         let dets = vec![rec(Tier::Fast, 3_000, 0)];
         let occs = vec![occ(2_000, 2_500), occ(2_600, 3_100)];
         let s = score(&dets, &occs, None);
-        assert_eq!((s[0].true_positives, s[0].misses, s[0].false_alarms), (1, 1, 0));
+        assert_eq!(
+            (s[0].true_positives, s[0].misses, s[0].false_alarms),
+            (1, 1, 0)
+        );
     }
 
     #[test]
@@ -264,7 +280,10 @@ mod tests {
         let occs = vec![occ(2_000, 2_500)];
         let s = score(&dets, &occs, None);
         assert_eq!(s[0].emit_lag_ms, vec![400]);
-        assert!(s[0].latency_ms.is_empty(), "no clock ⇒ no wall-clock latency");
+        assert!(
+            s[0].latency_ms.is_empty(),
+            "no clock ⇒ no wall-clock latency"
+        );
     }
 
     #[test]

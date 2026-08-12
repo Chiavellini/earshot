@@ -21,8 +21,11 @@ scheme is pinned in `VERIFICATIONS.md` Q3 — never change it without re-pinning
 - **Pre-sign for the hot path:** `Presigner::new(signer, method, path) -> Arc<Self>`;
   `Presigner::spawn_refresher(handle)` starts the refresh loop; `Presigner::get()` is
   the wait-free read.
-- **Identity read-back:** `Signer::key_id() -> &str` (the access-key id, used by the
-  arm-time credential check — see Exit door).
+- **Identity read-back:** `Signer::key_id() -> &str` and
+  `Signer::account_fingerprint() -> String`. The fingerprint is the lowercase
+  `sha256:` digest of `key_id || NUL || SubjectPublicKeyInfo DER`; it is stable
+  across PKCS#1/PKCS#8 private-key encodings, binds both halves of the selected
+  credential, and contains no private-key material.
 
 ## Exit door
 - **Signed headers:** `HDR_KEY` / `HDR_SIG` / `HDR_TS` (constants
@@ -35,6 +38,12 @@ scheme is pinned in `VERIFICATIONS.md` Q3 — never change it without re-pinning
   entry is older than `PRESIGN_MAX_AGE` (20 s) it re-signs inline (correctness over
   speed) and warns. The refresher re-signs every `PRESIGN_REFRESH` (10 s) — 3× / 1.5×
   margin against the measured ±30 s server window.
+- **Read-only CLI adapter:** `earshot account-fingerprint [--config <path>]`
+  loads the exact signer `arm` would select (the config-bound pair when both
+  fields exist, otherwise the process environment), performs no request and
+  emits exactly the fingerprint on stdout. It is the provisioning/check door
+  for the external execution profile consumed by immutable RunPlans; it is not
+  a credential-coherence network probe.
 - **Consumers:** `RestClient` (`src/kalshi/rest.rs`) holds one `Arc<Signer>` and signs
   read paths directly; the executor holds a `Presigner` in `ExecCtx` for the order POST;
   `book::run_ws` takes the `Arc<Signer>` for the WS auth. Each of these owns exactly one
@@ -60,12 +69,16 @@ Which credential a live event uses is decided at arm time, NOT here:
   never `headers_now`, except the deliberate stale-entry inline fallback.
 - Secrets never touch the repo or the config: the config carries only the key id and a
   PEM *path*; the key material lives at that path or in `KALSHI_PRIVATE_KEY_PATH`.
+- A fingerprint is non-secret identity, not authorization. Never substitute
+  it for the signed `balance()` coherence check on the live arm path.
 - `key_id` is an access-key id (an identifier), not a secret — safe to log and to place
   in a config.
 
 ## Failure policy
 - Missing env var, unreadable PEM, or unparseable key → `KalshiError::Credentials`;
   the caller refuses to arm (nothing signs). No fallback to an unsigned request.
+- The read-only fingerprint command has the same credential-load failures and
+  never falls back from a broken config-bound pair to ambient credentials.
 - Presigned entry stale past `PRESIGN_MAX_AGE` → inline re-sign + warn, never send a
   stale signature.
 
@@ -83,7 +96,8 @@ Which credential a live event uses is decided at arm time, NOT here:
 ## How to test in isolation
 - `src/kalshi/auth.rs` unit tests: `signature_verifies_against_exact_message_format`
   (RSA-PSS verify against the exact `{ts}{METHOD}{path}` string, header names/values),
-  plus the presigner freshness/fallback behavior.
+  `account_fingerprint_is_stable_and_binds_key_id_plus_public_key`, plus the
+  presigner freshness/fallback behavior.
 - The Presigner fire-path is exercised end-to-end in `tests/exec_mock.rs` (exactly one
   signed POST per intent).
 - The credential-source selection and `expected_key_id` check are covered at the config

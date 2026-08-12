@@ -72,7 +72,10 @@ pub struct CallManifest {
 /// relative to the root. Loud failure on any invalid manifest.
 pub fn load_dir(corpus_root: &Path) -> Result<Vec<CallManifest>, ManifestError> {
     let dir = corpus_root.join("manifests");
-    let read_err = |source, p: &Path| ManifestError::Io { path: p.display().to_string(), source };
+    let read_err = |source, p: &Path| ManifestError::Io {
+        path: p.display().to_string(),
+        source,
+    };
     let mut out = Vec::new();
     let mut paths: Vec<PathBuf> = std::fs::read_dir(&dir)
         .map_err(|e| read_err(e, &dir))?
@@ -83,12 +86,17 @@ pub fn load_dir(corpus_root: &Path) -> Result<Vec<CallManifest>, ManifestError> 
     paths.sort();
     for path in paths {
         let text = std::fs::read_to_string(&path).map_err(|e| read_err(e, &path))?;
-        let mf: ManifestFile = toml::from_str(&text)
-            .map_err(|err| ManifestError::Parse { err, path: path.display().to_string() })?;
+        let mf: ManifestFile = toml::from_str(&text).map_err(|err| ManifestError::Parse {
+            err,
+            path: path.display().to_string(),
+        })?;
         out.push(validate(mf, corpus_root, &path)?);
     }
     if out.is_empty() {
-        return Err(ManifestError::Invalid(format!("no manifests in {}", dir.display())));
+        return Err(ManifestError::Invalid(format!(
+            "no manifests in {}",
+            dir.display()
+        )));
     }
     Ok(out)
 }
@@ -114,10 +122,16 @@ fn validate(mf: ManifestFile, root: &Path, src: &Path) -> Result<CallManifest, M
     let mut prev_onset = 0u64;
     for occ in &mf.occurrences {
         if occ.end_ms <= occ.onset_ms {
-            return fail(format!("occurrence {:?} at {}: end ≤ onset", occ.phrase, occ.onset_ms));
+            return fail(format!(
+                "occurrence {:?} at {}: end ≤ onset",
+                occ.phrase, occ.onset_ms
+            ));
         }
         if occ.end_ms > duration_ms {
-            return fail(format!("occurrence {:?} at {} past audio end", occ.phrase, occ.onset_ms));
+            return fail(format!(
+                "occurrence {:?} at {} past audio end",
+                occ.phrase, occ.onset_ms
+            ));
         }
         if occ.onset_ms < prev_onset {
             return fail("occurrences must be sorted by onset_ms".into());

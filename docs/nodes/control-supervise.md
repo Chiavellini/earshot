@@ -7,13 +7,17 @@ until the run is terminal.
 
 ## Owns
 
-Unattended lifecycle/retry logic in `scripts/event-autorun.sh`,
-`scripts/wing-autorun.sh`, and `scripts/arm-when-url.sh`, plus mid-call phone
+Unattended lifecycle/retry logic in `scripts/event-autorun.sh` and
+`scripts/webcast-autorun.sh`, plus mid-call phone
 recovery in `scripts/redial-supervisor.sh` and event-timer installation in
 `scripts/install-event-timer.sh`, wrapped for the remote host by
 `scripts/box-event-install.sh`. It also owns the autorun environment
 templates under `configs/*-autorun.env`, `docs/RUNBOOK.md`, and the current
 phone-lane operational handoff in `PHONE-LANE-HANDOFF.md`.
+
+The owned `scripts/wing-autorun.sh` and `scripts/arm-when-url.sh` paths are
+retired inert facades that exit 64. They remain only to make stale invocations
+fail deterministically and name the `opsctl` replacement.
 
 `scripts/box-event-install.sh` schedules exactly one phone event on the
 us-east-1 box and then **re-reads the loaded unit** rather than the file it
@@ -30,6 +34,71 @@ binding elsewhere silently received no media on the tunnel-free box, and the
 loop's stale-port cleanup could kill a concurrent event's listener). Optional
 `DIAL_ATTEMPTS`, `STREAM_CONFIRM_SECS`, and `OPERATOR_HANDLER` env keys forward
 to `scripts/launch-event.sh`; absent, behavior is unchanged.
+
+**Operator escalation is derived and fail-closed (2026-08-12).** At fire time
+`scripts/event-autorun.sh` reads both the venue's `admission` and its
+`operator_handler` rehearsal pin from `configs/dial-ins.toml`. A venue recorded
+as `operator_screened` is dialable only when its event config carries a usable
+`[operator_handler] enabled=true` block (valid configured cell and conference
+namespace), the operator scripts are executable, and the registry carries
+`operator_handler = "rehearsed-YYYY-MM-DD"`. It then passes
+`--operator-handler` on the **first** dial. A missing/invalid capability, a
+missing rehearsal pin, or even an explicit `OPERATOR_HANDLER=0` refuses before
+the pager or bridge is called. A known silent leg into a screener is not
+coverage. Explicit enable for another venue is accepted only with the same
+usable config and rehearsal evidence.
+
+An admission-unknown path is different because requiring a per-venue rehearsal
+would be circular: the first live drop is what reveals the venue's screener.
+For an absent/`untested`/`unknown` admission verdict (including the
+reservation-window class), autorun now requires a usable enabled
+`[operator_handler]` capability but does **not** require a venue rehearsal pin.
+It leaves the initial dial byte-for-byte on the plain path and exports the
+exact config plus `scripts/operator-redial.sh` as a dormant run-scoped
+fallback. `held` remains plain and `operator_screened` remains human-first
+before the initial dial.
+
+`redial-supervisor.sh` activates that fallback on the first recognized early
+`stop|idle|socket_closed|close_frame|ws_error|no_stream` marker before the
+call-end grace. The replacement that consumes that marker, and every later
+replacement, use the operator wrapper; the switch is latched so a later leg
+cannot silently revert to the screener path. A partial/unreadable/disabled
+fallback is paged and refused at that boundary, never replaced by the default
+dial. Listener readiness, STOP, redial count, call-end grace, and maximum-time
+gates are evaluated in their existing order and retain their existing budgets.
+An abnormal first drop after grace retains the existing plain-redial policy; a
+leg that held that long is not auto-classified as a newly discovered screener.
+
+This switch is recovery routing, not an admission classifier. It writes no
+registry verdict or admission receipt. Page answer, bridge origination, and a
+connected stream all leave decisions closed; only the explicit current
+challenge+stream-bound `operator-page.sh --assert-admitted` action opens them,
+and every replacement stream invalidates the prior receipt.
+
+This closes HIMS 26AUG10: the venue was operator-screened, the handler had been
+built and rehearsed, and the loop still spent **31m47s across 17 legs** cycling
+DTMF variants of a credential that was never a passcode — every leg answered,
+streamed hold audio, and was hung up by a screener waiting for a name. The
+handler was engaged by hand 17 minutes into the live call, after which admission
+took 10 seconds and the leg held 2817 s unbroken. The deciding fact was sitting
+in the registry the whole time; nothing read it.
+
+`PASSCODE` is required to be **defined but may be empty**. An operator-screened
+bridge takes a reference spoken to a screener, so that venue class has no keyable
+credential; requiring non-empty refused to launch exactly the events the operator
+handler exists for. The generated env distinguishes three states — `KEY=+1…,pin#`
+(DTMF), `KEY=+1…` (no keyable credential ⇒ empty), and an absent line (`TBD`,
+which the placeholder guard still rejects).
+
+**One event owns one Rust process.** `event-autorun.sh` invokes
+`launch-event.sh` exactly once. Mid-call drops are consumed by the
+`redial-supervisor.sh` that launch starts behind that same listener; the outer
+scheduler never reconstructs the arm. A recorded live arm/ngrok PID or an
+already-held bind port is a collision and is refused, never killed as cleanup.
+This preserves the event-scoped decision journal, order journal, report and
+evidence writers through every call-leg replacement. If the sole arm exits,
+autorun pages and grades that terminal outcome; it does not overwrite the run
+with another attempt.
 
 ## Does not own
 
@@ -56,12 +125,28 @@ exists for the same reason — stub tests must never reach the Twilio API. The
 synthetic marker written by `control.launch`'s no-stream watchdog when a
 placed call never produced a stream (2026-08-04, Gap Q). The supervisor needs
 no special case — any non-`stop` reason redials and hangs up the deaf CallSid.
+The optional `--first-drop-dial-script` + `--first-drop-operator-config` pair
+(or inherited `EARSHOT_FIRST_DROP_DIAL_SCRIPT` +
+`EARSHOT_FIRST_DROP_OPERATOR_CONFIG`) arms the admission-unknown fallback; the
+presence of either half is intent, so a missing other half fails closed rather
+than silently disabling escalation. The config's `[event].id` must also equal
+the selected state directory basename, preventing a stale handoff from paging
+another event's configured cell.
 
 ## Output contracts
 
 The target `SupervisorEvent` stream records start, heartbeat, source drop,
 recovery attempt, budget exhaustion, STOP, child exit, and terminal status.
-Current outputs are per-event logs, marker files, exit codes, and notifications.
+Current outputs are per-event logs, marker files, exit codes, notifications,
+and a non-authoritative terminal summary. Deterministic grading is a separate
+`control.grade` operation over immutable evidence.
+
+The terminal exit code is part of the scheduler-facing output. After the
+summary is written and notification attempted, `event-autorun.sh` returns the
+sole `launch-event.sh` child's nonzero status unchanged. A clean child with
+detector-path audio below the configured audit floor returns supervisor status
+10. Summary delivery must never turn either condition into exit 0; launchd or
+systemd must retain a machine-visible failed unit for operator status/alerting.
 
 ## Side effects and exclusive resources
 
@@ -75,6 +160,10 @@ recovery policy for one `RunHandle`.
 Budgets and deadlines are hard stops. Failed recovery is logged and terminal or
 degraded according to explicit policy; it must not create an unbounded loop or
 restart a traded run merely because grading later reports deafness.
+
+A launcher/finalizer failure or unauditable audio is terminal failure, not a
+successful summary run. The supervisor still performs its best-effort summary
+and notification cleanup, removes its own pidfile, and then exits nonzero.
 
 Redial policy specifics (2026-07-29): a `reason=stop` marker consumed after
 the `--call-end-grace` window is judged a genuine call end — the supervisor
@@ -127,10 +216,36 @@ redial budget respected, failed dial backs off and success resets,
 stop-after-grace exits 0 without a dial, early stop still redials,
 same-second double-marker both consumed, missing `listener.ready` refuses
 then honors the pending request, `REDIAL-NO-MEDIA` flagged and paged, and the
-synthetic `no_stream` marker redials and hangs up the deaf CallSid.
+synthetic `no_stream` marker redials and hangs up the deaf CallSid. The same
+suite drives all six qualifying first-drop reasons through a stub operator
+wrapper, proves the switch latches without double-consuming a marker, keeps the
+known/default dial unchanged, refuses+pages an invalid fallback, preserves the
+post-grace stop, and verifies that routing never creates admission evidence.
+
+`tests/operator_escalation.sh` covers the escalation rule against the **real**
+script: `EARSHOT_AUTORUN_DECIDE_ONLY=1` prints the decision and exits before any
+dial, pidfile claim, STOP clear, or mail, so the cases test what ships
+rather than a copy of its `sed` expressions. They assert: a screened venue with
+a usable, rehearsed handler auto-escalates; missing config or missing rehearsal
+refuses; a `held` venue is untouched; a screened venue cannot be forced off;
+explicit first-dial enable still requires rehearsal; unknown/reservation-window
+venues automatically arm the first-drop fallback without a circular venue
+rehearsal; missing capability refuses; an **empty** `PASSCODE` still launches;
+and a `TBD` one still refuses. Stubbed wrapper cases additionally prove the
+configured cell is retried only after the failed page leg is closed, the bridge
+is dialed once, ambiguous page origination is not retried, and no admission
+receipt is auto-minted. A fixture registry carrying
+`operator_screened` inside `admission_detail` prose guards the lookup against
+reading prose as a verdict. The same offline launcher seam proves a nonzero
+launcher status remains scheduler-visible after the summary and that a
+zero-frame clean child exits with the distinct unauditable-audio status 10;
+both cases launch exactly once, write their summary, and remove the supervisor
+pidfile without touching a network.
 
 ## Migration status
 
-Supervision is split among event-specific shell hubs and file/process
-conventions. Replace marker polling and implicit PIDs with typed
-`RunHandle`/`SupervisorEvent` records before generalizing retry behavior.
+Supervision is now generic one-RunPlan shell orchestration with one launch and
+launcher-PID-only shutdown. Marker/PID typing remains compatibility debt:
+replace file polling and implicit PID records with typed
+`RunHandle`/`SupervisorEvent` records without reintroducing re-arm or group
+signals.

@@ -11,9 +11,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 
-use super::{
-    AudioSource, LatencyClass, SourceDescriptor, SourceError, SourceExit, SourceKind,
-};
+use super::{AudioSource, LatencyClass, SourceDescriptor, SourceError, SourceExit, SourceKind};
 use crate::clock::MonotonicNs;
 use crate::ring::RingSender;
 use crate::types::{AudioFrame, SourceId};
@@ -40,9 +38,7 @@ impl ReplaySource {
                 ),
             )));
         }
-        let pcm = reader
-            .samples::<i16>()
-            .collect::<Result<Vec<_>, _>>()?;
+        let pcm = reader.samples::<i16>().collect::<Result<Vec<_>, _>>()?;
         Ok(ReplaySource {
             pcm,
             sample_rate_hz: spec.sample_rate,

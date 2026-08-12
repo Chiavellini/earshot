@@ -314,9 +314,15 @@ mod tests {
             .join("bpe.model");
         if !path.exists() {
             if std::env::var_os("EARSHOT_REQUIRE_MODELS").is_some() {
-                panic!("EARSHOT_REQUIRE_MODELS set but {} missing — run scripts/fetch-models.sh", path.display());
+                panic!(
+                    "EARSHOT_REQUIRE_MODELS set but {} missing — run scripts/fetch-models.sh",
+                    path.display()
+                );
             }
-            eprintln!("SKIP: {} not present — run scripts/fetch-models.sh", path.display());
+            eprintln!(
+                "SKIP: {} not present — run scripts/fetch-models.sh",
+                path.display()
+            );
             return None;
         }
         Some(TokenTable::from_bpe_model(&path).unwrap())
@@ -344,7 +350,10 @@ mod tests {
         assert_eq!(enc(&t, "LIGHT UP"), "▁ L IGHT ▁UP");
         assert_eq!(enc(&t, "LOVELY CHILD"), "▁LOVE LY ▁CHI L D");
         assert_eq!(enc(&t, "recession"), "▁RE CE S S ION");
-        assert_eq!(enc(&t, "artificial intelligence"), "▁A R T IF IC I AL ▁IN TE LL IG ENCE");
+        assert_eq!(
+            enc(&t, "artificial intelligence"),
+            "▁A R T IF IC I AL ▁IN TE LL IG ENCE"
+        );
     }
 
     fn kw(phrase: &str, variants: &[&str], prefixes: &[&str]) -> KeywordConfig {
@@ -368,11 +377,18 @@ mod tests {
     #[test]
     fn fast_entry_is_token_prefix_of_confirmed_never_reencoded() {
         let Some(t) = table() else { return };
-        let entries =
-            compile(&[kw("recession", &["recession", "recessions"], &["reces"])], &t, 0.25, 2.0)
-                .unwrap();
+        let entries = compile(
+            &[kw("recession", &["recession", "recessions"], &["reces"])],
+            &t,
+            0.25,
+            2.0,
+        )
+        .unwrap();
         assert_eq!(entries.len(), 3);
-        let conf: Vec<_> = entries.iter().filter(|e| e.tier == Tier::Confirmed).collect();
+        let conf: Vec<_> = entries
+            .iter()
+            .filter(|e| e.tier == Tier::Confirmed)
+            .collect();
         let fast: Vec<_> = entries.iter().filter(|e| e.tier == Tier::Fast).collect();
         assert_eq!(conf[0].tokens.join(" "), "▁RE CE S S ION");
         // "reces" covers ▁RE CE S exactly — a strict token-prefix of the full word.
@@ -383,7 +399,11 @@ mod tests {
         // The trap case: "artificial intel" must be cut from the FULL word's
         // tokens (… ▁IN TE LL), never independently encoded (… ▁IN T EL).
         let entries = compile(
-            &[kw("ai", &["artificial intelligence"], &["artificial intel"])],
+            &[kw(
+                "ai",
+                &["artificial intelligence"],
+                &["artificial intel"],
+            )],
             &t,
             0.25,
             2.0,
@@ -397,16 +417,31 @@ mod tests {
     fn prefix_covering_whole_variant_is_rejected() {
         let Some(t) = table() else { return };
         let err = compile(&[kw("go", &["go"], &["go"])], &t, 0.25, 2.0).unwrap_err();
-        assert!(matches!(err, CompileError::PrefixNotShorter { .. }), "{err}");
+        assert!(
+            matches!(err, CompileError::PrefixNotShorter { .. }),
+            "{err}"
+        );
     }
 
     #[test]
     fn render_and_label_round_trip() {
         let Some(t) = table() else { return };
-        let entries = compile(&[kw("recession", &["recession"], &["reces"])], &t, 0.25, 2.0).unwrap();
+        let entries = compile(
+            &[kw("recession", &["recession"], &["reces"])],
+            &t,
+            0.25,
+            2.0,
+        )
+        .unwrap();
         let rendered = render_keywords(&entries);
-        assert!(rendered.contains("▁RE CE S S ION :2 #0.25 @kw0_conf0\n"), "{rendered}");
-        assert!(rendered.contains("▁RE CE S :2 #0.15 @kw0_fast0\n"), "{rendered}");
+        assert!(
+            rendered.contains("▁RE CE S S ION :2 #0.25 @kw0_conf0\n"),
+            "{rendered}"
+        );
+        assert!(
+            rendered.contains("▁RE CE S :2 #0.15 @kw0_fast0\n"),
+            "{rendered}"
+        );
         for e in &entries {
             assert_eq!(parse_label(&e.label), Some((e.keyword, e.tier)));
         }

@@ -92,7 +92,13 @@ impl JitterBuffer {
     fn new(jitter_ms: u32) -> Self {
         // At least 1 packet of reorder tolerance; jitter_ms/20 otherwise.
         let depth = ((jitter_ms / PACKET_MS) as usize).max(1);
-        JitterBuffer { buf: BTreeMap::new(), next: None, depth, last16: None, cycles: 0 }
+        JitterBuffer {
+            buf: BTreeMap::new(),
+            next: None,
+            depth,
+            last16: None,
+            cycles: 0,
+        }
     }
 
     /// Extend a 16-bit RTP seq to a monotonic 64-bit value, counting wrap cycles.
@@ -176,7 +182,12 @@ impl SipRtpSource {
     pub fn bind(addr: &str, source_id: SourceId, jitter_ms: u32) -> Result<Self, SourceError> {
         let socket = std::net::UdpSocket::bind(addr)?;
         socket.set_nonblocking(true)?;
-        Ok(SipRtpSource { socket, source_id, jitter_ms, idle_timeout: IDLE_TIMEOUT })
+        Ok(SipRtpSource {
+            socket,
+            source_id,
+            jitter_ms,
+            idle_timeout: IDLE_TIMEOUT,
+        })
     }
 
     /// Shorten the dead-stream idle timeout (tests; default 8 s).
@@ -326,7 +337,13 @@ mod tests {
     fn jitter_reorders_within_depth() {
         let mut j = JitterBuffer::new(40); // depth 2
         j.push(0, ts(), vec![0]);
-        assert_eq!(j.drain_ready().into_iter().map(|(_, p)| p[0]).collect::<Vec<_>>(), vec![0]);
+        assert_eq!(
+            j.drain_ready()
+                .into_iter()
+                .map(|(_, p)| p[0])
+                .collect::<Vec<_>>(),
+            vec![0]
+        );
         // 2 arrives before 1 — held until 1 fills the gap.
         j.push(2, ts(), vec![2]);
         assert!(j.drain_ready().is_empty(), "must hold 2 while 1 is missing");
@@ -339,7 +356,13 @@ mod tests {
     fn jitter_skips_persistent_gap() {
         let mut j = JitterBuffer::new(20); // depth 1
         j.push(0, ts(), vec![0]);
-        assert_eq!(j.drain_ready().into_iter().map(|(_, p)| p[0]).collect::<Vec<_>>(), vec![0]);
+        assert_eq!(
+            j.drain_ready()
+                .into_iter()
+                .map(|(_, p)| p[0])
+                .collect::<Vec<_>>(),
+            vec![0]
+        );
         // 1 is lost forever; 2 and 3 arrive → once deeper than depth, skip 1.
         j.push(2, ts(), vec![2]);
         j.push(3, ts(), vec![3]);

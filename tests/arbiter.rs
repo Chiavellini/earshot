@@ -43,7 +43,10 @@ fn run_dual(mode: ArbiterMode) -> earshot::telemetry::PipelineReport {
         total_ms: 2000,
         tone_hz: 440.0,
         amplitude: 0.6,
-        bursts: vec![Burst { onset_ms: 1000, dur_ms: 500 }],
+        bursts: vec![Burst {
+            onset_ms: 1000,
+            dur_ms: 500,
+        }],
     };
     let dir = tempfile::tempdir().unwrap();
     let wav = dir.path().join("fixture.wav");
@@ -61,7 +64,17 @@ fn run_dual(mode: ArbiterMode) -> earshot::telemetry::PipelineReport {
 
     let detector = Box::new(EnergyStubDetector::for_standard_fixture());
     let table = DecisionTable::from_keywords(&keywords());
-    run_pipeline("arbiter-e2e", 160, PreprocCfg::default(), source, detector, table, None, Default::default()).unwrap()
+    run_pipeline(
+        "arbiter-e2e",
+        160,
+        PreprocCfg::default(),
+        source,
+        detector,
+        table,
+        None,
+        Default::default(),
+    )
+    .unwrap()
 }
 
 #[test]
@@ -74,7 +87,11 @@ fn take_first_feeds_pipeline_one_clean_stream() {
         "expected ~100 deduped frames, got {}",
         report.frames_in
     );
-    assert_eq!(report.drops.total(), 0, "arbiter must not overflow the pipeline when paced");
+    assert_eq!(
+        report.drops.total(),
+        0,
+        "arbiter must not overflow the pipeline when paced"
+    );
     assert_eq!(report.detections.len(), 1, "the single burst fires once");
 }
 

@@ -59,8 +59,5 @@ pub enum SourceError {
 #[async_trait]
 pub trait AudioSource: Send {
     fn descriptor(&self) -> SourceDescriptor;
-    async fn run(
-        self: Box<Self>,
-        tx: RingSender<AudioFrame>,
-    ) -> Result<SourceExit, SourceError>;
+    async fn run(self: Box<Self>, tx: RingSender<AudioFrame>) -> Result<SourceExit, SourceError>;
 }

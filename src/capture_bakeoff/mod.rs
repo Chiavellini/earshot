@@ -147,7 +147,11 @@ pub fn run_capture_bakeoff(args: CaptureArgs) -> Result<CaptureReport, AnyErr> {
     let cross = cross_deltas(&captures);
     let recommendation = recommend(&legs);
 
-    Ok(CaptureReport { legs, cross, recommendation })
+    Ok(CaptureReport {
+        legs,
+        cross,
+        recommendation,
+    })
 }
 
 pub struct BridgeProbeArgs {
@@ -197,8 +201,16 @@ pub fn run_bridge_probe(args: BridgeProbeArgs) -> Result<BridgeProbeReport, AnyE
 
     std::fs::create_dir_all(&args.out_dir)?;
     let wav_path = write_leg(&args.out_dir, &cap)?;
-    let safe: String = cap.label.chars().map(|c| if c.is_alphanumeric() { c } else { '_' }).collect();
-    let jsonl_path = args.out_dir.join(format!("{safe}.jsonl")).display().to_string();
+    let safe: String = cap
+        .label
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '_' })
+        .collect();
+    let jsonl_path = args
+        .out_dir
+        .join(format!("{safe}.jsonl"))
+        .display()
+        .to_string();
 
     let held_ms = cap
         .frames
@@ -233,7 +245,11 @@ async fn capture_all(
         let (tx, rx) = ring::ring(LEG_RING_CAP);
         rxs.push(rx);
         handles.push(tokio::spawn(async move { inner.run(tx).await }));
-        caps.push(LegCapture { label: labels[i].clone(), sample_rate_hz: 0, frames: Vec::new() });
+        caps.push(LegCapture {
+            label: labels[i].clone(),
+            sample_rate_hz: 0,
+            frames: Vec::new(),
+        });
     }
 
     let deadline = Instant::now() + Duration::from_secs(max_secs);
@@ -245,11 +261,17 @@ async fn capture_all(
                 if caps[i].sample_rate_hz == 0 {
                     caps[i].sample_rate_hz = frame.sample_rate_hz;
                 }
-                caps[i].frames.push(Frame { capture_ts: frame.capture_ts, pcm: frame.pcm });
+                caps[i].frames.push(Frame {
+                    capture_ts: frame.capture_ts,
+                    pcm: frame.pcm,
+                });
             }
         }
         if Instant::now() >= deadline {
-            tracing::warn!(max_secs, "capture bake-off: max duration reached — stopping");
+            tracing::warn!(
+                max_secs,
+                "capture bake-off: max duration reached — stopping"
+            );
             for h in &handles {
                 h.abort();
             }
@@ -278,10 +300,17 @@ fn analyze_leg(cap: &LegCapture, wav_path: Option<String>) -> LegReport {
         .windows(2)
         .map(|w| w[1].capture_ts.saturating_since(w[0].capture_ts))
         .collect();
-    let stalls = intervals.iter().filter(|&&d| d >= STALL_THRESHOLD.as_nanos() as u64).count() as u64;
+    let stalls = intervals
+        .iter()
+        .filter(|&&d| d >= STALL_THRESHOLD.as_nanos() as u64)
+        .count() as u64;
 
     intervals.sort_unstable();
-    let median = if intervals.is_empty() { 0 } else { intervals[intervals.len() / 2] };
+    let median = if intervals.is_empty() {
+        0
+    } else {
+        intervals[intervals.len() / 2]
+    };
     // Jitter = absolute deviation of each interval from the median interval.
     let mut jitter: Vec<u64> = intervals.iter().map(|&d| d.abs_diff(median)).collect();
     jitter.sort_unstable();
@@ -314,7 +343,9 @@ fn pct(sorted: &[u64], q: f64) -> u64 {
 /// PCM (content lag) and adding the difference in first-frame arrival stamps.
 fn cross_deltas(caps: &[LegCapture]) -> Vec<CrossPair> {
     let mut out = Vec::new();
-    let Some(ref_cap) = caps.first() else { return out };
+    let Some(ref_cap) = caps.first() else {
+        return out;
+    };
     if ref_cap.frames.is_empty() {
         return out;
     }
@@ -395,9 +426,7 @@ fn recommend(legs: &[LegReport]) -> Recommendation {
         winner: winner.map(|l| l.label.clone()).unwrap_or_default(),
         runner_up: runner.map(|l| l.label.clone()),
         runner_up_cost_ms: match (winner, runner) {
-            (Some(w), Some(r)) => {
-                Some((r.jitter_p99_us as f64 - w.jitter_p99_us as f64) / 1000.0)
-            }
+            (Some(w), Some(r)) => Some((r.jitter_p99_us as f64 - w.jitter_p99_us as f64) / 1000.0),
             _ => None,
         },
         basis: "lowest p99 inter-frame jitter, tie-broken on stalls (tail-first)".into(),
@@ -405,7 +434,11 @@ fn recommend(legs: &[LegReport]) -> Recommendation {
 }
 
 fn write_leg(dir: &std::path::Path, cap: &LegCapture) -> Result<String, AnyErr> {
-    let safe: String = cap.label.chars().map(|c| if c.is_alphanumeric() { c } else { '_' }).collect();
+    let safe: String = cap
+        .label
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '_' })
+        .collect();
     let wav = dir.join(format!("{safe}.wav"));
     let spec = hound::WavSpec {
         channels: 1,
@@ -446,7 +479,12 @@ impl CaptureReport {
         for l in &self.legs {
             out.push_str(&format!(
                 "{:<14} {:>7} {:>9} {:>10} {:>10} {:>10} {:>7}\n",
-                l.label, l.frames, l.duration_ms, l.jitter_p50_us, l.jitter_p95_us, l.jitter_p99_us,
+                l.label,
+                l.frames,
+                l.duration_ms,
+                l.jitter_p50_us,
+                l.jitter_p95_us,
+                l.jitter_p99_us,
                 l.stalls_over_100ms
             ));
         }
@@ -460,7 +498,9 @@ impl CaptureReport {
         let r = &self.recommendation;
         out.push_str(&format!("\nrecommend: {} ({})\n", r.winner, r.basis));
         if let (Some(ru), Some(cost)) = (&r.runner_up, r.runner_up_cost_ms) {
-            out.push_str(&format!("  runner-up {ru} costs {cost:+.2} ms p99 jitter\n"));
+            out.push_str(&format!(
+                "  runner-up {ru} costs {cost:+.2} ms p99 jitter\n"
+            ));
         }
         out
     }
@@ -607,7 +647,10 @@ mod tests {
             record_dir: None,
         })
         .unwrap_err();
-        assert!(err.to_string().contains("collide"), "unexpected error: {err}");
+        assert!(
+            err.to_string().contains("collide"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
@@ -643,7 +686,10 @@ mod tests {
             out_dir: dir.path().join("probes"),
         })
         .unwrap_err();
-        assert!(err.to_string().contains("no audio"), "unexpected error: {err}");
+        assert!(
+            err.to_string().contains("no audio"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]

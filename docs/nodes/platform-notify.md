@@ -2,42 +2,72 @@
 
 ## Job
 
-Deliver one alert request through available operator channels and report
-whether any channel succeeded.
+Durably require one run-bound alert, deliver it through bounded operator
+channels, and keep delivery separate from explicit human acknowledgement.
 
 ## Owns
 
-Channel selection, message formatting, and delivery success semantics in
-`scripts/notify.sh`.
+`scripts/alertctl.py` owns the structured request, delivery-start,
+delivery-receipt, and acknowledgement facts. It anchors those facts as
+idempotent compatibility observations in the RunPlan's existing append-only,
+hash-chained lifecycle ledger; they never advance typed run state.
+
+`scripts/notify.sh` remains the local mail/desktop/speech adapter.
+`scripts/alert-phone.sh` is the critical fallback: it calls only the operator
+number provisioned outside the repository, emits only Twilio `<Say>` plus a
+pause, polls until the call is answered or definitely fails, and never dials
+an event bridge, conferences a leg, plays DTMF, records, or auto-acknowledges.
 
 ## Does not own
 
 It does not decide when an event is unhealthy, grade runs, retry jobs, discover
-slate changes, store project status, or suppress a caller's failure.
+slate changes, or suppress the originating failure. A delivery result never
+changes a caller's nonzero verdict.
 
 ## Input contracts
 
-`notify.sh <subject> <body> [--quiet]` is the current interface. The desired
-`AlertRequest` adds severity, event/run ID, dedupe key, timestamp, and requested
-channels without embedding SMTP secrets.
+`alertctl.py raise --run-dir <RUN> --severity warning|critical --code <ID>
+--dedupe-key <ID> --subject <TEXT> --body <TEXT>` consumes a verified schema-3
+RunPlan. Event/run/plan/host identity comes only from that plan. The request ID
+is the SHA-256 of plan identity plus severity, code, and dedupe key; repeating
+the same request is a no-op, while changing its body/subject under the same ID
+is refused. The lifecycle receipt envelope supplies the authoritative UTC
+timestamp.
 
 ## Output contracts
 
-Exit zero means at least one channel delivered; exit one means every channel
-failed. Skipped/missing channels are reported. The target `DeliveryReceipt`
-records per-channel success/failure without secret material.
+Every adapter invocation is preceded by an atomic, durable
+`alert.delivery_started` fact. A crash after that fact is ambiguous and is
+never blindly redialed. Its matching `alert.delivery` fact records
+`delivered`, `failed`, or `ambiguous`; only a definite failure is eligible for
+the next bounded phone attempt. The configured phone-attempt count is a
+lifetime bound for the deterministic alert ID, not a fresh allowance each time
+a producer repeats `raise`. A delivered or ambiguous phone outcome suppresses
+automatic redelivery; successful local mail/desktop delivery cannot mask a
+failed critical phone page. Critical requests are delivery-green only after
+the phone channel succeeds or the request has already been explicitly
+acknowledged. Warning requests require only the one-shot local adapter.
+
+`alertctl.py ack --run-dir <RUN> --alert-id <ID> --by <IDENTITY>` is the only
+acknowledgement door. Delivery—SMTP accepted, a desktop notification, or an
+answered phone page—is never acknowledgement. `alertctl.py status` exits
+nonzero while any request remains unacknowledged.
 
 ## Side effects and exclusive resources
 
-It may send SMTP mail, post a macOS notification, and invoke speech. It reads
-mailer credentials from `~/.kalshi/mail_env`; the file and OS notification
-session are external platform resources.
+It may send SMTP mail, post a macOS notification, invoke speech, or call the
+operator phone. Mail credentials remain in `~/.kalshi/mail_env`; critical-call
+credentials and `ALERT_TO_NUMBER` remain in `~/.kalshi/alert_env`. No secret or
+phone number is written to the RunPlan or ledger.
 
 ## Failure contract
 
-Every channel failure is loud and returns nonzero. One successful channel may
-degrade the others but must report them; notification failure never rewrites
-the originating node's verdict.
+Every channel failure is durable and loud. Failure of the severity-required
+channel returns nonzero. An accepted but unacknowledged page remains
+unresolved. Concurrent duplicate requests cannot create two sends from one
+attempt reservation; an incomplete reservation is reported ambiguous.
+Repeated producers cannot reset the retry cap. Notification failure never
+rewrites the originating node's verdict.
 
 ## Parallel work boundary
 
@@ -47,13 +77,18 @@ reimplement SMTP/desktop delivery.
 
 ## Verification
 
-Run `bash -n scripts/notify.sh`, then channel-specific tests with a non-sensitive
-test recipient/session. Exercise missing mail env, quiet mode, one-channel
-success, and all-channel failure.
+Run `python3 tests/alertctl.py` and
+`bash -n scripts/notify.sh scripts/alert-phone.sh`. The offline suite injects
+adapters and proves terminal-run append, request dedupe, bounded critical
+retry, lifetime retry caps, required-channel semantics, warning posture, total
+failure, provider ambiguity, crash-ambiguous reservation, explicit idempotent
+acknowledgement, and post-ack delivery suppression. Production phone
+verification requires a separately authorized test call to the configured
+operator number.
 
 ## Migration status
 
-The unified entry point and any-channel success rule exist, but its API is
-positional shell text and has no durable receipt or dedupe. Add structured
-request/receipt JSON before adding remote messaging channels.
-
+The proof-bearing run-bound contract and phone fallback are implemented.
+Legacy callers that invoke `notify.sh` directly still have only the historical
+unstructured log; migrate terminal lifecycle and nightly reconciliation sites
+to `alertctl.py` before treating their pages as acknowledged.

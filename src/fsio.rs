@@ -38,10 +38,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("ledger.json");
         write_atomic(&path, b"{\"spent_cents\": 7}").unwrap();
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "{\"spent_cents\": 7}");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "{\"spent_cents\": 7}"
+        );
         // Overwrite is atomic too.
         write_atomic(&path, b"{\"spent_cents\": 9}").unwrap();
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "{\"spent_cents\": 9}");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "{\"spent_cents\": 9}"
+        );
         let residue: Vec<_> = std::fs::read_dir(dir.path())
             .unwrap()
             .map(|e| e.unwrap().file_name().into_string().unwrap())

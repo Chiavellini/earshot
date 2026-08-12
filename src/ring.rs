@@ -74,8 +74,18 @@ pub fn ring<T>(capacity: usize) -> (RingSender<T>, RingReceiver<T>) {
         wake_req_ns: AtomicU64::new(0),
     });
     (
-        RingSender { inner: p, drops: drops.clone(), wake: wake.clone() },
-        RingReceiver { inner: c, drops, wake, spin: false, last_wake_ns: None },
+        RingSender {
+            inner: p,
+            drops: drops.clone(),
+            wake: wake.clone(),
+        },
+        RingReceiver {
+            inner: c,
+            drops,
+            wake,
+            spin: false,
+            last_wake_ns: None,
+        },
     )
 }
 
@@ -100,7 +110,9 @@ impl<T> RingSender<T> {
                 fence(Ordering::SeqCst);
                 if self.wake.parked.load(Ordering::Relaxed) {
                     if let Some(t) = self.wake.consumer.get() {
-                        self.wake.wake_req_ns.store(MonotonicNs::now().0, Ordering::Relaxed);
+                        self.wake
+                            .wake_req_ns
+                            .store(MonotonicNs::now().0, Ordering::Relaxed);
                         t.unpark();
                     }
                 }

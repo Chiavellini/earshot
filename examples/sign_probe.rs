@@ -36,8 +36,8 @@ impl Signer {
             .map_err(|_| "KALSHI_API_KEY_ID not set (source ~/.kalshi/env)")?;
         let pem_path = std::env::var("KALSHI_PRIVATE_KEY_PATH")
             .map_err(|_| "KALSHI_PRIVATE_KEY_PATH not set")?;
-        let pem = std::fs::read_to_string(&pem_path)
-            .map_err(|e| format!("read {pem_path}: {e}"))?;
+        let pem =
+            std::fs::read_to_string(&pem_path).map_err(|e| format!("read {pem_path}: {e}"))?;
         let key = RsaPrivateKey::from_pkcs1_pem(&pem)
             .or_else(|_| RsaPrivateKey::from_pkcs8_pem(&pem))
             .map_err(|e| format!("parse private key: {e}"))?;
@@ -68,7 +68,10 @@ impl Signer {
 }
 
 fn now_ms() -> u128 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
 }
 
 fn get_balance(
@@ -163,7 +166,14 @@ async fn probe_ws(signer: &Signer, label: &str, ws_url: &str, rest_base: &str) {
     let path = "/trade-api/ws/v2";
     let mut req_builder = tokio_tungstenite::tungstenite::http::Request::builder()
         .uri(ws_url)
-        .header("Host", ws_url.trim_start_matches("wss://").split('/').next().unwrap())
+        .header(
+            "Host",
+            ws_url
+                .trim_start_matches("wss://")
+                .split('/')
+                .next()
+                .unwrap(),
+        )
         .header("Upgrade", "websocket")
         .header("Connection", "Upgrade")
         .header(
@@ -176,8 +186,11 @@ async fn probe_ws(signer: &Signer, label: &str, ws_url: &str, rest_base: &str) {
     }
     let request = req_builder.body(()).unwrap();
 
-    match tokio::time::timeout(Duration::from_secs(10), tokio_tungstenite::connect_async(request))
-        .await
+    match tokio::time::timeout(
+        Duration::from_secs(10),
+        tokio_tungstenite::connect_async(request),
+    )
+    .await
     {
         Ok(Ok((mut ws, resp))) => {
             println!("  handshake: {}", resp.status());
@@ -186,9 +199,11 @@ async fn probe_ws(signer: &Signer, label: &str, ws_url: &str, rest_base: &str) {
                 "cmd": "subscribe",
                 "params": {"channels": ["orderbook_delta"], "market_ticker": ticker}
             });
-            ws.send(tokio_tungstenite::tungstenite::Message::Text(sub.to_string()))
-                .await
-                .ok();
+            ws.send(tokio_tungstenite::tungstenite::Message::Text(
+                sub.to_string(),
+            ))
+            .await
+            .ok();
             for _ in 0..3 {
                 match tokio::time::timeout(Duration::from_secs(10), ws.next()).await {
                     Ok(Some(Ok(msg))) => {

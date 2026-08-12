@@ -46,7 +46,9 @@ fn dead_source_still_produces_a_run_record() {
     let err = run_pipeline(
         EVENT,
         80,
-        PreprocCfg { resample_to_hz: Some(RATE) },
+        PreprocCfg {
+            resample_to_hz: Some(RATE),
+        },
         Box::new(src),
         Box::new(EnergyStubDetector::for_standard_fixture()),
         DecisionTable::from_keywords(&[]),
@@ -59,15 +61,24 @@ fn dead_source_still_produces_a_run_record() {
     let exit = ExitRecord::with(ExitReason::SourceError, err.to_string());
     let json = build_run_json(EVENT, None, None, &exit).unwrap();
 
-    assert_eq!(json["event_id"], EVENT, "a partial record must still name its event");
+    assert_eq!(
+        json["event_id"], EVENT,
+        "a partial record must still name its event"
+    );
     assert_eq!(json["exit"]["reason"], "source_error");
     assert!(
         json["exit"]["detail"].as_str().unwrap().contains("idle"),
         "the reason the run died must survive into the record: {}",
         json["exit"]["detail"]
     );
-    assert_eq!(json["partial_report"], true, "a report built without a pipeline must say so");
-    assert!(json["orders"].is_array(), "orders must always be an array, never absent");
+    assert_eq!(
+        json["partial_report"], true,
+        "a report built without a pipeline must say so"
+    );
+    assert!(
+        json["orders"].is_array(),
+        "orders must always be an array, never absent"
+    );
     assert_eq!(json["executor_report_missing"], true);
 }
 
@@ -79,7 +90,9 @@ fn clean_drain_record_keeps_pipeline_fields_and_gains_exit() {
     let report = run_pipeline(
         EVENT,
         80,
-        PreprocCfg { resample_to_hz: Some(RATE) },
+        PreprocCfg {
+            resample_to_hz: Some(RATE),
+        },
         Box::new(src),
         Box::new(EnergyStubDetector::for_standard_fixture()),
         DecisionTable::from_keywords(&[]),
@@ -92,10 +105,22 @@ fn clean_drain_record_keeps_pipeline_fields_and_gains_exit() {
 
     assert_eq!(json["event_id"], EVENT);
     assert_eq!(json["exit"]["reason"], "clean_drain");
-    assert!(json["exit"].get("detail").is_none(), "a clean exit carries no detail");
-    assert!(json.get("partial_report").is_none(), "a full report is not partial");
-    assert!(json["frames_in"].as_u64().unwrap() > 0, "pipeline counters must survive");
-    assert!(json["drops"].is_object(), "existing report keys must be untouched");
+    assert!(
+        json["exit"].get("detail").is_none(),
+        "a clean exit carries no detail"
+    );
+    assert!(
+        json.get("partial_report").is_none(),
+        "a full report is not partial"
+    );
+    assert!(
+        json["frames_in"].as_u64().unwrap() > 0,
+        "pipeline counters must survive"
+    );
+    assert!(
+        json["drops"].is_object(),
+        "existing report keys must be untouched"
+    );
 }
 
 /// `AllLegsDied` is a different diagnosis from a single source failing; a

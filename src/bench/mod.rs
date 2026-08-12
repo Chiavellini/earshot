@@ -111,7 +111,10 @@ pub fn run_bench(args: &BenchArgs) -> Result<BenchReport, AnyErr> {
     if calls.is_empty() {
         return Err("no corpus calls match the split/call filter".into());
     }
-    let corpus_hours: f64 = calls.iter().map(|c| c.duration_ms as f64 / 3_600_000.0).sum();
+    let corpus_hours: f64 = calls
+        .iter()
+        .map(|c| c.duration_ms as f64 / 3_600_000.0)
+        .sum();
 
     // Warn once about ground-truth phrases the config can't score.
     let cfg = config::load(&args.config_path)?;
@@ -178,9 +181,11 @@ fn apply_model_dir(cfg: &mut EventConfig, engine: EngineKind, dir: &Path) -> Res
             }
         },
         EngineKind::Stub => {
-            return Err("engine=stub loads no model — --model-dir would be ignored, \
+            return Err(
+                "engine=stub loads no model — --model-dir would be ignored, \
                         producing duplicate cells that look like a null result"
-                .into())
+                    .into(),
+            )
         }
     }
     Ok(())
@@ -212,7 +217,9 @@ fn run_cell(
         let source = Box::new(ReplaySource::from_wav(&call.audio, speed, SourceId(0))?);
         let detector = factory::build_detector(&cfg)?;
         let table = DecisionTable::from_keywords(&cfg.keywords);
-        let preproc = PreprocCfg { resample_to_hz: cfg.pipeline.resample_to_hz };
+        let preproc = PreprocCfg {
+            resample_to_hz: cfg.pipeline.resample_to_hz,
+        };
         tracing::info!(
             engine = ?engine,
             chunk_ms,
@@ -221,13 +228,31 @@ fn run_cell(
             paced = args.paced,
             "bench run"
         );
-        let report = run_pipeline(&call.id, chunk_ms, preproc, source, detector, table, None, Default::default())?;
+        let report = run_pipeline(
+            &call.id,
+            chunk_ms,
+            preproc,
+            source,
+            detector,
+            table,
+            None,
+            Default::default(),
+        )?;
         if report.drops.total() > 0 {
-            return Err(format!("bench run {} dropped {} frames", call.id, report.drops.total()).into());
+            return Err(format!(
+                "bench run {} dropped {} frames",
+                call.id,
+                report.drops.total()
+            )
+            .into());
         }
 
         corpus_hours += call.duration_ms as f64 / 3_600_000.0;
-        let anchor = if args.paced { report.first_capture_ts } else { None };
+        let anchor = if args.paced {
+            report.first_capture_ts
+        } else {
+            None
+        };
         for (i, kw) in cfg.keywords.iter().enumerate() {
             let dets: Vec<&DetectionRecord> = report
                 .detections
@@ -243,17 +268,19 @@ fn run_cell(
                 for &pos in &s.false_alarm_pos_ms {
                     fa_autopsy.push(format!("{} {:?} {}@{}ms", s.phrase, s.tier, call.id, pos));
                 }
-                let entry = agg.entry((s.phrase.clone(), s.tier)).or_insert_with(|| TierScore {
-                    phrase: s.phrase.clone(),
-                    tier: s.tier,
-                    true_positives: 0,
-                    misses: 0,
-                    false_alarms: 0,
-                    false_alarm_pos_ms: Vec::new(),
-                    latency_ms: Vec::new(),
-                    emit_lag_ms: Vec::new(),
-                    consumed_lag_ms: Vec::new(),
-                });
+                let entry = agg
+                    .entry((s.phrase.clone(), s.tier))
+                    .or_insert_with(|| TierScore {
+                        phrase: s.phrase.clone(),
+                        tier: s.tier,
+                        true_positives: 0,
+                        misses: 0,
+                        false_alarms: 0,
+                        false_alarm_pos_ms: Vec::new(),
+                        latency_ms: Vec::new(),
+                        emit_lag_ms: Vec::new(),
+                        consumed_lag_ms: Vec::new(),
+                    });
                 entry.true_positives += s.true_positives;
                 entry.misses += s.misses;
                 entry.false_alarms += s.false_alarms;
@@ -338,8 +365,11 @@ impl BenchReport {
             self.corpus_hours,
             self.calls.len()
         );
-        let model_head =
-            if show_model { format!("{:<model_w$} ", "model") } else { String::new() };
+        let model_head = if show_model {
+            format!("{:<model_w$} ", "model")
+        } else {
+            String::new()
+        };
         out.push_str(&format!(
             "{:<12} {:>6} {model_head}{:<26} {:>9} {:>4} {:>5} {:>4} {:>7} {:>9} {:>8} {:>8} {:>8} {:>9} {:>9} {:>9}\n",
             "engine", "chunk", "phrase", "tier", "tp", "miss", "fa", "recall", "precision", "fa/h",
@@ -347,8 +377,10 @@ impl BenchReport {
         ));
         for cell in &self.cells {
             let model_col = if show_model {
-                let label =
-                    cell.model_dir.as_deref().map_or_else(|| "-".to_string(), model_label);
+                let label = cell
+                    .model_dir
+                    .as_deref()
+                    .map_or_else(|| "-".to_string(), model_label);
                 format!("{label:<model_w$} ")
             } else {
                 String::new()
@@ -396,7 +428,10 @@ mod tests {
 
     #[test]
     fn model_label_is_the_basename() {
-        assert_eq!(model_label("models/ctc-small-2024-03-18"), "ctc-small-2024-03-18");
+        assert_eq!(
+            model_label("models/ctc-small-2024-03-18"),
+            "ctc-small-2024-03-18"
+        );
         assert_eq!(model_label("models/ctc-16/"), "ctc-16");
         assert_eq!(model_label("bare"), "bare");
     }
@@ -411,7 +446,10 @@ mod tests {
         assert_eq!(a.chars().count(), MODEL_COL_MAX);
         assert_eq!(b.chars().count(), MODEL_COL_MAX);
         assert_ne!(a, b, "elided labels collided: {a} vs {b}");
-        assert!(a.ends_with("2024-03-18") && b.ends_with("chunk16"), "{a} / {b}");
+        assert!(
+            a.ends_with("2024-03-18") && b.ends_with("chunk16"),
+            "{a} / {b}"
+        );
         assert!(a.starts_with('…') && b.starts_with('…'));
     }
 
@@ -424,7 +462,9 @@ mod tests {
     fn model_dir_refuses_rather_than_being_ignored() {
         // stub loads no model at all
         let mut cfg = example_cfg("");
-        let err = apply_model_dir(&mut cfg, EngineKind::Stub, &cfg_dir()).unwrap_err().to_string();
+        let err = apply_model_dir(&mut cfg, EngineKind::Stub, &cfg_dir())
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("stub"), "{err}");
 
         // engine selected, but no matching section exists to override
@@ -444,11 +484,17 @@ mod tests {
     fn model_dir_overrides_the_configured_model() {
         let mut cfg = example_cfg("[detector.streaming_ctc]\nmodel_dir = \"models/orig\"\n");
         apply_model_dir(&mut cfg, EngineKind::StreamingCtc, &cfg_dir()).unwrap();
-        assert_eq!(cfg.detector.streaming_ctc.as_ref().unwrap().model_dir, cfg_dir());
+        assert_eq!(
+            cfg.detector.streaming_ctc.as_ref().unwrap().model_dir,
+            cfg_dir()
+        );
 
         let mut cfg = example_cfg("[detector.sherpa_kws]\nmodel_dir = \"models/orig\"\n");
         apply_model_dir(&mut cfg, EngineKind::SherpaKws, &cfg_dir()).unwrap();
-        assert_eq!(cfg.detector.sherpa_kws.as_ref().unwrap().model_dir, cfg_dir());
+        assert_eq!(
+            cfg.detector.sherpa_kws.as_ref().unwrap().model_dir,
+            cfg_dir()
+        );
     }
 
     fn report_with(model_dirs: Vec<Option<&str>>) -> BenchReport {

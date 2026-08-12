@@ -5,16 +5,19 @@
 #
 #   scripts/study-nightly.sh --date 2026-08-05
 #
-# For every staged lane config of that date (webcast-<lc>-<dp>-arm-wc.toml AND
-# twilio-<lc>-<dp>-arm.toml — readiness artifacts are keyed to the config
-# BASENAME, so each lane needs its own), in CALL ORDER (earliest [event]
-# .starts_at first, so a slow study can never leave the nearest event ungated):
-#   * if the twilio twin's keywords_sha256 equals a fresh sibling artifact,
+# For every immutable schema-3 RunPlan whose starts_at_utc falls on that UTC
+# date, in CALL ORDER (so a slow study can never leave the nearest event
+# ungated). Config filenames are labels only: neither issuer tokens nor a
+# filename date participate in selection. The RunPlan pins the exact config
+# and event env used below.
+#   * if another selected config's keywords_sha256 equals a fresh artifact,
 #     CLONE the artifact to this basename (recorded via "cloned_from" — honest:
 #     the gate re-hashes the config itself);
 #   * else run scripts/variant-study.sh (Darwin `say` — laptop only).
-# Pages on: any study failure, any confirmed==0 keyword, missing binary/ORT.
-# Journals per event. Exit 1 if anything needs attention.
+# Every failure belonging to a verified RunPlan raises one proof-bearing
+# critical alert in that run's lifecycle ledger. Only failures that cannot be
+# bound to a trustworthy RunPlan use the legacy date-level notifier. Journals
+# remain per event. Exit nonzero if anything needs attention.
 set -uo pipefail
 REPO="${EARSHOT_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "$REPO"
@@ -31,19 +34,57 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 [[ -n "$DATE" ]] || { echo "usage: study-nightly.sh --date YYYY-MM-DD [--dry-run]" >&2; exit 2; }
-DP=$(python3 -c "
-from datetime import date
-d = date.fromisoformat('$DATE')
-print(f\"{d.strftime('%y')}{d.strftime('%b').lower()}{d.strftime('%d')}\")")
-if [[ "$DRY_RUN" == 1 ]]; then
-  page() { echo "── [dry-run] WOULD PAGE: $1"; echo "$2" | sed 's/^/      /'; }
-else
-  page() { scripts/notify.sh "$1" "$2" --quiet || true; }
-fi
+python3 - "$DATE" <<'PY' >/dev/null 2>&1 || {
+import datetime, sys
+datetime.date.fromisoformat(sys.argv[1])
+PY
+  echo "usage: study-nightly.sh --date YYYY-MM-DD [--dry-run]" >&2
+  exit 2
+}
+ALERTCTL="${_EARSHOT_STUDY_ALERTCTL:-$REPO/scripts/alertctl.py}"
+NOTIFY="${_EARSHOT_STUDY_NOTIFY:-$REPO/scripts/notify.sh}"
 
-[[ "$(uname -s)" == Darwin ]] || { echo "variant-study needs macOS 'say' — laptop only" >&2; exit 2; }
-[[ -x target/release/earshot ]] || { page "study-nightly BLOCKED" "no target/release/earshot — build first"; exit 1; }
-export EARSHOT_BIN=target/release/earshot
+# This compatibility path is deliberately date-level. It is used only when no
+# verified RunPlan can safely accept an AlertRequest.
+legacy_page() {
+  if [[ "$DRY_RUN" == 1 ]]; then
+    echo "── [dry-run] WOULD PAGE (no trustworthy RunPlan): $1"
+    echo "$2" | sed 's/^/      /'
+  else
+    "$NOTIFY" "$1" "$2" --quiet >/dev/null 2>&1 || true
+  fi
+}
+
+# Alert delivery can fail, but it can never erase or replace the originating
+# study failure. alertctl owns durable request/delivery facts and its bounded
+# retry/ambiguity policy; callers invoke it once and never loop delivery.
+critical_alert() {  # <run-dir> <event-id> <code> <dedupe-key> <body>
+  local run_dir="$1" event_id="$2" code="$3" dedupe="$4" body="$5"
+  if [[ "$DRY_RUN" == 1 ]]; then
+    echo "── [dry-run] WOULD REQUIRE CRITICAL ALERT: $event_id code=$code dedupe=$dedupe"
+    return 0
+  fi
+  if [[ ! -x "$ALERTCTL" ]]; then
+    echo "ALERT REFUSED $event_id: alertctl adapter is unavailable at $ALERTCTL" >&2
+    return 0
+  fi
+  EARSHOT_REPO="$REPO" "$ALERTCTL" raise \
+    --run-dir "$run_dir" --severity critical --code "$code" \
+    --dedupe-key "$dedupe" --subject "Nightly study failed: $event_id" \
+    --body "$body" >/dev/null 2>&1 || {
+      echo "ALERT DELIVERY FAILED $event_id: original study failure remains nonzero" >&2
+      return 0
+    }
+}
+
+alert_manifest_runs() {  # <code> <dedupe-key> <body>
+  local code="$1" dedupe="$2" body="$3"
+  local starts_at run_dir cfg ev event_env plan_sha
+  while IFS=$'\x1f' read -r starts_at run_dir cfg ev event_env plan_sha; do
+    [[ -n "$run_dir" ]] || continue
+    critical_alert "$run_dir" "$ev" "$code" "$dedupe" "$body"
+  done < "$MANIFEST"
+}
 
 # macOS ships no GNU timeout, and a detector replay has been observed to hang
 # on an individual item (variant-study.sh:70-84 carries the same helper for the
@@ -140,43 +181,244 @@ phrase_screen_flagged() {  # phrase_screen_flagged <cfg> -> SUFFIXes (may be emp
   rm -f "$out"
 }
 
-# The account env for a config, so preflight can run for real. slate-stage.sh
-# writes configs/<stem>-autorun.env with CONFIG_PATH= pointing back here; that
-# mapping is the only authority (the stem is NOT the config basename).
-account_env_for() {  # account_env_for <cfg> -> path, or empty
-  local cfg="$1" f rec
-  for f in configs/*-autorun.env; do
-    [[ -f "$f" ]] || continue
-    rec=$( set +e +u; . "$f" >/dev/null 2>&1
-           printf '%s\x1f%s' "${CONFIG_PATH:-}" "${ACCOUNT_ENV:-}" ) || true
-    local cp="" ae=""
-    IFS=$'\x1f' read -r cp ae <<<"$rec" || true
-    if [[ "$cp" == "$cfg" ]]; then printf '%s\x1f%s' "$ae" "$f"; return 0; fi
-  done
-  # No autorun env names this config. That is the NORMAL state for an event
-  # whose call time never resolved, because slate-stage.sh only writes the env
-  # when it has a time — so an untimed event silently poisoned preflight too,
-  # on top of never getting a timer. Fall back to the same default account
-  # install-t0-agents.sh and slate-stage.sh already use, so a verdict artifact
-  # always gets written. The event env stays empty: that part genuinely is
-  # missing, and preflight is told so rather than handed a wrong one.
-  printf '%s\x1f' "${EARSHOT_ACCOUNT_ENV:-$HOME/.earshot/ms.env}"
-}
+# Build the complete date manifest before doing any work. RunPlans are the
+# execution authority and are selected only by starts_at_utc. The config scan
+# is a completeness check using parsed event/env metadata: if staging expected
+# a config for this date but failed to compile its schema-3 plan, the entire
+# study is loudly non-green instead of silently studying the surviving subset.
+MANIFEST=$(mktemp "${TMPDIR:-/tmp}/earshot-study-manifest.XXXXXX") || exit 2
+trap 'rm -f -- "$MANIFEST"' EXIT
+if ! python3 - "$REPO" "$DATE" > "$MANIFEST" <<'PY'
+import datetime as dt
+import json
+import sys
+import tomllib
+from fnmatch import fnmatch
+from pathlib import Path
 
-CFGS=$(ls configs/webcast-*-"$DP"-arm-wc.toml configs/twilio-*-"$DP"-arm.toml 2>/dev/null || true)
-[[ -n "$CFGS" ]] || { page "study-nightly: NOTHING STAGED for $DATE" "no lane configs matching $DP — did slate-stage run?"; exit 1; }
+repo = Path(sys.argv[1]).resolve()
+wanted = dt.date.fromisoformat(sys.argv[2])
+sys.path.insert(0, str(repo / "scripts"))
+import eventctl as ec
 
-# Call order: sort by [event].starts_at.
-ORDERED=$(for c in $CFGS; do
-  st=$(sed -n '/^\[event\]/,/^\[/s/^[[:space:]]*starts_at[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$c" | head -1)
-  echo "${st:-9999}|$c"
-done | sort | cut -d'|' -f2)
+errors = []
+expected = {}
+env_scopes = {}
+
+
+def within_repo(path: Path, label: str):
+    try:
+        return path.resolve().relative_to(repo)
+    except ValueError:
+        errors.append(f"{label} escapes the repository: {path}")
+        return None
+
+
+# Use the same literal parser as RunPlan compilation. EVENT_DATE is only a
+# completeness signal; it never selects a plan or overrides starts_at_utc.
+for envp in sorted((repo / "configs").glob("*.env")):
+    try:
+        parsed = ec.parse_event_env(envp)
+    except OSError as exc:
+        errors.append(f"cannot read staged env {envp}: {exc}")
+        continue
+    config_path = parsed.get("config_path")
+    event_date = parsed.get("event_date")
+    if not config_path:
+        continue
+    cfg_abs = (repo / config_path).resolve()
+    cfg_rel = within_repo(cfg_abs, f"{envp.name} CONFIG_PATH")
+    if cfg_rel is None:
+        continue
+    env_scopes.setdefault(cfg_rel.as_posix(), []).append((envp, event_date))
+    if event_date == wanted.isoformat() and not cfg_abs.is_file():
+        errors.append(
+            f"expected staged event {envp.name} has missing CONFIG_PATH "
+            f"{cfg_rel.as_posix()} and therefore no RunPlan"
+        )
+
+
+for cfgp in sorted((repo / "configs").glob("*.toml")):
+    if any(fnmatch(cfgp.name, pattern) for pattern in ec.SKIP_CONFIG_GLOBS):
+        continue
+    cfg_rel = cfgp.resolve().relative_to(repo).as_posix()
+    scoped_envs = env_scopes.get(cfg_rel, [])
+    env_expects = any(event_date == wanted.isoformat()
+                      for _envp, event_date in scoped_envs)
+    try:
+        raw = tomllib.loads(cfgp.read_text(errors="replace"))
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        if env_expects:
+            errors.append(f"expected staged config {cfg_rel} is unreadable: {exc}")
+        continue
+    event = raw.get("event")
+    if not isinstance(event, dict) or not event.get("id"):
+        if env_expects:
+            errors.append(f"expected staged config {cfg_rel} has no [event].id")
+        continue
+    starts_raw = event.get("starts_at")
+    starts_date = None
+    if isinstance(starts_raw, str):
+        try:
+            starts = dt.datetime.fromisoformat(starts_raw.replace("Z", "+00:00"))
+            if starts.tzinfo is None:
+                starts = starts.replace(tzinfo=dt.timezone.utc)
+            starts_date = starts.astimezone(dt.timezone.utc).date()
+        except ValueError:
+            pass
+    if starts_date != wanted and not env_expects:
+        continue
+    try:
+        info = ec.load_event_config(cfgp)
+    except (OSError, ec.Refusal) as exc:
+        errors.append(f"expected staged config {cfg_rel} is invalid: {exc}")
+        continue
+    expected[cfg_rel] = info["event_id"]
+    if env_expects and starts_date != wanted:
+        names = ", ".join(envp.name for envp, date in scoped_envs
+                          if date == wanted.isoformat())
+        errors.append(
+            f"expected staged env {names} says {wanted}, but {cfg_rel} "
+            f"starts on {starts_date or 'an unparseable date'} UTC"
+        )
+
+
+selected = {}
+legacy = {}
+events = {}
+for plan_path in sorted((repo / "var" / "runs").glob("*/*/control/run-plan.json")):
+    try:
+        plan = json.loads(plan_path.read_text())
+        starts = dt.datetime.fromisoformat(
+            plan["starts_at_utc"].replace("Z", "+00:00")
+        )
+        if starts.tzinfo is None:
+            raise ValueError("starts_at_utc is timezone-naive")
+        starts = starts.astimezone(dt.timezone.utc)
+    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        errors.append(f"invalid RunPlan candidate {plan_path}: {exc}")
+        continue
+    if starts.date() != wanted:
+        continue
+    config_path = plan.get("config_path")
+    if not isinstance(config_path, str):
+        errors.append(f"RunPlan {plan_path} has no string config_path")
+        continue
+    if plan.get("schema") != ec.PLAN_SCHEMA or plan.get("kind") != "run-plan":
+        legacy.setdefault(config_path, []).append(
+            f"schema={plan.get('schema')!r} at {plan_path}"
+        )
+        continue
+    values = {
+        "starts": starts.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "run_dir": str(plan_path.parent.parent),
+        "config": config_path,
+        "event": plan.get("event_id"),
+        "event_env": plan.get("event_env_path") or "",
+        "plan_sha": plan.get("plan_sha256"),
+    }
+    if not all(isinstance(v, str) for v in values.values()):
+        errors.append(f"RunPlan {plan_path} has non-string study identity fields")
+        continue
+    if any("\x1f" in v or "\n" in v for v in values.values()):
+        errors.append(f"RunPlan {plan_path} has unsafe study identity fields")
+        continue
+    if config_path in selected:
+        errors.append(
+            f"multiple schema-{ec.PLAN_SCHEMA} RunPlans select {config_path} "
+            f"for {wanted}: {selected[config_path]['run_dir']} and "
+            f"{values['run_dir']}"
+        )
+        continue
+    event_id = values["event"]
+    if event_id in events:
+        errors.append(
+            f"multiple schema-{ec.PLAN_SCHEMA} RunPlans select event {event_id} "
+            f"for {wanted}: {events[event_id]} and {values['run_dir']}"
+        )
+        continue
+    selected[config_path] = values
+    events[event_id] = values["run_dir"]
+
+for config_path, event_id in sorted(expected.items()):
+    if config_path in selected:
+        continue
+    historical = legacy.get(config_path, [])
+    suffix = f"; only historical {'; '.join(historical)} exists" if historical else ""
+    errors.append(
+        f"expected staged event {event_id} ({config_path}) has no immutable "
+        f"schema-{ec.PLAN_SCHEMA} RunPlan for {wanted}{suffix}"
+    )
+
+for config_path, values in sorted(selected.items()):
+    if config_path not in expected:
+        errors.append(
+            f"schema-{ec.PLAN_SCHEMA} RunPlan {values['run_dir']} selects "
+            f"{config_path}, but parsed staging metadata does not place that "
+            f"config on {wanted}"
+        )
+
+if not selected:
+    errors.append(f"no immutable schema-{ec.PLAN_SCHEMA} RunPlans exist for {wanted}")
+
+if errors:
+    for error in errors:
+        print(f"REFUSED: study-nightly: {error}", file=sys.stderr)
+    raise SystemExit(1)
+
+for values in sorted(selected.values(), key=lambda item: (
+    item["starts"], item["event"], item["run_dir"]
+)):
+    print("\x1f".join((
+        values["starts"], values["run_dir"], values["config"],
+        values["event"], values["event_env"], values["plan_sha"],
+    )))
+PY
+then
+  legacy_page "study-nightly RUN-PLAN COVERAGE FAILED for $DATE" \
+    "RunPlan selection/completeness failed. No keyword study ran; fix staging so every expected event has one valid schema-3 RunPlan."
+  exit 1
+fi
+
+# Verify every selected plan and its pinned config/env before the first study;
+# otherwise a late corrupt candidate could leave only a partial date measured.
+PLAN_PROBLEMS=0
+while IFS=$'\x1f' read -r starts_at run_dir cfg ev event_env plan_sha; do
+  [[ -n "$run_dir" ]] || continue
+  if ! EARSHOT_REPO="$REPO" python3 scripts/eventctl.py verify \
+      --run-dir "$run_dir" >/dev/null; then
+    echo "REFUSED: study-nightly: RunPlan verification failed for $ev ($run_dir)" >&2
+    PLAN_PROBLEMS=$((PLAN_PROBLEMS + 1))
+  fi
+done < "$MANIFEST"
+if [[ "$PLAN_PROBLEMS" -ne 0 ]]; then
+  legacy_page "study-nightly RUN-PLAN INTEGRITY FAILED for $DATE" \
+    "$PLAN_PROBLEMS selected RunPlan(s) failed integrity or pinned-input verification. No keyword study ran."
+  exit 1
+fi
+
+STUDY_PLATFORM="${_EARSHOT_STUDY_PLATFORM:-$(uname -s)}"
+if [[ "$STUDY_PLATFORM" != Darwin ]]; then
+  echo "variant-study needs macOS 'say' — laptop only" >&2
+  alert_manifest_runs "study_platform_blocked" "nightly-study-platform" \
+    "The RunPlan-bound keyword study cannot execute on this host. Run it on the supported study host before preflight."
+  exit 2
+fi
+EARSHOT_BIN="${EARSHOT_BIN:-target/release/earshot}"
+if [[ ! -x "$EARSHOT_BIN" ]]; then
+  echo "study-nightly BLOCKED: no executable $EARSHOT_BIN — build first" >&2
+  alert_manifest_runs "study_binary_missing" "nightly-study-binary" \
+    "The pinned keyword-study binary is unavailable. Build and verify the study host before preflight."
+  exit 1
+fi
+export EARSHOT_BIN
 
 PROBLEMS=0
-for cfg in $ORDERED; do
+while IFS=$'\x1f' read -r starts_at run_dir cfg ev event_env plan_sha; do
+  [[ -n "$run_dir" ]] || continue
   base=$(basename "$cfg" .toml)
+  RUN_PROBLEM=0 STUDY_EXEC_FAILED=0
   ready="configs/.readiness/${base}.json"
-  ev=$(sed -n '/^\[event\]/,/^\[/s/^[[:space:]]*id[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$cfg" | head -1)
   kw_sha=$(python3 scripts/keywords-extract.py "$cfg" --sha256 2>/dev/null || true)
   n_kw=$(python3 scripts/keywords-extract.py "$cfg" 2>/dev/null | grep -c . || true)
   if [[ "${n_kw:-0}" -eq 0 ]]; then
@@ -195,11 +437,14 @@ PY
   then
     echo "── $base: readiness artifact already fresh + hash-matched — keeping"
   else
-    # Clone from a same-event sibling with identical keyword extraction?
+    # Clone only from another config selected by this date's RunPlans and only
+    # when its exact keyword extraction hash matches. Readiness filenames are
+    # destinations, never event/date selectors.
     CLONED=0
-    for sib in configs/.readiness/*-"$DP"-*.json; do
+    while IFS=$'\x1f' read -r _sib_starts _sib_run sib_cfg _sib_ev _sib_env _sib_sha; do
+      sib="configs/.readiness/$(basename "$sib_cfg" .toml).json"
       [[ -f "$sib" && "$sib" != "$ready" ]] || continue
-      if python3 - "$sib" "$kw_sha" "$base" "$ready" <<'PY'
+      if python3 - "$sib" "$kw_sha" "$base" "$ready" "$DRY_RUN" <<'PY'
 import json, sys
 from datetime import date, datetime
 a = json.load(open(sys.argv[1]))
@@ -207,32 +452,49 @@ if a.get("keywords_sha256") != sys.argv[2]:
     sys.exit(1)
 if (date.today() - datetime.strptime(a.get("date",""), "%Y-%m-%d").date()).days > 1:
     sys.exit(1)
-a["config"] = sys.argv[3]
-a["cloned_from"] = sys.argv[1]
-json.dump(a, open(sys.argv[4] + ".tmp", "w"), indent=1)
-import os
-os.replace(sys.argv[4] + ".tmp", sys.argv[4])
+if sys.argv[5] != "1":
+    a["config"] = sys.argv[3]
+    a["cloned_from"] = sys.argv[1]
+    json.dump(a, open(sys.argv[4] + ".tmp", "w"), indent=1)
+    import os
+    os.replace(sys.argv[4] + ".tmp", sys.argv[4])
 sys.exit(0)
 PY
       then
-        echo "── $base: CLONED readiness from $(basename "$sib") (identical keyword set)"
+        if [[ "$DRY_RUN" == 1 ]]; then
+          echo "── [dry-run] WOULD CLONE readiness from $(basename "$sib") to $ready (identical keyword set)"
+        else
+          echo "── $base: CLONED readiness from $(basename "$sib") (identical keyword set)"
+        fi
         CLONED=1
         break
       fi
-    done
+    done < "$MANIFEST"
     if [[ "$CLONED" -eq 0 && "$DRY_RUN" == 1 ]]; then
       echo "── [dry-run] WOULD run variant-study.sh $cfg (artifact stale or hash-mismatched)"
     elif [[ "$CLONED" -eq 0 ]]; then
       echo "════ $(date -u '+%H:%M:%SZ') variant-study $base ════"
-      if ! scripts/variant-study.sh "$cfg" "/tmp/variant-study-$base" 2>&1 | tail -25; then
-        page "study FAILED: $base" "variant-study.sh exited nonzero for $cfg — the readiness gate will refuse this event. Diagnose tonight."
+      scripts/variant-study.sh "$cfg" "/tmp/variant-study-$base" \
+        > "/tmp/study-$base.log" 2>&1
+      VS_RC=$?
+      tail -25 "/tmp/study-$base.log"
+      if (( VS_RC >= 2 )); then
+        echo "study FAILED TO RUN: $base (variant-study.sh exit=$VS_RC; readiness gate will refuse)" >&2
         PROBLEMS=$((PROBLEMS+1))
+        RUN_PROBLEM=1
+        STUDY_EXEC_FAILED=1
+      elif (( VS_RC == 1 )); then
+        echo "study measured one or more dead words for $base; resolving below"
       fi
     fi
   fi
   # Read the result — an unread study is how ZETA armed with confirmed:0.
   DEAD="" ; STUDY_DIR="/tmp/variant-study-$base" ; RESOLUTION=""
-  if [[ -f "$ready" ]]; then
+  if [[ "$STUDY_EXEC_FAILED" == 1 ]]; then
+    # A stale artifact may predate the failed invocation. It is not evidence
+    # from this attempt and must never drive widening or acknowledgement.
+    RESOLUTION="STUDY-COULD-NOT-RUN (prior readiness ignored)"
+  elif [[ -f "$ready" ]]; then
     DEAD=$(dead_suffixes "$ready")
     if [[ -n "$DEAD" ]]; then
       # ── 1. AUTOPSY: only NO-EVIDENCE/WEAK words are a widening problem ──
@@ -244,69 +506,44 @@ PY
       for d in $ORIG_DEAD; do grep -qw "$d" <<<"$WIDEN" || NEARMISS="$NEARMISS $d"; done
       NEARMISS="${NEARMISS# }"
 
-      # ── 2. WIDEN + 3. RE-STUDY ────────────────────────────────────────
-      WIDENED="" RESTUDY_FAILED=0
-      if [[ -n "$WIDEN" && "$DRY_RUN" == 1 ]]; then
-        echo "── [dry-run] WOULD widen: $WIDEN"
-        python3 scripts/variant-widen.py --config "$cfg" \
-          --only "$(tr ' ' ',' <<<"$WIDEN")" || true
-        echo "── [dry-run] WOULD re-run variant-study.sh $cfg"
-      elif [[ -n "$WIDEN" ]]; then
-        # PROPOSES ONLY: variant-study.sh re-scores every candidate against the
-        # real detector below, so a bad candidate comes back 0 and changes
-        # nothing. --write deliberately invalidates keywords_sha256 — the
-        # widened set is UNSTUDIED until the re-run rewrites the artifact, and
-        # preflight must refuse it until then.
-        if python3 scripts/variant-widen.py --config "$cfg" \
-             --only "$(tr ' ' ',' <<<"$WIDEN")" --write > "/tmp/widen-$base.txt" 2>&1; then
-          # awk, not sed: BSD sed does not read \t in a pattern as a tab.
-          WIDENED=$(awk -F'\t' '$1=="WROTE"{print $2}' "/tmp/widen-$base.txt" | tr '\n' ' ')
-          cat "/tmp/widen-$base.txt"
+      # ── 2. PROPOSE, NEVER MUTATE A PUBLISHED RUN ───────────────────────
+      # The schema-3 RunPlan pins the config bytes. The historical --write +
+      # re-study path changed those bytes underneath an immutable plan, which
+      # invalidated the very ledger needed to report the failure. A widening
+      # proposal is still useful, but applying it must produce a new config
+      # hash and therefore a new RunPlan attempt before another measurement.
+      PROPOSAL="/tmp/widen-proposal-$base.txt"
+      if [[ -n "$WIDEN" ]]; then
+        if [[ "$DRY_RUN" == 1 ]]; then
+          echo "── [dry-run] WOULD PROPOSE widening for: $WIDEN"
+          python3 scripts/variant-widen.py --config "$cfg" \
+            --only "$(tr ' ' ',' <<<"$WIDEN")" || true
         else
-          echo "⚠ variant-widen.py failed for $base" >&2; cat "/tmp/widen-$base.txt" >&2
+          python3 scripts/variant-widen.py --config "$cfg" \
+            --only "$(tr ' ' ',' <<<"$WIDEN")" > "$PROPOSAL" 2>&1 || true
+          cat "$PROPOSAL"
         fi
-        if [[ -n "$WIDENED" ]]; then
-          echo "════ $(date -u '+%H:%M:%SZ') RE-study $base after widening: $WIDENED ════"
-          scripts/variant-study.sh "$cfg" "$STUDY_DIR-widened" > "/tmp/restudy-$base.log" 2>&1
-          RS_RC=$?
-          tail -25 "/tmp/restudy-$base.log"
-          STUDY_DIR="$STUDY_DIR-widened"
-          # rc 1 = some keyword scored 0 (expected — that is the residue we ack
-          # below). rc 2 = the study could NOT RUN (no binary, no ORT dylib, no
-          # [detector] block). Those are opposite situations and conflating them
-          # is how a widening that never executed gets acked as "still dead".
-          if (( RS_RC >= 2 )); then
-            page "RE-STUDY COULD NOT RUN: $base" \
-              "Widened $WIDENED, but scripts/variant-study.sh exited $RS_RC — it did not measure anything (see /tmp/restudy-$base.log; the usual causes are a missing target/release/earshot or ORT_DYLIB_PATH). The config's keywords_sha256 has CHANGED, so the readiness artifact no longer matches and preflight WILL refuse this event until a study runs. Nothing was acked."
-            PROBLEMS=$((PROBLEMS+1))
-            RESTUDY_FAILED=1
-          fi
-          DEAD=$(dead_suffixes "$ready")
-        fi
+        RESOLUTION="NEW-RUN-REQUIRED (widening proposed for: $WIDEN)"
+        echo "REFUSED $base: widening is required for $WIDEN; the verified RunPlan pins $cfg, so no config bytes were changed and nothing was auto-acked" >&2
+        PROBLEMS=$((PROBLEMS+1))
+        RUN_PROBLEM=1
       fi
 
-      # ── 4. ACK THE RESIDUE ─────────────────────────────────────────────
+      # ── 3. ACK ONLY MEASURED RESIDUE THAT NEEDS NO CONFIG CHANGE ───────
       ACK="configs/.acks/${base}-dead-word.ack"
       N_RESID=$(wc -w <<<"$DEAD" | tr -d ' ')
-      if [[ "$RESTUDY_FAILED" == 1 ]]; then
-        # The widened set was never MEASURED, so "still dead" is unproven and
-        # acking it would claim evidence that does not exist. Do not ack. The
-        # page above already fired; preflight below writes the RED verdict, so
-        # this is a loud refusal, not the silent third state.
-        RESOLUTION="NOT-ACKED (re-study did not run; widened set unmeasured)"
-      elif [[ -z "$DEAD" ]]; then
-        RESOLUTION="FIXED by widening ($WIDENED)"
-        page "DEAD WORDS FIXED: $base" \
-          "Widened $WIDENED and re-studied: ALL keywords now confirm. Was dead: $ORIG_DEAD. No ack needed; the board arms whole."
+      if [[ -n "$WIDEN" ]]; then
+        : # A new RunPlan must measure the proposed variants before any ack.
       elif (( N_RESID * 3 > n_kw )); then
         # GUARDRAIL (a): a third of the board unhearable is a BROKEN CONFIG —
         # wrong engine, wrong models, a bad `prepare` run — not a set of hard
         # words. Acking would arm a board we do not understand, which is worse
-        # than not arming it. Refuse and page a human.
-        RESOLUTION="REFUSED-TO-ACK ($N_RESID/$n_kw still dead after widening)"
-        page "BROKEN CONFIG (not hard words): $base" \
-          "$N_RESID of $n_kw keywords are STILL dead after widening: $DEAD (was $ORIG_DEAD). More than a third of the board cannot be heard — that is a config/engine/model fault, not a variant fault. REFUSING to auto-ack. Diagnose: scripts/dead-word-autopsy.sh --auto --study-dir $STUDY_DIR"
+        # than not arming it. Refuse; the single run-bound critical alert below
+        # carries this failure to the operator.
+        RESOLUTION="REFUSED-TO-ACK ($N_RESID/$n_kw measured dead)"
+        echo "BROKEN CONFIG $base: $N_RESID of $n_kw measured keywords are dead; refusing to auto-ack" >&2
         PROBLEMS=$((PROBLEMS+1))
+        RUN_PROBLEM=1
       else
         # GUARDRAIL (b): a token the phrase screen flags is a DESCOPE question
         # (the market cannot be resolved by any variant), not a detectability
@@ -330,8 +567,7 @@ PY
             echo "# WRITTEN AUTOMATICALLY by scripts/study-nightly.sh."
             echo "#"
             echo "# These tokens scored 0 Confirmed on clean studio TTS through the"
-            echo "# REAL detector, and still scored 0 after their variants were widened"
-            echo "# from configs/variant-lexicon.toml + scripts/variant-widen.py."
+            echo "# REAL detector with the exact variants pinned by this RunPlan."
             echo "# A word that fails clean TTS will not fire live."
             echo "#"
             echo "# Acked so the event arms and trades its ${n_kw:-?}-keyword board minus these"
@@ -343,7 +579,6 @@ PY
             echo "#"
             echo "# Their markets are knowingly UNSERVED. Do not read silence there as"
             echo "# detector success."
-            [[ -n "$WIDENED" ]] && echo "# Widened first (and re-studied): ${WIDENED% }"
             [[ -n "$NEARMISS" ]] && echo "# NEAR-MISS per autopsy (threshold fix, widening cannot help): $NEARMISS"
             [[ -n "$REFUSED" ]] && echo "# NOT acked — phrase-screen flagged, descope question: $REFUSED"
             echo "# Tokens: $ACKABLE"
@@ -357,65 +592,38 @@ PY
         fi
         if [[ -n "$REFUSED" ]]; then
           RESOLUTION="ACKED:${ACKABLE:-none} DESCOPE-NEEDED:$REFUSED"
-          page "DESCOPE NEEDED (not a detectability bug): $base" \
-            "These dead tokens are flagged by scripts/market-phrase-screen.py — their armed variants cannot RESOLVE their market (the AAPL 'iPhone 18' class: a perfectly-heard wrong word scores 16/16). NOT auto-acked: $REFUSED. Fix the phrase or scripts/descope-event.sh them; preflight will stay RED until you do. Acked as unserved: ${ACKABLE:-none}. Widened + fixed: ${WIDENED:-none}."
+          echo "DESCOPE NEEDED $base: phrase-screen refused measured tokens $REFUSED" >&2
           PROBLEMS=$((PROBLEMS+1))
+          RUN_PROBLEM=1
         else
           RESOLUTION="ACKED:$ACKABLE"
-          page "DEAD WORDS ACKED: $base" \
-            "Was dead: $ORIG_DEAD. Widened + re-studied: ${WIDENED:-none}. STILL dead and now acked as knowingly UNSERVED: $ACKABLE${NEARMISS:+ | NEAR-MISS (needs a confirmed_threshold change, not variants): $NEARMISS}. The other $((n_kw - N_RESID)) keywords arm normally. Their markets are unserved — do not read silence there as detector success."
+          echo "DEAD WORDS ACKED $base: knowingly unserved=$ACKABLE; $((n_kw - N_RESID)) measured keywords remain eligible"
         fi
       fi
 
     fi
 
-    # ── 5. PREFLIGHT, so a verdict artifact EXISTS either way ────────────
-    # The 08-07 chain died here: no preflight ran, so state/<E>/preflight-
-    # result.json never existed, so assert-ready.sh refused at T-75 and the
-    # launchd `&&` short-circuited arm-on-url.sh out of existence. A RED
-    # verdict is a legal outcome; a MISSING one is the third state.
-    #
-    # ⚠ THIS MUST SIT OUTSIDE the `if [[ -n "$DEAD" ]]` branch above. It was
-    # written inside it, which meant a CLEAN config — zero dead words, nothing
-    # to resolve — still got no verdict artifact and was still refused at T-75.
-    # DKNG on 2026-08-07 was exactly that shape: study ok, no dead words, no
-    # preflight-result.json, no arm.
+    # Preflight is deliberately not embedded here. The canonical prepare-day
+    # chain invokes preflight-nightly next, and control.preflight is the sole
+    # authority that validates the readiness artifact, writes the verdict, and
+    # records study_completed/preflight receipts.
     [[ -n "$DEAD" ]] || RESOLUTION="no dead words"
-    ACCT="" ENVF=""
-    IFS=$'\x1f' read -r ACCT ENVF <<<"$(account_env_for "$cfg")" || true
-    if [[ "$DRY_RUN" == 1 ]]; then
-      echo "── [dry-run] WOULD run preflight-event.sh --config $cfg --account ${ACCT:-<none>}"
-    elif [[ -n "$ACCT" ]]; then
-      echo "════ $(date -u '+%H:%M:%SZ') preflight $base (post-resolution verdict) ════"
-      scripts/preflight-event.sh --config "$cfg" --account "$ACCT" \
-        ${ENVF:+--event-env "$ENVF"} > "/tmp/preflight-$base.log" 2>&1
-      PF_RC=$?
-      echo "preflight-event.sh exit=$PF_RC (log /tmp/preflight-$base.log)"
-      (( PF_RC == 0 )) || PROBLEMS=$((PROBLEMS+1))
-      RESOLUTION="$RESOLUTION preflight=$PF_RC"
-    else
-      # No autorun env ⇒ no account ⇒ no full verdict artifact. Run the
-      # readiness gate alone so the resolution is at least PROVEN, and page
-      # that nothing will write state/<E>/preflight-result.json.
-      scripts/preflight-event.sh --config "$cfg" --only-readiness \
-        > "/tmp/preflight-$base.log" 2>&1
-      PF_RC=$?
-      echo "preflight --only-readiness exit=$PF_RC (no account env for $cfg)"
-      page "NO PREFLIGHT VERDICT POSSIBLE: $base" \
-        "Resolution was ($RESOLUTION) but no configs/*-autorun.env names this config, so there is no ACCOUNT_ENV and preflight-event.sh cannot write state/<EVENT_ID>/preflight-result.json. assert-ready.sh WILL refuse at T-75 (readiness gate alone exited $PF_RC). Stage the event env."
-      PROBLEMS=$((PROBLEMS+1))
-      RESOLUTION="$RESOLUTION preflight=NONE(no-account)"
-    fi
   else
-    page "NO READINESS ARTIFACT: $base" "study did not produce $ready — event will be refused by the gate"
+    echo "NO READINESS ARTIFACT $base: study did not produce $ready; preflight must refuse" >&2
     PROBLEMS=$((PROBLEMS+1))
+    RUN_PROBLEM=1
+    RESOLUTION="NO-READINESS-ARTIFACT"
   fi
   # --dry-run must leave NO trace, journal included: a preview that writes
   # lifecycle entries makes the journal lie about what actually ran.
   [[ -n "$ev" && "$DRY_RUN" == 0 ]] && scripts/journal.sh --event "$ev" --actor study-nightly.sh --action study \
-    --outcome "$([[ -z "${DEAD:-}" && -f "$ready" ]] && echo ok || echo fail)" \
+    --outcome "$([[ "$RUN_PROBLEM" == 1 ]] && echo fail || { [[ -n "${DEAD:-}" ]] && echo warn || echo ok; })" \
     --detail "artifact=$ready${DEAD:+ dead:$DEAD}${RESOLUTION:+ resolution=$RESOLUTION}" --log "$ready" || true
-done
+  if [[ "$RUN_PROBLEM" == 1 ]]; then
+    critical_alert "$run_dir" "$ev" "study_failed" "nightly-study" \
+      "The RunPlan-bound keyword study did not complete cleanly for config $cfg. Inspect study-nightly output and the readiness evidence; preflight and scheduling must remain blocked."
+  fi
+done < "$MANIFEST"
 
 echo "ALL STUDIES DONE $(date -u '+%H:%M:%SZ') — problems: $PROBLEMS"
 [[ "$PROBLEMS" -eq 0 ]] || exit 1

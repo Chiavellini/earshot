@@ -1,7 +1,7 @@
 {
  "config": "webcast-zeta-26aug04-arm-wc",
  "keywords_sha256": "97ef3825e1caa147f89f80295d1be3b42920eb73b0a110abf1cf7f646ed48fd5",
- "date": "2026-08-04",
+ "date": "2026-08-12",
  "engine": "streaming_ctc",
  "voices": [
   "Samantha",
@@ -119,7 +119,7 @@
     "palan tier",
     "pallantir"
    ],
-   "clips": 45,
+   "clips": 44,
    "confirmed": 8
   },
   {

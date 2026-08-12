@@ -14,11 +14,23 @@ digits out of version control: the gitignored `state/hunt/<KEY>-<quarter>.json`
 carrying the numbers and passcodes, and the committed digits-free
 `slate/hunt-status.json` carrying tier, verdict, and provenance.
 
+It also owns **credential-kind classification** in `scripts/dial-in-intake.py`:
+given published release or confirmation text, which digits (if any) may be keyed
+into the phone, and which are spoken to a human. The governing verb decides it —
+"enter / dial / followed by #" is a DTMF credential; "**referencing** / quote /
+cite / provide" is a reference said to a screener. Only the first may be written
+after the comma in `state/hunt/numbers.env`; a line with no comma means the venue
+has no keyable credential at all, which `configs/*-autorun.env` resolves to an
+empty `PASSCODE` rather than `TBD`.
+
 ## Does not own
 
 It does not decide admission, place a call, edit the access registry, discover
 events, prepare an event configuration, resolve a webcast stream, or store the
-digits it finds anywhere a commit can reach. `configs/dial-ins.toml` and
+digits it finds anywhere a commit can reach. `dial-in-intake.py` emits an
+admission **prior** — "expect an operator screen, prepare the handler" — and
+never a verdict; THE MSFT RULE stands, and only a real probe dial sets
+`admission`. `configs/dial-ins.toml` and
 `docs/DIAL-INS.md` remain owned by `control.qualify`; probing remains owned by
 `control.admission`.
 
@@ -101,6 +113,14 @@ playback-versus-bridge dominance rule, a replay-only transcript that must yield
 no bridge, and Ford's absence-is-a-verdict case. `scripts/hunt-daily.sh
 --dry-run` prints every decision and commits nothing. Live evidence lands in
 `VERIFICATIONS.md` under the EDGAR pin.
+
+`python3 scripts/dial-in-intake.py --check` asserts five pinned intake verdicts.
+One is real and is the reason the script exists: the HIMS 2026-08-10 release
+("...**referencing** Meeting ID..."), whose id was stored as DTMF and cost the
+first 17 minutes of that call. The other four are labelled synthetic and encode
+the DTMF-passcode, DTMF-conference-id, registration-gated, and bare-number
+shapes. Exit codes are the machine surface: `0` DTMF, `3` spoken, `4` ambiguous
+or registration-gated, `5` no dial-in.
 
 ## Migration status
 

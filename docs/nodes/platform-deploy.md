@@ -18,6 +18,13 @@ event, right now?* — and answers it at prep time rather than at T-60. It is
 read-only except under `--repair`, which refuses while `src/`, `Cargo.toml`, or
 `Cargo.lock` are dirty so the deployed binary always corresponds to a commit.
 
+The source deploy excludes both runtime authorities: legacy `state/` and typed
+`var/runs/`. Once a schema-3 run is dispatched, the target host owns the
+receipt extension and evidence bytes; a source-tree `rsync --delete` must never
+shorten or remove that history. `var/host-boundary-staging/` is excluded too,
+so a concurrent source deploy cannot invalidate an incoming run snapshot
+between its checksum-stability check and atomic publication.
+
 ## Does not own
 
 It does not tune the host, build/pin an event binary, install event timers,
@@ -57,8 +64,8 @@ in the **installed** `/etc/caddy/Caddyfile`, since every unrouted path returns
 It writes and may delete files inside the explicit remote deployment root,
 connects over SSH, may download model artifacts, and may install/reload TLS
 service configuration. The rsync path must preserve `vendor/`, `target/`,
-`models/`, `corpus/`, `state/`, credentials, and other declared host-local
-assets.
+`models/`, `corpus/`, `state/`, `var/runs/`, the host-boundary staging
+namespace, credentials, and other declared host-local assets.
 
 ## Failure contract
 
@@ -74,7 +81,8 @@ consume only the deployment receipt.
 
 ## Verification
 
-Run `scripts/deploy-box.sh --check-only`, inspect the explicit rsync delta, then
+Run `bash -n scripts/deploy-box.sh`. In a network-authorized release flow, run
+`scripts/deploy-box.sh --check-only`, inspect the explicit rsync delta, then
 perform the real deploy only in an authorized release flow and verify the
 remote platform-library/smoke checks plus TLS configuration.
 

@@ -1,0 +1,127 @@
+{
+ "config": "webcast-ac-26aug12-arm-wc",
+ "keywords_sha256": "6ffc01327a9a6dad572db6811b1bbbce99d0039e1f9bf387ab75524d901f2a4d",
+ "date": "2026-08-11",
+ "engine": "streaming_ctc",
+ "voices": [
+  "Samantha",
+  "Daniel",
+  "Paulina"
+ ],
+ "carriers": 2,
+ "keywords": [
+  {
+   "ticker": "KXEARNINGSMENTIONAC-26AUG12-AIRB",
+   "phrase": "airbus",
+   "variants": [
+    "airbus"
+   ],
+   "clips": 9,
+   "confirmed": 2
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAC-26AUG12-CUBA",
+   "phrase": "cuba",
+   "variants": [
+    "cuba",
+    "cubas",
+    "cuban",
+    "cubans"
+   ],
+   "clips": 29,
+   "confirmed": 72
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAC-26AUG12-HEAD",
+   "phrase": "headwind",
+   "variants": [
+    "headwind",
+    "headwinds"
+   ],
+   "clips": 18,
+   "confirmed": 8
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAC-26AUG12-INFL",
+   "phrase": "inflation",
+   "variants": [
+    "inflation",
+    "inflations"
+   ],
+   "clips": 18,
+   "confirmed": 60
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAC-26AUG12-IRAN",
+   "phrase": "iran",
+   "variants": [
+    "iran",
+    "irans",
+    "middle east"
+   ],
+   "clips": 26,
+   "confirmed": 28
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAC-26AUG12-LAGU",
+   "phrase": "laguardia",
+   "variants": [
+    "laguardia",
+    "laguardias"
+   ],
+   "clips": 18,
+   "confirmed": 28
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAC-26AUG12-LICE",
+   "phrase": "license",
+   "variants": [
+    "license",
+    "licenses",
+    "licensed",
+    "licenseds"
+   ],
+   "clips": 36,
+   "confirmed": 94
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAC-26AUG12-TAIL",
+   "phrase": "tailwind",
+   "variants": [
+    "tailwind",
+    "tailwinds"
+   ],
+   "clips": 18,
+   "confirmed": 0
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAC-26AUG12-TARI",
+   "phrase": "tariff",
+   "variants": [
+    "tariff",
+    "tariffs"
+   ],
+   "clips": 18,
+   "confirmed": 34
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAC-26AUG12-WEAT",
+   "phrase": "weather",
+   "variants": [
+    "weather",
+    "weathers"
+   ],
+   "clips": 16,
+   "confirmed": 22
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAC-26AUG12-WORL",
+   "phrase": "world cup",
+   "variants": [
+    "world cup"
+   ],
+   "clips": 9,
+   "confirmed": 8
+  }
+ ]
+}

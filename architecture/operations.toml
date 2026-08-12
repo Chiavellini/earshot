@@ -1,0 +1,268 @@
+schema_version = 2
+authority = "canonical-event-operations"
+
+# This is the small, public operations surface. Every public invocation starts
+# at one facade; backing scripts below remain node-owned internal adapters.
+[[operator_command]]
+name = "surface"
+argv = ["scripts/opsctl.sh", "surface"]
+arguments = ""
+host = "laptop"
+purpose = "List the complete supported operator surface."
+
+[[operator_command]]
+name = "prepare-day"
+argv = ["scripts/opsctl.sh", "prepare-day"]
+arguments = "--date YYYY-MM-DD [--dry-run] [--no-mail]"
+host = "laptop"
+purpose = "Run stage, access binding checks, study, proof-bearing preflight, and typed scheduling for one UTC date."
+
+[[operator_command]]
+name = "stage"
+argv = ["scripts/opsctl.sh", "stage"]
+arguments = "--date YYYY-MM-DD"
+host = "laptop"
+purpose = "Stage a UTC event date and compile immutable schema-3 RunPlans."
+
+[[operator_command]]
+name = "access"
+argv = ["scripts/opsctl.sh", "access"]
+arguments = "--date YYYY-MM-DD"
+host = "laptop"
+purpose = "Require a canonical public or pre-established-session AccessPlan for every active webcast RunPlan."
+
+[[operator_command]]
+name = "bind-access"
+argv = ["scripts/opsctl.sh", "bind-access"]
+arguments = "--run-dir PATH --access-mode MODE --resolver-kind KIND [resolver/session options]"
+host = "laptop"
+purpose = "Bind one immutable webcast RunPlan to an explicit non-secret acquisition prerequisite."
+
+[[operator_command]]
+name = "study"
+argv = ["scripts/opsctl.sh", "study"]
+arguments = "--date YYYY-MM-DD [--dry-run]"
+host = "laptop"
+purpose = "Measure keyword readiness for every staged lane on a UTC event date."
+
+[[operator_command]]
+name = "preflight"
+argv = ["scripts/opsctl.sh", "preflight"]
+arguments = "--date YYYY-MM-DD [--no-mail]"
+host = "laptop"
+purpose = "Produce proof-bearing preflight verdicts without launching a run."
+
+[[operator_command]]
+name = "schedule"
+argv = ["scripts/opsctl.sh", "schedule"]
+arguments = "--date YYYY-MM-DD [--dry-run]"
+host = "laptop"
+purpose = "Install only preflight-passed runs and prove the loaded job readback."
+
+[[operator_command]]
+name = "status"
+argv = ["scripts/opsctl.sh", "status"]
+arguments = "EVENT_ID | YYYY-MM-DD | today"
+host = "laptop"
+purpose = "Read the typed lifecycle status without changing it."
+
+[[operator_command]]
+name = "pull"
+argv = ["scripts/opsctl.sh", "pull"]
+arguments = "(--date YYYY-MM-DD | --event EVENT_ID) [--dry-run]"
+host = "laptop"
+purpose = "Retrieve terminal box runs through the verified host boundary."
+
+[[operator_command]]
+name = "audit"
+argv = ["scripts/opsctl.sh", "audit"]
+arguments = "--run-dir var/runs/EVENT_ID/RUN_ID"
+host = "laptop"
+purpose = "Validate and deterministically grade one retrieved immutable run."
+
+[[operator_command]]
+name = "audit-day"
+argv = ["scripts/opsctl.sh", "audit-day"]
+arguments = "--date YYYY-MM-DD"
+host = "laptop"
+purpose = "Audit every immutable attempt on a UTC date and publish a derived performance index."
+
+[[operator_command]]
+name = "alerts"
+argv = ["scripts/opsctl.sh", "alerts"]
+arguments = "--run-dir var/runs/EVENT_ID/RUN_ID"
+host = "either"
+purpose = "List durable delivery and acknowledgement state; return nonzero while any alert is unacknowledged."
+
+[[operator_command]]
+name = "ack-alert"
+argv = ["scripts/opsctl.sh", "ack-alert"]
+arguments = "--run-dir PATH --alert-id 64HEX --by ID [--note text]"
+host = "either"
+purpose = "Explicitly acknowledge one run-bound alert after a human has seen it."
+
+[[operator_command]]
+name = "descope"
+argv = ["scripts/opsctl.sh", "descope"]
+arguments = "EVENT_TICKER reason [--fallbacks text]"
+host = "laptop"
+purpose = "Close an intentionally unserved event on the record."
+
+# These may dial, launch, schedule, stop, or prove a run. They are invoked by
+# the canonical surface or by a loaded scheduler job, not ad hoc at T-0.
+[[internal_adapter]]
+path = "scripts/access-plan.py"
+owner = "control.acquire"
+
+[[internal_adapter]]
+path = "scripts/arm-on-url.sh"
+owner = "control.launch"
+
+[[internal_adapter]]
+path = "scripts/descope-event.sh"
+owner = "control.operate"
+
+[[internal_adapter]]
+path = "scripts/event-status.sh"
+owner = "control.operate"
+
+[[internal_adapter]]
+path = "scripts/box-event-install.sh"
+owner = "control.supervise"
+
+[[internal_adapter]]
+path = "scripts/event-autorun.sh"
+owner = "control.supervise"
+
+[[internal_adapter]]
+path = "scripts/install-event-timer.sh"
+owner = "control.supervise"
+
+[[internal_adapter]]
+path = "scripts/install-t0-agents.sh"
+owner = "control.operate"
+
+[[internal_adapter]]
+path = "scripts/install-tls-ingress.sh"
+owner = "platform.deploy"
+
+[[internal_adapter]]
+path = "scripts/launch-event.sh"
+owner = "control.launch"
+
+[[internal_adapter]]
+path = "scripts/launch-webcast.sh"
+owner = "control.launch"
+
+[[internal_adapter]]
+path = "scripts/operator-page.sh"
+owner = "control.operator"
+
+[[internal_adapter]]
+path = "scripts/operator-redial.sh"
+owner = "control.operator"
+
+[[internal_adapter]]
+path = "scripts/preflight-nightly.sh"
+owner = "control.preflight"
+
+[[internal_adapter]]
+path = "scripts/preflight-proof.py"
+owner = "control.preflight"
+
+[[internal_adapter]]
+path = "scripts/redial-supervisor.sh"
+owner = "control.supervise"
+
+[[internal_adapter]]
+path = "scripts/run-audit.py"
+owner = "control.grade"
+
+[[internal_adapter]]
+path = "scripts/audit-day.py"
+owner = "control.grade"
+
+[[internal_adapter]]
+path = "scripts/alertctl.py"
+owner = "platform.notify"
+
+[[internal_adapter]]
+path = "scripts/alert-phone.sh"
+owner = "platform.notify"
+
+[[internal_adapter]]
+path = "scripts/pull-box-state.sh"
+owner = "control.grade"
+
+[[internal_adapter]]
+path = "scripts/schedule-nightly.sh"
+owner = "control.operate"
+
+[[internal_adapter]]
+path = "scripts/schedule-proof.py"
+owner = "control.supervise"
+
+[[internal_adapter]]
+path = "scripts/twilio-dial.sh"
+owner = "control.phone_session"
+
+[[internal_adapter]]
+path = "scripts/twilio-operator-dial.sh"
+owner = "control.operator"
+
+[[internal_adapter]]
+path = "scripts/stage-nightly.sh"
+owner = "control.operate"
+
+[[internal_adapter]]
+path = "scripts/study-nightly.sh"
+owner = "control.operate"
+
+[[internal_adapter]]
+path = "scripts/webcast-autorun.sh"
+owner = "control.supervise"
+
+# Kept at the old path only to give a deterministic refusal and point at the
+# replacement. The original implementation remains recoverable in git history.
+[[retired_entrypoint]]
+path = "scripts/arm-when-url.sh"
+replacement = "scripts/opsctl.sh schedule --date YYYY-MM-DD"
+reason = "Legacy URL watcher bypassed RunPlan and schedule-proof boundaries."
+
+[[retired_entrypoint]]
+path = "scripts/ms-morning.sh"
+replacement = "scripts/opsctl.sh prepare-day --date YYYY-MM-DD"
+reason = "Issuer/date-specific launcher embedded credentials, numbers, posture, and cleanup."
+
+[[retired_entrypoint]]
+path = "scripts/run-arm.sh"
+replacement = "scripts/opsctl.sh schedule --date YYYY-MM-DD"
+reason = "Slug-based arm path bypassed immutable RunPlan scheduling."
+
+[[retired_entrypoint]]
+path = "scripts/wing-autorun.sh"
+replacement = "scripts/opsctl.sh prepare-day --date YYYY-MM-DD"
+reason = "Issuer-specific resolver and arm were replaced by typed generic acquisition and supervision."
+
+# Historical analysis/preparation is retained for provenance but is never a
+# production entrypoint. New dated top-level scripts are rejected by the
+# operations-surface checker unless explicitly classified here.
+[[historical_script]]
+path = "scripts/counterfactual-26aug04.sh"
+reason = "Offline reconstruction for the 2026-08-04 postmortem."
+
+[[historical_script]]
+path = "scripts/restudy-26aug04.sh"
+reason = "One-day keyword study superseded by study-nightly.sh."
+
+[[historical_script]]
+path = "scripts/stage-afternoon-26aug04.py"
+reason = "One-day config generator superseded by stage-nightly.sh."
+
+[[historical_script]]
+path = "scripts/study-afternoon-26aug04.sh"
+reason = "One-day keyword study superseded by study-nightly.sh."
+
+[[historical_script]]
+path = "scripts/shop-resolve-stream.sh"
+reason = "Issuer-specific resolver retained as historical venue evidence; generic acquisition owns future events."

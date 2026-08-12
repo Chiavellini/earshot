@@ -77,8 +77,11 @@ impl LiveMarketValidator<'_> {
                 "fetched": "arm-time",
             });
             let path = rules_dir.join(format!("{}.json", kw.market_ticker));
-            crate::fsio::write_atomic(&path, serde_json::to_string_pretty(&rules).unwrap().as_bytes())
-                .map_err(|e| KalshiError::Validation(format!("store rules: {e}")))?;
+            crate::fsio::write_atomic(
+                &path,
+                serde_json::to_string_pretty(&rules).unwrap().as_bytes(),
+            )
+            .map_err(|e| KalshiError::Validation(format!("store rules: {e}")))?;
 
             let category = self.category_of(market).await;
             out.push(ValidatedMarket {
@@ -129,7 +132,10 @@ pub fn m2_live_gate(markets: &[ValidatedMarket], max_cap_cents: u8) -> Result<()
 /// order acceptance and reaction timing on a real mention market. Logs
 /// early-close capability per market: a mention strike that cannot close
 /// early will not behave like a mention market (VERIFICATIONS §Q4).
-pub fn mention_probe_gate(markets: &[ValidatedMarket], max_cap_cents: u8) -> Result<(), KalshiError> {
+pub fn mention_probe_gate(
+    markets: &[ValidatedMarket],
+    max_cap_cents: u8,
+) -> Result<(), KalshiError> {
     if max_cap_cents > 1 {
         return Err(KalshiError::Risk(format!(
             "mention-probe gate: cap {max_cap_cents}¢ > 1¢ — larger size is an M4 decision, not this posture"
@@ -159,7 +165,10 @@ pub fn mention_probe_gate(markets: &[ValidatedMarket], max_cap_cents: u8) -> Res
 /// spend stays bounded by the config notional caps and the $1 probe ledger
 /// (enforced in `RiskGate::check_order`), which are unchanged. Same early-close
 /// logging as the probe gate.
-pub fn mention_fill_gate(markets: &[ValidatedMarket], max_cap_cents: u8) -> Result<(), KalshiError> {
+pub fn mention_fill_gate(
+    markets: &[ValidatedMarket],
+    max_cap_cents: u8,
+) -> Result<(), KalshiError> {
     if u64::from(max_cap_cents) > crate::risk::MENTION_FILL_CAP_CENTS {
         return Err(KalshiError::Risk(format!(
             "mention-fill gate: cap {max_cap_cents}¢ > {}¢ ceiling — raise MENTION_FILL_CAP_CENTS deliberately, not per-run",
@@ -187,7 +196,10 @@ pub fn mention_fill_gate(markets: &[ValidatedMarket], max_cap_cents: u8) -> Resu
 /// Guaranteed-no-fill guard for the mention probe drill: refuse to send a
 /// buy-YES order that would cross the current best ask. `None` ask (empty
 /// book or missing field) is refused — unknown is dangerous (P3).
-pub fn assert_non_crossing(yes_ask_cents: Option<u64>, price_cents: u32) -> Result<(), KalshiError> {
+pub fn assert_non_crossing(
+    yes_ask_cents: Option<u64>,
+    price_cents: u32,
+) -> Result<(), KalshiError> {
     match yes_ask_cents {
         None => Err(KalshiError::Risk(
             "no best ask visible — refusing to send (cannot prove the order won't fill)".into(),
@@ -235,7 +247,10 @@ mod tests {
         // The spend cap does NOT loosen with the category.
         assert!(mention_probe_gate(std::slice::from_ref(&mention), 2).is_err());
         // A market that can't close early is warned about, not refused.
-        let no_early = ValidatedMarket { can_close_early: Some(false), ..mention };
+        let no_early = ValidatedMarket {
+            can_close_early: Some(false),
+            ..mention
+        };
         assert!(mention_probe_gate(&[no_early], 1).is_ok());
     }
 

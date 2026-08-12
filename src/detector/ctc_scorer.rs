@@ -262,7 +262,12 @@ impl CtcKeywordScorer {
             }
             e.last_fire_frame = Some(frame_idx);
             e.fired = true;
-            out.push(Fired { keyword: e.keyword, tier: e.tier, confidence, frame: frame_idx });
+            out.push(Fired {
+                keyword: e.keyword,
+                tier: e.tier,
+                confidence,
+                frame: frame_idx,
+            });
         }
         out
     }
@@ -286,11 +291,18 @@ mod tests {
     /// uniformly over the other symbols. `token = 0` means a blank/silence frame.
     fn frame(token: usize, p: f32) -> Vec<f32> {
         let rest = (1.0 - p) / (V as f32 - 1.0);
-        (0..V).map(|i| if i == token { p.ln() } else { rest.ln() }).collect()
+        (0..V)
+            .map(|i| if i == token { p.ln() } else { rest.ln() })
+            .collect()
     }
 
     fn target(kw: u16, tier: Tier, tokens: &[u32], threshold: f32) -> KeywordTarget {
-        KeywordTarget { keyword: KeywordId(kw), tier, tokens: tokens.to_vec(), threshold }
+        KeywordTarget {
+            keyword: KeywordId(kw),
+            tier,
+            tokens: tokens.to_vec(),
+            threshold,
+        }
     }
 
     /// Drive a frame sequence and collect all fires (refractory 100 frames).
@@ -345,7 +357,10 @@ mod tests {
             frame(0, 0.95),
         ];
         let fires = run(&mut s, &frames);
-        assert!(fires.iter().any(|f| f.tier == Tier::Fast), "Fast should fire: {fires:?}");
+        assert!(
+            fires.iter().any(|f| f.tier == Tier::Fast),
+            "Fast should fire: {fires:?}"
+        );
         assert!(
             !fires.iter().any(|f| f.tier == Tier::Confirmed),
             "Confirmed must NOT fire without token 3: {fires:?}"
@@ -362,7 +377,13 @@ mod tests {
     #[test]
     fn wrong_tokens_never_fire() {
         let mut s = CtcKeywordScorer::new(&[target(0, Tier::Confirmed, &[1, 2, 3], 0.5)], 0);
-        let frames = vec![frame(4, 0.9), frame(0, 0.9), frame(5, 0.9), frame(0, 0.9), frame(4, 0.9)];
+        let frames = vec![
+            frame(4, 0.9),
+            frame(0, 0.9),
+            frame(5, 0.9),
+            frame(0, 0.9),
+            frame(4, 0.9),
+        ];
         assert!(run(&mut s, &frames).is_empty());
     }
 
@@ -371,7 +392,10 @@ mod tests {
         // tokens present but with weak mass -> confidence below a high threshold
         let mut s = CtcKeywordScorer::new(&[target(0, Tier::Confirmed, &[1, 2, 3], 0.85)], 0);
         let frames = vec![frame(1, 0.35), frame(2, 0.35), frame(3, 0.35)];
-        assert!(run(&mut s, &frames).is_empty(), "weak match must stay below 0.85");
+        assert!(
+            run(&mut s, &frames).is_empty(),
+            "weak match must stay below 0.85"
+        );
 
         // strong mass clears the same threshold
         let mut s2 = CtcKeywordScorer::new(&[target(0, Tier::Confirmed, &[1, 2, 3], 0.85)], 0);
@@ -390,7 +414,11 @@ mod tests {
             frame(1, 0.95),
             frame(2, 0.95),
         ];
-        assert_eq!(run(&mut s, &frames).len(), 1, "refractory should collapse to one fire");
+        assert_eq!(
+            run(&mut s, &frames).len(),
+            1,
+            "refractory should collapse to one fire"
+        );
     }
 
     #[test]
@@ -399,10 +427,17 @@ mod tests {
         // blank). A single sustained 2 must NOT fire it.
         let mut s = CtcKeywordScorer::new(&[target(0, Tier::Confirmed, &[2, 2], 0.5)], 0);
         let sustained = vec![frame(2, 0.95), frame(2, 0.95), frame(2, 0.95)];
-        assert!(run(&mut s, &sustained).is_empty(), "sustained single token is one 2, not two");
+        assert!(
+            run(&mut s, &sustained).is_empty(),
+            "sustained single token is one 2, not two"
+        );
 
         let mut s2 = CtcKeywordScorer::new(&[target(0, Tier::Confirmed, &[2, 2], 0.5)], 0);
         let separated = vec![frame(2, 0.95), frame(0, 0.9), frame(2, 0.95)];
-        assert_eq!(run(&mut s2, &separated).len(), 1, "2,blank,2 is two tokens -> fires");
+        assert_eq!(
+            run(&mut s2, &separated).len(),
+            1,
+            "2,blank,2 is two tokens -> fires"
+        );
     }
 }

@@ -10,7 +10,8 @@ Turn a declared decoder subprocess's raw PCM stdout into a live webcast
 Decoder command spawning, stdout framing, stderr draining, idle detection,
 child cleanup, and HLS `ffmpeg` command construction in `src/source/pipe.rs`,
 plus the continuous HLS edge-fetch runtime adapter in
-`scripts/hls-edge-fetch.py` and its deaf-leg diagnostic in
+`scripts/hls-edge-fetch.py`, the cache-busting HLS segment adapter in
+`scripts/cdn-cachebust-fetch.sh`, and their deaf-leg diagnostic in
 `scripts/test-deaf-leg.py`.
 
 ## Does not own
@@ -49,6 +50,7 @@ tail. Ring pressure produces throttled, counted ingress-drop warnings.
 
 Framing, child lifecycle, and continuous edge fetching stay in
 `src/source/pipe.rs`, `scripts/hls-edge-fetch.py`,
+`scripts/cdn-cachebust-fetch.sh`,
 `scripts/test-deaf-leg.py`, and `tests/pipe_source.rs`. URL resolution and
 command/posture selection belong to `control.acquire`; changing PCM format
 requires the source-port contract.

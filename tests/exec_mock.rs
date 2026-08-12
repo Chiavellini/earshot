@@ -10,8 +10,11 @@ use earshot::config::{KeywordConfig, Policy};
 use earshot::kalshi::auth::{Presigner, Signer};
 use earshot::kalshi::book::{Book, BookCache};
 use earshot::kalshi::executor::{prestage_orders, run_executor, ExecCtx};
+use earshot::kalshi::order_evidence::{
+    OrderEvidenceCommand, OrderEvidenceIdentity, OrderEvidenceJournal, OrderTransitionKind,
+};
 use earshot::kalshi::rest::RestClient;
-use earshot::kalshi::transport::{OrderTransport, StageWire};
+use earshot::kalshi::transport::{OrderTransport, StageWire, WireStaged};
 use earshot::risk::{RiskConfig, RiskGate};
 use earshot::types::{DecisionIntent, KeywordId, Tier};
 use rsa::pkcs1::EncodeRsaPrivateKey;
@@ -68,11 +71,35 @@ struct Rig {
     _state: tempfile::TempDir,
 }
 
+fn evidence_identity() -> OrderEvidenceIdentity {
+    OrderEvidenceIdentity {
+        run_id: "run-exec-mock-001".into(),
+        event_id: "event-exec-mock".into(),
+        kalshi_env: "mock".into(),
+        account_fingerprint: "sha256:exec-mock-account".into(),
+        plan_sha256: "a".repeat(64),
+    }
+}
+
+fn attach_order_evidence(rig: &mut Rig) -> (OrderEvidenceJournal, std::path::PathBuf) {
+    let path = rig._state.path().join("orders.jsonl");
+    let journal = OrderEvidenceJournal::open(&path, evidence_identity()).unwrap();
+    Arc::get_mut(&mut rig.ctx)
+        .expect("test rig must have sole ExecCtx ownership before execution")
+        .order_evidence = Some(journal.sink());
+    (journal, path)
+}
+
 async fn rig(server: &MockServer, cap: u8, budget: u32, dry_run: bool, timeout: Duration) -> Rig {
     rig_kws(server, vec![keyword(cap, budget)], dry_run, timeout).await
 }
 
-async fn rig_kws(server: &MockServer, kws: Vec<KeywordConfig>, dry_run: bool, timeout: Duration) -> Rig {
+async fn rig_kws(
+    server: &MockServer,
+    kws: Vec<KeywordConfig>,
+    dry_run: bool,
+    timeout: Duration,
+) -> Rig {
     let signer = test_signer();
     let rest = RestClient::with_base_and_timeout(server.uri(), signer.clone(), timeout).unwrap();
     let cache = BookCache::new(&[TICKER.to_string()]);
@@ -88,23 +115,37 @@ async fn rig_kws(server: &MockServer, kws: Vec<KeywordConfig>, dry_run: bool, ti
     );
     let state = tempfile::tempdir().unwrap();
     let gate = RiskGate::new(
-        RiskConfig { allowlist_tickers: vec![TICKER.into()], ..Default::default() },
+        RiskConfig {
+            allowlist_tickers: vec![TICKER.into()],
+            ..Default::default()
+        },
         state.path(),
     )
     .unwrap();
     gate.arm();
-    let presigner = Presigner::new(signer, "POST", "/trade-api/v2/portfolio/events/orders".into());
+    let presigner = Presigner::new(
+        signer,
+        "POST",
+        "/trade-api/v2/portfolio/events/orders".into(),
+    );
     let haircuts: HashMap<u16, u32> = (0..kws.len() as u16).map(|i| (i, 0u32)).collect();
     Rig {
         ctx: Arc::new(ExecCtx {
-            transport: OrderTransport::Rest { client: rest.clone(), presigner },
-            rest,
+            transport: OrderTransport::Rest {
+                client: rest.clone(),
+                presigner,
+            },
+            rest: rest.clone(),
             cache,
             gate: Arc::new(gate),
             prestaged: prestage_orders("EV", &kws, StageWire::Rest),
             haircuts,
             dry_run,
             registry: earshot::kalshi::OrderRegistry::default(),
+            order_evidence: None,
+            decision_plan_sha1: "0".repeat(40),
+            keyword_text: HashMap::new(),
+            rest_endpoint_id: rest.endpoint_id(),
         }),
         _state: state,
     }
@@ -125,10 +166,21 @@ async fn fires_exactly_one_signed_post_per_intent() {
             "count": "1.00",
             "time_in_force": "immediate_or_cancel",
             "self_trade_prevention_type": "taker_at_cross",
-            "client_order_id": earshot::kalshi::rest::deterministic_client_order_id("EV:0:Confirmed"),
+            "client_order_id": earshot::kalshi::executor::deterministic_order_client_id(
+                "EV", TICKER, 90, 1, 0, Tier::Confirmed,
+            ),
         })))
         .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
-            "order": {"order_id": "srv-1", "status": "canceled"}
+            "order": {
+                "order_id": "srv-1",
+                "client_order_id": earshot::kalshi::executor::deterministic_order_client_id(
+                    "EV", TICKER, 90, 1, 0, Tier::Confirmed,
+                ),
+                "status": "canceled",
+                "fill_count": "1.00",
+                "remaining_count": "0.00",
+                "average_fill_price": "0.8500"
+            }
         })))
         .expect(1)
         .mount(&server)
@@ -146,14 +198,267 @@ async fn fires_exactly_one_signed_post_per_intent() {
     let o = &report.orders[0];
     assert_eq!(o.order_id.as_deref(), Some("srv-1"));
     assert_eq!(o.order_status.as_deref(), Some("canceled"));
+    assert_eq!(
+        o.wire_state,
+        earshot::kalshi::executor::OrderWireState::Observed
+    );
+    assert_eq!(o.transport_protocol.as_deref(), Some("rest"));
+    assert_eq!(o.protocol_status.as_deref(), Some("http:201"));
+    assert_eq!(o.exchange_accepted, Some(true));
+    assert_eq!(o.order_terminal, Some(true));
+    assert_eq!(
+        o.fill
+            .as_ref()
+            .and_then(|f| f.cumulative_contracts.as_deref()),
+        Some("1.00")
+    );
+    assert_eq!(
+        o.fill.as_ref().and_then(|f| f.average_price.as_deref()),
+        Some("0.8500")
+    );
+    assert!(
+        o.raw_response_body_base64.is_some(),
+        "exact HTTP bytes must be banked"
+    );
     assert!(!o.lost_race);
     assert!(o.reached_wire() && o.ack_ts.is_some());
     assert!(o.ack_ts.unwrap() > o.send_ts.unwrap());
     let edges = report.recorder.snapshot();
-    for edge in ["decision→exec", "handoff→exec", "book_age", "presign_age", "exec→send", "send→ack", "decision→ack", "capture→ack"] {
-        assert!(edges.get(edge).map(|s| s.count > 0).unwrap_or(false), "edge {edge} empty");
+    for edge in [
+        "decision→exec",
+        "handoff→exec",
+        "book_age",
+        "presign_age",
+        "exec→send",
+        "send→ack",
+        "decision→ack",
+        "capture→ack",
+    ] {
+        assert!(
+            edges.get(edge).map(|s| s.count > 0).unwrap_or(false),
+            "edge {edge} empty"
+        );
     }
     assert_eq!(rig.ctx.gate.ledger_spent_cents(), 90); // 1 × 90¢ worst-case debit
+}
+
+#[tokio::test]
+async fn successful_rest_execution_is_durably_journaled_with_exact_bytes_and_verified_id() {
+    let server = MockServer::start().await;
+    let expected_client_order_id = earshot::kalshi::executor::deterministic_order_client_id(
+        "EV",
+        TICKER,
+        90,
+        1,
+        0,
+        Tier::Confirmed,
+    );
+    let exact_response = format!(
+        r#"{{"order":{{"order_id":"srv-evidence-1","client_order_id":"{expected_client_order_id}","status":"canceled","fill_count":"1.00","remaining_count":"0.00","average_fill_price":"0.8500"}}}}"#
+    );
+    Mock::given(method("POST"))
+        .and(path("/portfolio/events/orders"))
+        .and(body_partial_json(serde_json::json!({
+            "client_order_id": expected_client_order_id,
+        })))
+        .respond_with(
+            ResponseTemplate::new(201).set_body_raw(exact_response.as_bytes(), "application/json"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let mut rig = rig(&server, 90, 1, false, Duration::from_secs(5)).await;
+    let expected_request = match &rig
+        .ctx
+        .prestaged
+        .values()
+        .next()
+        .expect("one prestaged order")
+        .wire
+    {
+        WireStaged::Rest { body } => body.to_vec(),
+        WireStaged::Fix { .. } => panic!("REST rig unexpectedly staged FIX"),
+    };
+    let (journal, journal_path) = attach_order_evidence(&mut rig);
+    let (tx, rx) = tokio::sync::mpsc::channel(8);
+    tx.send(intent(1, Tier::Confirmed)).await.unwrap();
+    drop(tx);
+
+    let report = run_executor(rx, rig.ctx.clone()).await;
+    assert_eq!(report.orders[0].order_id.as_deref(), Some("srv-evidence-1"));
+    assert_eq!(rig.ctx.registry.ids(), vec!["srv-evidence-1"]);
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].body, expected_request);
+
+    // Close and replay from disk: this asserts the sequence survived the
+    // writer's acknowledgement/fsync boundary rather than merely residing in
+    // the live snapshot.
+    journal.close().unwrap();
+    let replay = OrderEvidenceJournal::open(&journal_path, evidence_identity()).unwrap();
+    let events = replay.replayed_events();
+    assert!(events
+        .iter()
+        .all(|event| event.client_order_id == expected_client_order_id));
+    assert_eq!(
+        events.iter().map(|event| event.kind()).collect::<Vec<_>>(),
+        vec![
+            OrderTransitionKind::IntentEvaluated,
+            OrderTransitionKind::SendRequested,
+            OrderTransitionKind::InvocationPrepared,
+            OrderTransitionKind::WireAttempted,
+            OrderTransitionKind::ExchangeObserved,
+        ]
+    );
+    assert_eq!(
+        events
+            .iter()
+            .map(|event| event.journal_seq)
+            .collect::<Vec<_>>(),
+        vec![0, 1, 2, 3, 4]
+    );
+    assert_eq!(
+        events
+            .iter()
+            .map(|event| event.order_seq)
+            .collect::<Vec<_>>(),
+        vec![0, 1, 2, 3, 4]
+    );
+
+    match &events[2].transition {
+        OrderEvidenceCommand::InvocationPrepared(receipt) => {
+            assert_eq!(receipt.raw.decode().unwrap(), expected_request);
+        }
+        other => panic!("expected invocation_prepared, got {other:?}"),
+    }
+    match &events[4].transition {
+        OrderEvidenceCommand::ExchangeObserved(receipt) => {
+            assert_eq!(
+                receipt.echoed_client_order_id.as_deref(),
+                Some(expected_client_order_id.as_str())
+            );
+            assert_eq!(receipt.order_id.as_deref(), Some("srv-evidence-1"));
+            assert_eq!(receipt.raw.decode().unwrap(), exact_response.as_bytes());
+            assert_eq!(
+                receipt
+                    .parsed
+                    .as_ref()
+                    .and_then(|value| { value["order"]["client_order_id"].as_str() }),
+                Some(expected_client_order_id.as_str())
+            );
+        }
+        other => panic!("expected exchange_observed, got {other:?}"),
+    }
+    assert!(replay.unresolved_recoveries().is_empty());
+    replay.close().unwrap();
+}
+
+#[tokio::test]
+async fn foreign_echo_is_banked_but_never_promoted_or_registered() {
+    let server = MockServer::start().await;
+    let expected_client_order_id = earshot::kalshi::executor::deterministic_order_client_id(
+        "EV",
+        TICKER,
+        90,
+        1,
+        0,
+        Tier::Confirmed,
+    );
+    let suspicious_response = br#"{"order":{"order_id":"FOREIGN-POST-ID","client_order_id":"00000000-0000-0000-0000-0000deadbeef","status":"resting"}}"#;
+    let suspicious_query = br#"{"orders":[{"order_id":"FOREIGN-QUERY-ID","client_order_id":"00000000-0000-0000-0000-0000deadbeef","status":"resting"}]}"#;
+    Mock::given(method("POST"))
+        .and(path("/portfolio/events/orders"))
+        .respond_with(
+            ResponseTemplate::new(201).set_body_raw(suspicious_response, "application/json"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/portfolio/orders"))
+        .and(query_param(
+            "client_order_id",
+            expected_client_order_id.as_str(),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(suspicious_query, "application/json"))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let mut rig = rig(&server, 90, 1, false, Duration::from_secs(5)).await;
+    let (journal, journal_path) = attach_order_evidence(&mut rig);
+    let (tx, rx) = tokio::sync::mpsc::channel(8);
+    tx.send(intent(1, Tier::Confirmed)).await.unwrap();
+    drop(tx);
+
+    let report = run_executor(rx, rig.ctx.clone()).await;
+    let order = &report.orders[0];
+    assert_eq!(order.order_id, None);
+    assert!(order
+        .refusal
+        .as_deref()
+        .is_some_and(|detail| detail.contains("AMBIGUOUS")));
+    assert!(rig.ctx.registry.ids().is_empty());
+    assert_eq!(
+        rig.ctx.registry.pending_client_ids(),
+        vec![expected_client_order_id.clone()]
+    );
+
+    journal.close().unwrap();
+    let replay = OrderEvidenceJournal::open(&journal_path, evidence_identity()).unwrap();
+    let events = replay.replayed_events();
+    assert_eq!(
+        events.iter().map(|event| event.kind()).collect::<Vec<_>>(),
+        vec![
+            OrderTransitionKind::IntentEvaluated,
+            OrderTransitionKind::SendRequested,
+            OrderTransitionKind::InvocationPrepared,
+            OrderTransitionKind::WireAttempted,
+            OrderTransitionKind::ExchangeObserved,
+            OrderTransitionKind::ReconcileUnresolved,
+        ]
+    );
+    match &events[4].transition {
+        OrderEvidenceCommand::ExchangeObserved(receipt) => {
+            assert_eq!(receipt.raw.decode().unwrap(), suspicious_response);
+            assert_eq!(receipt.echoed_client_order_id, None);
+            assert_eq!(receipt.order_id, None);
+            assert!(receipt.detail.as_deref().is_some_and(|detail| {
+                detail.contains("did not carry the exact expected client_order_id")
+            }));
+            assert_eq!(
+                receipt
+                    .parsed
+                    .as_ref()
+                    .and_then(|value| { value["order"]["order_id"].as_str() }),
+                Some("FOREIGN-POST-ID")
+            );
+        }
+        other => panic!("expected exchange_observed, got {other:?}"),
+    }
+    match &events[5].transition {
+        OrderEvidenceCommand::ReconcileUnresolved(receipt) => {
+            assert_eq!(
+                receipt.raw.as_ref().unwrap().decode().unwrap(),
+                suspicious_query
+            );
+            assert_eq!(
+                receipt
+                    .parsed
+                    .as_ref()
+                    .and_then(|value| { value["orders"][0]["order_id"].as_str() }),
+                Some("FOREIGN-QUERY-ID")
+            );
+            assert!(receipt.detail.contains("no exact echoed client ID"));
+        }
+        other => panic!("expected reconcile_unresolved, got {other:?}"),
+    }
+    let state = &replay.snapshot().orders[0];
+    assert_eq!(state.order_id, None);
+    assert!(!state.terminal);
+    assert_eq!(state.last_kind, OrderTransitionKind::ReconcileUnresolved);
+    replay.close().unwrap();
 }
 
 #[tokio::test]
@@ -172,8 +477,38 @@ async fn lost_race_sends_nothing() {
     assert!(o.lost_race);
     assert!(o.send_ts.is_none());
     assert_eq!(o.best_ask, Some((85, 500)));
-    assert!(o.book_age_ns.is_some(), "book snapshot age must be recorded at decision");
+    assert!(
+        o.book_age_ns.is_some(),
+        "book snapshot age must be recorded at decision"
+    );
     assert_eq!(rig.ctx.gate.ledger_spent_cents(), 0);
+}
+
+#[tokio::test]
+async fn missing_prestaged_order_fails_closed_without_inline_post() {
+    let server = MockServer::start().await;
+    // No POST mock: any inline-built live request would be observable as a
+    // 404/attempt. Remove the arm-time artifact and require a local refusal.
+    let mut rig = rig(&server, 90, 1, false, Duration::from_secs(5)).await;
+    Arc::get_mut(&mut rig.ctx).unwrap().prestaged.clear();
+    let (tx, rx) = tokio::sync::mpsc::channel(8);
+    tx.send(intent(1, Tier::Confirmed)).await.unwrap();
+    drop(tx);
+
+    let report = run_executor(rx, rig.ctx.clone()).await;
+    let order = &report.orders[0];
+    assert_eq!(
+        order.wire_state,
+        earshot::kalshi::executor::OrderWireState::NotAttempted
+    );
+    assert!(order.send_ts.is_none());
+    assert!(order
+        .refusal
+        .as_deref()
+        .unwrap_or_default()
+        .contains("missing arm-time prestaged order"));
+    assert_eq!(rig.ctx.gate.ledger_spent_cents(), 0);
+    assert!(rig.ctx.registry.is_empty());
 }
 
 /// A 1¢ observe-tier intent crossing nothing is the DESIGNED outcome (the
@@ -193,7 +528,10 @@ async fn observe_noncross_is_not_a_lost_race() {
     assert_eq!(report.lost_races, 0);
     assert_eq!(report.observe_noncross, 1);
     let o = &report.orders[0];
-    assert!(o.lost_race, "the per-record flag still marks the non-crossing branch");
+    assert!(
+        o.lost_race,
+        "the per-record flag still marks the non-crossing branch"
+    );
     assert!(o.send_ts.is_none());
     assert_eq!(rig.ctx.gate.ledger_spent_cents(), 0);
 }
@@ -225,7 +563,9 @@ async fn ambiguous_timeout_queries_status_and_never_reposts() {
         .respond_with(
             ResponseTemplate::new(201)
                 .set_delay(Duration::from_secs(3))
-                .set_body_json(serde_json::json!({"order": {"order_id": "slow", "status": "canceled"}})),
+                .set_body_json(
+                    serde_json::json!({"order": {"order_id": "slow", "status": "canceled"}}),
+                ),
         )
         .expect(1) // exactly one POST: a blind retry would make this 2 and fail
         .mount(&server)
@@ -235,10 +575,23 @@ async fn ambiguous_timeout_queries_status_and_never_reposts() {
         .and(path("/portfolio/orders"))
         .and(query_param(
             "client_order_id",
-            earshot::kalshi::rest::deterministic_client_order_id("EV:0:Confirmed"),
+            earshot::kalshi::executor::deterministic_order_client_id(
+                "EV",
+                TICKER,
+                90,
+                1,
+                0,
+                Tier::Confirmed,
+            ),
         ))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "orders": [{"order_id": "srv-9", "status": "canceled"}]
+            "orders": [{
+                "client_order_id": earshot::kalshi::executor::deterministic_order_client_id(
+                    "EV", TICKER, 90, 1, 0, Tier::Confirmed,
+                ),
+                "order_id": "srv-9",
+                "status": "canceled"
+            }]
         })))
         .expect(1)
         .mount(&server)
@@ -253,6 +606,18 @@ async fn ambiguous_timeout_queries_status_and_never_reposts() {
     let o = &report.orders[0];
     assert_eq!(o.order_id.as_deref(), Some("srv-9"));
     assert_eq!(o.order_status.as_deref(), Some("canceled"));
+    assert!(
+        o.send_ts.is_some(),
+        "timeout happened after the wire boundary"
+    );
+    assert_eq!(
+        o.wire_state,
+        earshot::kalshi::executor::OrderWireState::Reconciled
+    );
+    assert_eq!(o.transport_protocol.as_deref(), Some("rest"));
+    assert!(o.transport_error.is_some());
+    assert!(o.reconciliation_ts.is_some());
+    assert!(o.reconciliation_response.is_some());
     // Ledger debited despite the ambiguous send — worst case counts.
     assert_eq!(rig.ctx.gate.ledger_spent_cents(), 90);
 }
@@ -300,8 +665,56 @@ async fn status_query_refuses_a_foreign_order_id() {
         Some("SOMEONE-ELSES-ORDER"),
         "adopted a foreign order id — kill-switch scope would be widened"
     );
-    assert_eq!(o.order_id, None, "no order of ours landed, so none must be recorded");
-    assert!(o.refusal.is_some(), "an unmatched status query must record a refusal");
+    assert_eq!(
+        o.order_id, None,
+        "no order of ours landed, so none must be recorded"
+    );
+    assert!(
+        o.refusal.is_some(),
+        "an unmatched status query must record a refusal"
+    );
+    assert!(
+        o.refusal
+            .as_deref()
+            .unwrap()
+            .contains("AMBIGUOUS attempted send"),
+        "one empty/untrusted query must not claim the order is absent: {:?}",
+        o.refusal
+    );
+    assert!(
+        o.send_ts.is_some(),
+        "the original wire attempt must survive reconciliation"
+    );
+}
+
+#[tokio::test]
+async fn status_query_refuses_a_row_without_an_echoed_client_id() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/portfolio/events/orders"))
+        .respond_with(ResponseTemplate::new(201).set_delay(Duration::from_secs(3)))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/portfolio/orders"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "orders": [{"order_id": "UNVERIFIABLE", "status": "resting"}]
+        })))
+        .mount(&server)
+        .await;
+
+    let rig = rig(&server, 90, 1, false, Duration::from_millis(300)).await;
+    let (tx, rx) = tokio::sync::mpsc::channel(8);
+    tx.send(intent(1, Tier::Confirmed)).await.unwrap();
+    drop(tx);
+    let report = run_executor(rx, rig.ctx.clone()).await;
+    let order = &report.orders[0];
+    assert_eq!(order.order_id, None);
+    assert!(
+        rig.ctx.registry.is_empty(),
+        "unverifiable id widened kill scope"
+    );
+    assert!(order.refusal.as_deref().unwrap().contains("AMBIGUOUS"));
 }
 
 #[tokio::test]
@@ -311,11 +724,21 @@ async fn burst_intents_overlap_not_serialize() {
     // in ~one delay (spawned concurrently), not six (serialized).
     Mock::given(method("POST"))
         .and(path("/portfolio/events/orders"))
-        .respond_with(
+        .respond_with(|request: &wiremock::Request| {
+            let request_body: serde_json::Value = request.body_json().unwrap();
+            let client_order_id = request_body["client_order_id"]
+                .as_str()
+                .expect("executor request omitted client_order_id");
             ResponseTemplate::new(201)
                 .set_delay(Duration::from_millis(200))
-                .set_body_json(serde_json::json!({"order": {"order_id": "srv-b", "status": "canceled"}})),
-        )
+                .set_body_json(serde_json::json!({
+                    "order": {
+                        "order_id": format!("srv-b-{client_order_id}"),
+                        "client_order_id": client_order_id,
+                        "status": "canceled"
+                    }
+                }))
+        })
         .expect(6)
         .mount(&server)
         .await;
@@ -326,12 +749,19 @@ async fn burst_intents_overlap_not_serialize() {
     // Ask must sit under the 15¢ cap for the sweep to be marketable.
     rig.ctx.cache.publish(
         TICKER,
-        Book { yes_bids: vec![(5, 100)], yes_asks: vec![(10, 500)], seq: 2, as_of: MonotonicNs::now() },
+        Book {
+            yes_bids: vec![(5, 100)],
+            yes_asks: vec![(10, 500)],
+            seq: 2,
+            as_of: MonotonicNs::now(),
+        },
     );
 
     let (tx, rx) = tokio::sync::mpsc::channel(8);
     for kw in 0..6u16 {
-        tx.send(intent_for(kw, 15, 1, Tier::Confirmed)).await.unwrap();
+        tx.send(intent_for(kw, 15, 1, Tier::Confirmed))
+            .await
+            .unwrap();
     }
     drop(tx);
     let t0 = std::time::Instant::now();
@@ -343,13 +773,24 @@ async fn burst_intents_overlap_not_serialize() {
         wall < Duration::from_millis(700),
         "6 × 200 ms intents took {wall:?} — executor is serializing the burst"
     );
-    assert!(wall >= Duration::from_millis(200), "mock delay never happened?");
+    assert!(
+        wall >= Duration::from_millis(200),
+        "mock delay never happened?"
+    );
     // Distinct idempotency keys per keyword, and exact ledger math under
     // concurrent record_send calls.
-    let mut ids: Vec<&str> = report.orders.iter().map(|o| o.client_order_id.as_str()).collect();
+    let mut ids: Vec<&str> = report
+        .orders
+        .iter()
+        .map(|o| o.client_order_id.as_str())
+        .collect();
     ids.sort();
     ids.dedup();
-    assert_eq!(ids.len(), 6, "client_order_ids must be distinct across the burst");
+    assert_eq!(
+        ids.len(),
+        6,
+        "client_order_ids must be distinct across the burst"
+    );
     assert_eq!(rig.ctx.gate.ledger_spent_cents(), 90); // 6 × 15¢, no lost updates
 }
 
@@ -358,22 +799,41 @@ async fn burst_with_mixed_outcomes_accounts_exactly() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/portfolio/events/orders"))
-        .respond_with(ResponseTemplate::new(201).set_body_json(
-            serde_json::json!({"order": {"order_id": "srv-m", "status": "canceled"}}),
-        ))
+        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+            "order": {
+                "order_id": "srv-m",
+                "client_order_id": earshot::kalshi::executor::deterministic_order_client_id(
+                    "EV", TICKER, 15, 1, 0, Tier::Confirmed,
+                ),
+                "status": "canceled"
+            }
+        })))
         .expect(1) // only the marketable keyword may POST
         .mount(&server)
         .await;
 
     // kw0 cap 15¢ ≥ ask 10¢ → fires; kw1 cap 5¢ < ask → LOST_RACE.
-    let rig = rig_kws(&server, vec![keyword(15, 1), keyword(5, 1)], false, Duration::from_secs(5)).await;
+    let rig = rig_kws(
+        &server,
+        vec![keyword(15, 1), keyword(5, 1)],
+        false,
+        Duration::from_secs(5),
+    )
+    .await;
     rig.ctx.cache.publish(
         TICKER,
-        Book { yes_bids: vec![(2, 100)], yes_asks: vec![(10, 500)], seq: 2, as_of: MonotonicNs::now() },
+        Book {
+            yes_bids: vec![(2, 100)],
+            yes_asks: vec![(10, 500)],
+            seq: 2,
+            as_of: MonotonicNs::now(),
+        },
     );
 
     let (tx, rx) = tokio::sync::mpsc::channel(8);
-    tx.send(intent_for(0, 15, 1, Tier::Confirmed)).await.unwrap();
+    tx.send(intent_for(0, 15, 1, Tier::Confirmed))
+        .await
+        .unwrap();
     tx.send(intent_for(1, 5, 1, Tier::Confirmed)).await.unwrap();
     drop(tx);
     let report = run_executor(rx, rig.ctx.clone()).await;
@@ -383,7 +843,11 @@ async fn burst_with_mixed_outcomes_accounts_exactly() {
     let fired: Vec<_> = report.orders.iter().filter(|o| !o.lost_race).collect();
     assert_eq!(fired.len(), 1);
     assert_eq!(fired[0].order_id.as_deref(), Some("srv-m"));
-    assert_eq!(rig.ctx.gate.ledger_spent_cents(), 15, "only the fired order debits");
+    assert_eq!(
+        rig.ctx.gate.ledger_spent_cents(),
+        15,
+        "only the fired order debits"
+    );
 }
 
 #[tokio::test]
@@ -391,7 +855,10 @@ async fn kill_switch_stop_file_cancels_and_disarms() {
     let state = tempfile::tempdir().unwrap();
     let gate = Arc::new(
         RiskGate::new(
-            RiskConfig { allowlist_tickers: vec![TICKER.into()], ..Default::default() },
+            RiskConfig {
+                allowlist_tickers: vec![TICKER.into()],
+                ..Default::default()
+            },
             state.path(),
         )
         .unwrap(),
@@ -417,5 +884,8 @@ async fn kill_switch_stop_file_cancels_and_disarms() {
     watcher.await.unwrap();
     assert!(gate.is_killed());
     assert!(cancelled.load(std::sync::atomic::Ordering::SeqCst));
-    assert_eq!(gate.check_order(TICKER, 1, 1, 0, 0), Err(earshot::risk::Refusal::Killed));
+    assert_eq!(
+        gate.check_order(TICKER, 1, 1, 0, 0),
+        Err(earshot::risk::Refusal::Killed)
+    );
 }

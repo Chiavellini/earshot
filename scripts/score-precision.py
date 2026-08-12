@@ -37,6 +37,69 @@ import argparse, glob, json, os, re, statistics, sys
 REPO = os.environ.get("EARSHOT_REPO") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+class AlignmentError(ValueError):
+    pass
+
+
+def estimate_offset(rows, window):
+    """Find one recorder-minus-detector offset across all timestamped intents.
+
+    A recorder may start long before the detector.  Searching only occurrences
+    near the detector-relative timestamp (the old +/-180 s shortcut) therefore
+    rejects valid runs.  Every observed occurrence supplies a candidate offset;
+    candidates are scored by how many *distinct intents* they align.  Tied
+    candidates in one compact cluster are combined at their median, while
+    disjoint equally-supported clusters are refused as ambiguous.
+    """
+    usable = [r for r in rows if r.get("t") is not None and r.get("occ")]
+    if not usable:
+        raise AlignmentError("no candidate hits at all — transcript and report do not describe the same call")
+
+    candidates = sorted({float(occ) - float(r["t"]) for r in usable for occ in r["occ"]})
+
+    def score(offset):
+        residuals = []
+        for row in usable:
+            residual = min(
+                (float(occ) - (float(row["t"]) + offset) for occ in row["occ"]),
+                key=abs,
+            )
+            if abs(residual) <= window:
+                residuals.append(residual)
+        return len(residuals), sum(abs(value) for value in residuals), residuals
+
+    scored = [(offset, *score(offset)) for offset in candidates]
+    support = max(item[1] for item in scored)
+    required = min(2, len(usable))
+    if support < required:
+        raise AlignmentError(
+            f"alignment not established — best offset aligns {support}/{len(usable)} intents; "
+            f"need at least {required}"
+        )
+
+    best_cost = min(item[2] for item in scored if item[1] == support)
+    winners = [
+        item[0]
+        for item in scored
+        if item[1] == support and abs(item[2] - best_cost) <= 1e-6
+    ]
+    if winners[-1] - winners[0] > 2 * window:
+        raise AlignmentError(
+            "alignment ambiguous — equally supported recorder offsets form disjoint clusters"
+        )
+
+    offset = statistics.median(winners)
+    final_support, _cost, residuals = score(offset)
+    if final_support < support:
+        raise AlignmentError("alignment ambiguous — median offset loses supporting intents")
+    return offset, residuals, support, len(usable)
+
+
+def normalized_words(text):
+    """Normalize ASR punctuation without collapsing distinct word tokens."""
+    return " ".join(re.findall(r"[a-z0-9]+(?:'[a-z0-9]+)?", text.lower()))
+
+
 def die(msg, code=2):
     print(f"SCORE-ERROR: {msg}", file=sys.stderr)
     sys.exit(code)
@@ -115,6 +178,7 @@ def main():
     if not ph:
         die(f"no config carries event id {a.event} — cannot map tickers to phrases")
     segs, full = load_truth(a)
+    full_normalized = normalized_words(full)
     timed = segs is not None and all("start" in s for s in (segs or []))
 
     first = rep.get("first_capture_ts")
@@ -124,10 +188,18 @@ def main():
 
     def occurrences(meta):
         """All occurrence times (timed) or a count (untimed), over ANY variant."""
-        pats = [v.lower() for v in meta["variants"]] + [meta["phrase"].lower()]
+        pats = [normalized_words(v) for v in meta["variants"]] + [
+            normalized_words(meta["phrase"])
+        ]
         if timed:
-            return sorted({s["start"] for s in segs if any(v in s["text"].lower() for v in pats)})
-        return sum(full.count(v) for v in set(pats))
+            return sorted(
+                {
+                    s["start"]
+                    for s in segs
+                    if any(v in normalized_words(s["text"]) for v in pats)
+                }
+            )
+        return sum(full_normalized.count(v) for v in set(pats))
 
     rows = []
     for o in intents:
@@ -151,19 +223,16 @@ def main():
         return 0
 
     # ── offset: the whole point of this script ────────────────────────────
-    cands = []
-    for r in rows:
-        if r["t"] is None or not r["occ"]:
-            continue
-        d = min(r["occ"], key=lambda x: abs(x - r["t"])) - r["t"]
-        if abs(d) < 180:
-            cands.append(d)
-    if not cands:
-        die("no candidate hits at all — transcript and report do not describe the same call", 3)
-    off = statistics.median(cands)
-    spread = statistics.pstdev(cands) if len(cands) > 1 else 0.0
+    try:
+        off, residuals, support, usable = estimate_offset(rows, a.window)
+    except AlignmentError as exc:
+        die(str(exc), 3)
+    spread = statistics.pstdev(residuals) if len(residuals) > 1 else 0.0
     print(f"\n=== {a.event} ===\nreport: {rpath}")
-    print(f"clock offset (transcript − decision): {off:+.1f}s   spread σ={spread:.1f}s   n={len(cands)}")
+    print(
+        f"clock offset (transcript − decision): {off:+.1f}s   "
+        f"spread σ={spread:.1f}s   support={support}/{usable}"
+    )
     if spread > 30:
         print("⚠ residual spread is large — alignment NOT established; treat every verdict below as unproven.")
 

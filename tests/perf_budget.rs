@@ -62,7 +62,9 @@ fn perf_preproc_rtf() {
     }
     let elapsed = t0.elapsed().as_secs_f64();
     let rtf = 60.0 / elapsed;
-    println!("preproc 2x upsampler: 60 s audio in {elapsed:.4} s → {rtf:.0}× realtime (sink {sink})");
+    println!(
+        "preproc 2x upsampler: 60 s audio in {elapsed:.4} s → {rtf:.0}× realtime (sink {sink})"
+    );
     assert!(rtf > 100.0, "resampler only {rtf:.0}× realtime");
 }
 
@@ -117,8 +119,7 @@ fn perf_detector_rtf() {
     // sherpa (the streaming_ctc milestone's territory, not a chunk_ms
     // property). 80/40/20 are report-only: the numbers feed the on-box WS-2
     // decision, and a noisy dev laptop can't green/red-light a prod change.
-    let ladder: [(u32, Option<u64>); 4] =
-        [(160, Some(80_000)), (80, None), (40, None), (20, None)];
+    let ladder: [(u32, Option<u64>); 4] = [(160, Some(80_000)), (80, None), (40, None), (20, None)];
 
     // Measure and PRINT the whole ladder first, assert only afterwards: a
     // budget miss at one size must not hide the other sizes' numbers — the
@@ -159,12 +160,19 @@ fn perf_detector_rtf() {
         println!(
             "sherpa_kws chunk {chunk_ms} ms: 60 s speech in {elapsed:.2} s → {rtf:.1}× realtime; \
              per-chunk p50 {p50} µs  p95 {p95} µs  max {max} µs{}",
-            if p95_budget_us.is_none() { "  [candidate: report-only]" } else { "" }
+            if p95_budget_us.is_none() {
+                "  [candidate: report-only]"
+            } else {
+                ""
+            }
         );
         results.push((chunk_ms, p95_budget_us, rtf, p95));
     }
     for (chunk_ms, p95_budget_us, rtf, p95) in results {
-        assert!(rtf > 3.0, "detector only {rtf:.1}× realtime at chunk {chunk_ms} — cannot keep up live");
+        assert!(
+            rtf > 3.0,
+            "detector only {rtf:.1}× realtime at chunk {chunk_ms} — cannot keep up live"
+        );
         if let Some(budget) = p95_budget_us {
             assert!(
                 p95 < budget,
@@ -196,18 +204,30 @@ async fn perf_executor_fire_path() {
     cache.touch();
     cache.publish(
         TICKER,
-        Book { yes_bids: vec![(5, 100)], yes_asks: vec![(10, 500)], seq: 1, as_of: MonotonicNs::now() },
+        Book {
+            yes_bids: vec![(5, 100)],
+            yes_asks: vec![(10, 500)],
+            seq: 1,
+            as_of: MonotonicNs::now(),
+        },
     );
     let state = tempfile::tempdir().unwrap();
     let gate = Arc::new(
         RiskGate::new(
-            RiskConfig { allowlist_tickers: vec![TICKER.into()], ..Default::default() },
+            RiskConfig {
+                allowlist_tickers: vec![TICKER.into()],
+                ..Default::default()
+            },
             state.path(),
         )
         .unwrap(),
     );
     gate.arm();
-    let presigner = Presigner::new(signer, "POST", "/trade-api/v2/portfolio/events/orders".into());
+    let presigner = Presigner::new(
+        signer,
+        "POST",
+        "/trade-api/v2/portfolio/events/orders".into(),
+    );
 
     // Presigner get(): wait-free header load on the fire path.
     let t0 = Instant::now();
@@ -218,7 +238,10 @@ async fn perf_executor_fire_path() {
     }
     let per_get_ns = t0.elapsed().as_nanos() as u64 / 10_000;
     println!("presigner.get(): {per_get_ns} ns/call (sink {sink})");
-    assert!(per_get_ns < 50_000, "presigner get {per_get_ns} ns — not wait-free?");
+    assert!(
+        per_get_ns < 50_000,
+        "presigner get {per_get_ns} ns — not wait-free?"
+    );
 
     // 6 keywords × 15¢ = 90¢: the deepest burst the $1 probe ledger allows.
     let kws: Vec<KeywordConfig> = (0..6)
@@ -237,14 +260,21 @@ async fn perf_executor_fire_path() {
         })
         .collect();
     let ctx = Arc::new(ExecCtx {
-        transport: OrderTransport::Rest { client: rest.clone(), presigner },
-        rest,
+        transport: OrderTransport::Rest {
+            client: rest.clone(),
+            presigner,
+        },
+        rest: rest.clone(),
         cache,
         gate,
         prestaged: prestage_orders("PERF", &kws, StageWire::Rest),
         haircuts: (0..6u16).map(|i| (i, 0u32)).collect::<HashMap<_, _>>(),
         dry_run: false,
         registry: earshot::kalshi::OrderRegistry::default(),
+        order_evidence: None,
+        decision_plan_sha1: "0".repeat(40),
+        keyword_text: HashMap::new(),
+        rest_endpoint_id: rest.endpoint_id(),
     });
     let (tx, rx) = tokio::sync::mpsc::channel(8);
     for kw in 0..6u16 {
@@ -273,11 +303,19 @@ async fn perf_executor_fire_path() {
         d2e.p95_us, e2s.p95_us, e2s.count
     );
     assert_eq!(report.orders.iter().filter(|o| o.reached_wire()).count(), 6);
-    assert!(e2s.p95_us < 5_000, "exec→send p95 {} µs — pre-staging broken?", e2s.p95_us);
+    assert!(
+        e2s.p95_us < 5_000,
+        "exec→send p95 {} µs — pre-staging broken?",
+        e2s.p95_us
+    );
     // decision→exec here includes queue wait: this rig pre-fills the channel
     // before the executor starts, so the edge is test-shaped. Bound it only
     // loosely; the live number comes from arm's report.
-    assert!(d2e.p95_us < 50_000, "decision→exec p95 {} µs — executor startup pathological", d2e.p95_us);
+    assert!(
+        d2e.p95_us < 50_000,
+        "decision→exec p95 {} µs — executor startup pathological",
+        d2e.p95_us
+    );
 }
 
 /// The headline: paced audio in → acked order out, full chain, local mock.
@@ -302,12 +340,20 @@ async fn perf_full_chain_paced() {
     cache.touch();
     cache.publish(
         TICKER,
-        Book { yes_bids: vec![(40, 100)], yes_asks: vec![(85, 500)], seq: 1, as_of: MonotonicNs::now() },
+        Book {
+            yes_bids: vec![(40, 100)],
+            yes_asks: vec![(85, 500)],
+            seq: 1,
+            as_of: MonotonicNs::now(),
+        },
     );
     let state = tempfile::tempdir().unwrap();
     let gate = Arc::new(
         RiskGate::new(
-            RiskConfig { allowlist_tickers: vec![TICKER.into()], ..Default::default() },
+            RiskConfig {
+                allowlist_tickers: vec![TICKER.into()],
+                ..Default::default()
+            },
             state.path(),
         )
         .unwrap(),
@@ -328,16 +374,27 @@ async fn perf_full_chain_paced() {
         min_confidence_fast: 0.0,
         min_confidence_confirmed: 0.0,
     }];
-    let presigner = Presigner::new(signer, "POST", "/trade-api/v2/portfolio/events/orders".into());
+    let presigner = Presigner::new(
+        signer,
+        "POST",
+        "/trade-api/v2/portfolio/events/orders".into(),
+    );
     let ctx = Arc::new(ExecCtx {
-        transport: OrderTransport::Rest { client: rest.clone(), presigner },
-        rest,
+        transport: OrderTransport::Rest {
+            client: rest.clone(),
+            presigner,
+        },
+        rest: rest.clone(),
         cache,
         gate,
         prestaged: prestage_orders("PERF", &keywords, StageWire::Rest),
         haircuts: HashMap::from([(0u16, 0u32)]),
         dry_run: false,
         registry: earshot::kalshi::OrderRegistry::default(),
+        order_evidence: None,
+        decision_plan_sha1: "0".repeat(40),
+        keyword_text: HashMap::new(),
+        rest_endpoint_id: rest.endpoint_id(),
     });
 
     let dir = tempfile::tempdir().unwrap();
@@ -347,7 +404,10 @@ async fn perf_full_chain_paced() {
         total_ms: 2000,
         tone_hz: 440.0,
         amplitude: 0.6,
-        bursts: vec![Burst { onset_ms: 1000, dur_ms: 500 }],
+        bursts: vec![Burst {
+            onset_ms: 1000,
+            dur_ms: 500,
+        }],
     }
     .write_wav(&wav)
     .unwrap();
@@ -358,12 +418,23 @@ async fn perf_full_chain_paced() {
     let (intent_tx, intent_rx) = tokio::sync::mpsc::channel(64);
     let exec_task = tokio::spawn(run_executor(intent_rx, ctx));
     let mut report = tokio::task::spawn_blocking(move || {
-        run_pipeline("PERF", 160, PreprocCfg::default(), source, detector, table, Some(intent_tx), Default::default())
+        run_pipeline(
+            "PERF",
+            160,
+            PreprocCfg::default(),
+            source,
+            detector,
+            table,
+            Some(intent_tx),
+            Default::default(),
+        )
     })
     .await
     .unwrap()
     .unwrap();
-    report.edges.extend(exec_task.await.unwrap().recorder.snapshot());
+    report
+        .edges
+        .extend(exec_task.await.unwrap().recorder.snapshot());
 
     let c2d = &report.edges["capture→decision"];
     let c2a = &report.edges["capture→ack"];
@@ -371,8 +442,16 @@ async fn perf_full_chain_paced() {
         "full chain paced: capture→decision p95 {} µs, capture→ack p95 {} µs",
         c2d.p95_us, c2a.p95_us
     );
-    assert!(c2d.p95_us < 170_000, "capture→decision p95 {} µs > chunk + 10 ms", c2d.p95_us);
-    assert!(c2a.p95_us < 200_000, "capture→ack p95 {} µs vs local mock", c2a.p95_us);
+    assert!(
+        c2d.p95_us < 170_000,
+        "capture→decision p95 {} µs > chunk + 10 ms",
+        c2d.p95_us
+    );
+    assert!(
+        c2a.p95_us < 200_000,
+        "capture→ack p95 {} µs vs local mock",
+        c2a.p95_us
+    );
 }
 
 /// Cold first fire vs steady state, A/B on the arm-time shadow warm-fire.
@@ -421,26 +500,39 @@ async fn perf_cold_first_fire() {
         rest.warm().await;
         if warm_code_path {
             // The arm-time shadow warm-fire, verbatim posture.
-            let _ = rest.order_by_client_id("earshot-warmfire-never-an-order").await;
+            let _ = rest
+                .order_by_client_id("earshot-warmfire-never-an-order")
+                .await;
         }
 
         let cache = BookCache::new(&[TICKER.to_string()]);
         cache.touch();
         cache.publish(
             TICKER,
-            Book { yes_bids: vec![(5, 100)], yes_asks: vec![(10, 500)], seq: 1, as_of: MonotonicNs::now() },
+            Book {
+                yes_bids: vec![(5, 100)],
+                yes_asks: vec![(10, 500)],
+                seq: 1,
+                as_of: MonotonicNs::now(),
+            },
         );
         let state = tempfile::tempdir().unwrap();
         let gate = Arc::new(
             RiskGate::new(
-                RiskConfig { allowlist_tickers: vec![TICKER.into()], ..Default::default() },
+                RiskConfig {
+                    allowlist_tickers: vec![TICKER.into()],
+                    ..Default::default()
+                },
                 state.path(),
             )
             .unwrap(),
         );
         gate.arm();
-        let presigner =
-            Presigner::new(signer, "POST", "/trade-api/v2/portfolio/events/orders".into());
+        let presigner = Presigner::new(
+            signer,
+            "POST",
+            "/trade-api/v2/portfolio/events/orders".into(),
+        );
         // 6 × 15¢ = 90¢: deepest sequence inside the $1 probe ledger.
         let kws: Vec<KeywordConfig> = (0..6)
             .map(|_| {
@@ -458,14 +550,21 @@ async fn perf_cold_first_fire() {
             })
             .collect();
         let ctx = Arc::new(ExecCtx {
-            transport: OrderTransport::Rest { client: rest.clone(), presigner },
-            rest,
+            transport: OrderTransport::Rest {
+                client: rest.clone(),
+                presigner,
+            },
+            rest: rest.clone(),
             cache,
             gate,
             prestaged: prestage_orders("PERF", &kws, StageWire::Rest),
             haircuts: (0..6u16).map(|i| (i, 0u32)).collect::<HashMap<_, _>>(),
             dry_run: false,
             registry: earshot::kalshi::OrderRegistry::default(),
+            order_evidence: None,
+            decision_plan_sha1: "0".repeat(40),
+            keyword_text: HashMap::new(),
+            rest_endpoint_id: rest.endpoint_id(),
         });
 
         // One intent at a time with a gap, so fire #1 is genuinely first and
@@ -510,11 +609,19 @@ async fn perf_cold_first_fire() {
         let (cold, steady) = rig_cold_premium(warm).await;
         println!(
             "rig {} warm-fire={:5}: cold exec→send {} µs, steady p50 {} µs, premium {} µs",
-            i + 1, warm, cold / 1000, steady / 1000, cold.saturating_sub(steady) / 1000
+            i + 1,
+            warm,
+            cold / 1000,
+            steady / 1000,
+            cold.saturating_sub(steady) / 1000
         );
         rows.push((warm, cold, steady));
         // Loose ceiling (2–3× convention) applies to every rig.
-        assert!(cold < 20_000_000, "cold exec→send {} µs — first-fire path pathological", cold / 1000);
+        assert!(
+            cold < 20_000_000,
+            "cold exec→send {} µs — first-fire path pathological",
+            cold / 1000
+        );
     }
     let (_, off_cold, off_steady) = rows[2]; // process-warm pair
     let (_, on_cold, on_steady) = rows[3];
@@ -579,7 +686,11 @@ fn perf_ring_wake_ab() {
 
     fn stats(mut deltas: Vec<u64>) -> (u64, u64, u64) {
         deltas.sort_unstable();
-        (percentile(&deltas, 0.50), percentile(&deltas, 0.95), *deltas.last().unwrap())
+        (
+            percentile(&deltas, 0.50),
+            percentile(&deltas, 0.95),
+            *deltas.last().unwrap(),
+        )
     }
 
     // OLD ring.
@@ -618,7 +729,12 @@ fn perf_ring_wake_ab() {
         "ring idle-wake push→recv ({N} parked pushes each):\n\
          old (park-timeout only): p50 {} µs  p95 {} µs  max {} µs\n\
          new (unpark-on-send)   : p50 {} µs  p95 {} µs  max {} µs",
-        o50 / 1000, o95 / 1000, omax / 1000, n50 / 1000, n95 / 1000, nmax / 1000
+        o50 / 1000,
+        o95 / 1000,
+        omax / 1000,
+        n50 / 1000,
+        n95 / 1000,
+        nmax / 1000
     );
     // The claim under test: the new ring's typical wake beats the old ring's
     // park-timeout-bounded wake. Assert on p50 with wide margin (macOS
@@ -640,7 +756,10 @@ fn perf_recorder_overhead() {
     }
     let per_op_ns = t0.elapsed().as_nanos() as u64 / 1_000_000;
     println!("LatencyRecorder.record(): {per_op_ns} ns/op");
-    assert!(per_op_ns < 100, "recorder {per_op_ns} ns/op — too hot for the detect loop");
+    assert!(
+        per_op_ns < 100,
+        "recorder {per_op_ns} ns/op — too hot for the detect loop"
+    );
 }
 
 /// `record_send` sits on the fire path (executor.rs, inside the exec→send
@@ -660,5 +779,8 @@ fn perf_risk_record_send() {
     }
     let per_op_ns = t0.elapsed().as_nanos() as u64 / n;
     println!("RiskGate.record_send(): {per_op_ns} ns/op");
-    assert!(per_op_ns < 200, "record_send {per_op_ns} ns/op — blocking I/O back on the fire path?");
+    assert!(
+        per_op_ns < 200,
+        "record_send {per_op_ns} ns/op — blocking I/O back on the fire path?"
+    );
 }

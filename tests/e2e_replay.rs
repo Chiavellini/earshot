@@ -38,17 +38,40 @@ fn run(spec: &FixtureSpec, speed: f32) -> PipelineReport {
     let source = Box::new(ReplaySource::from_wav(&wav, speed, SourceId(0)).unwrap());
     let detector = Box::new(EnergyStubDetector::for_standard_fixture());
     let table = DecisionTable::from_keywords(&keywords());
-    run_pipeline("e2e", 160, PreprocCfg::default(), source, detector, table, None, Default::default()).unwrap()
+    run_pipeline(
+        "e2e",
+        160,
+        PreprocCfg::default(),
+        source,
+        detector,
+        table,
+        None,
+        Default::default(),
+    )
+    .unwrap()
 }
 
 fn assert_report_sane(report: &PipelineReport, expected_detections: usize) {
     assert_eq!(report.detections.len(), expected_detections);
-    assert_eq!(report.drops.total(), 0, "no stage may drop under normal replay");
+    assert_eq!(
+        report.drops.total(),
+        0,
+        "no stage may drop under normal replay"
+    );
 
     // Every audio-pipeline edge histogram must be populated (the execution
     // edges only exist when the M2 executor is attached).
-    for edge in ["capture→preproc", "preproc→chunk", "chunk→detect", "detect→decision", "capture→decision"] {
-        let stats = report.edges.get(edge).unwrap_or_else(|| panic!("missing edge {edge}"));
+    for edge in [
+        "capture→preproc",
+        "preproc→chunk",
+        "chunk→detect",
+        "detect→decision",
+        "capture→decision",
+    ] {
+        let stats = report
+            .edges
+            .get(edge)
+            .unwrap_or_else(|| panic!("missing edge {edge}"));
         assert!(stats.count > 0, "edge {edge} recorded nothing");
     }
 
@@ -63,7 +86,14 @@ fn assert_report_sane(report: &PipelineReport, expected_detections: usize) {
         }
     }
     // One-shot: exactly one intent regardless of how many bursts fire Fast.
-    assert_eq!(report.detections.iter().filter(|d| d.intent.is_some()).count(), 1);
+    assert_eq!(
+        report
+            .detections
+            .iter()
+            .filter(|d| d.intent.is_some())
+            .count(),
+        1
+    );
 
     // Detections must be ordered in time.
     for pair in report.detections.windows(2) {
@@ -73,7 +103,10 @@ fn assert_report_sane(report: &PipelineReport, expected_detections: usize) {
     // report.json round-trips.
     let json = serde_json::to_string(report).unwrap();
     let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
-    assert_eq!(parsed["detections"].as_array().unwrap().len(), expected_detections);
+    assert_eq!(
+        parsed["detections"].as_array().unwrap().len(),
+        expected_detections
+    );
 }
 
 #[test]
@@ -92,7 +125,10 @@ fn paced_mode_matches_wall_clock_and_detects() {
         total_ms: 2000,
         tone_hz: 440.0,
         amplitude: 0.6,
-        bursts: vec![Burst { onset_ms: 1000, dur_ms: 500 }],
+        bursts: vec![Burst {
+            onset_ms: 1000,
+            dur_ms: 500,
+        }],
     };
     let start = Instant::now();
     let report = run(&spec, 1.0);

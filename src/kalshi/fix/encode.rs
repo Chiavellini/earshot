@@ -40,11 +40,20 @@ impl Default for FixWriter {
 
 impl FixWriter {
     pub fn new() -> Self {
-        FixWriter { body: Vec::with_capacity(512) }
+        FixWriter {
+            body: Vec::with_capacity(512),
+        }
     }
 
     /// Start a message: standard header in fixed order 35, 49, 56, 34, 52.
-    pub fn begin(&mut self, msg_type: &str, sender: &str, target: &str, seq: u64, sending_time: &str) {
+    pub fn begin(
+        &mut self,
+        msg_type: &str,
+        sender: &str,
+        target: &str,
+        seq: u64,
+        sending_time: &str,
+    ) {
         self.body.clear();
         self.tag(35, msg_type.as_bytes());
         self.tag(49, sender.as_bytes());
@@ -139,10 +148,27 @@ pub fn logon_prehash(sending_time: &str, seq: u64, sender: &str, target: &str) -
 /// Logon (35=A): EncryptMethod None, heartbeat, FIX50SP2 marker, RawData
 /// RSA-PSS signature over the pre-hash (same key as REST). `reset_seq` sets
 /// 141=Y — REQUIRED on KalshiNR (F4).
-pub fn logon(cfg: &FixConfig, signer: &Signer, seq: u64, sending_time: &str, reset_seq: bool) -> Vec<u8> {
-    let sig = signer.sign_raw(&logon_prehash(sending_time, seq, &cfg.sender_comp_id, &cfg.target_comp_id));
+pub fn logon(
+    cfg: &FixConfig,
+    signer: &Signer,
+    seq: u64,
+    sending_time: &str,
+    reset_seq: bool,
+) -> Vec<u8> {
+    let sig = signer.sign_raw(&logon_prehash(
+        sending_time,
+        seq,
+        &cfg.sender_comp_id,
+        &cfg.target_comp_id,
+    ));
     let mut w = FixWriter::new();
-    w.begin("A", &cfg.sender_comp_id, &cfg.target_comp_id, seq, sending_time);
+    w.begin(
+        "A",
+        &cfg.sender_comp_id,
+        &cfg.target_comp_id,
+        seq,
+        sending_time,
+    );
     w.tag_str(1137, "9"); // DefaultApplVerID = FIX50SP2
     w.tag_str(98, "0"); // EncryptMethod: none (TLS is the transport layer)
     w.tag_u64(108, u64::from(cfg.heartbeat_secs));
@@ -155,9 +181,20 @@ pub fn logon(cfg: &FixConfig, signer: &Signer, seq: u64, sending_time: &str, res
 }
 
 /// Heartbeat (35=0); echoes TestReqID (112) when answering a TestRequest.
-pub fn heartbeat(cfg: &FixConfig, seq: u64, sending_time: &str, test_req_id: Option<&str>) -> Vec<u8> {
+pub fn heartbeat(
+    cfg: &FixConfig,
+    seq: u64,
+    sending_time: &str,
+    test_req_id: Option<&str>,
+) -> Vec<u8> {
     let mut w = FixWriter::new();
-    w.begin("0", &cfg.sender_comp_id, &cfg.target_comp_id, seq, sending_time);
+    w.begin(
+        "0",
+        &cfg.sender_comp_id,
+        &cfg.target_comp_id,
+        seq,
+        sending_time,
+    );
     if let Some(id) = test_req_id {
         w.tag_str(112, id);
     }
@@ -167,7 +204,13 @@ pub fn heartbeat(cfg: &FixConfig, seq: u64, sending_time: &str, test_req_id: Opt
 /// TestRequest (35=1).
 pub fn test_request(cfg: &FixConfig, seq: u64, sending_time: &str, id: &str) -> Vec<u8> {
     let mut w = FixWriter::new();
-    w.begin("1", &cfg.sender_comp_id, &cfg.target_comp_id, seq, sending_time);
+    w.begin(
+        "1",
+        &cfg.sender_comp_id,
+        &cfg.target_comp_id,
+        seq,
+        sending_time,
+    );
     w.tag_str(112, id);
     w.finish()
 }
@@ -175,15 +218,32 @@ pub fn test_request(cfg: &FixConfig, seq: u64, sending_time: &str, id: &str) -> 
 /// Logout (35=5).
 pub fn logout(cfg: &FixConfig, seq: u64, sending_time: &str) -> Vec<u8> {
     let mut w = FixWriter::new();
-    w.begin("5", &cfg.sender_comp_id, &cfg.target_comp_id, seq, sending_time);
+    w.begin(
+        "5",
+        &cfg.sender_comp_id,
+        &cfg.target_comp_id,
+        seq,
+        sending_time,
+    );
     w.finish()
 }
 
 /// SequenceReset-GapFill (35=4, 123=Y, 36=new): our only lawful answer to a
 /// ResendRequest — the NR posture never retransmits application messages.
-pub fn sequence_reset_gapfill(cfg: &FixConfig, seq: u64, sending_time: &str, new_seq: u64) -> Vec<u8> {
+pub fn sequence_reset_gapfill(
+    cfg: &FixConfig,
+    seq: u64,
+    sending_time: &str,
+    new_seq: u64,
+) -> Vec<u8> {
     let mut w = FixWriter::new();
-    w.begin("4", &cfg.sender_comp_id, &cfg.target_comp_id, seq, sending_time);
+    w.begin(
+        "4",
+        &cfg.sender_comp_id,
+        &cfg.target_comp_id,
+        seq,
+        sending_time,
+    );
     w.tag_str(123, "Y");
     w.tag_u64(36, new_seq);
     w.finish()
@@ -201,7 +261,13 @@ pub fn order_cancel(
     ticker: &str,
 ) -> Vec<u8> {
     let mut w = FixWriter::new();
-    w.begin("F", &cfg.sender_comp_id, &cfg.target_comp_id, seq, sending_time);
+    w.begin(
+        "F",
+        &cfg.sender_comp_id,
+        &cfg.target_comp_id,
+        seq,
+        sending_time,
+    );
     w.tag_str(11, cl_ord_id);
     w.tag_str(41, orig_cl_ord_id);
     w.tag_str(54, "1"); // we only ever work the YES-buy side
@@ -283,7 +349,13 @@ mod tests {
 
     /// Replace SOH with '|' for readable assertions.
     fn readable(bytes: &[u8]) -> String {
-        String::from_utf8(bytes.iter().map(|&b| if b == SOH { b'|' } else { b }).collect()).unwrap()
+        String::from_utf8(
+            bytes
+                .iter()
+                .map(|&b| if b == SOH { b'|' } else { b })
+                .collect(),
+        )
+        .unwrap()
     }
 
     #[test]
@@ -353,13 +425,24 @@ mod tests {
     #[test]
     fn reused_buffers_do_not_leak() {
         let c = cfg();
-        let long = FixOrderTemplate::ioc_buy_yes(&c, "KX-A-VERY-LONG-TICKER-NAME", 97, 100_000, "long-id".into());
+        let long = FixOrderTemplate::ioc_buy_yes(
+            &c,
+            "KX-A-VERY-LONG-TICKER-NAME",
+            97,
+            100_000,
+            "long-id".into(),
+        );
         let short = FixOrderTemplate::ioc_buy_yes(&c, "KX-B", 5, 1, "s".into());
         let (mut w, mut out) = (FixWriter::new(), Vec::new());
         long.assemble(999_999, "20260721-12:00:00.000", &mut w, &mut out);
         short.assemble(1, "20260721-12:00:00.000", &mut w, &mut out);
         let mut fresh_out = Vec::new();
-        short.assemble(1, "20260721-12:00:00.000", &mut FixWriter::new(), &mut fresh_out);
+        short.assemble(
+            1,
+            "20260721-12:00:00.000",
+            &mut FixWriter::new(),
+            &mut fresh_out,
+        );
         assert_eq!(out, fresh_out);
     }
 
@@ -388,7 +471,9 @@ mod tests {
             .split('|')
             .find_map(|f| f.strip_prefix("96="))
             .expect("96= present");
-        let sig_bytes = base64::engine::general_purpose::STANDARD.decode(sig_b64).unwrap();
+        let sig_bytes = base64::engine::general_purpose::STANDARD
+            .decode(sig_b64)
+            .unwrap();
         let verifying: VerifyingKey<Sha256> = VerifyingKey::new(key.to_public_key());
         let sig = rsa::pss::Signature::try_from(sig_bytes.as_slice()).unwrap();
         let prehash = logon_prehash(ts, 1, "SENDER-KEY", "KalshiNR");
@@ -414,7 +499,19 @@ mod tests {
         let c = cfg();
         let g = readable(&sequence_reset_gapfill(&c, 5, "20260721-12:00:00.000", 9));
         assert!(g.contains("35=4|") && g.contains("123=Y|") && g.contains("36=9|"));
-        let x = readable(&order_cancel(&c, 6, "20260721-12:00:00.000", "new-id", "orig-id", "KX-T"));
-        assert!(x.contains("35=F|") && x.contains("11=new-id|") && x.contains("41=orig-id|") && x.contains("55=KX-T|"));
+        let x = readable(&order_cancel(
+            &c,
+            6,
+            "20260721-12:00:00.000",
+            "new-id",
+            "orig-id",
+            "KX-T",
+        ));
+        assert!(
+            x.contains("35=F|")
+                && x.contains("11=new-id|")
+                && x.contains("41=orig-id|")
+                && x.contains("55=KX-T|")
+        );
     }
 }

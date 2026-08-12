@@ -16,9 +16,12 @@
 #                   TIMER-INSTALL for phone-lane events, WEBCAST-TIMER (a
 #                   do-not-install-event-autorun reminder) for webcast-only
 #                   ones, since event-autorun fail-stops on TO_NUMBER=TBD
-#   ALREADY-STAGED: both lane configs exist — nothing rewritten (idempotent);
-#                   its PORT: line still prints (read back from disk) so one
-#                   grep shows the whole day's port map
+#   ALREADY-STAGED: configs + generic env are complete and agree with the
+#                   authoritative staged time; nothing rewritten (idempotent)
+#   RECONCILED:     an unpinned config carrying an explicit starts_at TODO was
+#                   completed from the verified slate time and/or its missing
+#                   generic env was created; an immutable RunPlan blocks this
+#                   repair loudly instead of being changed behind its hash
 #   NEEDS-TIME:     slate has no verified call time (or the call_time_utc is
 #                   malformed → a BAD-TIME line) — configs staged with the
 #                   starts_at TODO kept; NO autorun env written (its HHMM
@@ -29,9 +32,8 @@
 #   WINDOW-WRAP:    call window crosses UTC midnight — env written with the
 #                   HHMM windows left TBD (event-autorun compares plain HHMM);
 #                   set END/COMPLETE by hand before arming the timer
-#   ENV-STALE:      a phone lane landed after the env was generated — the env
-#                   still points at the webcast config/old port; fix by hand
-#                   (never rewritten silently)
+#   ENV-STALE:      the env is missing a generated field or conflicts with the
+#                   current config/time/port; it is never rewritten silently
 #   ERROR:          that event's stage failed; the failed artifact is removed
 #                   (never left half-written) and the run continues
 #
@@ -138,6 +140,15 @@ page() { if [[ $DRY -eq 1 ]]; then note "DRY: would page: $1"; else
 
 REPORT=""   # accumulated detail lines for the summary mail
 report() { echo "$*"; REPORT+="$*"$'\n'; }
+reconcile_staged_config() {  # $1 config, $2 authoritative UTC start
+  if [[ $DRY -eq 1 ]]; then
+    python3 scripts/stage-reconcile.py --repo "$REPO" --run-root "$RUN_ROOT" \
+      config --config "$1" --starts-at "$2" --check-only
+  else
+    python3 scripts/stage-reconcile.py --repo "$REPO" --run-root "$RUN_ROOT" \
+      config --config "$1" --starts-at "$2"
+  fi
+}
 
 STAGED=0; NEEDTIME=0; NOPHONE=0; ERRORS=0; ALREADY=0
 
@@ -148,6 +159,7 @@ command -v python3 >/dev/null || { note "ERROR: no python3"; exit 2; }
   page "slate-stage: NO SLATE" "Expected $SLATE — did slate-daily run? Nothing staged."; exit 2; }
 [[ -f configs/dial-ins.toml ]] || { note "ERROR: configs/dial-ins.toml missing"; exit 2; }
 [[ -x scripts/stage-webcast-arm.sh ]] || { note "ERROR: scripts/stage-webcast-arm.sh missing"; exit 2; }
+[[ -f scripts/stage-reconcile.py ]] || { note "ERROR: scripts/stage-reconcile.py missing"; exit 2; }
 BIN="${EARSHOT_BIN:-$REPO/target/release/earshot}"
 if [[ ! -x "$BIN" ]]; then
   note "WARN: no pinned binary at $BIN — falling back to 'cargo run --release' for prepare"
@@ -164,6 +176,7 @@ fi
 
 ACCOUNT_ENV_DEFAULT="${EARSHOT_ACCOUNT_ENV:-\$HOME/.earshot/ms.env}"
 BOX="${EARSHOT_BOX:-ubuntu@3.212.174.94}"   # c6a.4xlarge + EIP (deploy-box.sh)
+RUN_ROOT="${EARSHOT_RUN_ROOT:-$REPO/var/runs}"
 
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/slate-stage.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
@@ -206,11 +219,15 @@ for e in d.get("events", []):
     if not (today <= cdd <= today + datetime.timedelta(days=horizon)):
         continue
     t = e.get("call_time_utc") or "-"          # ISO ..T HH:MM:SSZ, usually null
-    disputed = "1" if (e.get("call_date_disputed") or e.get("ticker_date_misleading")) else "0"
-    rows.append((cd, ev, iss, t, disputed))
+    corrected = "1" if e.get("call_date_source") == "authoritative_correction" else "0"
+    disputed = "1" if (
+        e.get("call_date_disputed")
+        or (e.get("ticker_date_misleading") and corrected == "0")
+    ) else "0"
+    rows.append((cd, ev, iss, t, disputed, corrected))
 rows.sort()
-for cd, ev, iss, t, disputed in rows:
-    print("\t".join([ev, iss, cd, t, disputed]))
+for cd, ev, iss, t, disputed, corrected in rows:
+    print("\t".join([ev, iss, cd, t, disputed, corrected]))
 PY
 if [[ $PARSE_OK -ne 1 ]]; then
   note "ERROR: slate parse failed ($SLATE)"; [[ -s "$WARN" ]] && cat "$WARN" >&2
@@ -284,7 +301,7 @@ alloc_port() {  # → $PORT: lowest free port >= 8080, claimed for the rest of t
 seed_ports
 note "ports already claimed on disk:${USED_PORTS:- none}"
 
-while IFS=$'\t' read -r EV ISS CDATE CTIME DISPUTED; do
+while IFS=$'\t' read -r EV ISS CDATE CTIME DISPUTED CORRECTED; do
   [[ -n "$ONLY_ISSUER" && "$ISS" != "$ONLY_ISSUER" ]] && continue
   LC=$(tr '[:upper:]' '[:lower:]' <<<"$ISS")
   DATEPART=$(tr '[:upper:]' '[:lower:]' <<<"${EV##*-}")
@@ -300,19 +317,11 @@ while IFS=$'\t' read -r EV ISS CDATE CTIME DISPUTED; do
   fi
   PHONE_OK=0; [[ "$ADM" == "held" ]] && PHONE_OK=1
   HAVE_TIME=0; [[ "$CTIME" != "-" ]] && HAVE_TIME=1
+  EVENT_CHANGED=0
 
   note "── $EV ($ISS) call_date=$CDATE call_time=${CTIME} admission=$ADM"
   [[ "$DISPUTED" == "1" ]] && report "DATE-DISPUTED: $EV — slate flags the call date; verify before trusting the timer (Kalshi metadata lies in stereo — HOOD 07-28)"
-
-  # ── skip already-staged (idempotence: this runs daily over a rolling window)
-  if [[ -f "$WC" && ( -f "$PHONE" || $PHONE_OK -eq 0 ) ]]; then
-    report "ALREADY-STAGED: $EV — $WC$( [[ -f "$PHONE" ]] && echo " + $PHONE" ) exist; untouched"
-    EXIST_PORT=$(port_of_existing "$PHONE" "$ENVF")
-    report "PORT: $EV → 127.0.0.1:${EXIST_PORT:-unknown} (already staged, read from disk)"
-    ALREADY=$((ALREADY + 1))
-    [[ $PHONE_OK -eq 0 ]] && { report "NO-PHONE-LANE: $ISS ($ADM)"; NOPHONE=$((NOPHONE + 1)); }
-    continue
-  fi
+  [[ "$CORRECTED" == "1" ]] && report "DATE-CORRECTED: $EV — typed authoritative correction selected $CDATE; provenance remains in the merged slate"
 
   # ── window/fire arithmetic, all derived from call_time_utc in ONE guarded
   #    place. A malformed (hand-edited) time is a BAD-TIME line + the event
@@ -373,15 +382,38 @@ PY
       ERRORS=$((ERRORS + 1)); continue
     fi
     note "prepared $RAW"
+    EVENT_CHANGED=1
   fi
 
   # ── 2. webcast twin (stage-webcast-arm.sh, then rename + merge + patch) ───
   if [[ -f "$WC" ]]; then
-    note "webcast twin exists: $WC"
+    if [[ $HAVE_TIME -eq 1 ]]; then
+      if ! CONFIG_STATE=$(reconcile_staged_config "$WC" "$CTIME" 2>&1); then
+        report "ERROR: $EV — webcast config is not safely reconcilable: $CONFIG_STATE"
+        ERRORS=$((ERRORS + 1)); continue
+      fi
+      note "webcast twin $CONFIG_STATE: $WC"
+      if [[ "$CONFIG_STATE" == "RECONCILED" ]]; then
+        report "RECONCILED: $EV — completed starts_at in $WC from typed slate time"
+        EVENT_CHANGED=1
+      fi
+    else
+      note "webcast twin exists but slate has no verified time: $WC (not ready)"
+    fi
   elif [[ $DRY -eq 1 ]]; then
+    if ! GUARD_STATE=$(python3 scripts/stage-reconcile.py --repo "$REPO" --run-root "$RUN_ROOT" \
+        guard --config "$WC" 2>&1); then
+      report "ERROR: $EV — webcast path cannot be staged: $GUARD_STATE"
+      ERRORS=$((ERRORS + 1)); continue
+    fi
     note "DRY: would run: EARDIR=$REPO scripts/stage-webcast-arm.sh $SPEC_FLAG $LC $EV $START_ISO"
     note "DRY: would merge [risk]+keywords from $RAW in a TEMP copy (id → $EV-WEBCAST, engine → streaming_ctc), sanity-grep it, then install as $WC"
   else
+    if ! GUARD_STATE=$(python3 scripts/stage-reconcile.py --repo "$REPO" --run-root "$RUN_ROOT" \
+        guard --config "$WC" 2>&1); then
+      report "ERROR: $EV — webcast path cannot be staged: $GUARD_STATE"
+      ERRORS=$((ERRORS + 1)); continue
+    fi
     if [[ -f "$UNDATED_WC" ]]; then
       # A hand-staged undated config is live operator work; clobbering it to
       # mint our dated twin is exactly the frozen-path edit we must not make.
@@ -480,6 +512,7 @@ PY
       ERRORS=$((ERRORS + 1)); continue
     fi
     note "staged $WC (id ${EV}-WEBCAST, engine streaming_ctc, keywords merged, sanity-checked)"
+    EVENT_CHANGED=1
   fi
 
   # ── 3. phone lane, gated on a PROBED bridge (admission="held" only) ───────
@@ -487,10 +520,32 @@ PY
     report "NO-PHONE-LANE: $ISS ($ADM)"
     NOPHONE=$((NOPHONE + 1))
   elif [[ -f "$PHONE" ]]; then
-    note "phone config exists: $PHONE"
+    if [[ $HAVE_TIME -eq 1 ]]; then
+      if ! CONFIG_STATE=$(reconcile_staged_config "$PHONE" "$CTIME" 2>&1); then
+        report "ERROR: $EV — phone config is not safely reconcilable: $CONFIG_STATE"
+        ERRORS=$((ERRORS + 1)); continue
+      fi
+      note "phone config $CONFIG_STATE: $PHONE"
+      if [[ "$CONFIG_STATE" == "RECONCILED" ]]; then
+        report "RECONCILED: $EV — completed starts_at in $PHONE from typed slate time"
+        EVENT_CHANGED=1
+      fi
+    else
+      note "phone config exists but slate has no verified time: $PHONE (not ready)"
+    fi
   elif [[ $DRY -eq 1 ]]; then
+    if ! GUARD_STATE=$(python3 scripts/stage-reconcile.py --repo "$REPO" --run-root "$RUN_ROOT" \
+        guard --config "$PHONE" 2>&1); then
+      report "ERROR: $EV — phone path cannot be staged: $GUARD_STATE"
+      ERRORS=$((ERRORS + 1)); continue
+    fi
     note "DRY: would derive $PHONE from $RAW (starts_at=$START_ISO, engine streaming_ctc, bind :$PORT, Q-REDIAL params)"
   else
+    if ! GUARD_STATE=$(python3 scripts/stage-reconcile.py --repo "$REPO" --run-root "$RUN_ROOT" \
+        guard --config "$PHONE" 2>&1); then
+      report "ERROR: $EV — phone path cannot be staged: $GUARD_STATE"
+      ERRORS=$((ERRORS + 1)); continue
+    fi
     if ! python3 - "$RAW" "$PHONE" "$EV" "$ISS" "$START_ISO" "$PORT" "$HAVE_TIME" <<'PY'
 import re, sys
 raw, phone, ev, iss, start, port, have_time = sys.argv[1:8]
@@ -516,8 +571,9 @@ s = s.replace('engine = "sherpa_kws"\n', ctc, 1)
 old_bind = 'bind = "127.0.0.1:8080"\n'
 if old_bind not in s: die(f"expected twilio bind :8080 in {raw} — prepare output changed shape?")
 s = s.replace(old_bind, f'''bind = "127.0.0.1:{port}"
-# Q-REDIAL production values (pinned 2026-07-29 night)
-max_reconnects    = 2
+# Event-wide Q-REDIAL budget. event-autorun starts one Rust process; these are
+# call-leg replacements behind its existing listener, never arm restarts.
+max_reconnects    = 20
 idle_timeout_secs = 8
 ''', 1)
 hdr = f'''# TWILIO PHONE-LANE ARM — {iss} {start}. Derived by scripts/slate-stage.sh from
@@ -536,6 +592,7 @@ PY
       ERRORS=$((ERRORS + 1)); continue
     fi
     note "staged $PHONE (bind :$PORT)"
+    EVENT_CHANGED=1
   fi
 
   # ── 4. autorun env — written ONLY with a verified call time (its HHMM
@@ -544,62 +601,80 @@ PY
   LANE_CFG="$PHONE"; [[ $PHONE_OK -eq 0 ]] && LANE_CFG="$WC"
   if [[ $HAVE_TIME -eq 0 ]]; then
     note "no verified call time — autorun env NOT written (NEEDS-TIME below)"
-  elif [[ -f "$ENVF" ]]; then
-    note "autorun env exists: $ENVF"
-    # A phone lane that exists while the env predates it (staged back when the
-    # event was webcast-only) is said LOUDLY and never silently rewritten.
-    if [[ $PHONE_OK -eq 1 && -f "$PHONE" ]]; then
-      if ! grep -q "CONFIG_PATH=\"$PHONE\"" "$ENVF" || ! grep -q "^BIND_PORT=$PORT$" "$ENVF"; then
-        report "ENV-STALE: $EV — $ENVF still points at webcast config/old port (phone lane is $PHONE :$PORT); env NOT rewritten, fix by hand"
-      fi
-    fi
-  elif [[ $DRY -eq 1 ]]; then
-    note "DRY: would write $ENVF (CONFIG_PATH=$LANE_CFG BIND_PORT=$PORT FIRE_HHMM=$FIRE_HHMM TO_NUMBER=TBD)"
   else
-    TICKS=""
-    if ! TICKS=$(python3 - "$RAW" <<'PY'
+    if ENV_STATE=$(python3 scripts/stage-reconcile.py --repo "$REPO" --run-root "$RUN_ROOT" \
+        env --config "$LANE_CFG" --env "$ENVF" --event-date "$CDATE" \
+        --fire-hhmm "$FIRE_HHMM" --end-hhmm "$END_HHMM" \
+        --complete-hhmm "$CE_HHMM" --bind-port "$PORT" 2>&1); then
+      ENV_RC=0
+    else
+      ENV_RC=$?
+    fi
+    if [[ $ENV_RC -eq 0 ]]; then
+      note "autorun env $ENV_STATE: $ENVF"
+    elif [[ $ENV_RC -ne 3 ]]; then
+      report "ENV-STALE: $EV — $ENV_STATE; env NOT rewritten"
+      ERRORS=$((ERRORS + 1)); continue
+    elif [[ $DRY -eq 1 ]]; then
+      note "DRY: would write $ENVF (CONFIG_PATH=$LANE_CFG BIND_PORT=$PORT FIRE_HHMM=$FIRE_HHMM TO_NUMBER=TBD)"
+    else
+      TICKS=""
+      if ! TICKS=$(python3 - "$RAW" <<'PY'
 import re, sys
 s = open(sys.argv[1]).read()
 m = re.search(r'allowlist_tickers = \[(.*?)\]', s, re.S)
 ticks = re.findall(r'"([A-Z0-9-]+)"', m.group(1)) if m else []
 print(" ".join(t.rsplit("-", 1)[-1] for t in ticks))
 PY
-    ); then
-      report "ERROR: $EV — ticker extraction from $RAW failed; autorun env not written"
-      ERRORS=$((ERRORS + 1)); continue
-    fi
-    if ! {
-      echo "# Per-event autorun parameters — $ISS ($EV). Staged by scripts/slate-stage.sh $(date -u +%F)."
-      echo "# Sourced by scripts/event-autorun.sh via EARSHOT_EVENT_ENV (systemd timer on the"
-      echo "# box / launchd plist on the laptop). ALL HHMM TIMES ARE BOX-LOCAL = UTC (us-east)."
-      echo "# TO_NUMBER/PASSCODE are TBD ON PURPOSE: event-autorun.sh FAIL-STOPS on TBD, so"
-      echo "# this env cannot place a call until the number hunt lands real digits here."
-      if [[ $PHONE_OK -eq 0 ]]; then
-        echo "# NO PHONE LANE (dial-ins admission=\"$ADM\"): CONFIG_PATH points at the WEBCAST"
-        echo "# lane; TO_NUMBER stays TBD so the phone autorun path can never fire this env."
+      ); then
+        report "ERROR: $EV — ticker extraction from $RAW failed; autorun env not written"
+        ERRORS=$((ERRORS + 1)); continue
       fi
-      echo "EVENT_NAME=\"$ISS\""
-      echo "EVENT_TICKER=\"$EV\"          # informational"
-      echo "CONFIG_PATH=\"$LANE_CFG\""
-      echo "WEBCAST_CONFIG_PATH=\"$WC\"   # informational"
-      echo "TO_NUMBER=\"TBD\"             # number hunt / dial-ins number_src"
-      echo "PASSCODE=\"TBD\""
-      echo "LABEL=\"com.earshot.${LC}-${DATEPART}-autorun\""
-      echo "EVENT_DATE=\"$CDATE\""
-      echo "END_HHMM_LIVE=$END_HHMM             # call + 150 min UTC$( [[ "$END_HHMM" == TBD ]] && echo ' — WINDOW WRAPS MIDNIGHT, set by hand')"
-      echo "COMPLETE_EARLIEST_HHMM=$CE_HHMM     # call + 45 min UTC$( [[ "$CE_HHMM" == TBD ]] && echo ' — WINDOW WRAPS MIDNIGHT, set by hand')"
-      echo "ACCOUNT_ENV=\"$ACCOUNT_ENV_DEFAULT\""
-      echo "BIND_PORT=$PORT"
-      echo "FIRE_HHMM=$FIRE_HHMM                # timer fire = call − 25 min, zero-padded HHMM UTC"
-      echo "                                    # (matches install-event-timer.sh --fire-hhmm;"
-      echo "                                    #  preflight-nightly.sh timer check reads it)"
-      echo "TICKERS=\"$TICKS\""
-    } > "$ENVF"; then
-      rm -f "$ENVF"   # never leave a partial env behind
-      report "ERROR: $EV — writing $ENVF failed; partial env removed"
-      ERRORS=$((ERRORS + 1)); continue
+      if ! ENVTMP=$(mktemp "configs/.${LC}-${DATEPART}-autorun.env.XXXXXX"); then
+        report "ERROR: $EV — could not allocate a same-directory temporary env for $ENVF"
+        ERRORS=$((ERRORS + 1)); continue
+      fi
+      if ! {
+        echo "# Per-event autorun parameters — $ISS ($EV). Staged by scripts/slate-stage.sh $(date -u +%F)."
+        echo "# Sourced by scripts/event-autorun.sh via EARSHOT_EVENT_ENV (systemd timer on the"
+        echo "# box / launchd plist on the laptop). ALL HHMM TIMES ARE BOX-LOCAL = UTC (us-east)."
+        echo "# TO_NUMBER/PASSCODE are TBD ON PURPOSE: event-autorun.sh FAIL-STOPS on TBD, so"
+        echo "# this env cannot place a call until the number hunt lands real digits here."
+        if [[ $PHONE_OK -eq 0 ]]; then
+          echo "# NO PHONE LANE (dial-ins admission=\"$ADM\"): CONFIG_PATH points at the WEBCAST"
+          echo "# lane; TO_NUMBER stays TBD so the phone autorun path can never fire this env."
+        fi
+        echo "EVENT_NAME=\"$ISS\""
+        echo "EVENT_TICKER=\"$EV\"          # informational"
+        echo "CONFIG_PATH=\"$LANE_CFG\""
+        echo "WEBCAST_CONFIG_PATH=\"$WC\"   # informational"
+        echo "TO_NUMBER=\"TBD\"             # number hunt / dial-ins number_src"
+        echo "PASSCODE=\"TBD\""
+        echo "LABEL=\"com.earshot.${LC}-${DATEPART}-autorun\""
+        echo "EVENT_DATE=\"$CDATE\""
+        echo "END_HHMM_LIVE=$END_HHMM             # call + 150 min UTC$( [[ "$END_HHMM" == TBD ]] && echo ' — WINDOW WRAPS MIDNIGHT, set by hand')"
+        echo "COMPLETE_EARLIEST_HHMM=$CE_HHMM     # call + 45 min UTC$( [[ "$CE_HHMM" == TBD ]] && echo ' — WINDOW WRAPS MIDNIGHT, set by hand')"
+        echo "EARSHOT_ACCOUNT_PROFILE=\"$ACCOUNT_ENV_DEFAULT\""
+        echo "ACCOUNT_ENV=\"$ACCOUNT_ENV_DEFAULT\""
+        echo "BIND_PORT=$PORT"
+        echo "FIRE_HHMM=$FIRE_HHMM                # timer fire = call − 25 min, zero-padded HHMM UTC"
+        echo "                                    # (matches install-event-timer.sh --fire-hhmm;"
+        echo "                                    #  preflight-nightly.sh timer check reads it)"
+        echo "TICKERS=\"$TICKS\""
+      } > "$ENVTMP"; then
+        rm -f "$ENVTMP"
+        report "ERROR: $EV — writing $ENVF failed; temporary env removed"
+        ERRORS=$((ERRORS + 1)); continue
+      fi
+      if ! mv "$ENVTMP" "$ENVF"; then
+        rm -f "$ENVTMP"
+        report "ERROR: $EV — could not atomically install $ENVF"
+        ERRORS=$((ERRORS + 1)); continue
+      fi
+      note "staged $ENVF"
+      report "RECONCILED: $EV — created missing generic env $ENVF"
+      EVENT_CHANGED=1
     fi
-    note "staged $ENVF"
   fi
   if [[ -f "$PHONE" || -f "$ENVF" ]]; then
     report "PORT: $EV → 127.0.0.1:$PORT"
@@ -619,7 +694,12 @@ PY
     report "NEEDS-TIME: $EV — no verified call time; env NOT written, timer NOT installed"
     NEEDTIME=$((NEEDTIME + 1))
   fi
-  STAGED=$((STAGED + 1))
+  if [[ $EVENT_CHANGED -eq 1 || $DRY -eq 1 ]]; then
+    STAGED=$((STAGED + 1))
+  elif [[ $HAVE_TIME -eq 1 ]]; then
+    report "ALREADY-STAGED: $EV — config$( [[ -f "$PHONE" ]] && echo 's' ) + generic env are complete, time-consistent, and untouched"
+    ALREADY=$((ALREADY + 1))
+  fi
 done < "$ELIG"
 
 # ── summary — one grep-able line + one mail, always ─────────────────────────

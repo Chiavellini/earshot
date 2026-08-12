@@ -8,12 +8,65 @@ human-memory steps and the evidence of *why* was spread across five
 filesystem roots with no index. This node owns the day runbooks, the
 per-event lifecycle journal, the green gate shared by every launcher, the
 descope record, and the installers that turn "a human remembers at T-minus"
-into loaded launchd agents.
+into loaded launchd agents. Since 2026-08-11 it also owns the typed run
+control plane: one immutable run identity per event attempt and one
+replayable, append-only lifecycle ledger under
+`var/runs/<EVENT_ID>/<RUN_ID>/` (`scripts/eventctl.py`), born from the
+2026-08-11 CAVA/CRWV reconstruction (`casino143.md`) where $48.50 of fills
+could not be audited and restarts kept overwriting fixed report paths.
 
 ## Owns
 
-- `docs/runbooks/**` — day-keyed operating procedure (RUNBOOK-YYYY-MM-DD.md);
-  the historical accumulator `docs/RUNBOOK.md` stays with control.supervise.
+- `docs/runbooks/**` — the generic per-event procedure
+  (`EVENT-LIFECYCLE.md`, the one document every event follows) plus the
+  day-keyed historical examples (RUNBOOK-YYYY-MM-DD.md); the historical
+  accumulator `docs/RUNBOOK.md` stays with control.supervise.
+- `scripts/eventctl.py` — the run control plane: compiles the immutable
+  `control/run-plan.json` (door `control.run.plan`) and appends the
+  hash-chained `control/receipts.jsonl` (door `control.run.receipts`) under
+  `var/runs/<EVENT_ID>/<RUN_ID>/`. Python stdlib only. It orchestrates
+  existing node entry points and records what they did; it is NOT a third
+  runtime composer — it never launches an arm, places a call, or touches
+  order policy. Commands: `init`, `record`, `compat`, `status`, `verify`,
+  `init-date`. The default RUN_ID is deterministic
+  (`<starts_at compact>-p<plan schema>-<sha256(config bytes)[:12]>`), so
+  repeated identical `init` is idempotent, a config edit yields a NEW run
+  identity, and a protocol upgrade cannot collide with or migrate an
+  immutable older-schema attempt.
+- `scripts/opsctl.sh` — the public generic facade. `prepare-day` takes one UTC
+  date and runs stage, canonical access checks, study, proof-bearing preflight,
+  and typed scheduling in order. Each aggregate stage continues across sibling
+  events, but the facade
+  returns nonzero if any stage reports trouble; ready siblings proceed and a
+  failed run is never called scheduled. Status, terminal-only box retrieval,
+  deterministic run audit, and recorded descope are exposed by the same
+  command. The facade contains no issuer/date map, credential, market posture,
+  resolver, scheduler implementation, or runtime composer.
+- `tests/eventctl_lifecycle.py` — the ledger's isolated test suite
+  (temp-repo fixtures, never the working tree; includes cross-process
+  flock/concurrency and truncated-tail recovery cases).
+- `scripts/run-host-boundary.py` — the network-free authority-transfer
+  primitive for one schema-3 run tree. A transport first lands a stable
+  snapshot in a private staging path; this helper verifies it through
+  `eventctl`, atomically publishes an absent canonical destination, or
+  reconciles only when one receipt ledger is an exact byte prefix of the
+  other. When the incoming host owns the extension, evidence is installed
+  before the exact receipt suffix is appended under `flock` + `fsync`.
+  Divergent ledgers, symlinks, unexplained destination files, and changed
+  immutable artifacts are refused before receipt mutation. It performs no
+  network operation. `tests/run_host_boundary.py` exercises laptop-prefix →
+  box-extension → laptop-tail round trips entirely in temporary repos.
+- `scripts/execution-profile.sh` — the one-time external account-profile
+  provisioner and read-only plan-time resolver. `configure` requires an
+  explicit stable target-host ID, sources only the named account env with
+  xtrace/output suppressed, calls the pinned binary's no-network
+  `account-fingerprint` command, and atomically maintains a marked block with
+  `EARSHOT_EXECUTION_HOST` plus
+  `EARSHOT_KALSHI_ACCOUNT_FINGERPRINT`. `resolve` re-derives the exact signer
+  selected for a given config and emits one non-secret identity JSON object
+  only when it still matches. It never infers `hostname`, sources a generated
+  event env, or contacts Kalshi. `tests/execution_profile.sh` uses only a temp
+  HOME, temp account env, and fake binary.
 - `scripts/journal.sh` — append-only per-event lifecycle journal writer:
   one JSON line `{ts,event,actor,action,outcome,detail,log,host,pid}` to
   `state/<EVENT_ID>/journal.jsonl`. ALWAYS exits 0 (a journaling failure must
@@ -22,61 +75,49 @@ into loaded launchd agents.
   `state/<E>/preflight-result.json` is PASS + config-sha-matched + ≤24 h AND
   `configs/.readiness/<basename>.json` is hash-matched with no unacked
   `confirmed:0` keyword. `rehearsal-*` basenames exempt. Pure read.
-- `scripts/descope-event.sh` — writes `state/<E>/DESCOPED.json` + pages; the
-  record that makes a descope distinguishable from a miss (the MCD lesson).
+- `scripts/descope-event.sh` — resolves the exact market-event ticker across
+  schema-3 RunPlans, verifies the complete selection, refuses duplicate active
+  attempts or any launched/other-terminal member, and records typed `descope`
+  on every active lane before durably publishing `state/<E>/DESCOPED.json` and
+  paging. The legacy-only projection remains available only when no exact or
+  related typed RunPlan exists; it can never hide a schedulable typed run.
 - `scripts/watcher-liveness.sh` — page-only "nothing watches the watchers"
   check for due-but-dead arm-on-url watchers.
-- `scripts/install-t0-agents.sh` — per-event launchd writer: watch +
-  escalate (+ resolver) agents per webcast event, T−35 probe-reminder pages
-  per non-held phone venue, the two liveness jobs. `--rehearsal` mode fires a
-  5-minute drill. **Refuses to install an unschedulable job.** An event whose
-  call time never resolved is staged at midnight UTC carrying a `TODO` marker,
-  so its T−75 instant is already past at install time; launchd loads the plist,
-  reports `runs=0`, and never fires — a silent total miss behind a green
-  install log. Both shapes (unresolved TODO, computed fire time in the past)
-  are refused, journalled `outcome=fail`, and counted into `PROBLEMS`. This is
-  the install-time half of what `night-before-sweep.sh` catches at read time;
-  the class took all 5 of the 2026-08-06 slate and 4 of 2026-08-07.
-- `scripts/study-nightly.sh` — date-driven variant-study runner in call
-  order (generalizes the hand-written per-day study scripts), and **the
-  resolver that leaves no event in the third state.** Until 2026-08-07 it paged
-  on a `confirmed:0` keyword and CONTINUED: TTWO had 3 dead words of 12, so
-  `preflight-event.sh` never ran, `assert-ready.sh` refused at T−75 with "no
-  preflight verdict", the launchd `&&` short-circuited, `arm-on-url.sh` was
-  never exec'd, and a board that traded 69,658 contracts got nothing.
-  `docs/runbooks/RUNBOOK-2026-08-05.md:86` already required "fix, ack
-  deliberately, or descope — NO THIRD STATE"; paging and continuing was a
-  fourth. It now runs, per config with dead words:
-  1. **autopsy** (`dead-word-autopsy.sh --auto`, bounded) to separate NEAR-MISS
-     (a `confirmed_threshold` question — widening cannot help) from
-     NO-EVIDENCE/WEAK (a spelling question — no threshold helps);
-  2. **widen** the NO-EVIDENCE/WEAK words through `scripts/variant-widen.py`
-     `--write`, then **re-run `variant-study.sh`**. The widener proposes only;
-     measurement is still the gate, so a bad candidate scores 0 and changes
-     nothing. A re-study that exits ≥2 (could not run) is NOT treated as
-     "still dead" — it pages and refuses to ack, because nothing was measured;
-  3. **ack the residue** into `configs/.acks/<base>-dead-word.ack`, naming
-     every residual token (`preflight-event.sh:131` requires each one, so a new
-     dead word cannot hide behind an old ack). This risks no money:
-     `posture-from-study.py` pins any keyword with ratio below the floor to a
-     1¢ non-crossing cap, and a dead word has ratio 0 — it provably cannot
-     fill. Acking only stops it vetoing the rest of the board. A pre-existing
-     ack is preserved verbatim below the machine section;
-  4. **run `preflight-event.sh`** (full, with the `ACCOUNT_ENV` resolved from
-     the matching `configs/*-autorun.env`; `--only-readiness` when there is
-     none) so a verdict artifact EXISTS either way — a RED verdict is a legal
-     outcome, a MISSING one is the third state;
-  5. **page** what was widened, what was acked, and what is knowingly unserved.
+- `scripts/install-t0-agents.sh` — the internal macOS adapter for exactly one
+  schema-3 webcast RunPlan. It requires the matching AccessPlan, installs one
+  `arm-on-url.sh --run-dir ...` launchd job, reads the loaded job back, and
+  delegates the durable `scheduled` fact to `schedule-proof.py`. It refuses a
+  placeholder/past fire, host mismatch, argv mismatch, or partially installed
+  descriptor; an on-disk plist is not coverage.
+- `scripts/study-nightly.sh` — RunPlan-driven variant-study runner in call
+  order (generalizes the hand-written per-day study scripts). A UTC date
+  selects only immutable schema-3 plans by `starts_at_utc`; each plan pins the
+  exact config and event env. Issuer/date filename tokens never select an
+  event, and the script prevalidates the complete set before measuring
+  anything. Parsed config/env staging metadata is checked independently, so
+  an expected event whose RunPlan compilation failed makes the date nonzero
+  rather than disappearing behind its ready siblings.
 
-  Two guardrails refuse the auto-ack and page a human instead: more than **one
-  third** of the board still dead after widening (a config/engine/model fault,
-  not hard words), and any token `market-phrase-screen.py` flags (that is a
-  DESCOPE question — the AAPL "iPhone 18" class, where a perfectly-heard wrong
-  word scores 16/16 and still cannot settle the contract). A board the screen
-  cannot reach degrades to "acked UNSCREENED" with a loud page rather than
-  blocking, because a network blip must not re-create the third state.
-  `--dry-run` prints the whole decision tree, sends no pages and writes
-  nothing.
+  The RunPlan's config hash is an immutability boundary. When autopsy says a
+  dead word needs wider spelling variants, `variant-widen.py` runs in proposal
+  mode only. `study-nightly.sh` never passes `--write`, never changes the
+  pinned config, never remeasures a hypothetical edit, and never auto-acks that
+  unmeasured result. It leaves a reviewable proposal in `/tmp`, raises the
+  stable critical `study_failed` / `nightly-study` AlertRequest while the plan
+  still verifies, and makes the date nonzero. Applying that proposal is a
+  deliberate config change which must produce a new config hash and new
+  RunPlan attempt before another study.
+
+  Measured dead words for which widening is not the remedy may still be
+  acknowledged as knowingly unserved under the existing 1¢ non-crossing
+  posture. More than one third of the board dead is refused as a broken
+  config, and a phrase-screen mismatch remains a descope decision rather than
+  a detectability acknowledgement. The script produces/resolves readiness
+  only; it never calls `preflight-event.sh`. The next `prepare-day` stage,
+  `preflight-nightly.sh`, is the sole producer of proof-bearing
+  `study_completed` and preflight verdict receipts. `--dry-run` may use
+  temporary selection files but makes no repository, lifecycle, journal, ack,
+  config, or notification change.
 - `scripts/green-guardian.sh` — re-checks the green gate shortly before the
   watcher fires and restores the snapshotted green SET if an interrupted
   night-before edit left the event red. Makes the safe state the default state
@@ -85,6 +126,16 @@ into loaded launchd agents.
   tomorrow" sweep: green gate, the **loaded** launchd descriptor being in the
   future (not merely listed), the loaded argv's posture flags, the pinned
   binary, and stale `$HOME/<slug>-stream.url` files.
+- `scripts/schedule-nightly.sh` — the scheduling join behind `opsctl
+  prepare-day`. It enumerates immutable RunPlans, refuses a zero-plan date, and
+  delegates only `preflight_passed` attempts to their lane-specific
+  proof-bearing installer. The facade consumes `preflight-nightly.sh` through
+  `control.preflight`'s public script boundary; it does not own that gate. A
+  failure of one verified plan raises one stable run-bound critical alert and
+  does not stop later siblings. A corrupt/no-plan failure has no trustworthy
+  ledger and therefore uses the legacy date-level notifier. Alert delivery
+  failure never changes the original nonzero scheduling result, and dry-run
+  invokes neither installers nor notification adapters.
 
 ## Does not own
 
@@ -103,28 +154,88 @@ into loaded launchd agents.
 
 ## Input contracts
 
-None registered yet. The de-facto inputs are files: `state/<E>/
-preflight-result.json` (written by control.preflight since 2026-08-04),
-`configs/.readiness/<basename>.json` (evidence.benchmark), staged configs
-(control.prepare). They become typed doors in roadmap Phase D
+None registered yet. The de-facto inputs are files: staged configs and
+`configs/*-autorun.env` (control.prepare — `eventctl.py init`/`init-date`
+parse `[event].id`, `[event].starts_at`, `[[sources]].kind` via `tomllib`
+and `CONFIG_PATH`/`EVENT_DATE`/`EARSHOT_ACCOUNT_PROFILE` via
+literal-assignment regex, never filename shape or shell evaluation), the
+external account profile named by that locator,
+`state/<E>/preflight-result.json` (written by
+control.preflight since 2026-08-04), and
+`configs/.readiness/<basename>.json` (evidence.benchmark). The remaining
+de-facto inputs become typed doors in later Phase D slices
 (`preflight-result.json` is already shaped for it).
 
 ## Output contracts
 
-None registered yet. `state/<E>/journal.jsonl` and `state/<E>/DESCOPED.json`
-are the de-facto outputs, consumed by the missed-arm reconciliation
-(control.grade) and the day-after reconstruction. Phase D types them as run
-artifacts under `var/runs/<event>/<run-id>/`.
+- `control.run.plan` — the immutable run plan,
+  `var/runs/<EVENT_ID>/<RUN_ID>/control/run-plan.json`. One per event
+  attempt: schema version, event/run ids, UTC creation and start
+  timestamps, ingress lane, stable execution-host ID, Kalshi environment,
+  market-event ticker, stable account fingerprint, explicit execution posture,
+  repo-relative config/env paths
+  with SHA-256 hashes, the lane's required preparation receipts, the
+  run-relative artifact destinations (receipts, status, all six audio-evidence
+  constructor paths, book tape, order-evidence journal, independent raw FIX
+  observation tape, runtime report, grade), and its own canonical
+  `plan_sha256` (computed with that field omitted). The six audio keys are
+  `audio_raw`, `audio_frames`, `audio_manifest`, `audio_commit`, `audio_lock`,
+  and `audio_wav_dir`; the FIX key is `fix_observation_tape`. Repeated
+  identical `init` is idempotent; a divergent or unsupported-schema plan at
+  the same path is refused read-only, never rewritten or migrated. For an
+  execution-enabled plan, host/account identity comes from either a complete
+  explicit override pair or schema-1 `execution-identity` JSON returned by
+  `execution-profile.sh resolve` after it rechecks the selected signer.
+- `control.run.receipts` — the append-only lifecycle ledger,
+  `var/runs/<EVENT_ID>/<RUN_ID>/control/receipts.jsonl`. Exclusive
+  `flock` + `O_APPEND`, one canonical JSON line per write; every receipt
+  carries `sequence`, `previous_sha256` (chain anchored at `plan_sha256`),
+  and its own `receipt_sha256`. Typed transitions re-verify the whole
+  chain plus the current config/env hashes before appending; legacy
+  `compat` receipts are observations that can never advance or terminate
+  typed state. `control/status.json` is a DERIVED snapshot
+  (`"derived": true`, `"authority": "control/receipts.jsonl"`) and is
+  never authoritative.
+
+Across hosts, the same two doors retain one authority chain. Before launch the
+laptop may hold the preflight prefix. Dispatch publishes that exact tree to the
+RunPlan's execution host; the execution host then owns every scheduler/runtime
+append. Retrieval accepts the laptop prefix and imports the box extension
+without synthesizing receipts. A later local `evidence_pulled`/`graded` tail is
+the normal inverse relation (remote ledger is then a prefix of local). A
+laptop-hosted terminal run instead records `evidence_consolidated` after the
+offline audit validates its in-place artifacts; `evidence_pulled` is the
+stronger remote-transfer form of that same grading prerequisite.
+
+`state/<E>/journal.jsonl` and `state/<E>/DESCOPED.json` remain the
+de-facto legacy outputs, consumed by the missed-arm reconciliation
+(control.grade) and the day-after reconstruction; `journal.sh` bridges
+each legacy line into the active run's ledger as a `compat` receipt.
 
 ## Side effects and exclusive resources
 
 - Appends to `state/<E>/journal.jsonl` (O_APPEND single-line writes; safe
   under concurrent actors).
-- Writes `~/Library/LaunchAgents/com.earshot.<slug>-<datepart>-*.plist` and
-  bootstraps them into `gui/<uid>` — the ONLY writer of per-event laptop
-  agents; bootout the date's set after the event day.
-- Pages via `scripts/notify.sh` (descope, gate refusal/override, dead
-  watcher, study problems).
+- Writes under `var/runs/<EVENT_ID>/<RUN_ID>/` (gitignored): the plan via
+  a uniquely named temp file + file fsync + rename + parent-directory fsync,
+  receipts via exclusive `flock` on the receipts fd itself + `O_APPEND` + one
+  write + fsync, and the status snapshot through the same durable temp/rename
+  publication under the receipts lock. Readers take a shared flock. Nothing
+  else may write those three files.
+- `execution-profile.sh configure` is the sole deliberate external write in
+  this slice: when the operator explicitly names an account env, it atomically
+  replaces that one file while preserving its restrictive mode and all bytes
+  outside its marked block. It refuses symlinks and any group/other-readable
+  credential file. Repository verification never invokes it on a real account
+  env.
+- The internal installer writes one RunPlan-bound launchd plist and bootstraps
+  it into `gui/<uid>`. Only the loaded-job readback plus schedule proof may
+  advance `scheduled`.
+- Delegates verified RunPlan-bound study/schedule failures to
+  `scripts/alertctl.py`, which owns durable request, delivery, retry, and
+  acknowledgement facts. Legacy `notify.sh` remains only where this node has
+  no trustworthy RunPlan ledger (plus older descope/gate/watcher callers not
+  migrated by this slice).
 - Never places calls, never sends orders, never touches Twilio/Kalshi APIs.
 
 ## Failure contract
@@ -133,10 +244,66 @@ artifacts under `var/runs/<event>/<run-id>/`.
 - `assert-ready.sh` refusals are single-line `REFUSED: <why>` on stdout,
   exit 1; launchers page and exit 7 on refusal; `EARSHOT_GREEN_OVERRIDE`
   proceeds but pages ("an override that pages is a decision, not a bypass").
-- `install-t0-agents.sh` prints `LOAD-FAILED:` per agent and exits 1 if any
-  agent failed to bootstrap — a partially-installed day must be visible.
+- `install-t0-agents.sh` refuses/rolls back when bootstrap or loaded-job proof
+  fails; a partially installed job must never gain a `scheduled` receipt.
 - `watcher-liveness.sh` pages the missing-slug diff and exits 1.
-- `descope-event.sh` refuses to run without a reason string.
+- `descope-event.sh` refuses without a reason, on a lane event ID rather than
+  the exact market-event ticker, on an invalid/corrupt related RunPlan, on
+  multiple active attempts for one lane event, or if any selected run has
+  launched or terminated as anything other than `descope`. It prevalidates the
+  whole set and publishes no legacy projection until every selected ledger
+  durably contains `descope`; a stopped append is loud and idempotently
+  recoverable by rerun.
+- `eventctl.py` exit codes: 0 success (including idempotent no-ops and a
+  `compat` with no active run), 1 refusal or integrity failure, 2 usage,
+  3 recoverable truncated tail. An illegal transition modifies nothing; a
+  refused `init` writes nothing. `verify` fails loud on any mutation of
+  the plan, the config, the env, any earlier receipt, any newline-terminated
+  corrupt receipt (including the last one), or any corrupt/missing sibling run
+  candidate. Only a non-newline-terminated final JSONL fragment is diagnosed
+  as recoverable (repair = manual truncation to the reported byte offset;
+  eventctl never auto-truncates the ledger).
+  Only the current RunPlan schema is writable/readable. Existing schema-1 and
+  schema-2 attempt directories are immutable historical evidence: a colliding
+  `init` checks them before any `mkdir`/`O_CREAT` and fails without changing
+  even their directory set. The schema component in a default RUN_ID prevents
+  accidental collision while leaving those directories byte-for-byte intact.
+  The `journal.sh` compat bridge is wrapped so an eventctl failure can
+  never break journal.sh's unconditional exit 0.
+- Execution identity is all-or-nothing. An enabled `init` accepts both
+  explicit recovery overrides (`--host-id` and `--account-fingerprint`) or
+  resolves both from the event env's literal portable
+  `EARSHOT_ACCOUNT_PROFILE` (literal `ACCOUNT_ENV` is the compatibility
+  fallback); it never mixes the two. Missing/computed/nonportable locators,
+  stale keys, config-vs-ambient signer mismatches, malformed helper output,
+  and missing pinned binaries refuse before a run directory is created.
+  `init-date` resolves each event independently, so concurrent events may pin
+  different accounts with no per-event fingerprint patch. Neither profile
+  command prints credential values or private-key bytes.
+- `run-host-boundary.py` exits 0 only for an atomic publication, a verified
+  prefix advance, or an already-compatible no-op. Exit 1 leaves the
+  authoritative receipt prefix unchanged. A crash before the receipt append
+  may leave only source-verified evidence files beside the old valid prefix;
+  rerunning completes the same reconciliation. The helper requires an exact
+  `--expected-host` match and a canonical destination under
+  `var/runs/<EVENT_ID>/<RUN_ID>/`.
+- `opsctl prepare-day` never converts a partial date into an all-clear. It
+  returns 1 if stage, access, study, preflight, or schedule reports any problem while
+  still allowing those aggregate scripts to process ready siblings.
+- `study-nightly.sh` fails before its first detector invocation if no schema-3
+  RunPlan exists for the requested UTC date, if a selected plan or pinned
+  input fails `eventctl verify`, if two plans ambiguously select one event or
+  config, or if parsed staging metadata expects a config that has no plan.
+  Filename dates are never a compatibility fallback. Once verified, pinned
+  config bytes are read-only: a widening need creates a proposal plus a
+  critical alert/nonzero verdict and requires a new RunPlan attempt. Study
+  never invokes preflight.
+- `schedule-nightly.sh` continues siblings after a verified run's failure and
+  raises one critical AlertRequest with a stable failure-class code/dedupe key.
+  It calls `alertctl` once and inherits its bounded delivery policy; it does
+  not loop or blind-redial. Failures without a trustworthy plan use one legacy
+  date-level notification. Any alert-adapter failure is logged but the
+  scheduler's original nonzero result is preserved.
 
 ## Parallel work boundary
 
@@ -148,6 +315,26 @@ spans both sides and must move in one change.
 ## Verification
 
 - `bash -n` on every owned script.
+- Run ledger: `python3 -m py_compile scripts/eventctl.py
+  tests/eventctl_lifecycle.py`; `python3 tests/eventctl_lifecycle.py`
+  (isolated temp repos — replay, idempotency, join gates, mutation
+  detection, truncated tail, cross-process concurrency, init-date
+  selection/ambiguity); `git check-ignore
+  var/runs/TEST/RUN/control/run-plan.json`; `cargo test --test
+  architecture_contract`; `scripts/doc-lint.sh`.
+- Host boundary: `python3 -m py_compile scripts/run-host-boundary.py
+  tests/run_host_boundary.py`; `python3 tests/run_host_boundary.py`. The suite
+  uses temporary local/remote repositories and invokes no ssh, rsync,
+  systemctl, launchctl, dial, or market API.
+- Operations facade, RunPlan-only study date selection, pinned-config
+  immutability, study/preflight separation, and nightly alert boundaries:
+  `python3 tests/opsctl.py`; schedule success/failure/sibling/dry-run drill:
+  `scripts/schedule-nightly.sh --check`; public-surface governance:
+  `python3 tests/ops_surface.py` and `scripts/doc-lint.sh`.
+- Execution identity: `bash -n scripts/execution-profile.sh
+  tests/execution_profile.sh`; `tests/execution_profile.sh`; `cargo test --lib
+  auth`; `cargo test --bin earshot
+  local_account_identity_uses_the_same_config_first_selector_as_arm`.
 - Journal round-trip: `scripts/journal.sh --event JOURNAL-SELFTEST --actor t
   --action note --outcome ok --detail 'x "y" <z>'` then `python3 -c
   "import json;[json.loads(l) for l in open('state/JOURNAL-SELFTEST/journal.jsonl')]"`.
@@ -157,8 +344,9 @@ spans both sides and must move in one change.
 - The launcher integration is covered by `tests/launch_event_posture.rs` /
   `tests/launch_webcast_posture.rs` (green with the gate blocks in place,
   2026-08-04).
-- `install-t0-agents.sh --rehearsal` is the honest launchd-fired drill
-  (fires in ~2 min; URL-MISSED page delivery + paste→pcm-gate→launch).
+- `tests/typed_scheduler_boundary.sh` is the offline scheduler/fire-time drill:
+  loaded-job rollback/readback, endpoint-bound PCM proof, crash-gap recovery,
+  exactly one launch, and launcher-PID-only teardown.
 
 ## Migration status
 
@@ -166,7 +354,26 @@ New node (2026-08-04, prep-night for the 10-event 2026-08-05 slate). Journal
 insertions cover the tonight-critical actors (launch-event, launch-webcast,
 arm-on-url, run-arm, event-autorun, redial-supervisor, preflight-event);
 remaining actors (slate-stage, variant-study, webcast-autorun,
-install-event-timer, run-verdict) get theirs in the week's follow-up. The
-event-status reader (`scripts/event-status.sh`) lands next, then this node's
-artifacts migrate to Phase D's `var/runs/<event>/<run-id>/` (one path
-constant in journal.sh).
+install-event-timer, run-verdict) get theirs in the week's follow-up.
+
+Phase D reliability integration is implemented and offline-tested: the run
+identity and lifecycle ledger are live (`control.run.plan` /
+`control.run.receipts`), `journal.sh`
+bridges legacy lines into the active run as `compat` receipts,
+`event-status.sh` verifies and prefers typed status, enumerates the union of
+RunPlans and slate entries, and returns nonzero with
+`STALE_PREFIX_POSSIBLE` when a scheduled active run's execution-host tail has
+not been pulled. It never hides typed corruption behind legacy state. The
+`stage-nightly.sh` compiles run plans nightly via `eventctl.py init-date`.
+Account/host identity is a stable per-account prerequisite rather than a
+per-event patch: provision an account env once, then every event naming its
+portable profile locator is checked against the pinned binary during nightly
+plan compilation and again against the actual signer at arm time.
+The runtime now coordinates report, decision, order, audio, book, and raw FIX
+evidence close; launchers consume only schema-3 plans; the scheduler proves the
+loaded job and fire-time capture boundary; and the deterministic grader
+consumes the run ledger, including an independent FIX-tape replay and the
+derived date audit. Run-bound failures now carry durable bounded delivery and
+explicit acknowledgement facts. Still open are production
+rehearsal/deployment, transcript-backed precision, and remote status
+read-through before terminal evidence pull.

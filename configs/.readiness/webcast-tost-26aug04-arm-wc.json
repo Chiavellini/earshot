@@ -1,7 +1,7 @@
 {
  "config": "webcast-tost-26aug04-arm-wc",
  "keywords_sha256": "9f4b4611d9685cd42f605d5787c93dc4540575cefecb37b4924ce9386ef5ad73",
- "date": "2026-08-04",
+ "date": "2026-08-12",
  "engine": "streaming_ctc",
  "voices": [
   "Samantha",

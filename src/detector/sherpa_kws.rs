@@ -53,16 +53,24 @@ pub struct SherpaKwsDetector {
 }
 
 impl SherpaKwsDetector {
-    pub fn new(cfg: &SherpaKwsConfig, keywords: &[KeywordConfig]) -> Result<Self, DetectorBuildError> {
+    pub fn new(
+        cfg: &SherpaKwsConfig,
+        keywords: &[KeywordConfig],
+    ) -> Result<Self, DetectorBuildError> {
         let dir = &cfg.model_dir;
         let table = TokenTable::from_bpe_model(&dir.join("bpe.model"))
             .map_err(|e| DetectorBuildError::SherpaKws(e.to_string()))?;
         let entries = compile(keywords, &table, cfg.default_threshold, cfg.default_boost)
             .map_err(|e| DetectorBuildError::SherpaKws(e.to_string()))?;
         let fast: Vec<&CompiledEntry> = entries.iter().filter(|e| e.tier == Tier::Fast).collect();
-        let conf: Vec<&CompiledEntry> = entries.iter().filter(|e| e.tier == Tier::Confirmed).collect();
-        let label_map: HashMap<String, (KeywordId, Tier)> =
-            entries.iter().map(|e| (e.label.clone(), (e.keyword, e.tier))).collect();
+        let conf: Vec<&CompiledEntry> = entries
+            .iter()
+            .filter(|e| e.tier == Tier::Confirmed)
+            .collect();
+        let label_map: HashMap<String, (KeywordId, Tier)> = entries
+            .iter()
+            .map(|e| (e.label.clone(), (e.keyword, e.tier)))
+            .collect();
 
         let conf_engine = TierEngine::create(cfg, &render_owned(&conf))?;
         let fast_engine = if fast.is_empty() {
@@ -107,11 +115,14 @@ impl TierEngine {
     fn create(cfg: &SherpaKwsConfig, keywords_buf: &str) -> Result<TierEngine, DetectorBuildError> {
         let dir = &cfg.model_dir;
         let find_model = |stem: &str, int8: bool| -> Result<String, DetectorBuildError> {
-            let entries = std::fs::read_dir(dir)
-                .map_err(|e| DetectorBuildError::SherpaKws(format!("read {}: {e}", dir.display())))?;
+            let entries = std::fs::read_dir(dir).map_err(|e| {
+                DetectorBuildError::SherpaKws(format!("read {}: {e}", dir.display()))
+            })?;
             for f in entries.flatten() {
                 let name = f.file_name().to_string_lossy().into_owned();
-                if name.starts_with(stem) && name.ends_with(".onnx") && (name.contains(".int8.") == int8)
+                if name.starts_with(stem)
+                    && name.ends_with(".onnx")
+                    && (name.contains(".int8.") == int8)
                 {
                     return Ok(f.path().display().to_string());
                 }
@@ -149,7 +160,10 @@ impl TierEngine {
         // real stream must never see synthetic silence (leading silence
         // corrupts the decoder's internal clock; module docs).
         let throwaway = spotter.create_stream();
-        throwaway.accept_waveform(EXPECTED_RATE_HZ as i32, &vec![0f32; 2 * EXPECTED_RATE_HZ as usize]);
+        throwaway.accept_waveform(
+            EXPECTED_RATE_HZ as i32,
+            &vec![0f32; 2 * EXPECTED_RATE_HZ as usize],
+        );
         while spotter.is_ready(&throwaway) {
             spotter.decode(&throwaway);
         }
@@ -177,9 +191,12 @@ impl Detector for SherpaKwsDetector {
         );
 
         self.f32_buf.clear();
-        self.f32_buf.extend(chunk.pcm.iter().map(|&s| s as f32 / 32768.0));
+        self.f32_buf
+            .extend(chunk.pcm.iter().map(|&s| s as f32 / 32768.0));
         for engine in self.engines() {
-            engine.stream.accept_waveform(EXPECTED_RATE_HZ as i32, &self.f32_buf);
+            engine
+                .stream
+                .accept_waveform(EXPECTED_RATE_HZ as i32, &self.f32_buf);
         }
         self.samples_fed += chunk.pcm.len() as u64;
 

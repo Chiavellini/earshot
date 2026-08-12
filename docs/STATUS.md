@@ -1,103 +1,139 @@
 ---
-as_of: 2026-08-01
+as_of: 2026-08-12
 authority: current-project-state
 ---
 
 # Current status
 
-EARSHOT has a working typed runtime spine: replay/live sources, preprocessing,
-chunking, pluggable detectors, one-shot decisions, local books, bounded risk,
-live-validated REST execution, offline/mock-tested FIX execution, and latency
-reporting. M0–M3 acceptance work is complete; M4 remains gated by the explicit
-risk posture in `docs/SPEC.md`.
+EARSHOT's Rust runtime remains the sound part of the system: typed sources,
+preprocessing, detectors, persistent one-shot decisions, wait-free local books,
+bounded risk, REST/FIX execution, and coordinated cancellation. The active
+reliability program is replacing the improvised operational harness described
+in `casino143.md`; it does not change price caps, sizing, detector thresholds,
+or listen-only safety posture.
 
-The fastest measured ingress is the phone lane, but its unattended acquisition,
-bridge admission, reconnection, and multi-event ingress are active reliability
-work. The webcast lane is a measured production fallback and research surface,
-not merely a placeholder.
+## Reliability baseline now implemented
 
-## Active structural state
+- Every live attempt has one immutable schema-3 RunPlan and one append-only,
+  hash-chained lifecycle ledger under
+  `var/runs/<EVENT_ID>/<RUN_ID>/`. Config, environment, host, account identity,
+  lane, posture, and all evidence destinations are pinned before launch.
+- Both live composers require the RunPlan's in-process audio bank, exact raw
+  Kalshi book tape, authoritative order-evidence journal, and (for FIX) raw
+  observation tape. STOP/SIGTERM drains and finalizes these before the runtime
+  publishes a success report; unresolved evidence makes the run fail loudly.
+- Decision state and order accounting survive source reconnection and process
+  restart. Order evidence is the accounting authority; report disagreement is
+  an audit failure rather than a heuristic choice between counters.
+- Phone streams renew a current-stream admission receipt on each CallSid and
+  attempt. Unknown/untested venues switch to the operator topology on the first
+  qualifying early drop; known screened venues start human-first; a route or
+  page is not itself admission.
+- Execution identity is a stable non-secret host/account fingerprint derived
+  by the same signer selector as `arm`. Host-bound run trees cross through a
+  prefix-checked, symlink-refusing boundary; box evidence is published locally
+  only for completed/aborted/failed runs.
+- Preflight is proof-bearing. Webcast access uses an immutable schema-2,
+  non-secret AccessPlan with an explicit public, registered-session, or
+  signed-in-session prerequisite and explicitly says current media is not yet
+  proven. Phone uses a typed admission strategy (fresh held, rehearsed
+  operator-first, first-drop fallback, or reservation fallback). A green
+  report is durably written before `preflight_passed` can be recorded.
+- The deterministic offline run audit independently validates order, book,
+  report, and audio evidence. It reports observed cap-depth exhaustion and
+  monotonic timing, never invents competitor/sweep causality. Local webcast
+  evidence is consolidated in place; remote evidence retains explicit pull
+  provenance. FIX runs independently replay the raw observation chain and REST
+  proves the typed not-applicable posture. Precision remains unresolved until
+  transcript scoring consumes the committed WAVs.
+- Critical run failures have deterministic alert IDs, durable bounded delivery
+  attempts/outcomes, a phone-required channel, and explicit human
+  acknowledgement. The date audit reconciles every immutable attempt and its
+  unresolved alerts while continuing siblings; invalid evidence or an
+  unacknowledged alert keeps the date red.
 
-- The executable node registry now gives every first-party file one owner and
-  every connection a producer, consumers, kind, maturity, and concrete current
-  door. Dependency cycles, uncovered paths, and unresolved contracts fail
-  `cargo test`.
-- The runtime leaf nodes mostly have useful typed doors and focused tests.
-- `src/main.rs`, the flat event config, and several 200–540 line operational
-  scripts are legacy hubs that combine construction, policy, lifecycle, and
-  reporting.
-- Operational state is still implicit across CLI flags, sourced env files,
-  logs, and `state/<event>`. There is not yet a typed `RunPlan`, `RunId`, or
-  structured preflight/session result.
-- Append-only evidence is valuable but interleaved with current instructions.
-  `docs/RUNBOOK.md` and `docs/LATENCY-PROOF.md` are historical accumulators,
-  not current-state authorities.
-- A completed performance sweep exists on
-  `sweep/overnight-2026-07-29`; it is not silently part of this branch.
-- The 2026-07-30 session ended in a power loss with 109 uncommitted paths. That
-  work is now committed. One lane was cut mid-edit and is PARKED, not finished:
-  the HLS read-quantum work in `docs/LATENCY-PROOF.md` §Q1. Its 90-minute
-  drop-safety gate has never run, `scripts/prefetch-gate.sh` carries four
-  recorded defects, and `--chunk-ms` therefore still defaults to 0. Do not read
-  §Q1 as settled. The defects are listed in that lane's claim.
+## One operational surface
 
-## Pre-event access: what we know before a call
+The supported operator entrypoint is `scripts/opsctl.sh`. Its generic
+`prepare-day --date YYYY-MM-DD` chain runs stage, canonical access checks,
+study, preflight, and typed schedule for every event on the date; problems
+remain nonzero and loud while ready siblings continue. Missing public/session
+access prints the exact generic `bind-access` action rather than inviting an
+issuer-specific patch. Status, pull, single-run/date audit, alerts,
+acknowledgement, and descope are exposed by the same facade.
 
-This is the question the phone lane starts with, and it now has an end-to-end
-answer rather than a human with a browser:
+`architecture/operations.toml` classifies the public commands, internal
+adapters, retired live entrypoints, and historical scripts. Normal doc lint
+invokes `scripts/ops-surface-check.py`; a new dated or unclassified
+trade/schedule-capable top-level script fails. The old `run-arm.sh`,
+`arm-when-url.sh`, `ms-morning.sh`, and `wing-autorun.sh` paths now refuse with
+exit 64 and name their generic replacement.
 
-- `control.hunt` sweeps SEC 8-K exhibits nightly and produces a per-issuer
-  verdict. `tier = "unknown"` means the hunt COULD NOT LOOK (no 8-K matched, or
-  a foreign private issuer filing 6-K) and is deliberately distinct from
-  `bridge_unpublished`, which is a real negative across a scanned window.
-- Found numbers reach the prober automatically through
-  `control.bridge.numbers` (gitignored, 0600); `bridge-probe-batch.sh` unions
-  registry and hunt candidates, so a newly found bridge is visible the same
-  night. `registry-propose.py` turns verdicts into paste-ready registry rows.
-- Admission remains probe-only (THE MSFT RULE) and the registry stays
-  human-audited. Reservation-window venues — whose bridge does not exist
-  off-hours — are marked as such and probed at T-90..T-30 by
-  `admission-window-probe.sh`, which refuses to dial outside that window.
+The dated files beside `docs/runbooks/EVENT-LIFECYCLE.md` and the long
+`docs/RUNBOOK.md` are historical evidence, not procedures. The lifecycle
+runbook plus `opsctl.sh surface` are the current operational authority.
 
-The binding constraint is now coverage, not plumbing: `admission` is set on 10
-of 64 registry venues and **three** are `held` (CMG, SPOT, PGR), so
-`slate-stage.sh` still stages webcast-only for almost everything by
-construction. Growing `held` coverage is the highest-value phone-lane work
-available.
+## Integration state
 
-**2026-08-04 changed how a probe's verdict reaches the registry.** SPOT and PGR
-were both `held` on the morning of their calls and neither was registered,
-because `bridge-probe.sh` printed a paste-ready snippet and a human had to
-retype it. `bridge-probe.sh --promote` now writes the verdict itself (via
-`scripts/registry-admit.py`, owned by `control.admission`) and persists the
-proven digits to `state/hunt/numbers-probed.env`. THE MSFT RULE is unchanged —
-only a probe dial sets `admission`, and only `held` auto-writes. Full account
-in `docs/POSTMORTEM-26AUG04.md`.
+Typed schedule and fire-time supervision are implemented and offline-tested:
+exact RunPlan jobs, loaded-manager proof, durable `capture_ready`, one launch,
+launcher-PID-only shutdown, and no re-arm. The shared schedule proof binds plan
+hash, stable host, fire time, loaded argv/environment, and (on systemd)
+`TimeoutStopSec >= 150` plus `KillMode=mixed` before recording `scheduled`.
 
-## Immediate outcomes
+The 2026-08-12 COHR/CBRS live calls were the first attempted production
+validation and they did **not** validate that canonical mechanism end to end.
+Both calls were already live before their immutable plans could reach a loaded
+scheduled job. COHR reached canonical preflight, but its late emergency launch
+was dry-run and deliberately has no synthetic `scheduled`, `capture_ready`, or
+`launched` receipt. Its old raw-book parser initially rejected valid one-sided
+Kalshi snapshots whose empty side key was omitted; the shared parser now treats
+an absent side as an empty ladder and the live regression passes. During the
+subsequent optimized run the streamlink leg died on one HLS sequence gap while
+the tuned ffmpeg sibling continued until venue end. An independent edge
+fetcher and a primary WAV recorder preserved the call, and a separate raw book
+tape closed at 39,354 frames with zero recorder drops.
 
-1. Grow probed `admission` coverage — the gate is correct and starving.
-   Four hunted bridges (MELI, YOU, WEN, HIMS) are one probe each from a phone
-   lane; the AAPL-class venues need an in-window probe on event day.
-2. Introduce a compiled run plan and structured config inspection so shell
-   scripts stop parsing TOML independently.
-3. Introduce run-scoped identity/artifacts and converge attended/scheduled
-   launch on one lifecycle.
-4. Extract the legacy control-plane hubs behind compatibility facades.
-5. Harden the runtime contracts listed below in independent workstreams.
+COHR's emergency evidence is therefore useful but explicitly non-canonical:
+63m48s primary audio, 16m32s recovery audio, transcript/word timestamps, raw
+book and public-trade tapes, and a finalized runtime report are consolidated in
+`state/KXEARNINGSMENTIONCOHR-26AUG12-WEBCAST/capture/`. The detector processed
+101,207 frames with zero ring drops, produced 11 detections and two one-shot
+intents, and sent zero orders under the existing 1-cent dry-run posture. Both
+intents were audio-backed true positives. The China intent preceded observed
+1-cent cap-depth exhaustion by about 15.7 seconds, but the single post-call
+clock anchor cannot provide drift-corrected race timing and the book transition
+does not establish competitor causality. This run proves that evidence can be
+salvaged and compared; it does not prove autonomous production readiness.
 
-Detailed sequencing and exit criteria are in `docs/ROADMAP.md`. Concurrent
-claims are in `docs/work/ACTIVE.md`; neither README nor a runbook overrides
-this status.
+## Governance state
 
-## Known architecture debts to keep visible
+The node registry remains structurally healthy: no ownership cycles,
+dependency cycles, duplicate claims, broken contracts, heading errors, link
+errors, or dial-in digit leaks are known. The shared worktree's pre-existing
+event configs/evidence and formatter-only Rust churn are collision-protected by
+exact claims, including eight explicit `complete_pending_commit`
+formatter-only claims. No broad ownership or claim glob was added.
 
-- Runtime environment selection is not consistently honored by all live
-  connection paths.
-- Risk authorization/debit is not yet one atomic permit.
-- A saturated intent channel can consume one-shot decision state before the
-  intent is durably accepted.
-- Mixed-format source arbitration lacks an explicit stream-format contract.
-- Telemetry edge names remain stringly typed.
-- Deploying directly from a dirty shared checkout is unsafe and must be
-  replaced by commit-addressed release artifacts.
+No deployment, real scheduler installation, phone call, page, or trade has
+been performed by this reliability pass. The emergency webcasts contacted
+their external media and market-data venues but did not send orders.
+Production readiness still requires the focused/integration suites,
+architecture test, doc lint, full Rust test matrix, and a future on-time
+capture-only canonical fire from an immutable release.
+
+## Deliberately unchanged or still open
+
+- Risk ceilings, book-staleness policy, price caps, and depth-aware sizing are
+  strategy decisions outside this reliability work.
+- Transcript scoring is implemented for the legacy report path and COHR now
+  has an audio-backed 2/2 actionable-intent result. The typed RunGrade still
+  needs to ingest a bound transcript score before canonical run precision can
+  be called complete.
+- Remote status remains explicitly uncertain between dispatch and terminal
+  pull (`STALE_PREFIX_POSSIBLE`); a future read-through may narrow that window
+  but must not bless a stale laptop prefix.
+- Deployment still needs an immutable commit/release artifact; operating a
+  dirty shared checkout is forbidden.
+- Historical event configs remain evidence. New events must be generated by
+  the generic stage path, never cloned and patched before market.

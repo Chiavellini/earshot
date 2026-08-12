@@ -14,11 +14,14 @@
 #   redial-supervisor.sh --state-dir state/<id> --to +1... --stream-url wss://… \
 #                        [--dtmf 1234#] [--digit-delay 8] [--dtmf-repeat 1] \
 #                        [--max-redials 3] [--max-minutes 120] \
-#                        [--call-end-grace 2700] [--dial-script scripts/twilio-dial.sh]
+#                        [--call-end-grace 2700] [--dial-script scripts/twilio-dial.sh] \
+#                        [--first-drop-dial-script scripts/operator-redial.sh \
+#                         --first-drop-operator-config configs/event.toml]
 #
 # Marker contract (producer: src/source/twilio_ws.rs):
 #   {"unix_ts":<s>,"old_call_sid":"<sid|''>","attempt":<n>,"reason":
-#    "stop|idle|socket_closed|close_frame|ws_error"}
+#    "stop|idle|socket_closed|close_frame|ws_error|no_stream"}
+# `no_stream` is synthesized by control.launch's first-leg watchdog.
 # reason=stop is a CLEAN Twilio stop event. After --call-end-grace seconds of
 # supervisor uptime (default 2700 = 45 min) a stop means the call genuinely
 # ended — redialing would place a paid call into a dead bridge, so we log the
@@ -47,6 +50,15 @@ MEDIA_CONFIRM_SECS=30
 LAST_DIAL_TS=0
 DIAL_SCRIPT="scripts/twilio-dial.sh"
 HANGUP_SCRIPT="scripts/twilio-hangup.sh"
+# Optional unknown-venue recovery. event-autorun exports both values only for
+# an admission-unknown run whose config carries the enabled operator
+# capability. They travel through launch-event unchanged, so the FIRST leg
+# remains the normal listen-only dial. On the first qualifying early drop the
+# supervisor latches to this wrapper for that replacement and every later one.
+# Supplying either half requests the fallback; a missing/invalid other half is
+# therefore a fail-closed escalation, never permission to use DIAL_SCRIPT.
+FIRST_DROP_DIAL_SCRIPT="${EARSHOT_FIRST_DROP_DIAL_SCRIPT:-}"
+FIRST_DROP_OPERATOR_CONFIG="${EARSHOT_FIRST_DROP_OPERATOR_CONFIG:-}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --state-dir)      STATE_DIR="$2"; shift 2 ;;
@@ -59,16 +71,18 @@ while [[ $# -gt 0 ]]; do
     --max-minutes)    MAX_MINUTES="$2"; shift 2 ;;
     --call-end-grace) CALL_END_GRACE="$2"; shift 2 ;;
     --media-confirm-secs) MEDIA_CONFIRM_SECS="$2"; shift 2 ;;
-    # Future operator-venue redials pass a different (gated) dial script; the
-    # pass-through args are identical, only the invoked path changes.
+    # Known operator venues pass a different (gated) dial script from launch;
+    # the pass-through args are identical, only the invoked path changes.
     --dial-script)    DIAL_SCRIPT="$2"; shift 2 ;;
+    --first-drop-dial-script) FIRST_DROP_DIAL_SCRIPT="$2"; shift 2 ;;
+    --first-drop-operator-config) FIRST_DROP_OPERATOR_CONFIG="$2"; shift 2 ;;
     # Stub tests must never touch the Twilio API; production keeps the default.
     --hangup-script)  HANGUP_SCRIPT="$2"; shift 2 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
 [[ -n "$STATE_DIR" && -n "$TO" && -n "$STREAM_URL" ]] || {
-  echo "usage: $0 --state-dir state/<id> --to +1... --stream-url wss://… [--dtmf …] [--max-redials 3] [--max-minutes 120] [--call-end-grace 2700] [--dial-script <path>]" >&2
+  echo "usage: $0 --state-dir state/<id> --to +1... --stream-url wss://… [--dtmf …] [--max-redials 3] [--max-minutes 120] [--call-end-grace 2700] [--dial-script <path>] [--first-drop-dial-script <path> --first-drop-operator-config <path>]" >&2
   exit 2
 }
 [[ "$MAX_REDIALS" =~ ^[0-9]+$ && "$MAX_MINUTES" =~ ^[1-9][0-9]*$ ]] || { echo "bad --max-redials/--max-minutes" >&2; exit 2; }
@@ -80,6 +94,49 @@ READY="${STATE_DIR}/listener.ready"
 LOG="${STATE_DIR}/redial.log"
 log() { echo "$(date -u +%FT%TZ) $*" >> "$LOG"; echo "redial-supervisor: $*" >&2; }
 jnl() { "$(dirname "${BASH_SOURCE[0]}")/journal.sh" --event "$(basename "$STATE_DIR")" --actor redial-supervisor.sh --action "$1" --outcome "$2" --detail "${3:-}" --log "$LOG" || true; }
+
+# Validate the capability before any drop, but do not page yet: a configured
+# fallback is intentionally dormant while the first plain leg is healthy.
+# `FALLBACK_REQUESTED` is true when EITHER half is present so a partial/mistyped
+# handoff cannot silently degrade to the default screener dial.
+FALLBACK_REQUESTED=0 FALLBACK_READY=0 FALLBACK_ACTIVE=0 FALLBACK_REFUSED=0
+FALLBACK_PROBLEM=""
+if [[ -n "$FIRST_DROP_DIAL_SCRIPT" || -n "$FIRST_DROP_OPERATOR_CONFIG" ]]; then
+  FALLBACK_REQUESTED=1
+  if [[ -z "$FIRST_DROP_DIAL_SCRIPT" ]]; then
+    FALLBACK_PROBLEM="first-drop operator fallback has no dial script"
+  elif [[ ! -x "$FIRST_DROP_DIAL_SCRIPT" ]]; then
+    FALLBACK_PROBLEM="first-drop operator dial script is missing/not executable: $FIRST_DROP_DIAL_SCRIPT"
+  elif [[ -z "$FIRST_DROP_OPERATOR_CONFIG" || ! -r "$FIRST_DROP_OPERATOR_CONFIG" ]]; then
+    FALLBACK_PROBLEM="first-drop operator config is missing/unreadable: ${FIRST_DROP_OPERATOR_CONFIG:-<unset>}"
+  else
+    FD_ENABLED=$(sed -n '/^\[operator_handler\]/,/^\[/s/^[[:space:]]*enabled[[:space:]]*=[[:space:]]*\([a-zA-Z]*\).*/\1/p' "$FIRST_DROP_OPERATOR_CONFIG" | head -1)
+    FD_CELL=$(sed -n '/^\[operator_handler\]/,/^\[/s/^[[:space:]]*cell_number[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$FIRST_DROP_OPERATOR_CONFIG" | head -1)
+    FD_PREFIX=$(sed -n '/^\[operator_handler\]/,/^\[/s/^[[:space:]]*conference_prefix[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$FIRST_DROP_OPERATOR_CONFIG" | head -1)
+    FD_EVENT=$(sed -n '/^\[event\]/,/^\[/s/^[[:space:]]*id[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$FIRST_DROP_OPERATOR_CONFIG" | head -1)
+    [[ -n "$FD_PREFIX" ]] || FD_PREFIX="earshot"
+    if [[ "$FD_ENABLED" != "true" ]]; then
+      FALLBACK_PROBLEM="$FIRST_DROP_OPERATOR_CONFIG lacks [operator_handler] enabled=true"
+    elif [[ -z "$FD_EVENT" || "$FD_EVENT" != "$(basename "$STATE_DIR")" ]]; then
+      FALLBACK_PROBLEM="$FIRST_DROP_OPERATOR_CONFIG event ${FD_EVENT:-<missing>} does not own state $(basename "$STATE_DIR")"
+    elif [[ ! "$FD_CELL" =~ ^\+[1-9][0-9]{7,14}$ ]]; then
+      FALLBACK_PROBLEM="$FIRST_DROP_OPERATOR_CONFIG has no valid configured operator cell"
+    elif [[ ! "$FD_PREFIX" =~ ^[a-z0-9-]{1,24}$ ]]; then
+      FALLBACK_PROBLEM="$FIRST_DROP_OPERATOR_CONFIG has an invalid operator conference namespace"
+    else
+      FALLBACK_READY=1
+    fi
+  fi
+fi
+
+page_fallback_refusal() { # $1 = detail
+  local detail="$1"
+  jnl operator-fallback refused "$detail"
+  log "OPERATOR-ESCALATION-REFUSED: $detail — NOT dialing the replacement leg through the plain screener path"
+  "${EARSHOT_NOTIFY:-scripts/notify.sh}" "OPERATOR ESCALATION REFUSED: $(basename "$STATE_DIR")" \
+    "$detail. The first-drop replacement was NOT dialed; repair the configured handler capability and reconcile this live run." \
+    --quiet >>"$LOG" 2>&1 || log "warn: notify failed for OPERATOR-ESCALATION-REFUSED"
+}
 
 # Parse one string field out of the marker JSON; empty on any parse failure.
 marker_field() { # $1 = marker content, $2 = field name
@@ -121,7 +178,15 @@ LAST_CONTENT=$(cat "$REQ" 2>/dev/null || true)
 LAST_NOT_READY_CONTENT=""
 BACKOFF=0
 REDIALS=0
-log "up: watching $REQ content (max_redials=$MAX_REDIALS, max_minutes=$MAX_MINUTES, call_end_grace=${CALL_END_GRACE}s, dial=$DIAL_SCRIPT, to=$TO)"
+FALLBACK_DESC="off"
+if [[ "$FALLBACK_REQUESTED" == 1 ]]; then
+  if [[ "$FALLBACK_READY" == 1 ]]; then
+    FALLBACK_DESC="armed:$FIRST_DROP_DIAL_SCRIPT"
+  else
+    FALLBACK_DESC="invalid:${FALLBACK_PROBLEM}"
+  fi
+fi
+log "up: watching $REQ content (max_redials=$MAX_REDIALS, max_minutes=$MAX_MINUTES, call_end_grace=${CALL_END_GRACE}s, dial=$DIAL_SCRIPT, first_drop_fallback=$FALLBACK_DESC, to=$TO)"
 jnl supervisor-start info "max_redials=$MAX_REDIALS max_minutes=$MAX_MINUTES"
 
 while :; do
@@ -170,6 +235,33 @@ while :; do
   fi
   LAST_CONTENT="$CONTENT"
 
+  # Admission-unknown runs start on the unchanged plain path. A first early
+  # drop is the only automatic escalation signal: it proves that this leg did
+  # not hold, but deliberately proves NOTHING about venue admission. Latch the
+  # operator wrapper for this replacement and all subsequent replacements so
+  # no later leg silently falls back to a screener. Clean stops after grace
+  # exited above and therefore never reach this switch.
+  QUALIFYING_EARLY_DROP=0
+  if (( NOW - START_TS <= CALL_END_GRACE )); then
+    case "$REASON" in
+      stop|idle|socket_closed|close_frame|ws_error|no_stream) QUALIFYING_EARLY_DROP=1 ;;
+    esac
+  fi
+  if [[ "$FALLBACK_REQUESTED" == 1 && "$FALLBACK_ACTIVE" == 0 \
+        && "$FALLBACK_REFUSED" == 0 && "$QUALIFYING_EARLY_DROP" == 1 ]]; then
+    if [[ "$FALLBACK_READY" != 1 ]]; then
+      FALLBACK_REFUSED=1
+      page_fallback_refusal "$FALLBACK_PROBLEM"
+      continue
+    fi
+    FALLBACK_ACTIVE=1
+    jnl operator-fallback info "first qualifying early drop reason=${REASON}; wrapper=$FIRST_DROP_DIAL_SCRIPT; explicit admission still required"
+    log "FIRST-DROP-OPERATOR: reason=${REASON}; switching this replacement and subsequent legs to $FIRST_DROP_DIAL_SCRIPT. This is recovery routing only — admission remains unproven until the human explicitly asserts the current challenge+stream."
+  elif [[ "$FALLBACK_REFUSED" == 1 ]]; then
+    log "operator fallback remains REFUSED — ignoring replacement request rather than dialing the plain screener path: $CONTENT"
+    continue
+  fi
+
   # Did the PREVIOUS redial actually produce audio? The dial script's exit code
   # only says Twilio accepted the call-creation request; it cannot say the
   # bridge admitted us or that a single frame arrived. The in-band answer is
@@ -211,7 +303,16 @@ while :; do
   [[ -n "$DTMF" ]] && DIAL_ARGS+=(--dtmf "$DTMF")
   [[ -n "$DIGIT_DELAY" ]] && DIAL_ARGS+=(--digit-delay "$DIGIT_DELAY")
   [[ -n "$DTMF_REPEAT" ]] && DIAL_ARGS+=(--dtmf-repeat "$DTMF_REPEAT")
-  if "$DIAL_SCRIPT" "${DIAL_ARGS[@]}" >>"$LOG" 2>&1; then
+  ACTIVE_DIAL_SCRIPT="$DIAL_SCRIPT"
+  [[ "$FALLBACK_ACTIVE" == 1 ]] && ACTIVE_DIAL_SCRIPT="$FIRST_DROP_DIAL_SCRIPT"
+  DIAL_RC=0
+  if [[ "$FALLBACK_ACTIVE" == 1 ]]; then
+    EARSHOT_OPERATOR_CONFIG="$FIRST_DROP_OPERATOR_CONFIG" \
+      "$ACTIVE_DIAL_SCRIPT" "${DIAL_ARGS[@]}" >>"$LOG" 2>&1 || DIAL_RC=$?
+  else
+    "$ACTIVE_DIAL_SCRIPT" "${DIAL_ARGS[@]}" >>"$LOG" 2>&1 || DIAL_RC=$?
+  fi
+  if [[ "$DIAL_RC" == 0 ]]; then
     # "dialed", not "capturing": media is confirmed only by the ABSENCE of a
     # fresh idle marker over the next MEDIA_CONFIRM_SECS, checked at the top of
     # the loop.
@@ -223,6 +324,11 @@ while :; do
     BACKOFF=$(( BACKOFF == 0 ? 1 : (BACKOFF * 2 > 30 ? 30 : BACKOFF * 2) ))
     jnl redial fail "#${REDIALS} dial failed — backoff ${BACKOFF}s"
     log "REDIAL #${REDIALS} FAILED — backing off ${BACKOFF}s before honoring the next request"
+    if [[ "$FALLBACK_ACTIVE" == 1 ]]; then
+      "${EARSHOT_NOTIFY:-scripts/notify.sh}" "OPERATOR ESCALATION FAILED: $(basename "$STATE_DIR")" \
+        "The bounded page/operator replacement failed (redial #${REDIALS}, exit ${DIAL_RC}). No plain screener leg was substituted. Inspect ${LOG}; admission remains closed." \
+        --quiet >>"$LOG" 2>&1 || log "warn: notify failed for OPERATOR ESCALATION FAILED"
+    fi
     sleep "$BACKOFF"
   fi
 done

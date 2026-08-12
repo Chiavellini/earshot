@@ -8,6 +8,10 @@
 #                    [--conference <name>] [--sid-file <path>] \
 #                    [--wait-joined <secs>] [--dry-run]
 #
+# After the human has actually passed the screener (separate explicit action):
+#   operator-page.sh --config <event.toml> --operator-i-am-paged \
+#                    --assert-admitted --state-dir <event-state-dir>
+#
 # DESTINATION IS NOT A CHOICE: the pager dials EXACTLY the config's
 # [operator_handler] cell_number. A --to arg is accepted only as a tripwire —
 # any value other than the configured cell is refused.
@@ -25,6 +29,7 @@
 set -euo pipefail
 
 CONFIG="" CONFERENCE="" SID_FILE="" DRY_RUN=0 PAGED=0 TO_OVERRIDE="" WAIT_JOINED=""
+ASSERT_ADMITTED=0 STATE_DIR=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --config)              CONFIG="$2"; shift 2 ;;
@@ -32,6 +37,8 @@ while [[ $# -gt 0 ]]; do
     --sid-file)            SID_FILE="$2"; shift 2 ;;
     --to)                  TO_OVERRIDE="$2"; shift 2 ;;   # tripwire only — must equal the config cell
     --wait-joined)         WAIT_JOINED="$2"; shift 2 ;;   # poll until answered, else exit nonzero
+    --assert-admitted)     ASSERT_ADMITTED=1; shift ;;
+    --state-dir)           STATE_DIR="$2"; shift 2 ;;
     --operator-i-am-paged) PAGED=1; shift ;;
     --dry-run)             DRY_RUN=1; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
@@ -39,6 +46,7 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "$CONFIG" ]] || {
   echo "usage: $0 --config <event.toml> --operator-i-am-paged [--conference <name>] [--sid-file <path>] [--wait-joined <secs>] [--dry-run]" >&2
+  echo "       $0 --config <event.toml> --operator-i-am-paged --assert-admitted --state-dir <event-state-dir>" >&2
   exit 2
 }
 [[ -f "$CONFIG" ]] || { echo "config not found: $CONFIG" >&2; exit 2; }
@@ -66,6 +74,186 @@ EVENT_ID=$(sed -n '/^\[event\]/,/^\[/s/^id[[:space:]]*=[[:space:]]*"\([^"]*\)".*
   echo "REFUSING: [operator_handler] cell_number ${OP_CELL:-<empty>} in ${CONFIG} is not strict E.164" >&2
   exit 2
 }
+
+# Explicit operator-pass assertion. This is intentionally NOT inferred from a
+# page reaching `in-progress`, a bridge call being created, a stream landing,
+# or the human hanging up: each can happen while the screener still has not
+# admitted the bridge. The human invokes this only after hearing the live call.
+#
+# The writer binds that assertion to the runtime's durable challenge and the
+# CURRENT stream marker. A redial changes call_sid/attempt and automatically
+# invalidates the old receipt in runtime assembly, requiring a fresh assertion.
+if [[ "$ASSERT_ADMITTED" == 1 ]]; then
+  [[ -n "$STATE_DIR" ]] || { echo "REFUSING: --assert-admitted requires --state-dir" >&2; exit 2; }
+  [[ "$DRY_RUN" == 0 && -z "$WAIT_JOINED" && -z "$SID_FILE" ]] || {
+    echo "REFUSING: --assert-admitted is a standalone action; do not combine it with page/dry-run options" >&2
+    exit 2
+  }
+  EARSHOT_OPERATOR_STATE_DIR="$STATE_DIR" \
+  EARSHOT_OPERATOR_EVENT_ID="$EVENT_ID" \
+  EARSHOT_OPERATOR_REPO="$(cd "$(dirname "$0")/.." && pwd)" \
+  EARSHOT_OPERATOR_ASSERTED_BY="${EARSHOT_OPERATOR_ASSERTED_BY:-human-cli}" \
+  python3 - <<'PY'
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import stat
+import time
+
+
+def refuse(message, code=8):
+    print(f"REFUSING admission assertion: {message}", file=os.sys.stderr)
+    raise SystemExit(code)
+
+
+state = Path(os.environ["EARSHOT_OPERATOR_STATE_DIR"])
+try:
+    state = state.resolve(strict=True)
+except OSError as exc:
+    refuse(f"state dir is not a real existing directory: {exc}")
+if not state.is_dir():
+    refuse(f"state path is not a directory: {state}")
+
+
+def regular_json(name):
+    path = state / name
+    try:
+        mode = path.lstat().st_mode
+    except OSError as exc:
+        refuse(f"missing {name}: {exc}")
+    if stat.S_ISLNK(mode) or not stat.S_ISREG(mode):
+        refuse(f"{name} must be a regular non-symlink file")
+    try:
+        return path, json.loads(path.read_bytes())
+    except (OSError, json.JSONDecodeError) as exc:
+        refuse(f"cannot parse {name}: {exc}")
+
+
+challenge_path, challenge = regular_json("admission.challenge.json")
+stream_path, stream = regular_json("stream.connected")
+event_id = os.environ["EARSHOT_OPERATOR_EVENT_ID"]
+if challenge.get("schema_version") != 1:
+    refuse("unsupported challenge schema")
+if challenge.get("event_id") != event_id:
+    refuse(
+        f"challenge event {challenge.get('event_id')!r} != config event {event_id!r}"
+    )
+nonce = challenge.get("nonce")
+if not isinstance(nonce, str) or len(nonce) != 64:
+    refuse("challenge nonce is absent or malformed")
+pid = challenge.get("pid")
+if not isinstance(pid, int) or pid <= 0:
+    refuse("challenge pid is absent or malformed")
+try:
+    os.kill(pid, 0)
+except OSError:
+    refuse(f"challenge owner pid {pid} is not alive")
+
+
+def challenge_path_is(field, expected):
+    raw = challenge.get(field)
+    if not isinstance(raw, str):
+        return False
+    try:
+        candidate = Path(raw)
+        if not candidate.is_absolute():
+            candidate = Path(os.environ["EARSHOT_OPERATOR_REPO"]) / candidate
+        return candidate.resolve() == expected
+    except OSError:
+        return False
+
+
+receipt_path = state / "admission.receipt.json"
+if not challenge_path_is("receipt_path", receipt_path):
+    refuse("challenge receipt_path does not name this state directory")
+if not challenge_path_is("stream_connected_path", stream_path):
+    refuse("challenge stream_connected_path does not name this state directory")
+call_sid = stream.get("call_sid")
+attempt = stream.get("attempt")
+if not isinstance(call_sid, str) or not (
+    len(call_sid) == 34
+    and call_sid.startswith("CA")
+    and all(c in "0123456789abcdefABCDEF" for c in call_sid[2:])
+):
+    refuse("current stream marker has no valid Twilio CallSid")
+if not isinstance(attempt, int) or isinstance(attempt, bool) or attempt < 0:
+    refuse("current stream marker has no valid nonnegative attempt")
+
+receipt = {
+    "schema_version": 1,
+    "event_id": event_id,
+    "nonce": nonce,
+    "status": "admitted",
+    "call_sid": call_sid,
+    "stream_attempt": attempt,
+    "assertion_method": "explicit_operator_pass_cli",
+    "asserted_by": os.environ["EARSHOT_OPERATOR_ASSERTED_BY"],
+    "asserted_unix_ns": time.time_ns(),
+    "challenge_pid": pid,
+}
+
+# Idempotent for the same live challenge/stream: never manufacture multiple
+# assertion rows because a user safely repeated the exact command.
+try:
+    prior = json.loads(receipt_path.read_bytes())
+except FileNotFoundError:
+    prior = None
+except (OSError, json.JSONDecodeError) as exc:
+    refuse(f"existing receipt is unreadable; refusing to overwrite: {exc}")
+if prior is not None and all(
+    prior.get(k) == receipt[k]
+    for k in ("schema_version", "event_id", "nonce", "status", "call_sid", "stream_attempt")
+):
+    print(
+        f"operator admission already asserted for event={event_id} "
+        f"call_sid={call_sid} stream_attempt={attempt}"
+    )
+    raise SystemExit(0)
+
+# Durable append-only audit row first. If the process dies before publishing
+# the receipt, decisions remain closed but the assertion itself is recoverable.
+assertion = dict(receipt)
+assertion["kind"] = "operator_admission_assertion"
+canonical = json.dumps(assertion, sort_keys=True, separators=(",", ":")).encode()
+assertion["assertion_sha256"] = hashlib.sha256(canonical).hexdigest()
+line = json.dumps(assertion, sort_keys=True, separators=(",", ":")).encode() + b"\n"
+audit_path = state / "admission.assertions.jsonl"
+fd = os.open(audit_path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+try:
+    fcntl.flock(fd, fcntl.LOCK_EX)
+    if os.write(fd, line) != len(line):
+        refuse("short write to admission assertion journal")
+    os.fsync(fd)
+finally:
+    os.close(fd)
+
+# Atomic + durable receipt publication. Runtime reads this on every decision;
+# only after replace+directory fsync can the explicit assertion open the gate.
+encoded = json.dumps(receipt, indent=2, sort_keys=True).encode() + b"\n"
+tmp = state / f".admission.receipt.{os.getpid()}.tmp"
+flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+fd = os.open(tmp, flags, 0o600)
+try:
+    if os.write(fd, encoded) != len(encoded):
+        refuse("short write to admission receipt")
+    os.fsync(fd)
+finally:
+    os.close(fd)
+os.replace(tmp, receipt_path)
+dirfd = os.open(state, os.O_RDONLY)
+try:
+    os.fsync(dirfd)
+finally:
+    os.close(dirfd)
+print(
+    f"operator admission ASSERTED event={event_id} call_sid={call_sid} "
+    f"stream_attempt={attempt}; receipt={receipt_path}"
+)
+PY
+  exit $?
+fi
 # The pager's destination is the configured cell, full stop.
 if [[ -n "$TO_OVERRIDE" && "$TO_OVERRIDE" != "$OP_CELL" ]]; then
   echo "REFUSING: --to \"$TO_OVERRIDE\" != configured [operator_handler] cell_number \"$OP_CELL\"." >&2

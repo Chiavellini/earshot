@@ -1,7 +1,7 @@
 {
  "config": "webcast-spcx-26aug04-arm-wc",
  "keywords_sha256": "d68b857aa8747965ae4a777010d02b8dfd7ed4763d63eec250c5cbfc54a95617",
- "date": "2026-08-04",
+ "date": "2026-08-12",
  "engine": "streaming_ctc",
  "voices": [
   "Samantha",

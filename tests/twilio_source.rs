@@ -67,18 +67,26 @@ async fn full_session_delivers_decoded_frames_in_order() {
     });
 
     let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
-    ws.send(Message::Text(json!({"event":"connected","protocol":"Call","version":"1.0.0"}).to_string()))
+    ws.send(Message::Text(
+        json!({"event":"connected","protocol":"Call","version":"1.0.0"}).to_string(),
+    ))
+    .await
+    .unwrap();
+    ws.send(Message::Text(start_msg("audio/x-mulaw", 8000, 1)))
         .await
         .unwrap();
-    ws.send(Message::Text(start_msg("audio/x-mulaw", 8000, 1))).await.unwrap();
     // 0xFF is μ-law +0; 0x80 is +32124 — one “loud” frame in the middle.
     for i in 0..25u64 {
         let byte = if i == 12 { 0x80 } else { 0xFF };
-        ws.send(Message::Text(media_msg(i + 2, &[byte; 160]))).await.unwrap();
+        ws.send(Message::Text(media_msg(i + 2, &[byte; 160])))
+            .await
+            .unwrap();
     }
-    ws.send(Message::Text(json!({"event":"stop","sequenceNumber":"27","streamSid":"MZtest"}).to_string()))
-        .await
-        .unwrap();
+    ws.send(Message::Text(
+        json!({"event":"stop","sequenceNumber":"27","streamSid":"MZtest"}).to_string(),
+    ))
+    .await
+    .unwrap();
 
     let exit = run.await.unwrap().unwrap();
     assert_eq!(exit, SourceExit::EndOfStream);
@@ -89,7 +97,10 @@ async fn full_session_delivers_decoded_frames_in_order() {
         assert_eq!(f.sample_rate_hz, 8000);
         assert_eq!(f.pcm.len(), 160, "160 μ-law bytes = 160 samples = 20 ms");
         let expect = if i == 12 { 32124 } else { 0 };
-        assert!(f.pcm.iter().all(|&s| s == expect), "frame {i} decoded wrong");
+        assert!(
+            f.pcm.iter().all(|&s| s == expect),
+            "frame {i} decoded wrong"
+        );
     }
     for pair in frames.windows(2) {
         assert!(pair[1].capture_ts >= pair[0].capture_ts);
@@ -103,7 +114,9 @@ async fn wrong_media_format_fails_loud() {
     let run = tokio::spawn(src.run(tx));
 
     let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
-    ws.send(Message::Text(start_msg("audio/l16", 16000, 1))).await.unwrap();
+    ws.send(Message::Text(start_msg("audio/l16", 16000, 1)))
+        .await
+        .unwrap();
 
     let err = run.await.unwrap().unwrap_err();
     assert!(err.to_string().contains("mediaFormat"), "got: {err}");
@@ -116,7 +129,9 @@ async fn media_before_start_fails_loud() {
     let run = tokio::spawn(src.run(tx));
 
     let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
-    ws.send(Message::Text(media_msg(1, &[0xFF; 160]))).await.unwrap();
+    ws.send(Message::Text(media_msg(1, &[0xFF; 160])))
+        .await
+        .unwrap();
 
     let err = run.await.unwrap().unwrap_err();
     assert!(err.to_string().contains("before start"), "got: {err}");
@@ -136,13 +151,27 @@ async fn twilio_seq_gap_warns_but_streams_on() {
     });
 
     let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
-    ws.send(Message::Text(start_msg("audio/x-mulaw", 8000, 1))).await.unwrap();
-    ws.send(Message::Text(media_msg(2, &[0xFF; 160]))).await.unwrap();
-    ws.send(Message::Text(media_msg(9, &[0xFF; 160]))).await.unwrap(); // gap: lost packets
-    ws.send(Message::Text(json!({"event":"stop","streamSid":"MZtest"}).to_string())).await.unwrap();
+    ws.send(Message::Text(start_msg("audio/x-mulaw", 8000, 1)))
+        .await
+        .unwrap();
+    ws.send(Message::Text(media_msg(2, &[0xFF; 160])))
+        .await
+        .unwrap();
+    ws.send(Message::Text(media_msg(9, &[0xFF; 160])))
+        .await
+        .unwrap(); // gap: lost packets
+    ws.send(Message::Text(
+        json!({"event":"stop","streamSid":"MZtest"}).to_string(),
+    ))
+    .await
+    .unwrap();
 
     assert_eq!(run.await.unwrap().unwrap(), SourceExit::EndOfStream);
-    assert_eq!(consumer.join().unwrap(), 2, "both frames delivered despite the gap");
+    assert_eq!(
+        consumer.join().unwrap(),
+        2,
+        "both frames delivered despite the gap"
+    );
 }
 
 #[tokio::test]
@@ -169,12 +198,24 @@ async fn stray_connection_does_not_kill_the_listener() {
 
     // The real (synthetic-Twilio) session must still be accepted afterwards.
     let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
-    ws.send(Message::Text(start_msg("audio/x-mulaw", 8000, 1))).await.unwrap();
-    ws.send(Message::Text(media_msg(2, &[0xFF; 160]))).await.unwrap();
-    ws.send(Message::Text(json!({"event":"stop","streamSid":"MZtest"}).to_string())).await.unwrap();
+    ws.send(Message::Text(start_msg("audio/x-mulaw", 8000, 1)))
+        .await
+        .unwrap();
+    ws.send(Message::Text(media_msg(2, &[0xFF; 160])))
+        .await
+        .unwrap();
+    ws.send(Message::Text(
+        json!({"event":"stop","streamSid":"MZtest"}).to_string(),
+    ))
+    .await
+    .unwrap();
 
     assert_eq!(run.await.unwrap().unwrap(), SourceExit::EndOfStream);
-    assert_eq!(consumer.join().unwrap(), 1, "frame delivered after stray connection");
+    assert_eq!(
+        consumer.join().unwrap(),
+        1,
+        "frame delivered after stray connection"
+    );
 }
 
 #[tokio::test]
@@ -210,9 +251,20 @@ async fn drop_then_redial_reattaches_with_seq_continuity() {
     // Call 1: two frames, then the socket dies WITHOUT a stop (the MSFT-class
     // far-end drop as the source sees it).
     let (mut ws1, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
-    ws1.send(Message::Text(start_msg_sid("audio/x-mulaw", 8000, 1, "CA1"))).await.unwrap();
-    ws1.send(Message::Text(media_msg(2, &[0xFF; 160]))).await.unwrap();
-    ws1.send(Message::Text(media_msg(3, &[0xFF; 160]))).await.unwrap();
+    ws1.send(Message::Text(start_msg_sid(
+        "audio/x-mulaw",
+        8000,
+        1,
+        "CA1",
+    )))
+    .await
+    .unwrap();
+    ws1.send(Message::Text(media_msg(2, &[0xFF; 160])))
+        .await
+        .unwrap();
+    ws1.send(Message::Text(media_msg(3, &[0xFF; 160])))
+        .await
+        .unwrap();
     drop(ws1);
 
     // The redial supervisor's marker must appear before the new call lands.
@@ -231,10 +283,25 @@ async fn drop_then_redial_reattaches_with_seq_continuity() {
 
     // Call 2 (the redial): NEW callSid, two more frames, clean stop.
     let (mut ws2, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
-    ws2.send(Message::Text(start_msg_sid("audio/x-mulaw", 8000, 1, "CA2"))).await.unwrap();
-    ws2.send(Message::Text(media_msg(2, &[0x80; 160]))).await.unwrap();
-    ws2.send(Message::Text(media_msg(3, &[0x80; 160]))).await.unwrap();
-    ws2.send(Message::Text(json!({"event":"stop","streamSid":"MZtest"}).to_string())).await.unwrap();
+    ws2.send(Message::Text(start_msg_sid(
+        "audio/x-mulaw",
+        8000,
+        1,
+        "CA2",
+    )))
+    .await
+    .unwrap();
+    ws2.send(Message::Text(media_msg(2, &[0x80; 160])))
+        .await
+        .unwrap();
+    ws2.send(Message::Text(media_msg(3, &[0x80; 160])))
+        .await
+        .unwrap();
+    ws2.send(Message::Text(
+        json!({"event":"stop","streamSid":"MZtest"}).to_string(),
+    ))
+    .await
+    .unwrap();
 
     assert_eq!(run.await.unwrap().unwrap(), SourceExit::EndOfStream);
     let frames = consumer.join().unwrap();
@@ -264,25 +331,58 @@ async fn stale_same_callsid_reattach_is_dropped_not_adopted() {
 
     // Call 1 drops without a stop.
     let (mut ws1, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
-    ws1.send(Message::Text(start_msg_sid("audio/x-mulaw", 8000, 1, "CA1"))).await.unwrap();
-    ws1.send(Message::Text(media_msg(2, &[0xFF; 160]))).await.unwrap();
+    ws1.send(Message::Text(start_msg_sid(
+        "audio/x-mulaw",
+        8000,
+        1,
+        "CA1",
+    )))
+    .await
+    .unwrap();
+    ws1.send(Message::Text(media_msg(2, &[0xFF; 160])))
+        .await
+        .unwrap();
     drop(ws1);
     tokio::time::sleep(Duration::from_millis(300)).await;
 
     // A zombie of the SAME call re-attaches: must be dropped, not adopted.
     let (mut zombie, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
-    let _ = zombie.send(Message::Text(start_msg_sid("audio/x-mulaw", 8000, 1, "CA1"))).await;
+    let _ = zombie
+        .send(Message::Text(start_msg_sid(
+            "audio/x-mulaw",
+            8000,
+            1,
+            "CA1",
+        )))
+        .await;
     let _ = zombie.send(Message::Text(media_msg(2, &[0x80; 160]))).await;
 
     // The REAL redial still gets in afterwards.
     tokio::time::sleep(Duration::from_millis(300)).await;
     let (mut ws2, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
-    ws2.send(Message::Text(start_msg_sid("audio/x-mulaw", 8000, 1, "CA2"))).await.unwrap();
-    ws2.send(Message::Text(media_msg(2, &[0xFF; 160]))).await.unwrap();
-    ws2.send(Message::Text(json!({"event":"stop","streamSid":"MZtest"}).to_string())).await.unwrap();
+    ws2.send(Message::Text(start_msg_sid(
+        "audio/x-mulaw",
+        8000,
+        1,
+        "CA2",
+    )))
+    .await
+    .unwrap();
+    ws2.send(Message::Text(media_msg(2, &[0xFF; 160])))
+        .await
+        .unwrap();
+    ws2.send(Message::Text(
+        json!({"event":"stop","streamSid":"MZtest"}).to_string(),
+    ))
+    .await
+    .unwrap();
 
     assert_eq!(run.await.unwrap().unwrap(), SourceExit::EndOfStream);
-    assert_eq!(consumer.join().unwrap(), 2, "zombie frames must not be adopted");
+    assert_eq!(
+        consumer.join().unwrap(),
+        2,
+        "zombie frames must not be adopted"
+    );
 }
 
 #[tokio::test]
@@ -302,11 +402,21 @@ async fn redial_marker_carries_schema_with_reason() {
 
     // An abrupt client drop surfaces as a WS read error → reason "ws_error".
     let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
-    ws.send(Message::Text(start_msg_sid("audio/x-mulaw", 8000, 1, "CA1"))).await.unwrap();
-    ws.send(Message::Text(media_msg(2, &[0xFF; 160]))).await.unwrap();
+    ws.send(Message::Text(start_msg_sid(
+        "audio/x-mulaw",
+        8000,
+        1,
+        "CA1",
+    )))
+    .await
+    .unwrap();
+    ws.send(Message::Text(media_msg(2, &[0xFF; 160])))
+        .await
+        .unwrap();
     drop(ws);
 
-    let exit = tokio::time::timeout(Duration::from_secs(5), run).await
+    let exit = tokio::time::timeout(Duration::from_secs(5), run)
+        .await
         .expect("expired reaccept window must end the run")
         .unwrap()
         .unwrap();
@@ -315,14 +425,21 @@ async fn redial_marker_carries_schema_with_reason() {
     let req: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&marker).unwrap()).unwrap();
     assert!(req["unix_ts"].as_u64().unwrap() > 0, "marker: {req}");
-    assert_eq!(req["old_call_sid"].as_str().unwrap(), "CA1", "marker: {req}");
+    assert_eq!(
+        req["old_call_sid"].as_str().unwrap(),
+        "CA1",
+        "marker: {req}"
+    );
     assert_eq!(req["attempt"].as_u64().unwrap(), 1, "marker: {req}");
     let reason = req["reason"].as_str().expect("reason must be a string");
     assert!(
         ["stop", "idle", "socket_closed", "close_frame", "ws_error"].contains(&reason),
         "reason outside the pinned vocabulary: {req}"
     );
-    assert_eq!(reason, "ws_error", "abrupt drop must map to ws_error: {req}");
+    assert_eq!(
+        reason, "ws_error",
+        "abrupt drop must map to ws_error: {req}"
+    );
 }
 
 #[tokio::test]
@@ -358,8 +475,17 @@ async fn live_stream_superseded_by_new_callsid_without_burning_an_attempt() {
 
     // Stream A (callSid CA1): one frame, then silent — half-open.
     let (mut ws_a, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
-    ws_a.send(Message::Text(start_msg_sid("audio/x-mulaw", 8000, 1, "CA1"))).await.unwrap();
-    ws_a.send(Message::Text(media_msg(2, &[0xFF; 160]))).await.unwrap();
+    ws_a.send(Message::Text(start_msg_sid(
+        "audio/x-mulaw",
+        8000,
+        1,
+        "CA1",
+    )))
+    .await
+    .unwrap();
+    ws_a.send(Message::Text(media_msg(2, &[0xFF; 160])))
+        .await
+        .unwrap();
     let f0 = next_frame(&mut fwd_rx, "frame from stream A").await;
     assert_eq!(f0.seq, 0);
     assert!(f0.pcm.iter().all(|&s| s == 0));
@@ -367,15 +493,29 @@ async fn live_stream_superseded_by_new_callsid_without_burning_an_attempt() {
     // Stream B (callSid CA2) connects while A is still open: the redial
     // landing. Frames from B must flow within ~1 s of the swap.
     let (mut ws_b, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
-    ws_b.send(Message::Text(start_msg_sid("audio/x-mulaw", 8000, 1, "CA2"))).await.unwrap();
-    ws_b.send(Message::Text(media_msg(2, &[0x80; 160]))).await.unwrap();
-    ws_b.send(Message::Text(media_msg(3, &[0x80; 160]))).await.unwrap();
+    ws_b.send(Message::Text(start_msg_sid(
+        "audio/x-mulaw",
+        8000,
+        1,
+        "CA2",
+    )))
+    .await
+    .unwrap();
+    ws_b.send(Message::Text(media_msg(2, &[0x80; 160])))
+        .await
+        .unwrap();
+    ws_b.send(Message::Text(media_msg(3, &[0x80; 160])))
+        .await
+        .unwrap();
     let f1 = next_frame(&mut fwd_rx, "first frame from superseding stream B").await;
     assert_eq!(f1.seq, 1, "seq must stay dense ACROSS the supersede splice");
     assert!(f1.pcm.iter().all(|&s| s == 32124), "frame must come from B");
     let f2 = next_frame(&mut fwd_rx, "second frame from stream B").await;
     assert_eq!(f2.seq, 2);
-    assert!(!marker.exists(), "superseding must NOT trigger a redial request");
+    assert!(
+        !marker.exists(),
+        "superseding must NOT trigger a redial request"
+    );
     drop(ws_a);
 
     // B did not consume the reconnect attempt: a REAL drop of B still gets
@@ -389,18 +529,42 @@ async fn live_stream_superseded_by_new_callsid_without_burning_an_attempt() {
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    assert!(requested, "real drop after a supersede must still redial (attempt not burned)");
+    assert!(
+        requested,
+        "real drop after a supersede must still redial (attempt not burned)"
+    );
     let req: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&marker).unwrap()).unwrap();
-    assert_eq!(req["attempt"].as_u64().unwrap(), 1, "supersede consumed an attempt: {req}");
-    assert_eq!(req["old_call_sid"].as_str().unwrap(), "CA2", "marker: {req}");
+    assert_eq!(
+        req["attempt"].as_u64().unwrap(),
+        1,
+        "supersede consumed an attempt: {req}"
+    );
+    assert_eq!(
+        req["old_call_sid"].as_str().unwrap(),
+        "CA2",
+        "marker: {req}"
+    );
     assert_eq!(req["reason"].as_str().unwrap(), "ws_error", "marker: {req}");
 
     // The redial (callSid CA3) re-attaches normally; clean stop ends the run.
     let (mut ws_c, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
-    ws_c.send(Message::Text(start_msg_sid("audio/x-mulaw", 8000, 1, "CA3"))).await.unwrap();
-    ws_c.send(Message::Text(media_msg(2, &[0xFF; 160]))).await.unwrap();
-    ws_c.send(Message::Text(json!({"event":"stop","streamSid":"MZtest"}).to_string())).await.unwrap();
+    ws_c.send(Message::Text(start_msg_sid(
+        "audio/x-mulaw",
+        8000,
+        1,
+        "CA3",
+    )))
+    .await
+    .unwrap();
+    ws_c.send(Message::Text(media_msg(2, &[0xFF; 160])))
+        .await
+        .unwrap();
+    ws_c.send(Message::Text(
+        json!({"event":"stop","streamSid":"MZtest"}).to_string(),
+    ))
+    .await
+    .unwrap();
 
     let f3 = next_frame(&mut fwd_rx, "frame from redial stream C").await;
     assert_eq!(f3.seq, 3, "seq dense across supersede AND redial");
@@ -425,8 +589,17 @@ async fn one_shot_second_connection_does_not_disturb_live_stream() {
     });
 
     let (mut ws_a, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
-    ws_a.send(Message::Text(start_msg_sid("audio/x-mulaw", 8000, 1, "CA1"))).await.unwrap();
-    ws_a.send(Message::Text(media_msg(2, &[0xFF; 160]))).await.unwrap();
+    ws_a.send(Message::Text(start_msg_sid(
+        "audio/x-mulaw",
+        8000,
+        1,
+        "CA1",
+    )))
+    .await
+    .unwrap();
+    ws_a.send(Message::Text(media_msg(2, &[0xFF; 160])))
+        .await
+        .unwrap();
 
     // A second WS client: its handshake must never be answered mid-stream.
     let second = tokio::time::timeout(
@@ -434,13 +607,26 @@ async fn one_shot_second_connection_does_not_disturb_live_stream() {
         tokio_tungstenite::connect_async(&url),
     )
     .await;
-    assert!(second.is_err(), "one-shot source must not accept a second connection mid-stream");
+    assert!(
+        second.is_err(),
+        "one-shot source must not accept a second connection mid-stream"
+    );
 
     // Stream A keeps flowing and ends cleanly.
-    ws_a.send(Message::Text(media_msg(3, &[0xFF; 160]))).await.unwrap();
-    ws_a.send(Message::Text(json!({"event":"stop","streamSid":"MZtest"}).to_string())).await.unwrap();
+    ws_a.send(Message::Text(media_msg(3, &[0xFF; 160])))
+        .await
+        .unwrap();
+    ws_a.send(Message::Text(
+        json!({"event":"stop","streamSid":"MZtest"}).to_string(),
+    ))
+    .await
+    .unwrap();
     assert_eq!(run.await.unwrap().unwrap(), SourceExit::EndOfStream);
-    assert_eq!(consumer.join().unwrap(), 2, "both of A's frames delivered untouched");
+    assert_eq!(
+        consumer.join().unwrap(),
+        2,
+        "both of A's frames delivered untouched"
+    );
 }
 
 #[tokio::test]
@@ -452,11 +638,16 @@ async fn default_one_shot_drop_still_fails_loud_immediately() {
     let run = tokio::spawn(src.run(tx));
 
     let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
-    ws.send(Message::Text(start_msg("audio/x-mulaw", 8000, 1))).await.unwrap();
-    ws.send(Message::Text(media_msg(2, &[0xFF; 160]))).await.unwrap();
+    ws.send(Message::Text(start_msg("audio/x-mulaw", 8000, 1)))
+        .await
+        .unwrap();
+    ws.send(Message::Text(media_msg(2, &[0xFF; 160])))
+        .await
+        .unwrap();
     drop(ws);
 
-    let err = tokio::time::timeout(Duration::from_secs(3), run).await
+    let err = tokio::time::timeout(Duration::from_secs(3), run)
+        .await
         .expect("one-shot drop must not wait for a reaccept window")
         .unwrap()
         .unwrap_err();
@@ -475,10 +666,13 @@ async fn exhausted_budget_expires_reaccept_window_as_end_of_stream() {
     let run = tokio::spawn(src.run(tx));
 
     let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
-    ws.send(Message::Text(start_msg("audio/x-mulaw", 8000, 1))).await.unwrap();
+    ws.send(Message::Text(start_msg("audio/x-mulaw", 8000, 1)))
+        .await
+        .unwrap();
     drop(ws);
 
-    let exit = tokio::time::timeout(Duration::from_secs(5), run).await
+    let exit = tokio::time::timeout(Duration::from_secs(5), run)
+        .await
         .expect("expired reaccept window must end the run")
         .unwrap()
         .unwrap();
@@ -501,8 +695,17 @@ async fn stream_connected_marker_written_on_start() {
     let run = tokio::spawn(src.run(tx));
 
     let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
-    ws.send(Message::Text(start_msg_sid("audio/x-mulaw", 8000, 1, "CAconn"))).await.unwrap();
-    ws.send(Message::Text(media_msg(1, &[0xFF; 160]))).await.unwrap();
+    ws.send(Message::Text(start_msg_sid(
+        "audio/x-mulaw",
+        8000,
+        1,
+        "CAconn",
+    )))
+    .await
+    .unwrap();
+    ws.send(Message::Text(media_msg(1, &[0xFF; 160])))
+        .await
+        .unwrap();
 
     // The marker is written in the start handler; poll until it lands.
     let mut waited = 0u64;
@@ -527,22 +730,30 @@ async fn stream_connected_marker_absent_without_env() {
     // bound_source() goes through TwilioWsSource::bind, so this asserts the
     // env-gated default, then runs a full session to prove no file appears.
     let (src, url) = bound_source(5, 2);
-    assert!(src.stream_connected_path.is_none() || std::env::var("EARSHOT_REDIAL_DIR").is_ok(),
-        "stream_connected_path must derive only from EARSHOT_REDIAL_DIR");
+    assert!(
+        src.stream_connected_path.is_none() || std::env::var("EARSHOT_REDIAL_DIR").is_ok(),
+        "stream_connected_path must derive only from EARSHOT_REDIAL_DIR"
+    );
     let had_env = std::env::var("EARSHOT_REDIAL_DIR").is_ok();
 
     let (tx, _rx) = ring::ring::<AudioFrame>(64);
     let run = tokio::spawn(src.run(tx));
 
     let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
-    ws.send(Message::Text(start_msg("audio/x-mulaw", 8000, 1))).await.unwrap();
-    ws.send(Message::Text(media_msg(1, &[0xFF; 160]))).await.unwrap();
+    ws.send(Message::Text(start_msg("audio/x-mulaw", 8000, 1)))
+        .await
+        .unwrap();
+    ws.send(Message::Text(media_msg(1, &[0xFF; 160])))
+        .await
+        .unwrap();
     tokio::time::sleep(Duration::from_millis(200)).await;
     drop(ws);
     let _ = tokio::time::timeout(Duration::from_secs(5), run).await;
 
     if !had_env {
-        assert!(!std::path::Path::new("stream.connected").exists(),
-            "bare source must not write a marker into the cwd");
+        assert!(
+            !std::path::Path::new("stream.connected").exists(),
+            "bare source must not write a marker into the cwd"
+        );
     }
 }

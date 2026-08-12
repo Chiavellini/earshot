@@ -19,9 +19,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 
-use super::{
-    AudioSource, LatencyClass, SourceDescriptor, SourceError, SourceExit, SourceKind,
-};
+use super::{AudioSource, LatencyClass, SourceDescriptor, SourceError, SourceExit, SourceKind};
 use crate::clock::MonotonicNs;
 use crate::ring::RingSender;
 use crate::types::{AudioFrame, SourceId};
@@ -51,7 +49,9 @@ impl PipeSource {
             return Err(SourceError::Protocol("pipe source: empty command".into()));
         }
         if sample_rate_hz == 0 {
-            return Err(SourceError::Protocol("pipe source: zero sample rate".into()));
+            return Err(SourceError::Protocol(
+                "pipe source: zero sample rate".into(),
+            ));
         }
         Ok(PipeSource {
             cmd,
@@ -69,8 +69,19 @@ impl PipeSource {
             return Err(SourceError::Protocol("hls source: empty url".into()));
         }
         let cmd = [
-            "ffmpeg", "-nostdin", "-loglevel", "warning", "-i", url,
-            "-f", "s16le", "-ac", "1", "-ar", "16000", "-",
+            "ffmpeg",
+            "-nostdin",
+            "-loglevel",
+            "warning",
+            "-i",
+            url,
+            "-f",
+            "s16le",
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-",
         ]
         .iter()
         .map(|s| s.to_string())
@@ -149,39 +160,41 @@ impl AudioSource for PipeSource {
         let mut dropped_since_warn = 0u64;
         let mut last_drop_warn = std::time::Instant::now();
 
-        let mut emit = |buf: &mut Vec<u8>, seq: &mut u64, tx: &mut RingSender<AudioFrame>, n: usize| {
-            let bytes: Vec<u8> = buf.drain(..n).collect();
-            let pcm: Arc<[i16]> = bytes
-                .chunks_exact(2)
-                .map(|b| i16::from_le_bytes([b[0], b[1]]))
-                .collect();
-            let frame = AudioFrame {
-                pcm,
-                sample_rate_hz: self.sample_rate_hz,
-                capture_ts: MonotonicNs::now(),
-                source: self.source_id,
-                seq: *seq,
-                preproc_ts: MonotonicNs(0),
-            };
-            *seq += 1;
-            // Live semantics: ingress is THE legitimate drop point — never
-            // block the capture path on a stalled consumer.
-            if tx.send(frame).is_err() {
-                dropped_since_warn += 1;
-                if last_drop_warn.elapsed() >= std::time::Duration::from_secs(1) {
-                    tracing::warn!(
-                        seq = *seq - 1,
-                        dropped = dropped_since_warn,
-                        "ring full: pipe frames dropped (throttled, count since last warn)"
-                    );
-                    dropped_since_warn = 0;
-                    last_drop_warn = std::time::Instant::now();
+        let mut emit =
+            |buf: &mut Vec<u8>, seq: &mut u64, tx: &mut RingSender<AudioFrame>, n: usize| {
+                let bytes: Vec<u8> = buf.drain(..n).collect();
+                let pcm: Arc<[i16]> = bytes
+                    .chunks_exact(2)
+                    .map(|b| i16::from_le_bytes([b[0], b[1]]))
+                    .collect();
+                let frame = AudioFrame {
+                    pcm,
+                    sample_rate_hz: self.sample_rate_hz,
+                    capture_ts: MonotonicNs::now(),
+                    source: self.source_id,
+                    seq: *seq,
+                    preproc_ts: MonotonicNs(0),
+                };
+                *seq += 1;
+                // Live semantics: ingress is THE legitimate drop point — never
+                // block the capture path on a stalled consumer.
+                if tx.send(frame).is_err() {
+                    dropped_since_warn += 1;
+                    if last_drop_warn.elapsed() >= std::time::Duration::from_secs(1) {
+                        tracing::warn!(
+                            seq = *seq - 1,
+                            dropped = dropped_since_warn,
+                            "ring full: pipe frames dropped (throttled, count since last warn)"
+                        );
+                        dropped_since_warn = 0;
+                        last_drop_warn = std::time::Instant::now();
+                    }
                 }
-            }
-        };
+            };
 
         loop {
-            let n = match tokio::time::timeout(self.idle_timeout, stdout.read(&mut read_chunk)).await
+            let n = match tokio::time::timeout(self.idle_timeout, stdout.read(&mut read_chunk))
+                .await
             {
                 Err(_) => {
                     let _ = child.kill().await;

@@ -65,6 +65,59 @@ def _ticker_suffix(date):
     return d.strftime("%y%b%d").upper()
 
 
+# One issuer+date can carry several LANES (`…HIMS-26AUG10-WEBCAST` and
+# `…-PHONE`). `descoped`/`wire_evidence` have stripped this suffix since
+# 2026-08-05 to accept any lane's record; everything else now does too.
+LANE_SUFFIX = re.compile(r"-(WEBCAST|PHONE|ACOUSTIC)$")
+
+# `sweep-hft` is a SEPARATE project that shares only the Kalshi account. Its run
+# dirs sit in the same state/ pile and its event ids can match the mention
+# regex, so its fills must never be counted as this system's. Today's sweep
+# reports carry `event_id: null` and a KXTRUMPMENTION series so nothing leaks —
+# this makes the boundary explicit rather than incidental.
+NON_MENTION_SUFFIX = re.compile(r"-SWEEP$")
+
+
+def _event_dirs(state_dir="state", stem=None):
+    """Event state dirs for the whole pile, or for one issuer+date stem."""
+    pat = (stem + "*") if stem else "*"
+    return [d for d in sorted(glob.glob(os.path.join(state_dir, pat)))
+            if os.path.isdir(d)
+            and not NON_MENTION_SUFFIX.search(os.path.basename(d))]
+
+
+def _artifact(d, name):
+    """THE `<name>` for event dir `d` — canonical, or pulled from the box.
+
+    A BOX-HOSTED run leaves NOTHING at `state/<E>/<name>` on the laptop. The
+    documented pull (`.claude/skills/phone-event-prep`, and the convention
+    `scripts/event-status.sh:35` already reads) lands it at
+    `state/<E>/box/<name>`, so globbing one level deep made every box-hosted run
+    invisible to this grader. That is how HIMS 26AUG10 was reported as
+    "1 staged, 1 captured, 0 orders, 1c observing posture" on a day its PHONE
+    lane put 2 orders on the wire and spent 194c: the only lane the grader could
+    see was the laptop's webcast twin.
+
+    Returns at most ONE path. `box/` exists only because a box run was pulled,
+    so it wins when both are present and nothing is double-counted.
+    """
+    box = os.path.join(d, "box", name)
+    if os.path.isfile(box):
+        return box
+    p = os.path.join(d, name)
+    return p if os.path.isfile(p) else None
+
+
+def _artifacts(d, name):
+    """Every existing `<name>` for `d` (box first). For OR-style evidence only.
+
+    Safe where the question is a boolean ("did any journal record arm-start?")
+    and wrong where anything is summed — use `_artifact` for report.json.
+    """
+    return [p for p in (os.path.join(d, "box", name), os.path.join(d, name))
+            if os.path.isfile(p)]
+
+
 def captures_for(date, probe_dir="corpus/bridge-probes", state_dir="state"):
     """issuer -> {'held_s': float, 'sources': [...]} for that date."""
     out = {}
@@ -92,7 +145,10 @@ def captures_for(date, probe_dir="corpus/bridge-probes", state_dir="state"):
     # positive, and a gate that cries wolf gets ignored (the same lesson
     # discover-events.py learned at 52-of-57).
     suffix = _ticker_suffix(date)
-    for p in sorted(glob.glob(os.path.join(state_dir, "*", "report.json"))):
+    for d in _event_dirs(state_dir):
+        p = _artifact(d, "report.json")
+        if not p:
+            continue
         try:
             r = json.load(open(p))
         except Exception:
@@ -115,24 +171,28 @@ def captures_for(date, probe_dir="corpus/bridge-probes", state_dir="state"):
     # "no capture evidence for 2026-08-05". A grading tool that cannot see a
     # success is as dangerous as one that cannot see a failure.
     # state/<E>/journal.jsonl records arm-start regardless of how the run ends.
-    for p in sorted(glob.glob(os.path.join(state_dir, "*", "journal.jsonl"))):
-        ev = os.path.basename(os.path.dirname(p))
+    for d in _event_dirs(state_dir):
+        # The EVENT dir names the event — never the file's parent, which is
+        # literally "box" for a pulled box run.
+        ev = os.path.basename(d)
         m = re.match(r"KXEARNINGSMENTION([A-Z0-9]+?)-", ev)
         if not m:
             continue
         if suffix and suffix not in ev.upper():
             continue
+        journals = _artifacts(d, "journal.jsonl")
         armed = False
-        try:
-            for ln in open(p):
-                try:
-                    j = json.loads(ln)
-                except Exception:
-                    continue
-                if j.get("action") == "arm-start":
-                    armed = True
-        except OSError:
-            continue
+        for p in journals:
+            try:
+                for ln in open(p):
+                    try:
+                        j = json.loads(ln)
+                    except Exception:
+                        continue
+                    if j.get("action") == "arm-start":
+                        armed = True
+            except OSError:
+                continue
         if not armed:
             continue
         e = out.setdefault(m.group(1), {"held_s": 0.0, "sources": []})
@@ -140,7 +200,7 @@ def captures_for(date, probe_dir="corpus/bridge-probes", state_dir="state"):
         # caller can distinguish "captured, report missing" from "never ran".
         e.setdefault("frames_in", 0)
         e["armed_no_report"] = "report.json" not in " ".join(e["sources"])
-        e["sources"].append(os.path.relpath(p))
+        e["sources"].extend(os.path.relpath(p) for p in journals)
     return out
 
 
@@ -162,10 +222,20 @@ def staged_for(date, config_dir="configs"):
     if not dp:
         return {}
     out = {}
+    # `*-{dp}-phone-arm.toml` is the name scripts/phone-lane-derive.py actually
+    # writes (`configs/hims-26aug10-phone-arm.toml`). The old
+    # `phone-*-{dp}-arm.toml` matched NOTHING, so the phone lane was never in
+    # the denominator at all — HIMS 26AUG10 was graded entirely on its webcast
+    # twin while the phone lane was the one that traded.
     patterns = (f"webcast-*-{dp}-arm-wc.toml", f"twilio-*-{dp}-arm.toml",
-                f"phone-*-{dp}-arm.toml", f"acoustic-*-{dp}-arm.toml")
+                f"*-{dp}-phone-arm.toml", f"phone-*-{dp}-arm.toml",
+                f"acoustic-*-{dp}-arm.toml")
+    seen_cfg = set()
     for pat in patterns:
         for p in sorted(glob.glob(os.path.join(config_dir, pat))):
+            if p in seen_cfg:      # patterns overlap by design; count each once
+                continue
+            seen_cfg.add(p)
             try:
                 with open(p, "rb") as fh:
                     cfg = tomllib.load(fh)
@@ -182,8 +252,22 @@ def staged_for(date, config_dir="configs"):
             # config did not have. A single fillable keyword means silence on a
             # traded board is a real miss, not a designed decline.
             fill = any((k.get("max_price_cents") or 0) > 1 for k in kws)
-            out[m.group(1)] = {"config": os.path.relpath(p), "event_id": ev,
-                               "fill_posture": fill, "keywords": len(kws)}
+            lane = {"config": os.path.relpath(p), "event_id": ev,
+                    "fill_posture": fill, "keywords": len(kws)}
+            # ONE ROW PER ISSUER, but every LANE kept. This used to be a plain
+            # assignment, so a two-lane issuer silently discarded whichever
+            # pattern matched first and graded the day on the survivor.
+            e = out.setdefault(m.group(1), {"lanes": []})
+            e["lanes"].append(lane)
+            # Roll-up used by reconcile. `fill_posture` is ANY lane's: one
+            # fillable lane makes silence on a traded board a real miss.
+            # `event_id` is representative only — descoped()/wire_evidence()
+            # strip the lane suffix and scan every lane, and both lanes of an
+            # issuer share one Kalshi board.
+            e["event_id"] = e["lanes"][0]["event_id"]
+            e["config"] = ", ".join(l["config"] for l in e["lanes"])
+            e["fill_posture"] = any(l["fill_posture"] for l in e["lanes"])
+            e["keywords"] = max(l["keywords"] for l in e["lanes"])
     return out
 
 
@@ -207,25 +291,27 @@ def descoped(event_id, state_dir="state"):
     # EBAY's record to the bare event ticker `…EBAY-26AUG05`, so an exact-path
     # lookup reported both of 2026-08-05's legitimate descopes (DUOL, EBAY) as
     # misses. Match on the issuer+date prefix and accept any lane's record.
-    stem = re.sub(r"-(WEBCAST|PHONE|ACOUSTIC)$", "", event_id)
-    for d in sorted(glob.glob(os.path.join(state_dir, stem + "*"))):
-        if os.path.exists(os.path.join(d, "DESCOPED.json")):
+    stem = LANE_SUFFIX.sub("", event_id)
+    for d in _event_dirs(state_dir, stem):
+        dsc = _artifact(d, "DESCOPED.json")
+        if dsc:
             try:
-                r = json.load(open(os.path.join(d, "DESCOPED.json")))
+                r = json.load(open(dsc))
                 return (r.get("reason") or "DESCOPED.json")[:120]
             except (OSError, ValueError):
                 return "DESCOPED.json"
-        try:
-            with open(os.path.join(d, "journal.jsonl")) as fh:
-                for ln in fh:
-                    try:
-                        j = json.loads(ln)
-                    except ValueError:
-                        continue
-                    if j.get("action") == "descope" and j.get("outcome") == "ok":
-                        return (j.get("detail") or "journal descope")[:120]
-        except OSError:
-            continue
+        for jp in _artifacts(d, "journal.jsonl"):
+            try:
+                with open(jp) as fh:
+                    for ln in fh:
+                        try:
+                            j = json.loads(ln)
+                        except ValueError:
+                            continue
+                        if j.get("action") == "descope" and j.get("outcome") == "ok":
+                            return (j.get("detail") or "journal descope")[:120]
+            except OSError:
+                continue
     return None
 
 
@@ -240,11 +326,11 @@ def wire_evidence(event_id, state_dir="state"):
       * at least one intent DID have a crossable ask and still nothing reached
         the wire. That is worth a human look.
     """
-    stem = re.sub(r"-(WEBCAST|PHONE|ACOUSTIC)$", "", event_id)
+    stem = LANE_SUFFIX.sub("", event_id)
     has_report, crossable = False, 0
-    for d in sorted(glob.glob(os.path.join(state_dir, stem + "*"))):
-        rp = os.path.join(d, "report.json")
-        if not os.path.exists(rp):
+    for d in _event_dirs(state_dir, stem):
+        rp = _artifact(d, "report.json")
+        if not rp:
             continue
         try:
             r = json.load(open(rp))
@@ -270,8 +356,8 @@ def run_health(event_id, state_dir="state"):
     d = os.path.join(state_dir, event_id)
     if not os.path.isdir(d):
         return ("never-armed", "no state dir")
-    rp = os.path.join(d, "report.json")
-    if not os.path.exists(rp):
+    rp = _artifact(d, "report.json")
+    if not rp:
         return ("unknown", "armed, no report.json")
     try:
         r = json.load(open(rp))
@@ -283,6 +369,26 @@ def run_health(event_id, state_dir="state"):
     if r.get("partial_report") or reason == "all_legs_died" or frames == 0:
         return ("died", f"exit={reason or 'unknown'} frames_in={frames}")
     return ("healthy", f"exit={reason or 'unknown'} frames_in={frames}")
+
+
+# Best outcome first: one healthy lane means the issuer was heard.
+_HEALTH_RANK = {"healthy": 0, "died": 1, "unknown": 2, "never-armed": 3}
+
+
+def best_health(lanes, health):
+    """Health across an issuer's LANES, naming the lane that achieved it.
+
+    An issuer covered on two lanes is covered if EITHER heard the call. Grading
+    on one arbitrarily-chosen lane is how HIMS 26AUG10 read as a clean
+    single-lane observe while its phone lane was the one on the wire.
+    """
+    best = ("never-armed", "no lane staged")
+    for ln in lanes or []:
+        state, detail = health(ln["event_id"])
+        if _HEALTH_RANK.get(state, 9) < _HEALTH_RANK.get(best[0], 9):
+            m = LANE_SUFFIX.search(ln["event_id"])
+            best = (state, f"{m.group(1) if m else ln['event_id']}: {detail}")
+    return best
 
 
 def orders_by_issuer(state_dir="state"):
@@ -298,7 +404,10 @@ def orders_by_issuer(state_dir="state"):
     records so this still grades an archived run correctly.
     """
     out = {}
-    for p in sorted(glob.glob(os.path.join(state_dir, "*", "report.json"))):
+    for d in _event_dirs(state_dir):
+        p = _artifact(d, "report.json")
+        if not p:
+            continue
         try:
             r = json.load(open(p))
         except Exception:
@@ -366,7 +475,11 @@ def reconcile(captures, orders, board=None, staged=None, health=None):
                         pass
 
             # THREE ways to place nothing, and only one of them is benign.
-            state, detail = health(st["event_id"]) if st else ("unknown", "not staged")
+            if st:
+                state, detail = best_health(
+                    st.get("lanes") or [{"event_id": st["event_id"]}], health)
+            else:
+                state, detail = ("unknown", "not staged")
             if not armed_run and state in ("never-armed", "unknown") and not cap.get("sources"):
                 # Staged, board traded, and nothing on disk at all — the
                 # ABNB/LYFT shape. Previously invisible for want of a row.
@@ -401,6 +514,7 @@ def reconcile(captures, orders, board=None, staged=None, health=None):
                 "run_state": state, "run_detail": detail,
                 "config": (st or {}).get("config"),
                 "fill_posture": (st or {}).get("fill_posture"),
+                "lanes": [l["event_id"] for l in (st or {}).get("lanes") or []],
                 **cap})
     # Worst first: total misses, then runs that died, then armed-but-silent at
     # a fillable cap, then designed observes.
@@ -515,9 +629,78 @@ def check():
         f2 = reconcile(caps, {"ABNB": 1}, board=traded, staged=st, health=health)
         assert "ABNB" not in {x["issuer"] for x in f2}
 
+    # ── 2026-08-11: TWO LANES, and the box-hosted one is where the trade was ──
+    # HIMS 26AUG10 was graded "1 staged, 0 orders, 1c observing posture" on a day
+    # its PHONE lane put 2 orders on the wire and spent 194c. Three defects, all
+    # of which had to be true at once for the day to read clean.
+    with tempfile.TemporaryDirectory() as d:
+        cdir, sdir = os.path.join(d, "configs"), os.path.join(d, "state")
+        os.makedirs(cdir)
+        os.makedirs(sdir)
+        WC = "KXEARNINGSMENTIONHIMS-26AUG10-WEBCAST"
+        PH = "KXEARNINGSMENTIONHIMS-26AUG10-PHONE"
+        # D1: the name phone-lane-derive.py ACTUALLY writes. The old glob
+        # `phone-*-26aug10-arm.toml` matched nothing, so this lane was never in
+        # the denominator.
+        open(os.path.join(cdir, "webcast-hims-26aug10-arm-wc.toml"), "w").write(
+            f'[event]\nid = "{WC}"\n[[keywords]]\nphrase = "x"\nmax_price_cents = 97\n')
+        open(os.path.join(cdir, "hims-26aug10-phone-arm.toml"), "w").write(
+            f'[event]\nid = "{PH}"\n[[keywords]]\nphrase = "x"\nmax_price_cents = 97\n')
+        st = staged_for("2026-08-10", config_dir=cdir)
+        assert set(st) == {"HIMS"}, st
+        # D2: both lanes kept, not one silently overwritten by the other.
+        assert [l["event_id"] for l in st["HIMS"]["lanes"]] == [WC, PH], st["HIMS"]
+
+        # The webcast lane ran on the LAPTOP: report at the canonical path.
+        os.makedirs(os.path.join(sdir, WC))
+        json.dump({"event_id": WC, "frames_in": 297398, "sent": 0,
+                   "exit": {"reason": "clean_drain"}, "orders": []},
+                  open(os.path.join(sdir, WC, "report.json"), "w"))
+        # D3: the phone lane ran on the BOX, so its artifacts exist ONLY under
+        # box/ after the documented pull. Globbing state/*/report.json one level
+        # deep could never see it.
+        os.makedirs(os.path.join(sdir, PH, "box"))
+        json.dump({"event_id": PH, "frames_in": 140439, "sent": 2,
+                   "exit": {"reason": "clean_drain"}, "orders": []},
+                  open(os.path.join(sdir, PH, "box", "report.json"), "w"))
+        open(os.path.join(sdir, PH, "box", "journal.jsonl"), "w").write(
+            json.dumps({"action": "arm-start", "outcome": "info"}) + "\n")
+
+        assert orders_by_issuer(state_dir=sdir) == {"HIMS": 2}, \
+            orders_by_issuer(state_dir=sdir)
+        c = captures_for("2026-08-10", probe_dir=os.path.join(d, "none"), state_dir=sdir)
+        # Both lanes' audio counts toward the issuer.
+        assert c["HIMS"]["frames_in"] == 297398 + 140439, c
+        # Health is the BEST lane, and it names which one.
+        assert run_health(PH, state_dir=sdir)[0] == "healthy"
+        hb = best_health(st["HIMS"]["lanes"], lambda ev: run_health(ev, state_dir=sdir))
+        assert hb[0] == "healthy" and "WEBCAST" in hb[1], hb
+        # …and an issuer on the wire is never flagged.
+        assert not reconcile(c, orders_by_issuer(state_dir=sdir), board=traded,
+                             staged=st,
+                             health=lambda ev: run_health(ev, state_dir=sdir))
+
+        # A box report must be counted ONCE even when a stale canonical copy
+        # also exists — box/ wins, and nothing double-counts.
+        json.dump({"event_id": PH, "frames_in": 1, "sent": 99, "orders": []},
+                  open(os.path.join(sdir, PH, "report.json"), "w"))
+        assert orders_by_issuer(state_dir=sdir) == {"HIMS": 2}, \
+            "box copy must win and must not double-count"
+
+        # sweep-hft shares the account, never the numerator.
+        sw = os.path.join(sdir, "KXEARNINGSMENTIONHIMS-26AUG10-SWEEP")
+        os.makedirs(sw)
+        json.dump({"event_id": "KXEARNINGSMENTIONHIMS-26AUG10-SWEEP", "sent": 40,
+                   "frames_in": 5, "orders": []},
+                  open(os.path.join(sw, "report.json"), "w"))
+        assert orders_by_issuer(state_dir=sdir) == {"HIMS": 2}, \
+            "sweep run leaked into mention-lane orders"
+
     print("missed-arm-check --check: OK (SPOT/PGR flagged, armed run silent, "
           "untraded board ignored, volume ranking, fail-loud, short-leg floor, "
-          "staged denominator, posture from config, died≠observing, descope honoured)")
+          "staged denominator, posture from config, died≠observing, descope "
+          "honoured, phone-lane config named, both lanes kept, box-hosted run "
+          "visible + counted once, sweep excluded)")
 
 
 def main():
@@ -541,7 +724,8 @@ def main():
     if not caps and not staged:
         print(f"missed-arm-check: no capture evidence and no staged configs for {a.date}")
         return 0
-    findings = reconcile(caps, orders_by_issuer(), staged=staged)
+    placed = orders_by_issuer()
+    findings = reconcile(caps, placed, staged=staged)
     bad = {"MISSED-ARM", "ARMED-DIED", "ARMED-NO-FILL", "ARMED-NO-RECORD"}
     if a.json:
         print(json.dumps(findings, indent=1))
@@ -554,11 +738,34 @@ def main():
     undet = [f for f in findings if f["verdict"] == "UNDETERMINED"]
     observing = [f for f in findings if f["verdict"] == "ARMED-OBSERVING"]
     desc = [f for f in findings if f["verdict"] == "DESCOPED"]
-    print(f"missed-arm-check {a.date}: {len(staged)} staged, {len(caps)} captured, "
+    # Lanes, not just issuers: one issuer covered on both webcast and phone is
+    # TWO commitments, and reporting "1 staged" understated exactly the day
+    # whose second lane was the one that traded.
+    n_lanes = sum(len(v.get("lanes") or [1]) for v in staged.values())
+    lane_note = f" ({n_lanes} lanes)" if n_lanes != len(staged) else ""
+    print(f"missed-arm-check {a.date}: {len(staged)} staged{lane_note}, "
+          f"{len(caps)} captured, "
           f"{len(missed)} MISSED-ARM, {len(died)} ARMED-DIED, "
           f"{len(nofill)} ARMED-NO-FILL, {len(norec)} ARMED-NO-RECORD, "
           f"{len(observing)} ARMED-OBSERVING, "
           f"{len(desc)} DESCOPED, {len(undet)} undetermined")
+
+    # An issuer that reached the wire produces NO finding (reconcile skips it),
+    # so without this a fully successful day is indistinguishable from a day
+    # where nothing was staged at all. The tool already prints the good news for
+    # graded verdicts; this is the good news that never had a row.
+    for issuer in sorted(set(staged) | set(caps)):
+        n = placed.get(issuer, 0)
+        if not n:
+            continue
+        lanes = [l["event_id"] for l in (staged.get(issuer) or {}).get("lanes") or []]
+        where = ""
+        if lanes:
+            tags = [(LANE_SUFFIX.search(e).group(1) if LANE_SUFFIX.search(e) else e)
+                    for e in lanes]
+            where = f" across {len(lanes)} lane(s): {', '.join(tags)}"
+        print(f"\n✓ ON THE WIRE: {issuer} — {n} order(s) with send_ts{where}")
+
     for f in desc:
         print(f"\n– DESCOPED: {f['issuer']} — {f['reason']}")
     # Print the good news too: an operator who only ever sees this tool shout

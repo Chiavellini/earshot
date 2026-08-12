@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# T-1 NIGHTLY preflight over every staged autorun env (W2.2).
+# T-1 NIGHTLY preflight over every immutable schema-3 RunPlan for one date.
 #
 #   scripts/preflight-nightly.sh [--date YYYY-MM-DD] [--no-mail]
 #
@@ -9,22 +9,21 @@
 # PYPL and BA events were missed SILENTLY with no human at the keyboard: the
 # gap was not one broken check, it was that nothing was scheduled to check.
 # This script is the scheduled rememberer: every night it walks every staged
-# configs/*-autorun.env, preflights the ones whose EVENT_DATE is today (UTC),
-# and mails ONE aggregate verdict — so a T-1 gap is an email the night
-# before, not a post-mortem the day after.
+# schema-3 RunPlan whose starts_at_utc is today (UTC), proves its required
+# preflight inputs exist, and raises one run-bound critical alert for every
+# verified plan that fails. The aggregate remains the fallback for
+# corrupt/unverifiable plans and date-scope failures.
 #
 # WHAT IT DOES:
-#   1. For each configs/*-autorun.env: sources it in a SUBSHELL only — the
-#      sourcing-corruption trap (unquoted `Del Rio`, `O$Brien`) that
-#      preflight-event.sh's registration round-trip guards against must never
-#      pollute THIS process's environment or leak between envs.
-#   2. Skips any env whose EVENT_DATE != today UTC (--date overrides "today";
-#      the intended 01:00Z fire time is early on the event's OWN UTC day, so
-#      today-UTC == event day at run time). Envs missing CONFIG_PATH,
-#      EVENT_DATE, or ACCOUNT_ENV are counted in the same SKIP bucket,
-#      loudly.
-#   3. For each match: runs scripts/preflight-event.sh with the env's
-#      CONFIG_PATH/ACCOUNT_ENV, ALWAYS passing the env file itself as
+#   1. Enumerates var/runs/*/*/control/run-plan.json by immutable UTC start
+#      date. Zero matching plans fails; an orphan env is not an event.
+#   2. Verifies each plan/ledger and skips only typed terminal runs. An active
+#      run with no pinned env or a webcast run with no AccessPlan is a per-run
+#      FAIL; a broken run never prevents its siblings being checked.
+#   3. Sources each pinned env in a SUBSHELL only, so values cannot leak into
+#      another run, then runs preflight-event.sh with the plan's config,
+#      exact --run-dir, account env, event env, and webcast AccessPlan.
+#      It ALWAYS passes the env file itself as
 #      --event-env (preflight treats it as optional context: the dial-in
 #      go/no-go gate when it names a number, AND the LABEL for the Linux
 #      systemd-timer check). --fire-hhmm is passed when the env defines
@@ -39,17 +38,22 @@
 #      probes fit well inside that; a wedged build must not eat the night).
 #      On timeout the preflight's WHOLE process group is killed — a bare
 #      `kill $pid` would orphan cargo's children and the hang would survive.
-#   5. Aggregates ONE summary mail via scripts/notify.sh:
-#        <N> PASS, <M> FAIL(<event>: <first FAIL line>), <W> WARN, <K> NO-ENV/SKIP
-#      Every processed env lands in exactly one PASS/FAIL/SKIP bucket; WARN
-#      is an extra count (a PASSing env can still carry the fire-mechanism
-#      WARN). Machine-readable lines "PREFLIGHT-NIGHTLY: <event>
-#      PASS|FAIL|SKIP" print per env, plus "PREFLIGHT-NIGHTLY: <event>
+#   5. For each failed plan whose identity and ledger verified, records and
+#      delivers a proof-bearing critical AlertRequest via alertctl.py. The
+#      request is deterministic; alert failure never replaces or suppresses
+#      the originating preflight failure. --no-mail neither delivers nor
+#      mutates a run ledger with alert facts.
+#   6. Aggregates ONE summary mail via scripts/notify.sh:
+#        <N> PASS, <M> FAIL(<run>: <first FAIL line>), <W> WARN, <K> TERMINAL-SKIP
+#      Every selected run lands in exactly one PASS/FAIL/TERMINAL-SKIP bucket;
+#      WARN is an extra count. Machine-readable lines
+#      "PREFLIGHT-NIGHTLY: <event>/<run> PASS|FAIL|SKIP" print per run, plus
+#      "PREFLIGHT-NIGHTLY: <event>/<run>
 #      WARN <reason>" when a check was skipped.
 #      (Each preflight-event.sh run ALSO mails its own full checklist — the
 #      aggregate is the index, the per-event mails are the detail.)
-#   6. Exits 1 if any preflight FAILED, or if the summary mail could not be
-#      delivered — on ANY night, all-clear included (an alert chain that
+#   7. Exits 1 if any preflight FAILED, no RunPlan exists for the date, or the
+#      summary mail could not be delivered — on ANY night, all-clear included (an alert chain that
 #      cannot alert is itself a failed preflight; a silent all-clear is
 #      indistinguishable from the 2026-07-28 miss).
 #
@@ -62,6 +66,7 @@
 set -euo pipefail
 
 REPO="${EARSHOT_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+ALERTCTL="${EARSHOT_ALERTCTL:-$REPO/scripts/alertctl.py}"
 
 # If this script itself dies mid-sweep, that must not be silent — the whole
 # point is that silence is indistinguishable from a healthy idle box. The
@@ -109,9 +114,8 @@ elif ! python3 -c "import datetime,sys; datetime.datetime.strptime(sys.argv[1], 
   exit 2
 fi
 
-# Feature-detect --result-json in preflight-event.sh (it does NOT support it
-# yet — passing an unknown arg would exit 2 and every env would read as FAIL
-# for a reason that is this script's bug, not the event's).
+# Feature-detect --result-json so older checked-out adapters fail for their own
+# evidence gaps instead of receiving an argument they do not understand.
 HAS_RESULT_JSON=0
 grep -q 'result-json' "$REPO/scripts/preflight-event.sh" && HAS_RESULT_JSON=1
 
@@ -172,63 +176,208 @@ BODY_FILE="$TMPD/body.txt"
 : > "$BODY_FILE"
 
 n_pass=0; n_fail=0; n_skip=0; n_warn=0
-fail_detail=""   # "DPZ: [FAIL] …; GEV: [FAIL] …" for the one-line summary
+fail_detail=""   # "EVENT/RUN: [FAIL] …" for the one-line summary
 pass_names=""; fail_names=""; skip_names=""; warn_names=""
-n_envs=0
+n_runs=0
 
-shopt -s nullglob
-for envf in "$REPO"/configs/*-autorun.env; do
-  n_envs=$((n_envs+1))
-  stem=$(basename "$envf" | sed 's/-autorun\.env$//')
+raise_run_alert() { # <verified-run-dir> <event/run>
+  local verified_run_dir="$1" failed_run="$2" alert_out="" alert_last=""
+  # --no-mail is the offline notification posture. Do not append a durable
+  # requirement while deliberately suppressing every delivery attempt.
+  [[ "$NO_MAIL" == 0 ]] || return 0
+  if ! alert_out=$(python3 "$ALERTCTL" raise \
+      --run-dir "$verified_run_dir" \
+      --severity critical \
+      --code preflight_failed \
+      --dedupe-key nightly_preflight \
+      --subject "preflight failed: $failed_run" \
+      --body "Nightly preflight did not pass for $failed_run on UTC date $DATE. Inspect the run ledger and rerun scripts/opsctl.sh preflight --date $DATE." \
+      2>&1); then
+    alert_last=$(tail -n 1 <<<"$alert_out")
+    echo "PREFLIGHT-NIGHTLY-RUN-ALERT-FAILED: $failed_run — ${alert_last:-alertctl exited without detail}; original preflight failure preserved" >&2
+    return 0
+  fi
+  alert_last=$(tail -n 1 <<<"$alert_out")
+  echo "PREFLIGHT-NIGHTLY-RUN-ALERT: $failed_run — ${alert_last:-proof-bearing alert recorded}"
+}
+
+mark_fail() { # <event/run> <message> [verified-run-dir]
+  local failed_run="$1" failed_message="$2" verified_run_dir="${3:-}"
+  n_fail=$((n_fail+1)); fail_names="$fail_names $failed_run"
+  [[ -n "$fail_detail" ]] && fail_detail="$fail_detail; "
+  fail_detail="${fail_detail}${failed_run}: ${failed_message}"
+  echo "PREFLIGHT-NIGHTLY: $failed_run FAIL"
+  echo "FAIL  $failed_run — $failed_message" >> "$BODY_FILE"
+  [[ -z "$verified_run_dir" ]] || raise_run_alert "$verified_run_dir" "$failed_run"
+}
+
+# RunPlan is the event-set authority. Beginning from env filenames made an
+# active plan with a missing env invisible. The unit separator preserves an
+# empty event_env_path (unlike tab, which bash treats as collapsible IFS
+# whitespace).
+MANIFEST="$TMPD/runplans.usv"
+if ! python3 - "$REPO" "$DATE" > "$MANIFEST" <<'PY'
+import datetime as dt
+import json
+import sys
+from pathlib import Path
+
+repo, wanted = Path(sys.argv[1]), dt.date.fromisoformat(sys.argv[2])
+for path in sorted((repo / "var" / "runs").glob("*/*/control/run-plan.json")):
+    try:
+        plan = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SystemExit(f"invalid RunPlan candidate {path}: {exc}")
+    if plan.get("schema") != 3 or plan.get("kind") != "run-plan":
+        continue
+    try:
+        starts = dt.datetime.fromisoformat(
+            str(plan["starts_at_utc"]).replace("Z", "+00:00")
+        )
+    except (KeyError, ValueError, TypeError) as exc:
+        raise SystemExit(f"invalid schema-3 RunPlan candidate {path}: {exc}")
+    if starts.tzinfo is None:
+        raise SystemExit(
+            f"invalid RunPlan candidate {path}: starts_at_utc is timezone-naive"
+        )
+    if starts.astimezone(dt.timezone.utc).date() != wanted:
+        continue
+    run_dir = path.parent.parent
+    fields = [
+        str(run_dir), str(plan.get("event_id", run_dir.parent.name)),
+        str(plan.get("run_id", run_dir.name)), str(plan.get("lane", "")),
+        str(plan.get("config_path", "")),
+        str(plan.get("event_env_path") or ""),
+        str(plan.get("plan_sha256", "")),
+    ]
+    if any("\n" in value or "\x1f" in value for value in fields):
+        raise SystemExit(f"unsafe RunPlan field in {path}")
+    print("\x1f".join(fields))
+PY
+then
+  echo "PREFLIGHT-NIGHTLY-MANIFEST-FAILED: could not enumerate RunPlans for $DATE" >&2
+  exit 1
+fi
+
+while IFS=$'\x1f' read -r run_dir event_id run_id lane plan_cfg env_rel plan_sha; do
+  [[ -n "$run_dir" ]] || continue
+  n_runs=$((n_runs+1))
+  run_name="$event_id/$run_id"
+
+  # Refuse mutated plans/envs and torn ledgers before trusting any field. A
+  # corrupt sibling is reported and does not prevent later siblings running.
+  verify_out=""
+  if ! verify_out=$(EARSHOT_REPO="$REPO" python3 "$REPO/scripts/eventctl.py" verify \
+      --run-dir "$run_dir" 2>&1); then
+    verify_detail=$(tail -n 1 <<< "$verify_out")
+    mark_fail "$run_name" \
+      "RunPlan/ledger verification failed: ${verify_detail:-$run_dir}"
+    continue
+  fi
+  status=""
+  if ! status=$(EARSHOT_REPO="$REPO" python3 "$REPO/scripts/eventctl.py" status \
+      --run-dir "$run_dir" --json 2>/dev/null); then
+    mark_fail "$run_name" "typed status failed for verified RunPlan $run_dir" "$run_dir"
+    continue
+  fi
+  active=$(python3 -c 'import json,sys; print("1" if json.load(sys.stdin)["state"]["active"] else "0")' <<< "$status" 2>/dev/null || true)
+  if [[ "$active" == 0 ]]; then
+    n_skip=$((n_skip+1)); skip_names="$skip_names $run_name"
+    echo "PREFLIGHT-NIGHTLY: $run_name SKIP terminal"
+    echo "SKIP  $run_name — typed run is terminal; no preflight may advance it" >> "$BODY_FILE"
+    continue
+  elif [[ "$active" != 1 ]]; then
+    mark_fail "$run_name" "typed status payload was unreadable" "$run_dir"
+    continue
+  fi
+
+  # This is the failure the old env-driven enumeration could not observe.
+  if [[ -z "$env_rel" ]]; then
+    mark_fail "$run_name" \
+      "active RunPlan has no event_env_path; stage must publish and pin the event env" \
+      "$run_dir"
+    continue
+  fi
+  envf="$REPO/$env_rel"
+  if [[ ! -f "$envf" ]]; then
+    mark_fail "$run_name" "pinned event env $env_rel is missing" "$run_dir"
+    continue
+  fi
+
+  # Webcast acquisition is a parallel prerequisite produced by
+  # control.acquire. Preflight consumes it; this node never creates or repairs
+  # it. The full preflight validates schema/hash after this visibility check.
+  access_plan=""
+  if [[ "$lane" == webcast ]]; then
+    access_plan="$run_dir/control/access-plan.json"
+    if [[ ! -f "$access_plan" ]]; then
+      mark_fail "$run_name" \
+        "required webcast AccessPlan missing at $access_plan; run control.acquire, then retry preflight" \
+        "$run_dir"
+      continue
+    fi
+  elif [[ "$lane" != phone ]]; then
+    mark_fail "$run_name" "unsupported RunPlan lane '$lane'" "$run_dir"
+    continue
+  fi
 
   # Source in a SUBSHELL and extract only the keys this sweep needs
   # (event-autorun.sh's contract: EVENT_NAME/CONFIG_PATH/ACCOUNT_ENV/
   # EVENT_DATE, plus FIRE_HHMM once slate-stage.sh writes it).
   # \x1f-delimited so values with spaces survive; nothing the env sets
   # survives past the substitution.
-  rec=$(
-    set +e +u
+  if ! rec=$(
+    set -eu
     # shellcheck disable=SC1090
     source "$envf" >/dev/null 2>&1
     printf '%s\x1f%s\x1f%s\x1f%s\x1f%s' \
       "${EVENT_NAME:-}" "${CONFIG_PATH:-}" "${ACCOUNT_ENV:-}" \
       "${EVENT_DATE:-}" "${FIRE_HHMM:-}"
-  ) || true
-  ev_name=""; ev_cfg=""; ev_acct=""; ev_date=""; ev_fire=""
-  IFS=$'\x1f' read -r ev_name ev_cfg ev_acct ev_date ev_fire <<<"$rec" || true
-  name="${ev_name:-$stem}"
+  ); then
+    mark_fail "$run_name" "pinned event env could not be sourced: $env_rel" "$run_dir"
+    continue
+  fi
+  ev_name=""; env_cfg=""; ev_acct=""; ev_date=""; ev_fire=""
+  IFS=$'\x1f' read -r ev_name env_cfg ev_acct ev_date ev_fire <<<"$rec" || true
 
-  # ── SKIP bucket: not today, or env too broken to know ────────────────────
-  if [[ -z "$ev_cfg" || -z "$ev_date" ]]; then
-    n_skip=$((n_skip+1)); skip_names="$skip_names $name"
-    echo "PREFLIGHT-NIGHTLY: $name SKIP"
-    echo "SKIP  $name — env incomplete (CONFIG_PATH='${ev_cfg:-}' EVENT_DATE='${ev_date:-}') in $envf; event-autorun would refuse it too" >> "$BODY_FILE"
+  # Pinned env metadata is evidence, never a second event selector.
+  if [[ -z "$env_cfg" || -z "$ev_date" ]]; then
+    mark_fail "$run_name" \
+      "pinned env incomplete (CONFIG_PATH='${env_cfg:-}' EVENT_DATE='${ev_date:-}') in $env_rel" \
+      "$run_dir"
+    continue
+  fi
+  if [[ "$env_cfg" != "$plan_cfg" ]]; then
+    mark_fail "$run_name" \
+      "pinned env CONFIG_PATH=$env_cfg contradicts RunPlan config_path=$plan_cfg" \
+      "$run_dir"
     continue
   fi
   if [[ "$ev_date" != "$DATE" ]]; then
-    n_skip=$((n_skip+1)); skip_names="$skip_names $name"
-    echo "PREFLIGHT-NIGHTLY: $name SKIP"
-    echo "SKIP  $name — EVENT_DATE=$ev_date != $DATE ($envf)" >> "$BODY_FILE"
+    mark_fail "$run_name" \
+      "pinned env EVENT_DATE=$ev_date contradicts RunPlan UTC date $DATE" \
+      "$run_dir"
     continue
   fi
-  # Today's event but no account: preflight-event.sh would FAIL on the empty
-  # --account for a reason that is the ENV's incompleteness, not the event's
-  # health — keep the diagnosis honest and bucket it as a loud SKIP.
+  # Today's event but no account is a preparation failure, not an ignorable
+  # non-date skip. Calling this SKIP let a date-level facade return success and
+  # continue toward scheduling with an event it could never authenticate.
   if [[ -z "$ev_acct" ]]; then
-    n_skip=$((n_skip+1)); skip_names="$skip_names $name"
-    echo "PREFLIGHT-NIGHTLY: $name SKIP"
-    echo "SKIP  $name — incomplete env (no ACCOUNT_ENV) in $envf; cannot preflight without an account env" >> "$BODY_FILE"
+    mark_fail "$run_name" \
+      "pinned env has no ACCOUNT_ENV in $env_rel; cannot preflight or schedule" \
+      "$run_dir"
     continue
   fi
 
   # ── Build the preflight invocation ───────────────────────────────────────
-  args=(--config "$ev_cfg" --account "$ev_acct")
+  args=(--config "$plan_cfg" --account "$ev_acct" --run-dir "$run_dir")
   # ALWAYS pass the env file — preflight-event.sh treats it as optional
   # context: the dial-in go/no-go gate when it names a number (a TBD number
   # FAIL-STOPs tonight, not at 06:05 — the DPZ 2026-07-20 promise, kept at
   # T-1) AND the LABEL its Linux systemd-timer check needs. Conditioning on
   # TO_NUMBER/PASSCODE would lose the LABEL for webcast-lane envs.
   args+=(--event-env "$envf")
+  [[ -n "$access_plan" ]] && args+=(--access-plan "$access_plan")
   if [[ -n "$ev_fire" ]]; then
     args+=(--fire-hhmm "$ev_fire")
   else
@@ -236,30 +385,24 @@ for envf in "$REPO"/configs/*-autorun.env; do
     # fire-mechanism (pmset wake / systemd timer) check — nothing verifies
     # that anything will actually fire this event. That gap must be visible
     # in the aggregate, WARN-counted, never hidden by an all-clear subject.
-    n_warn=$((n_warn+1)); warn_names="$warn_names $name"
-    echo "PREFLIGHT-NIGHTLY: $name WARN fire-mechanism check SKIPPED (no FIRE_HHMM in env)"
-    echo "WARN  $name — fire-mechanism check SKIPPED (no FIRE_HHMM in $envf); nothing verified a timer/wake will fire this event" >> "$BODY_FILE"
+    n_warn=$((n_warn+1)); warn_names="$warn_names $run_name"
+    echo "PREFLIGHT-NIGHTLY: $run_name WARN fire-mechanism check SKIPPED (no FIRE_HHMM in env)"
+    echo "WARN  $run_name — fire-mechanism check SKIPPED (no FIRE_HHMM in $envf); nothing verified a timer/wake will fire this event" >> "$BODY_FILE"
   fi
   if [[ "$HAS_RESULT_JSON" == 1 ]]; then
-    # `|| true`: a staged env can name a config that does not exist yet —
-    # preflight-event.sh will FAIL that loudly itself; the sweep must survive.
-    eid=$(sed -n '/^\[event\]/,/^\[/s/^id[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$ev_cfg" 2>/dev/null | head -1 || true)
-    eid="${eid:-$stem}"
-    mkdir -p "$REPO/state/$eid"
-    args+=(--result-json "state/$eid/preflight-result.json")
+    mkdir -p "$REPO/state/$event_id"
+    args+=(--result-json "state/$event_id/preflight-result.json")
   fi
 
-  out="$TMPD/$stem.out"
+  out="$TMPD/run-$n_runs.out"
   rc=0
   run_with_timeout 2700 bash "$REPO/scripts/preflight-event.sh" "${args[@]}" >"$out" 2>&1 || rc=$?
 
   if [[ "$rc" -eq 0 ]]; then
-    n_pass=$((n_pass+1)); pass_names="$pass_names $name"
-    echo "PREFLIGHT-NIGHTLY: $name PASS"
-    echo "PASS  $name — $ev_cfg (exit 0)" >> "$BODY_FILE"
+    n_pass=$((n_pass+1)); pass_names="$pass_names $run_name"
+    echo "PREFLIGHT-NIGHTLY: $run_name PASS"
+    echo "PASS  $run_name — $plan_cfg (exit 0)" >> "$BODY_FILE"
   else
-    n_fail=$((n_fail+1)); fail_names="$fail_names $name"
-    echo "PREFLIGHT-NIGHTLY: $name FAIL"
     if [[ "$rc" -eq 124 ]]; then
       first_fail="preflight TIMED OUT (>45 min) — wedged build or hung probe"
     elif [[ "$rc" -ge 128 ]]; then
@@ -268,37 +411,34 @@ for envf in "$REPO"/configs/*-autorun.env; do
       first_fail=$(grep -m1 '^\[FAIL\]' "$out" || true)
       first_fail="${first_fail:-exit $rc with no [FAIL] line — preflight itself crashed}"
     fi
-    [[ -n "$fail_detail" ]] && fail_detail="$fail_detail; "
-    fail_detail="${fail_detail}${name}: ${first_fail}"
+    mark_fail "$run_name" "$first_fail" "$run_dir"
     {
-      echo "FAIL  $name — $ev_cfg (exit $rc)"
-      echo "      first FAIL: $first_fail"
+      echo "      config: $plan_cfg (exit $rc)"
       echo "      last 30 lines of preflight output:"
       tail -n 30 "$out" | sed 's/^/      | /'
     } >> "$BODY_FILE"
   fi
-done
-shopt -u nullglob
+done < "$MANIFEST"
 
-# ── Aggregate summary — every env in exactly one bucket ────────────────────
+# ── Aggregate summary — every selected run in exactly one bucket ─────────────
+if [[ "$n_runs" -eq 0 ]]; then
+  n_fail=$((n_fail+1))
+  first_fail="no schema-3 RunPlans exist for $DATE"
+  fail_detail="$first_fail"
+  fail_names=" date-scope"
+  echo "PREFLIGHT-NIGHTLY-EMPTY: $first_fail" >&2
+  echo "FAIL  date-scope — $first_fail; staging/RunPlan compilation did not establish an event set" >> "$BODY_FILE"
+fi
 if [[ -n "$fail_detail" ]]; then
-  SUMMARY="$n_pass PASS, $n_fail FAIL($fail_detail), $n_warn WARN, $n_skip NO-ENV/SKIP"
+  SUMMARY="$n_pass PASS, $n_fail FAIL($fail_detail), $n_warn WARN, $n_skip TERMINAL-SKIP"
 else
-  SUMMARY="$n_pass PASS, 0 FAIL, $n_warn WARN, $n_skip NO-ENV/SKIP"
+  SUMMARY="$n_pass PASS, 0 FAIL, $n_warn WARN, $n_skip TERMINAL-SKIP"
 fi
 echo "PREFLIGHT-NIGHTLY-SUMMARY: $SUMMARY"
-if [[ "$n_envs" -eq 0 ]]; then
-  # Zero staged envs is information, not silence: either nothing is
-  # scheduled (fine) or slate-daily never staged today's events (the
-  # 2026-07-28 failure shape). The human decides which; we make sure they see it.
-  echo "PREFLIGHT-NIGHTLY-EMPTY: no configs/*-autorun.env staged at all"
-  echo "(no configs/*-autorun.env files exist — nothing staged; if events are expected for $DATE, slate/staging never ran)" >> "$BODY_FILE"
-fi
-
 BODY="$SUMMARY
 
 date checked (UTC): $DATE
-envs scanned: $n_envs   (pass:${pass_names:- none}  fail:${fail_names:- none}  warn:${warn_names:- none}  skip:${skip_names:- none})
+RunPlans selected: $n_runs   (pass:${pass_names:- none}  fail:${fail_names:- none}  warn:${warn_names:- none}  terminal-skip:${skip_names:- none})
 
 $(cat "$BODY_FILE")
 

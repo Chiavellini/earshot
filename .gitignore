@@ -33,3 +33,11 @@ vendor/
 __pycache__/
 *.pyc
 slate/latest-timed.json
+# Per-run lifecycle ledger and derived date index — generated operational state
+# like state/, never source.
+var/runs/
+# Derived date-level audit indexes (rebuildable from immutable run evidence).
+var/audits/
+# Archived run evidence pulled aside from var/runs/ — same class of operational
+# state, kept on disk only.
+var/runs-archive/

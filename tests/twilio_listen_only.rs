@@ -21,15 +21,20 @@ fn repo_root() -> PathBuf {
 fn dial_dry_run(dtmf: Option<&str>) -> (i32, String) {
     let mut cmd = Command::new("bash");
     cmd.arg("scripts/twilio-dial.sh")
-        .arg("--to").arg("+18005551234")
-        .arg("--stream-url").arg("wss://example.test/media")
+        .arg("--to")
+        .arg("+18005551234")
+        .arg("--stream-url")
+        .arg("wss://example.test/media")
         .arg("--dry-run")
         .current_dir(repo_root());
     if let Some(d) = dtmf {
         cmd.arg("--dtmf").arg(d);
     }
     let out = cmd.output().expect("run twilio-dial.sh");
-    (out.status.code().unwrap_or(-1), String::from_utf8_lossy(&out.stdout).into_owned())
+    (
+        out.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+    )
 }
 
 #[test]
@@ -45,7 +50,10 @@ fn dtmf_star_is_rejected() {
 fn dtmf_non_passcode_chars_are_rejected() {
     for bad in ["abc", "12 34", "12;rm", "+1", "12,34"] {
         let (code, _) = dial_dry_run(Some(bad));
-        assert_eq!(code, 3, "DTMF {bad:?} must be rejected (charset [0-9#w] only)");
+        assert_eq!(
+            code, 3,
+            "DTMF {bad:?} must be rejected (charset [0-9#w] only)"
+        );
     }
 }
 
@@ -54,7 +62,10 @@ fn valid_passcodes_are_accepted() {
     for ok in ["1234#", "w1234", "0000", "1364784#"] {
         let (code, twiml) = dial_dry_run(Some(ok));
         assert_eq!(code, 0, "DTMF {ok:?} must be accepted");
-        assert!(twiml.contains(&format!("<Play digits=\"wwwwwwww{ok}\"/>")), "TwiML: {twiml}");
+        assert!(
+            twiml.contains(&format!("<Play digits=\"wwwwwwww{ok}\"/>")),
+            "TwiML: {twiml}"
+        );
     }
 }
 
@@ -65,10 +76,19 @@ fn twiml_is_one_way_start_stream_never_bidirectional() {
     for dtmf in [None, Some("1234#")] {
         let (code, twiml) = dial_dry_run(dtmf);
         assert_eq!(code, 0);
-        assert!(twiml.contains("<Start><Stream"), "must be a one-way fork: {twiml}");
-        assert!(twiml.contains("track=\"inbound_track\""), "inbound-only: {twiml}");
+        assert!(
+            twiml.contains("<Start><Stream"),
+            "must be a one-way fork: {twiml}"
+        );
+        assert!(
+            twiml.contains("track=\"inbound_track\""),
+            "inbound-only: {twiml}"
+        );
         for forbidden in ["<Connect", "<Dial", "<Number", "<Sip"] {
-            assert!(!twiml.contains(forbidden), "TwiML must never contain {forbidden}: {twiml}");
+            assert!(
+                !twiml.contains(forbidden),
+                "TwiML must never contain {forbidden}: {twiml}"
+            );
         }
     }
 }
@@ -80,22 +100,37 @@ fn pause_secs_changes_only_the_hold_time() {
     let run = |pause: &str| {
         let out = Command::new("bash")
             .arg("scripts/twilio-dial.sh")
-            .arg("--to").arg("+18005551234")
-            .arg("--stream-url").arg("wss://example.test/media")
-            .arg("--pause-secs").arg(pause)
+            .arg("--to")
+            .arg("+18005551234")
+            .arg("--stream-url")
+            .arg("wss://example.test/media")
+            .arg("--pause-secs")
+            .arg(pause)
             .arg("--dry-run")
             .current_dir(repo_root())
             .output()
             .expect("run twilio-dial.sh");
-        (out.status.code().unwrap_or(-1), String::from_utf8_lossy(&out.stdout).into_owned())
+        (
+            out.status.code().unwrap_or(-1),
+            String::from_utf8_lossy(&out.stdout).into_owned(),
+        )
     };
     let (code, twiml) = run("150");
     assert_eq!(code, 0);
     assert!(twiml.contains("<Pause length=\"150\"/>"), "TwiML: {twiml}");
-    assert!(twiml.contains("<Start><Stream"), "one-way fork must survive: {twiml}");
-    assert!(twiml.contains("track=\"inbound_track\""), "inbound-only: {twiml}");
+    assert!(
+        twiml.contains("<Start><Stream"),
+        "one-way fork must survive: {twiml}"
+    );
+    assert!(
+        twiml.contains("track=\"inbound_track\""),
+        "inbound-only: {twiml}"
+    );
     for forbidden in ["<Connect", "<Dial", "<Number", "<Sip"] {
-        assert!(!twiml.contains(forbidden), "TwiML must never contain {forbidden}: {twiml}");
+        assert!(
+            !twiml.contains(forbidden),
+            "TwiML must never contain {forbidden}: {twiml}"
+        );
     }
     for bad in ["0", "5401", "-5", "abc"] {
         let (code, _) = run(bad);
@@ -104,7 +139,10 @@ fn pause_secs_changes_only_the_hold_time() {
     // Default (no flag) stays the pre-existing 90-min hold, byte-for-byte.
     let (code, twiml) = dial_dry_run(None);
     assert_eq!(code, 0);
-    assert!(twiml.contains("<Pause length=\"5400\"/>"), "default hold changed: {twiml}");
+    assert!(
+        twiml.contains("<Pause length=\"5400\"/>"),
+        "default hold changed: {twiml}"
+    );
 }
 
 #[test]

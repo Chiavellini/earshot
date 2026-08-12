@@ -68,7 +68,10 @@ impl LatencyRecorder {
         for edge in EDGES {
             // 1 ns .. 60 s range, 3 significant digits: fixed memory, covers
             // everything from ring hops to a stalled stage.
-            hists.insert(edge, Histogram::new_with_bounds(1, 60_000_000_000, 3).unwrap());
+            hists.insert(
+                edge,
+                Histogram::new_with_bounds(1, 60_000_000_000, 3).unwrap(),
+            );
         }
         LatencyRecorder { hists }
     }
@@ -128,6 +131,11 @@ pub struct EdgeStats {
 pub struct DetectionRecord {
     pub detection: Detection,
     pub intent: Option<DecisionIntent>,
+    /// Present when assembly intentionally prevented this detection from
+    /// reaching (and therefore consuming) the one-shot decision table. Phone
+    /// runs use `pre_admission`; the detection remains evidence, not an intent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suppression: Option<String>,
     /// emit_ts − audio_ts: detection latency relative to the capture of the
     /// chunk's first frame (dominated by chunk accumulation, by design).
     pub detect_latency_us: u64,
@@ -194,6 +202,10 @@ pub struct LegSummary {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExitReason {
+    /// Assembly built the graph but refused to release it because a required
+    /// startup receipt (currently `listener.ready`) could not be persisted.
+    /// No source frames or order intents were allowed through.
+    StartupError,
     /// Source reached end-of-stream and every stage drained normally.
     CleanDrain,
     /// The source returned an error (idle guard, WS/pipe read failure, dial
@@ -201,6 +213,13 @@ pub enum ExitReason {
     SourceError,
     /// Fanout mode: every leg died, so the pipeline had nothing left to read.
     AllLegsDied,
+    /// The durable one-shot decision state could not be appended or synced.
+    /// The session was killed; this is neither an audio-source failure nor a
+    /// thread panic and must remain separately gradeable.
+    DecisionStateError,
+    /// Durable order/wire evidence became unhealthy. The session was killed
+    /// and the run cannot be classified as a clean drain.
+    OrderEvidenceError,
     /// SIGTERM — the unattended kill (launchd, launcher trap, supervisor).
     Sigterm,
     /// `<state-dir>/STOP` or SIGINT: gate disarmed, pipeline winds down.
@@ -220,11 +239,17 @@ pub struct ExitRecord {
 
 impl ExitRecord {
     pub fn clean() -> Self {
-        ExitRecord { reason: ExitReason::CleanDrain, detail: None }
+        ExitRecord {
+            reason: ExitReason::CleanDrain,
+            detail: None,
+        }
     }
 
     pub fn with(reason: ExitReason, detail: impl Into<String>) -> Self {
-        ExitRecord { reason, detail: Some(detail.into()) }
+        ExitRecord {
+            reason,
+            detail: Some(detail.into()),
+        }
     }
 }
 
@@ -235,12 +260,17 @@ impl ExitRecord {
 /// post-event grading can ask one question of every run instead of
 /// special-casing the stub. `terminated` is retained for readers that predate
 /// `exit`.
-pub fn sigterm_stub_json(session_order_ids: &[String], ledger_spent_cents: u64) -> serde_json::Value {
+pub fn sigterm_stub_json(
+    session_order_ids: &[String],
+    pending_client_order_ids: &[String],
+    ledger_spent_cents: u64,
+) -> serde_json::Value {
     serde_json::json!({
         "terminated": "SIGTERM",
         "exit": ExitRecord::with(ExitReason::Sigterm, "kill watcher: SIGTERM"),
         "partial_report": true,
         "session_order_ids": session_order_ids,
+        "pending_client_order_ids": pending_client_order_ids,
         "ledger_spent_cents": ledger_spent_cents,
     })
 }
@@ -272,7 +302,11 @@ pub fn build_run_json(
             // re-derive the distinction that produced the false "23 orders
             // placed" on 2026-08-05 (the true number was 0).
             json["intents"] = e.orders.len().into();
-            json["sent"] = e.orders.iter().filter(|o| o.reached_wire()).count().into();
+            let send_attempted = e.orders.iter().filter(|o| o.send_attempted()).count();
+            json["send_attempted"] = send_attempted.into();
+            // Compatibility key. Its historical spelling overstates what a
+            // send timestamp proves; new readers use `send_attempted`.
+            json["sent"] = send_attempted.into();
             json["acked"] = e.orders.iter().filter(|o| o.acked()).count().into();
             json["orders"] = serde_json::to_value(&e.orders)?;
             json["lost_races"] = e.lost_races.into();
@@ -281,6 +315,7 @@ pub fn build_run_json(
         None => {
             json["intents"] = 0.into();
             json["sent"] = 0.into();
+            json["send_attempted"] = 0.into();
             json["acked"] = 0.into();
             json["orders"] = serde_json::json!([]);
             json["executor_report_missing"] = true.into();
@@ -320,6 +355,10 @@ pub struct PipelineReport {
     /// existing reports keep their exact shape).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub per_leg: Option<Vec<LegSummary>>,
+    /// First durable decision-state failure. Presence means the risk session
+    /// was killed and no later detection was eligible to trade.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decision_journal_error: Option<String>,
 }
 
 impl PipelineReport {
@@ -360,7 +399,10 @@ impl PipelineReport {
                     l.detections,
                     l.drops.total(),
                     pct_suffix(l.drop_pct),
-                    l.died.as_deref().map(|d| format!("  DIED: {d}")).unwrap_or_default(),
+                    l.died
+                        .as_deref()
+                        .map(|d| format!("  DIED: {d}"))
+                        .unwrap_or_default(),
                 ));
             }
             out.push('\n');
@@ -387,7 +429,10 @@ impl PipelineReport {
                     d.detect_latency_us,
                     d.intent
                         .as_ref()
-                        .map(|i| format!("{} x{} @≤{}¢", i.market_ticker, i.tranche_contracts, i.max_price_cents))
+                        .map(|i| format!(
+                            "{} x{} @≤{}¢",
+                            i.market_ticker, i.tranche_contracts, i.max_price_cents
+                        ))
                         .unwrap_or_else(|| "suppressed (state machine)".into()),
                 ));
             }
@@ -400,7 +445,10 @@ pub fn init_logging(json: bool) {
     use tracing_subscriber::EnvFilter;
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     if json {
-        tracing_subscriber::fmt().with_env_filter(filter).json().init();
+        tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .json()
+            .init();
     } else {
         tracing_subscriber::fmt().with_env_filter(filter).init();
     }
@@ -440,20 +488,34 @@ mod tests {
     #[test]
     fn every_exit_reason_has_a_distinct_wire_name() {
         let all = [
+            ExitReason::StartupError,
             ExitReason::CleanDrain,
             ExitReason::SourceError,
             ExitReason::AllLegsDied,
+            ExitReason::DecisionStateError,
+            ExitReason::OrderEvidenceError,
             ExitReason::Sigterm,
             ExitReason::StopFile,
             ExitReason::PanicOrJoin,
         ];
-        let names: Vec<String> =
-            all.iter().map(|r| serde_json::to_value(r).unwrap().as_str().unwrap().to_string()).collect();
+        let names: Vec<String> = all
+            .iter()
+            .map(|r| {
+                serde_json::to_value(r)
+                    .unwrap()
+                    .as_str()
+                    .unwrap()
+                    .to_string()
+            })
+            .collect();
         let mut sorted = names.clone();
         sorted.sort();
         sorted.dedup();
         assert_eq!(sorted.len(), all.len(), "duplicate wire names in {names:?}");
+        assert!(names.contains(&"startup_error".to_string()));
         assert!(names.contains(&"all_legs_died".to_string()));
+        assert!(names.contains(&"decision_state_error".to_string()));
+        assert!(names.contains(&"order_evidence_error".to_string()));
     }
 
     /// The SIGTERM stub is the only record an unattended kill leaves behind.
@@ -462,11 +524,16 @@ mod tests {
     /// eventually forget to.
     #[test]
     fn sigterm_stub_carries_the_same_exit_shape_as_a_full_report() {
-        let v = sigterm_stub_json(&["ord-1".to_string(), "ord-2".to_string()], 97);
+        let v = sigterm_stub_json(
+            &["ord-1".to_string(), "ord-2".to_string()],
+            &["client-ambiguous".to_string()],
+            97,
+        );
         assert_eq!(v["exit"]["reason"], "sigterm");
         assert_eq!(v["partial_report"], true);
         assert_eq!(v["ledger_spent_cents"], 97);
         assert_eq!(v["session_order_ids"].as_array().unwrap().len(), 2);
+        assert_eq!(v["pending_client_order_ids"][0], "client-ambiguous");
         // Retained for readers that predate `exit`.
         assert_eq!(v["terminated"], "SIGTERM");
     }
@@ -498,11 +565,18 @@ mod tests {
     /// confusion.
     #[test]
     fn drop_pct_is_none_when_no_frame_arrived() {
-        let none = DropCounters { source_to_preproc: 0, preproc_to_chunker: 0, chunker_to_detector: 0 };
+        let none = DropCounters {
+            source_to_preproc: 0,
+            preproc_to_chunker: 0,
+            chunker_to_detector: 0,
+        };
         assert_eq!(none.pct_of(0), None, "no frames must not read as 0%");
         assert_eq!(none.pct_of(1000), Some(0.0));
         assert_eq!(PipelineReport::render_table_pct_suffix(None), "");
-        assert_eq!(PipelineReport::render_table_pct_suffix(Some(0.0)), " (0.00%)");
+        assert_eq!(
+            PipelineReport::render_table_pct_suffix(Some(0.0)),
+            " (0.00%)"
+        );
 
         // The real TLN-26AUG05 numbers: 9,395 dropped of 227,209 = 4.13%.
         let tln = DropCounters {
@@ -512,10 +586,17 @@ mod tests {
         };
         let pct = tln.pct_of(227_209).expect("frames present");
         assert!((pct - 4.135).abs() < 0.01, "got {pct}, want ~4.13");
-        assert_eq!(PipelineReport::render_table_pct_suffix(Some(pct)), " (4.13%)");
+        assert_eq!(
+            PipelineReport::render_table_pct_suffix(Some(pct)),
+            " (4.13%)"
+        );
 
         // Only the ingress ring can drop, but the rate sums all three stages.
-        let all = DropCounters { source_to_preproc: 1, preproc_to_chunker: 2, chunker_to_detector: 3 };
+        let all = DropCounters {
+            source_to_preproc: 1,
+            preproc_to_chunker: 2,
+            chunker_to_detector: 3,
+        };
         assert_eq!(all.total(), 6);
         assert_eq!(all.pct_of(600), Some(1.0));
     }
@@ -562,7 +643,11 @@ mod tests {
         }
         let snap = r.snapshot();
         for edge in ["book_age", "handoff→exec", "ring_wake"] {
-            assert_eq!(snap.get(edge).map(|s| s.count), Some(1), "edge {edge} dropped");
+            assert_eq!(
+                snap.get(edge).map(|s| s.count),
+                Some(1),
+                "edge {edge} dropped"
+            );
         }
     }
 

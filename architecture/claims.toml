@@ -1,5 +1,5 @@
 schema_version = 1
-as_of = "2026-08-01"
+as_of = "2026-08-11"
 authority = "open-collaboration-claims"
 
 # Every table is an open, collision-protected claim. `complete_pending_commit`
@@ -8,25 +8,36 @@ authority = "open-collaboration-claims"
 [[claim]]
 id = "root.architecture"
 node = "project.architecture"
-worker = "/root"
+worker = "event-lifecycle-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
 # The registry and this file are edited by every lane that adds a node, an
 # owner, or a claim. The claim stays open while that is happening and is
 # retired once the governance surface settles.
+# 2026-08-11: temporarily handed to event-lifecycle-lane with the
+# control.operate slice so one worker owns both the implementation claim and
+# the registry edits needed to publish its doors. Hand back before another
+# node changes the registry.
 paths = [
   # 2026-08-04: CLAUDE.md gains the never-point-a-recorder-at-a-tradeable-call
   # convention and the new commands; STATUS.md's `held` count goes 1 -> 3.
   "CLAUDE.md",
   "architecture/claims.toml",
   "architecture/nodes.toml",
+  "architecture/operations.toml",
+  "docs/NODES.md",
   "docs/STATUS.md",
   "docs/nodes/project-architecture.md",
+  "scripts/doc-lint.py",
+  "scripts/ops-surface-check.py",
+  "tests/ops_surface.py",
   "docs/work/ACTIVE.md",
 ]
 verification = [
   "python3 scripts/doc-lint.py --self-test",
+  "python3 tests/ops_surface.py",
+  "python3 tests/opsctl.py",
   "scripts/doc-lint.sh",
 ]
 evidence = ["architecture/nodes.toml"]
@@ -34,9 +45,9 @@ evidence = ["architecture/nodes.toml"]
 [[claim]]
 id = "phone.runtime_assembly"
 node = "runtime.assembly"
-worker = "phone-lane"
+worker = "execution-identity-lane"
 branch = "webcast-lane"
-state = "active"
+state = "complete_pending_commit"
 contract_change = true
 # 2026-08-05 post-mortem, section 1: `arm()` writes report.json only on a clean
 # pipeline drain (src/main.rs:1334). Of ~14 exit paths exactly one produced a
@@ -44,6 +55,15 @@ contract_change = true
 # entire record was lost. The tail of arm() becomes a single finish_run() choke
 # point called from BOTH the Ok and Err arms, and PipelineReport gains an
 # `exit` record so a run always says how it ended.
+# 2026-08-11 handoff: the claimed paths are clean. Runtime-reliability-lane
+# takes the completed historical claim to wire live arms to the event-scoped
+# persistent DecisionTable. Dry runs/replays remain in-memory and cannot
+# consume live one-shot state.
+# 2026-08-11 reliability continuation: runtime-reliability-lane completed and
+# verified mandatory RunPlan evidence/finalization.  The same open node claim
+# is now handed to execution-identity-lane for the bounded read-only
+# `account-fingerprint` CLI adapter; no further assembly lifecycle work is in
+# scope for that lane.
 paths = [
   "docs/nodes/runtime-assembly.md",
   "src/lib.rs",
@@ -53,6 +73,8 @@ paths = [
   # canonical OrderRecord::reached_wire() so the predicate has ONE definition.
   "tests/e2e_full_chain.rs",
   "tests/perf_budget.rs",
+  "tests/e2e_fanout.rs",
+  "tests/e2e_replay.rs",
   # 2026-08-07: both composers read Detector::engine_name() before the detector
   # moves into its thread and stamp it on PipelineReport. Fanout reports the
   # DISTINCT set joined by "+" rather than asserting one engine, since nothing
@@ -60,6 +82,7 @@ paths = [
   "src/pipeline/mod.rs",
 ]
 verification = [
+  "cargo test --lib decision",
   "cargo test --test e2e_full_chain",
   "cargo test --test twilio_listen_only",
   "cargo test --test report_on_exit",
@@ -68,9 +91,31 @@ verification = [
 evidence = ["docs/nodes/runtime-assembly.md"]
 
 [[claim]]
+id = "reliability.execution_identity"
+node = "runtime.kalshi.auth"
+worker = "execution-identity-lane"
+branch = "webcast-lane"
+state = "complete_pending_commit"
+contract_change = true
+# Stable, non-secret account identity for immutable RunPlans.  The library
+# already owns the exact key-id + RSA-public-DER fingerprint algorithm; this
+# slice exposes/tests that read-only identity without signing a request or
+# contacting Kalshi, so nightly staging does not need a per-event fingerprint
+# patch.
+paths = [
+  "docs/layers/auth.md",
+  "examples/sign_probe.rs",
+  "src/kalshi/auth.rs",
+]
+verification = [
+  "cargo test --lib auth",
+]
+evidence = ["docs/layers/auth.md"]
+
+[[claim]]
 id = "post26aug05.wire_truth"
 node = "runtime.kalshi.executor"
-worker = "phone-lane"
+worker = "order-truth-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
@@ -80,6 +125,10 @@ contract_change = true
 # `!dry_run` rather than from any wire event. Adds the canonical predicates
 # `OrderRecord::reached_wire()` / `acked()`, replacing four drifting copies of
 # `send_ts.is_some()` in the test suite.
+# 2026-08-11: clean paths transferred to order-truth-lane. Migrate the executor
+# from the lossy compatibility send door to `SubmitResult`, preserving every
+# attempted/observed/accepted/fill transition and exact response evidence in
+# the per-intent record. No execution policy or risk cap changes.
 paths = [
   "docs/layers/executor.md",
   "src/kalshi/executor.rs",
@@ -96,7 +145,7 @@ evidence = ["docs/layers/executor.md"]
 [[claim]]
 id = "post26aug05.telemetry_exit_record"
 node = "runtime.telemetry"
-worker = "phone-lane"
+worker = "runtime-reliability-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
@@ -105,6 +154,10 @@ contract_change = true
 # the same way whether it drained cleanly, died on a source error, or was
 # SIGTERMed. Without it a missing report and a crashed run are indistinguishable
 # from a run that never armed.
+# 2026-08-11: clean claim handed to runtime-reliability-lane with the assembly
+# follow-up. PipelineReport gains an explicit decision_journal_error and the
+# exit vocabulary gains decision_state_error; a durable-state fault must never
+# masquerade as a source failure or panic.
 paths = [
   "docs/layers/telemetry.md",
   "src/telemetry.rs",
@@ -139,6 +192,7 @@ contract_change = true
 paths = [
   "docs/layers/source.md",
   "docs/nodes/source-port.md",
+  "src/source/mod.rs",
 ]
 verification = ["cargo test --lib source"]
 evidence = ["docs/nodes/source-port.md"]
@@ -162,7 +216,7 @@ evidence = ["docs/TWILIO.md"]
 [[claim]]
 id = "phone.prepare"
 node = "control.prepare"
-worker = "phone-lane"
+worker = "phone-lane + execution-identity-lane + generic-stage-reconcile + cerebras-live-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
@@ -181,6 +235,8 @@ paths = [
   "configs/webcast-amzn-26jul30-arm-wc.toml",
   "configs/webcast-cmg-26jul29-arm-wc.toml",
   "scripts/slate-stage.sh",
+  "scripts/stage-reconcile.py",
+  "tests/stage_reconcile.py",
   "configs/webcast-cvna-26jul29-arm-wc.toml",
   "configs/webcast-grab-26aug03-arm-wc.toml",
   # GRAB 26AUG03: the webcast file above is a deliberate fail-closed stub (both
@@ -201,6 +257,9 @@ paths = [
   # 2026-08-05 TLN: the hand-made phone-only arm, and the script that now
   # derives it (verified semantically identical, same keywords_sha256).
   "configs/tln-26aug05-phone-arm.toml",
+  # 2026-08-11: also emits a literal, portable EARSHOT_ACCOUNT_PROFILE
+  # locator.  eventctl never sources generated event envs, so computed
+  # ACCOUNT_ENV search loops cannot be trusted as immutable identity input.
   "scripts/phone-lane-derive.py",
   "docs/layers/prepare.md",
   "docs/work/PLAN-26JUL30.md",
@@ -273,6 +332,32 @@ paths = [
   # half of that class is guarded in control.operate/ops.traceability.
   "configs/hims-26aug10-raw.toml",
   "configs/webcast-hims-26aug10-arm-wc.toml",
+  # 2026-08-11 staged event artifacts. These stay exact-file claims so the
+  # reusable lifecycle never turns a dated config into a public interface.
+  "configs/ac-26aug12-raw.toml",
+  "configs/amat-26aug13-raw.toml",
+  "configs/cava-26aug11-phone-arm.toml",
+  "configs/cava-26aug11-raw.toml",
+  "configs/cbrs-26aug12-raw.toml",
+  "configs/cohr-26aug12-raw.toml",
+  "configs/crwv-26aug11-phone-arm.toml",
+  "configs/crwv-26aug11-raw.toml",
+  "configs/etor-26aug11-raw.toml",
+  "configs/hims-26aug10-phone-arm.toml",
+  "configs/hims-capture-sidecar.toml",
+  "configs/lunr-26aug13-raw.toml",
+  "configs/webcast-ac-26aug12-arm-wc.toml",
+  "configs/webcast-amat-26aug13-arm-wc.toml",
+  "configs/webcast-cava-26aug11-arm-wc.toml",
+  "configs/webcast-cbrs-26aug12-arm-wc.toml",
+  # 2026-08-12 T0 collision recovery: a separately named 1c non-crossing
+  # attempt, because the prior untracked path changed to unauthorized 97c
+  # fill posture after a RunPlan pinned its safe bytes. Never arm the 97c path.
+  "configs/webcast-cbrs-26aug12-safe-observe-wc.toml",
+  "configs/webcast-cohr-26aug12-arm-wc.toml",
+  "configs/webcast-crwv-26aug11-arm-wc.toml",
+  "configs/webcast-etor-26aug11-arm-wc.toml",
+  "configs/webcast-lunr-26aug13-arm-wc.toml",
   # 2026-08-07: the widener's lexicon. It lives under configs/ (so this node's
   # glob owns it) but its content is study evidence — live-validated variant
   # sets, propagated across issuers. Its consumer, scripts/variant-widen.py,
@@ -281,6 +366,8 @@ paths = [
 ]
 verification = [
   "cargo test --lib prepare",
+  "python3 scripts/slate-time-merge.py --self-test",
+  "python3 tests/stage_reconcile.py",
   "scripts/preflight-event.sh --help",
 ]
 evidence = ["docs/layers/prepare.md"]
@@ -332,7 +419,7 @@ evidence = ["docs/nodes/control-operator.md"]
 [[claim]]
 id = "phone.supervise"
 node = "control.supervise"
-worker = "phone-lane"
+worker = "phone-lane + typed-scheduler-lane + cerebras-live-lane + coherent-live-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
@@ -345,10 +432,14 @@ paths = [
   # 2026-08-05: schedule a phone event on the box and verify the LOADED unit;
   # event-autorun.sh now honors the BIND_PORT its own env files declare.
   "scripts/box-event-install.sh",
+  "scripts/install-event-timer.sh",
+  "scripts/schedule-proof.py",
   "docs/nodes/control-supervise.md",
   "scripts/redial-supervisor.sh",
   "scripts/url-escalate.sh",
   "scripts/webcast-autorun.sh",
+  "scripts/arm-when-url.sh",
+  "scripts/wing-autorun.sh",
   # 2026-08-04: the stub-driven suite control-supervise.md §Verification has
   # prescribed since 2026-07-29 and that never existed until now.
   "tests/redial_supervisor.rs",
@@ -364,17 +455,35 @@ paths = [
   "configs/ttwo-26aug07-autorun.env",
   "configs/uber-26aug05-autorun.env",
   "configs/you-26aug05-autorun.env",
+  # 2026-08-10: the loop now reads the venue's admission verdict itself and
+  # escalates to the operator handler BEFORE the first dial. HIMS 26AUG10 spent
+  # 31m47s / 17 legs cycling DTMF variants of a credential that was never a
+  # passcode while `operator_screened` was derivable from the registry; the
+  # handler was engaged by hand 17 minutes into a live call.
+  "tests/operator_escalation.sh",
+  "tests/schedule_proof.py",
+  "tests/typed_scheduler_boundary.sh",
+  "configs/hims-26aug10-phone-autorun.env",
+  "configs/amat-26aug13-autorun.env",
+  "configs/cava-26aug11-phone-autorun.env",
+  "configs/cbrs-26aug12-autorun.env",
+  "configs/cbrs-26aug12-safe-observe-autorun.env",
+  "configs/cohr-26aug12-autorun.env",
+  "configs/crwv-26aug11-phone-autorun.env",
 ]
 verification = [
   "bash -n scripts/redial-supervisor.sh",
+  "bash -n scripts/box-event-install.sh scripts/install-event-timer.sh scripts/event-autorun.sh scripts/webcast-autorun.sh",
   "cargo test --test redial_supervisor",
+  "tests/operator_escalation.sh",
+  "tests/typed_scheduler_boundary.sh",
 ]
 evidence = ["PHONE-LANE-HANDOFF.md"]
 
 [[claim]]
 id = "phone_tls.launch"
 node = "control.launch"
-worker = "phone-lane + tls-box-lane"
+worker = "phone-lane + tls-box-lane + admission-evidence-lane + typed-scheduler-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
@@ -382,13 +491,20 @@ paths = [
   "docs/MULTI-EVENT.md",
   "docs/nodes/control-launch.md",
   "scripts/launch-event.sh",
+  "scripts/capture-ready.py",
+  "tests/capture_ready.py",
   "tests/launch_event_posture.rs",
+  # 2026-08-11: after the launcher records detector-path source attachment,
+  # it watches each atomic stream.connected identity and invokes the bounded
+  # control.admission receipt producer. Fresh probe-proven `held` opens only
+  # that stream; ineligible venues remain closed; integrity faults page + STOP.
   # 2026-08-03 (webcast-lane, PLTR/SNAP): extended rather than opened as a second
   # claim, since doc-lint permits only one open claim per node. Fixes the
   # ORT_DYLIB_PATH dSYM resolution that HUNG detector-smoke >90 s on the arm path
   # (docs/POSTMORTEM-26AUG03.md §Bugs), plus the two new launch-path gates.
   "scripts/launch-webcast.sh",
   "scripts/run-arm.sh",
+  "scripts/ms-morning.sh",
   "scripts/pcm-gate.sh",
   "scripts/arm-on-url.sh",
   # 2026-08-05 (operator ruling): W7's FILL half lifted — launch-webcast.sh
@@ -406,13 +522,14 @@ verification = [
   "bash -n scripts/arm-on-url.sh",
   "cargo test --test launch_webcast_posture",
   "cargo test --test launch_event_posture",
+  "python3 tests/capture_ready.py",
 ]
 evidence = ["docs/MULTI-EVENT.md"]
 
 [[claim]]
 id = "admission.qualify"
 node = "control.qualify"
-worker = "admission-evidence-lane"
+worker = "admission-evidence-lane + event-lifecycle-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
@@ -439,7 +556,7 @@ evidence = ["configs/dial-ins.toml"]
 [[claim]]
 id = "preflight.admission_gate"
 node = "control.preflight"
-worker = "admission-evidence-lane"
+worker = "admission-evidence-lane + preflight-proof-lane + event-lifecycle-lane + preflight-alert-lane + access-lifecycle-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
@@ -449,6 +566,9 @@ contract_change = true
 paths = [
   "docs/nodes/control-preflight.md",
   "scripts/preflight-event.sh",
+  "scripts/preflight-proof.py",
+  "scripts/preflight-nightly.sh",
+  "tests/preflight_proof.py",
   # 2026-08-06 (latency-lane): P1's "chunk-16 re-export (160 ms)" label is
   # wrong — chunk-16 IS the armed export and is 320 ms. One-line correction to
   # the checklist item. Added here rather than as a second claim because
@@ -466,7 +586,9 @@ paths = [
 ]
 verification = [
   "bash -n scripts/preflight-event.sh",
+  "bash -n scripts/preflight-nightly.sh",
   "scripts/preflight-event.sh --help",
+  "python3 tests/preflight_proof.py",
   "scripts/doc-lint.sh",
 ]
 evidence = ["VERIFICATIONS.md"]
@@ -487,12 +609,19 @@ paths = [
   # printing a snippet nobody pasted, and refuses a long capture against an
   # open board. Both close the SPOT miss.
   "scripts/registry-admit.py",
+  # 2026-08-11 reliability continuation: a previously probed, fresh `held`
+  # bridge may automatically open ONLY the current live stream's runtime
+  # admission interlock.  This is distinct from the operator-screened path,
+  # which still requires an explicit human assertion after the gate passes.
+  "scripts/held-admission-receipt.py",
+  "tests/held_admission_receipt.py",
 ]
 verification = [
   "bash -n scripts/bridge-probe.sh",
   "bash -n scripts/bridge-probe-batch.sh",
   "bash -n scripts/admission-window-probe.sh",
   "scripts/admission-window-probe.sh --config configs/twilio-yum-26jul30-arm.toml",
+  "python3 tests/held_admission_receipt.py",
 ]
 evidence = ["docs/nodes/control-admission.md"]
 
@@ -589,14 +718,28 @@ paths = [
   "scripts/wnt-captions-parse.py",
   "scripts/wnt-vod-fetch.sh",
   "src/capture_bakeoff/mod.rs",
+  # 2026-08-12 reliability handoff: the admission-evidence lane keeps
+  # ownership of the planned in-process audio banker. These exact paths are
+  # reserved before implementation; no ownership transfer is implied.
+  "src/audio_evidence.rs",
+  "tests/audio_evidence.rs",
+  "scripts/capture-sidecar.sh",
   "corpus/bridge-probes/amd_2026_08_04.json",
   "corpus/bridge-probes/amd_2026_08_04.jsonl",
   "corpus/bridge-probes/you_26aug05.json",
   "corpus/bridge-probes/you_26aug05.jsonl",
   "corpus/bridge-probes/meli_26aug05.json",
   "corpus/bridge-probes/meli_26aug05.jsonl",
+  "corpus/bridge-probes/q4chime_2026_08_11.json",
+  "corpus/bridge-probes/q4chime_2026_08_11.jsonl",
+  "corpus/bridge-probes/q4chime_cava_mid_2026_08_11.json",
+  "corpus/bridge-probes/q4chime_cava_mid_2026_08_11.jsonl",
 ]
-verification = ["cargo test --lib capture_bakeoff"]
+verification = [
+  "cargo test --lib capture_bakeoff",
+  "cargo test --lib audio_evidence",
+  "cargo test --test audio_evidence",
+]
 evidence = ["corpus/bridge-probes/tts_rehearsal_2026_07_29.json"]
 
 [[claim]]
@@ -607,6 +750,9 @@ branch = "webcast-lane"
 state = "active"
 contract_change = true
 paths = [
+  # The system diagnosis and worked event reconstruction are measurement
+  # evidence; executable architecture policy remains machine-readable.
+  "casino143.md",
   "VERIFICATIONS.md",
   "docs/COMPETITOR-ANATOMY.md",
   "docs/INGRESS-BAKEOFF.md",
@@ -631,6 +777,13 @@ paths = [
   "docs/POSTMORTEM-26AUG05.md",
   "HANDOFF-26AUG04-MISSED-ARM.md",
   "docs/nodes/evidence-measure.md",
+  # 2026-08-11: system-wide performance framework. It consumes banked
+  # runtime/benchmark/measurement artifacts only; live event posture and the
+  # later trading-strategy study stay explicitly out of scope.
+  "docs/SYSTEM-ANALYSIS.md",
+  "scripts/system-analysis.py",
+  "scripts/race-postmortem.py",
+  "src/latprobe/mod.rs",
   "scripts/abs-lag.py",
   # 26AUG04: replay the SPOT/PGR captures through the real keyword sets to
   # quantify what WOULD have fired had the events been armed instead of
@@ -657,7 +810,10 @@ paths = [
 verification = [
   "python3 -m py_compile scripts/abs-lag.py scripts/drace-wallclock.py",
   "python3 -m py_compile scripts/arrival-lead.py scripts/clock-anchor.py scripts/prefetch-verdict.py",
+  "python3 -m py_compile scripts/system-analysis.py",
+  "python3 scripts/system-analysis.py --self-test",
   "bash -n scripts/prefetch-gate.sh",
+  "scripts/doc-lint.sh",
 ]
 evidence = ["VERIFICATIONS.md"]
 # ── read-quantum-lane: PARKED MID-EDIT, 2026-07-30 17:10, power loss ─────────
@@ -680,12 +836,18 @@ evidence = ["VERIFICATIONS.md"]
 [[claim]]
 id = "tls.acquire"
 node = "control.acquire"
-worker = "tls-box-lane"
+worker = "tls-box-lane + preflight-proof-lane + access-lifecycle-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
+# 2026-08-12 access-lifecycle slice: schema-2 binding requires an explicit
+# public/registered/signed-in prerequisite, and the read-only date gate selects
+# immutable RunPlans by starts_at_utc before preflight. Focused tests are green;
+# this shared claim remains active for the pre-existing resolver migration.
 paths = [
   "docs/nodes/control-acquire.md",
+  "scripts/access-plan.py",
+  "tests/access_plan.py",
   "scripts/browser-resolve.py",
   "scripts/q4-resolve.sh",
   "scripts/shop-resolve-stream.sh",
@@ -693,13 +855,17 @@ paths = [
   "scripts/q4-register-resolve.py",
   "scripts/chorus-register-resolve.py",
 ]
-verification = ["bash -n scripts/manifest-probe.sh scripts/venue-probe.sh"]
+verification = [
+  "bash -n scripts/manifest-probe.sh scripts/venue-probe.sh",
+  "python3 tests/access_plan.py",
+  "python3 scripts/access-plan.py --help",
+]
 evidence = ["docs/nodes/control-acquire.md"]
 
 [[claim]]
 id = "tls.deploy"
 node = "platform.deploy"
-worker = "tls-box-lane"
+worker = "tls-box-lane + typed-scheduler-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
@@ -722,12 +888,18 @@ evidence = ["docs/nodes/platform-deploy.md"]
 [[claim]]
 id = "root.source_pipe_contract"
 node = "runtime.source.pipe"
-worker = "/root"
+worker = "/root + cerebras-live-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
 paths = [
   "docs/nodes/source-pipe.md",
+  "src/source/pipe.rs",
+  "tests/pipe_source.rs",
+  # 2026-08-12 CBRS: media-server/CloudFront returned a frozen cached media
+  # playlist to ordinary HLS clients while a unique query parameter advanced
+  # the same playlist. This runtime adapter owns that continuous source fix.
+  "scripts/cdn-cachebust-fetch.sh",
   # read-quantum-lane 2026-07-30: chunk_bytes_for()/synth_pdt()/join_key() and
   # the --chunk-ms flag. Finished and --selftest-clean; the gate that would let
   # its default change is the parked one under `admission.measure`.
@@ -742,7 +914,7 @@ evidence = ["docs/nodes/source-pipe.md"]
 [[claim]]
 id = "xvenue.book_recorder"
 node = "runtime.kalshi.book"
-worker = "xvenue-lane"
+worker = "book-evidence-lane + coherent-live-empty-book-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
@@ -753,10 +925,20 @@ contract_change = true
 # NOTE: src/main.rs is deliberately NOT touched; it is held by
 # phone.runtime_assembly, so the recorder ships as an example binary instead of
 # a new subcommand flag.
+# 2026-08-11 handoff: the original paths are clean. Book-evidence-lane takes
+# the node to move the proven tap writer into the library, add timer-driven
+# quiet-market heartbeats/flush/close summaries, and retain nonblocking feed
+# semantics. Runtime assembly integration remains a separate claim.
+# 2026-08-12 live COHR: Kalshi emitted a valid one-sided full snapshot with
+# `yes_dollars_fp` present and the empty `no_dollars_fp` side omitted. The
+# existing Q-XTAPE verification already pins omitted empty-side keys as live
+# wire behavior; coherent-live-empty-book-lane makes the shared strict parser
+# honor that fact and adds a focused regression. No event ticker is special.
 paths = [
   "docs/layers/book-cache.md",
   "examples/book-tape.rs",
   "src/kalshi/book.rs",
+  "tests/ws_book.rs",
   "tests/ws_tape.rs",
 ]
 verification = [
@@ -765,6 +947,83 @@ verification = [
   "scripts/doc-lint.sh",
 ]
 evidence = ["docs/POSTMORTEM-26AUG03.md"]
+
+[[claim]]
+id = "reliability.decision_journal"
+node = "runtime.decision"
+worker = "decision-reliability-lane"
+branch = "webcast-lane"
+state = "active"
+contract_change = true
+# 2026-08-11 independent assembly review reopened this claim: the journal
+# needs an arm-lifetime lease and a shared fault signal so assembly can keep
+# exclusivity through executor drain and turn an append/fsync fault into a
+# structured, fail-closed run failure instead of an ordinary non-decision.
+# A warm Twilio reconnect retains the in-memory DecisionTable, but the outer
+# event restart loop constructs a fresh table and can fire the same market a
+# second time. Add a durable, append-only per-event state journal at the
+# decision boundary. This slice exposes and proves the constructor/API only;
+# runtime assembly wiring waits for its occupied claim to hand off.
+paths = [
+  "docs/layers/decision.md",
+  "src/decision.rs",
+]
+verification = [
+  "cargo test --lib decision",
+  "cargo test --test e2e_replay",
+  "cargo test --test e2e_fanout",
+  "scripts/doc-lint.sh",
+]
+evidence = ["docs/layers/decision.md"]
+
+[[claim]]
+id = "reliability.order_transport_truth"
+node = "runtime.order_transport"
+worker = "order-truth-lane"
+branch = "webcast-lane"
+state = "active"
+contract_change = true
+# Preserve the attempted/observed/accepted/fill state machine and its
+# timestamps on every REST/FIX success and failure. The compatibility
+# send_order door stays until the separately claimed executor migrates.
+paths = [
+  "docs/nodes/runtime-order-transport.md",
+  "src/kalshi/mod.rs",
+  "src/kalshi/rest.rs",
+  "src/kalshi/transport.rs",
+]
+verification = [
+  "cargo test --lib kalshi::rest",
+  "cargo test --test exec_mock",
+  "cargo test --test exec_fix_mock",
+  "scripts/doc-lint.sh",
+]
+evidence = ["docs/nodes/runtime-order-transport.md"]
+
+[[claim]]
+id = "reliability.order_evidence_journal"
+node = "runtime.order_evidence"
+worker = "order-truth-lane"
+branch = "webcast-lane"
+state = "active"
+contract_change = true
+# An ExecReport written at graceful teardown cannot audit a process crash after
+# a send. Add a locked, strict, append-only transition journal. A durable
+# send_requested receipt precedes transport invocation and is explicitly
+# delivery-ambiguous; each later wire/observation/reconciliation/fill event is
+# synced independently. Restart refuses corrupt/torn state and exposes
+# unresolved requests for exact-id reconciliation before live activation.
+paths = [
+  "docs/nodes/runtime-order-evidence.md",
+  "src/kalshi/order_evidence.rs",
+  "tests/order_evidence.rs",
+]
+verification = [
+  "cargo test --test order_evidence",
+  "cargo test --lib kalshi::order_evidence",
+  "scripts/doc-lint.sh",
+]
+evidence = ["docs/nodes/runtime-order-evidence.md"]
 
 [[claim]]
 id = "expansion.pm_measure"
@@ -822,10 +1081,15 @@ paths = [
   "scripts/hunt-dial-in.py",
   "scripts/hunt-daily.sh",
   "slate/hunt-status.json",
+  # 2026-08-10: read the governing VERB before storing a credential.
+  # "referencing Meeting ID" is spoken to a screener; it is not a passcode, and
+  # sending it as DTMF cost HIMS 26AUG10 the first 17 minutes of its call.
+  "scripts/dial-in-intake.py",
 ]
 verification = [
   "python3 scripts/hunt-dial-in.py --self-test",
   "bash -n scripts/hunt-daily.sh",
+  "python3 scripts/dial-in-intake.py --check",
   "scripts/doc-lint.sh",
 ]
 evidence = ["slate/hunt-status.json", "docs/HUNT.md"]
@@ -882,6 +1146,7 @@ paths = [
   # 2026-08-07: implements Detector::engine_name() -> "streaming_ctc". Needed
   # because this engine's `confidence` is a real posterior while sherpa_kws
   # emits a constant 1.0 sentinel, and a banked report recorded neither.
+  "src/detector/ctc_scorer.rs",
   "src/detector/streaming_ctc.rs",
 ]
 verification = [
@@ -910,7 +1175,12 @@ contract_change = true
 paths = [
   "docs/BAKEOFF.md",
   "docs/nodes/evidence-benchmark.md",
+  "benches/hot_path.rs",
+  "src/bench/manifest.rs",
   "src/bench/mod.rs",
+  "src/bench/score.rs",
+  "src/fixture.rs",
+  "tests/bench_fixture.rs",
   # 2026-08-07: the variant WIDENER and its lexicon. `variant-study.sh` (this
   # node) measures whether a keyword is reachable; nothing proposed a fix, so a
   # dead word was a manual job and on 08-07 nobody was awake — TTWO forfeited a
@@ -931,7 +1201,7 @@ evidence = [
 [[claim]]
 id = "missed_arm.reconcile"
 node = "control.grade"
-worker = "admission-evidence-lane"
+worker = "admission-evidence-lane + event-lifecycle-lane + run-audit-lane + typed-scheduler-lane + coherent-live-grade-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
@@ -943,6 +1213,24 @@ contract_change = true
 paths = [
   "docs/nodes/control-grade.md",
   "scripts/missed-arm-check.py",
+  # 2026-08-11: the grader could not see a BOX-HOSTED run at all. HIMS 26AUG10's
+  # phone lane put 2 orders on the wire and the day was graded "1 staged, 0
+  # orders, 1c observing posture" off the laptop's webcast twin. Three defects
+  # had to hold at once: the phone config's real filename matched no pattern,
+  # a second lane overwrote the first, and every glob looked one level deep
+  # while a pulled box run lands under state/<E>/box/.
+  "scripts/pull-box-state.sh",
+  # Schema-3 deterministic run audit. Order evidence is the accounting
+  # authority; the raw book tape is reconstructed on the shared monotonic
+  # clock so empty-at-detection and cap-depth exhaustion remain distinct.
+  "scripts/run-audit.py",
+  "tests/run_audit.py",
+  # Date-level reconciliation is derived from exact immutable RunPlans,
+  # lifecycle tails, and schema-1 grades. It continues healthy siblings and
+  # returns nonzero if any committed attempt remains active, invalid,
+  # unauditable, blocked, or operationally failed.
+  "scripts/audit-day.py",
+  "tests/audit_day.py",
   # the scheduled leg's notify wrapper. The launchd plist itself is owned and
   # claimed by platform.runtime (configs/launchd/**), like slate-daily's.
   "scripts/missed-arm-daily.sh",
@@ -954,9 +1242,19 @@ paths = [
   # 2026-08-07: landed untracked on 08-06 with no owning node. It is a grader,
   # so it belongs beside run-verdict.sh and missed-arm-check.py.
   "scripts/post-event-report.sh",
+  "scripts/score-precision.py",
+  # 2026-08-12 COHR live validation: capture began ~37 minutes before the
+  # detector. The old scorer discarded every true alignment hypothesis beyond
+  # 180 seconds and falsely reported that the transcript described another
+  # call. The focused test protects global repeated-phrase alignment and
+  # ambiguity refusal without changing detector or execution policy.
+  "tests/score_precision.py",
 ]
 verification = [
   "python3 scripts/missed-arm-check.py --check",
+  "python3 tests/run_audit.py",
+  "python3 tests/audit_day.py",
+  "python3 tests/score_precision.py",
   "python3 scripts/missed-arm-check.py --date 2026-08-04",
   "python3 scripts/missed-arm-check.py --date 2026-08-03",
 ]
@@ -982,6 +1280,7 @@ paths = [
   "configs/launchd/com.earshot.stage-nightly.plist",
   "configs/launchd/com.earshot.study-nightly.plist",
   "configs/launchd/com.earshot.preflight-nightly.plist",
+  "src/perf.rs",
 ]
 verification = [
   "plutil -lint configs/launchd/com.earshot.missed-arm.plist",
@@ -989,18 +1288,31 @@ verification = [
 evidence = ["VERIFICATIONS.md"]
 
 [[claim]]
-id = "ops.traceability"
+id = "ops.lifecycle_ledger"
 node = "control.operate"
-worker = "prep-night-26aug05"
+worker = "event-lifecycle-lane + execution-identity-lane + typed-scheduler-lane + runplan-day-selection-lane + nightly-alert-lane + cerebras-live-lane + coherent-live-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
-# 2026-08-04 prep night: the per-event journal, the green gate, descope
-# records, and the T-0 agent installers — the machinery that converts
-# human-memory steps into scheduled jobs and blocking gates.
+# 2026-08-11 handoff: the historical prep-night claim had no dirty paths and
+# no live worker. Event-lifecycle-lane takes the same node to add one immutable run
+# identity plus a replayable lifecycle ledger. This slice never launches an
+# arm or changes money posture; existing launchers remain the only adapters to
+# the two Rust composers.
+# 2026-08-12 live CBRS: event selection must ignore coexisting immutable
+# schema-1/2 history while preserving integrity checks and ambiguity refusal
+# across active schema-3 attempts. Cerebras-live-lane owns that focused fix
+# and regression inside the already claimed eventctl/test paths.
 paths = [
+  "HANDOFF-EVENT-LIFECYCLE.md",
   "docs/nodes/control-operate.md",
+  "docs/runbooks/EVENT-LIFECYCLE.md",
   "docs/runbooks/RUNBOOK-26AUG04-AFTERNOON.md",
+  "scripts/eventctl.py",
+  "scripts/run-host-boundary.py",
+  "scripts/schedule-nightly.sh",
+  "scripts/execution-profile.sh",
+  "scripts/opsctl.sh",
   "scripts/journal.sh",
   "scripts/assert-ready.sh",
   "scripts/descope-event.sh",
@@ -1016,44 +1328,69 @@ paths = [
   # and prep-night machinery already lives.
   "scripts/green-guardian.sh",
   "scripts/night-before-sweep.sh",
+  "tests/eventctl_lifecycle.py",
+  "tests/run_host_boundary.py",
+  "tests/opsctl.py",
+  "tests/execution_profile.sh",
 ]
 verification = [
-  "bash -n scripts/journal.sh scripts/assert-ready.sh scripts/descope-event.sh scripts/watcher-liveness.sh scripts/install-t0-agents.sh scripts/study-nightly.sh",
+  "python3 -m py_compile scripts/eventctl.py tests/eventctl_lifecycle.py",
+  "python3 tests/eventctl_lifecycle.py",
+  "python3 tests/run_host_boundary.py",
+  "tests/execution_profile.sh",
+  "bash -n scripts/study-nightly.sh scripts/schedule-nightly.sh scripts/opsctl.sh",
+  "scripts/schedule-nightly.sh --check",
+  "python3 tests/opsctl.py",
+  "bash -n scripts/journal.sh scripts/event-status.sh scripts/stage-nightly.sh",
+  "cargo test --test architecture_contract",
   "scripts/doc-lint.sh",
 ]
-evidence = ["docs/nodes/control-operate.md"]
+evidence = [
+  "HANDOFF-EVENT-LIFECYCLE.md",
+  "docs/nodes/control-operate.md",
+  "docs/runbooks/EVENT-LIFECYCLE.md",
+]
 
 [[claim]]
 id = "notify.delivery_log"
 node = "platform.notify"
-worker = "prep-night-26aug05"
+worker = "prep-night-26aug05 + event-lifecycle-lane"
 branch = "webcast-lane"
 state = "active"
-contract_change = false
+contract_change = true
 # 2026-08-04: three URL-MISSED pages fired and nobody can say whether they
 # arrived. notify.sh now appends per-channel outcomes to ~/.kalshi/notify.log.
 paths = [
+  "docs/nodes/platform-notify.md",
   "scripts/notify.sh",
+  "scripts/alertctl.py",
+  "scripts/alert-phone.sh",
+  "tests/alertctl.py",
 ]
 verification = [
-  "bash -n scripts/notify.sh",
+  "bash -n scripts/notify.sh scripts/alert-phone.sh",
+  "python3 tests/alertctl.py",
 ]
-evidence = ["docs/runbooks/RUNBOOK-26AUG04-AFTERNOON.md"]
+evidence = [
+  "docs/nodes/platform-notify.md",
+  "docs/runbooks/RUNBOOK-26AUG04-AFTERNOON.md",
+]
 
 [[claim]]
 id = "build.derived_slate_ignore"
 node = "project.build"
-worker = "prep-night-26aug05"
+worker = "event-lifecycle-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = false
-# slate/latest-timed.json is generated nightly by slate-time-merge.py — a
-# derived artifact, gitignored like every other regenerable output.
+# slate/latest-timed.json and var/runs/ are generated operational state, not
+# source. The existing clean claim is handed to event-lifecycle-lane for the latter.
 paths = [
   ".gitignore",
 ]
 verification = [
   "git check-ignore slate/latest-timed.json",
+  "git check-ignore var/runs/TEST/RUN/control/run-plan.json",
 ]
 evidence = [".gitignore"]
 
@@ -1072,6 +1409,7 @@ contract_change = true
 paths = [
   "docs/layers/risk.md",
   "src/risk.rs",
+  "tests/kill_sigterm.rs",
 ]
 verification = [
   "cargo test --lib risk",
@@ -1094,6 +1432,7 @@ contract_change = true
 # `engine_name()` so a report can say what produced its detections.
 paths = [
   "docs/layers/detector.md",
+  "src/detector/factory.rs",
   "src/detector/mod.rs",
   "src/detector/stub.rs",
 ]
@@ -1114,9 +1453,144 @@ contract_change = false
 # confidence is the 1.0 sentinel, so it is the reason the field exists.
 # See claim `detector.engine_name`.
 paths = [
+  "examples/kws_probe.rs",
   "src/detector/sherpa_kws.rs",
+  "tests/sherpa_kws.rs",
 ]
 verification = [
   "cargo test --lib detector",
 ]
 evidence = ["docs/layers/detector.md"]
+
+[[claim]]
+id = "reliability.fix_wire_truth"
+node = "runtime.kalshi.fix"
+worker = "fix-wire-truth-lane"
+branch = "webcast-lane"
+state = "active"
+contract_change = true
+# Preserve order-attempt evidence at the FIX boundary. The additive API keeps
+# pre-send failures distinct from ambiguous post-send failures and retains the
+# latest non-terminal ExecutionReport; the legacy send_order door remains as a
+# deliberately lossy compatibility wrapper for the order-transport migration.
+# 2026-08-12: reserve a separate append-only receive tape for every raw FIX
+# observation, including late and orphan reports. It remains FIX-owned and is
+# deliberately not folded into the per-intent order-evidence reducer.
+paths = [
+  "docs/layers/fix-transport.md",
+  "src/kalshi/fix/encode.rs",
+  "src/kalshi/fix/mod.rs",
+  "src/kalshi/fix/observation_tape.rs",
+  "src/kalshi/fix/parse.rs",
+  "src/kalshi/fix/seqstore.rs",
+  "src/kalshi/fix/session.rs",
+  "src/kalshi/fix/transport.rs",
+  "tests/fix_observation_tape.rs",
+  "tests/fix_session_mock.rs",
+]
+verification = [
+  "cargo test --lib kalshi::fix",
+  "cargo test --test fix_observation_tape",
+  "cargo test --test fix_session_mock",
+  "scripts/doc-lint.sh",
+]
+evidence = ["docs/layers/fix-transport.md"]
+
+# The following eight claims protect formatter-only collateral produced while
+# running the reliability verification suite. They carry no semantic or
+# contract intent; each stays exact-file and complete_pending_commit so the
+# shared dirty tree remains collision-safe until the reliability handoff is
+# committed or the formatting delta is deliberately removed.
+
+[[claim]]
+id = "reliability.formatter_runtime_foundation"
+node = "runtime.foundation"
+worker = "event-lifecycle-lane"
+branch = "webcast-lane"
+state = "complete_pending_commit"
+contract_change = false
+paths = [
+  "src/clock.rs",
+  "src/fsio.rs",
+  "src/ring.rs",
+  "src/types.rs",
+]
+verification = ["cargo fmt --check"]
+evidence = ["docs/nodes/runtime-foundation.md"]
+
+[[claim]]
+id = "reliability.formatter_keyword_compile"
+node = "runtime.detector.keyword_compile"
+worker = "event-lifecycle-lane"
+branch = "webcast-lane"
+state = "complete_pending_commit"
+contract_change = false
+paths = ["src/detector/kws_compile.rs"]
+verification = ["cargo fmt --check", "cargo test --lib detector"]
+evidence = ["docs/nodes/detector-keyword-compile.md"]
+
+[[claim]]
+id = "reliability.formatter_market_validation"
+node = "runtime.market_validation"
+worker = "event-lifecycle-lane"
+branch = "webcast-lane"
+state = "complete_pending_commit"
+contract_change = false
+paths = ["src/kalshi/validator.rs", "tests/validator_mock.rs"]
+verification = ["cargo fmt --check", "cargo test --test validator_mock"]
+evidence = ["docs/nodes/runtime-market-validation.md"]
+
+[[claim]]
+id = "reliability.formatter_chunker"
+node = "runtime.chunker"
+worker = "event-lifecycle-lane"
+branch = "webcast-lane"
+state = "complete_pending_commit"
+contract_change = false
+paths = ["src/pipeline/chunker.rs"]
+verification = ["cargo fmt --check", "cargo test --lib pipeline"]
+evidence = ["docs/layers/chunker.md"]
+
+[[claim]]
+id = "reliability.formatter_preproc"
+node = "runtime.preproc"
+worker = "event-lifecycle-lane"
+branch = "webcast-lane"
+state = "complete_pending_commit"
+contract_change = false
+paths = ["src/pipeline/preproc.rs"]
+verification = ["cargo fmt --check", "cargo test --lib pipeline"]
+evidence = ["docs/layers/preproc.md"]
+
+[[claim]]
+id = "reliability.formatter_source_arbiter"
+node = "runtime.source.arbiter"
+worker = "event-lifecycle-lane"
+branch = "webcast-lane"
+state = "complete_pending_commit"
+contract_change = false
+paths = ["src/source/arbiter.rs", "src/xcorr.rs", "tests/arbiter.rs"]
+verification = ["cargo fmt --check", "cargo test --test arbiter"]
+evidence = ["docs/nodes/source-arbiter.md"]
+
+[[claim]]
+id = "reliability.formatter_source_replay"
+node = "runtime.source.replay"
+worker = "event-lifecycle-lane"
+branch = "webcast-lane"
+state = "complete_pending_commit"
+contract_change = false
+paths = ["src/source/replay.rs"]
+verification = ["cargo fmt --check", "cargo test --lib source"]
+evidence = ["docs/nodes/source-replay.md"]
+
+[[claim]]
+id = "reliability.formatter_source_sip"
+node = "runtime.source.sip"
+worker = "event-lifecycle-lane"
+branch = "webcast-lane"
+state = "complete_pending_commit"
+contract_change = false
+paths = ["src/source/sip.rs", "tests/sip_source.rs"]
+verification = ["cargo fmt --check", "cargo test --test sip_source"]
+evidence = ["docs/nodes/source-sip.md"]

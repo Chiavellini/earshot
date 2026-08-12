@@ -451,14 +451,15 @@ qa_mechanism  = "hybrid"
 listen_access = "yes"
 reservation_window = true
 # WHY reservation_window: the bridge refuses to admit before T-30 and SAYS so.
-# Probed 2026-08-11 ~15:11Z (T-5h49m), DTMF 411798645#, CallSid
+# Probed 2026-08-11 ~15:11Z (T-5h49m), using the attendee ID in evidence_src;
+# CallSid
 # CA5776f791ec8991cc46b490c9804ed67a, held 21.1s:
 #   "CAVA Q2 2026 earnings call has not yet started. This event is scheduled to
 #    start at Tuesday, August 11th at 5 p.m. EDT. Please reconnect up to 30
 #    minutes before 5 p.m. EDT."
 # So `admission` stays UNTESTED on purpose — an off-hours probe classifies
 # nothing here. Decide it in-window (>= 20:30Z) with admission-window-probe.sh.
-evidence      = "Q4-native webcast; the phone lane comes from the attendee REST twin's data.conference.conferenceCallIntake (public, no credential) — see VERIFICATIONS.md Q-Q4PHONE. One shared AWS Chime bridge serves every Q4 webcast; the per-event discriminator is the Meeting ID, which IS the public attendee-URL number (411798645). Registration confirmation lists a Meeting ID and NO passcode. Prior evidence retained: Operator, Q1'26: 'If you would like to ask a question, please press Star one to raise your hand.' 8-K publishes webcast only."
+evidence      = "Q4-native webcast; the phone lane comes from the attendee REST twin's data.conference.conferenceCallIntake (public, no credential) — see VERIFICATIONS.md Q-Q4PHONE. One shared AWS Chime bridge serves every Q4 webcast; the per-event discriminator is the Meeting ID in evidence_src. Registration confirmation lists a Meeting ID and NO passcode. Prior evidence retained: Operator, Q1'26: 'If you would like to ask a question, please press Star one to raise your hand.' 8-K publishes webcast only."
 evidence_src  = "https://attendees.events.q4inc.com/rest/v1/event/411798645"
 number_src    = "https://help.events.q4inc.com/eahc/international-dial-in-numbers"
 confidence    = "high"

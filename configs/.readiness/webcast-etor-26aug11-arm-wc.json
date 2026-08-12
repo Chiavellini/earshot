@@ -1,0 +1,168 @@
+{
+ "config": "webcast-etor-26aug11-arm-wc",
+ "keywords_sha256": "96b9dfa649cbc17c69ca0a7d1c246dea0bfd7a1c886413f4bd9010bce681a847",
+ "date": "2026-08-10",
+ "engine": "streaming_ctc",
+ "voices": [
+  "Samantha",
+  "Daniel",
+  "Paulina"
+ ],
+ "carriers": 2,
+ "keywords": [
+  {
+   "ticker": "KXEARNINGSMENTIONETOR-26AUG11-BITC",
+   "phrase": "bitcoin",
+   "variants": [
+    "bitcoin",
+    "bitcoins"
+   ],
+   "clips": 18,
+   "confirmed": 16
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONETOR-26AUG11-BLOC",
+   "phrase": "blockchain",
+   "variants": [
+    "blockchain",
+    "blockchains"
+   ],
+   "clips": 18,
+   "confirmed": 30
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONETOR-26AUG11-CHUR",
+   "phrase": "churn",
+   "variants": [
+    "churn",
+    "churns",
+    "churned",
+    "churneds"
+   ],
+   "clips": 36,
+   "confirmed": 110
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONETOR-26AUG11-CLAR",
+   "phrase": "clarity act",
+   "variants": [
+    "clarity act"
+   ],
+   "clips": 9,
+   "confirmed": 12
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONETOR-26AUG11-COPY",
+   "phrase": "copytrader",
+   "variants": [
+    "copytrader",
+    "copytraders"
+   ],
+   "clips": 18,
+   "confirmed": 4
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONETOR-26AUG11-ETOR",
+   "phrase": "etoro club",
+   "variants": [
+    "etoro club"
+   ],
+   "clips": 9,
+   "confirmed": 4
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONETOR-26AUG11-HEAD",
+   "phrase": "headwind",
+   "variants": [
+    "headwind",
+    "headwinds"
+   ],
+   "clips": 18,
+   "confirmed": 8
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONETOR-26AUG11-PERP",
+   "phrase": "perpetual",
+   "variants": [
+    "perpetual",
+    "perpetuals",
+    "perp",
+    "perps"
+   ],
+   "clips": 36,
+   "confirmed": 52
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONETOR-26AUG11-REGU",
+   "phrase": "regulation",
+   "variants": [
+    "regulation",
+    "regulations",
+    "regulatory",
+    "regulatorys"
+   ],
+   "clips": 36,
+   "confirmed": 108
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONETOR-26AUG11-SHAR",
+   "phrase": "share repurchase",
+   "variants": [
+    "share repurchase"
+   ],
+   "clips": 9,
+   "confirmed": 4
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONETOR-26AUG11-SPAC",
+   "phrase": "spacex",
+   "variants": [
+    "spacex",
+    "spacexs"
+   ],
+   "clips": 18,
+   "confirmed": 10
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONETOR-26AUG11-STOC",
+   "phrase": "stockperks",
+   "variants": [
+    "stockperks"
+   ],
+   "clips": 9,
+   "confirmed": 12
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONETOR-26AUG11-TAIL",
+   "phrase": "tailwind",
+   "variants": [
+    "tailwind",
+    "tailwinds"
+   ],
+   "clips": 18,
+   "confirmed": 0
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONETOR-26AUG11-TOKE",
+   "phrase": "tokenized",
+   "variants": [
+    "tokenized",
+    "tokenizeds",
+    "tokenization",
+    "tokenizations"
+   ],
+   "clips": 36,
+   "confirmed": 54
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONETOR-26AUG11-ZENG",
+   "phrase": "zengo",
+   "variants": [
+    "zengo",
+    "zengos"
+   ],
+   "clips": 18,
+   "confirmed": 18
+  }
+ ]
+}

@@ -4,7 +4,8 @@
 # tunnel, no Twilio, no dial — the subprocess pulls the stream itself.
 #
 #   scripts/launch-webcast.sh --config configs/<event>.toml --account <env> \
-#       [--bin <pinned>] [--wait-live <url-or-url-file> --wait-kind youtube|hls]
+#       [--bin <pinned>] [--run-dir <immutable-run>] \
+#       [--wait-live <url-or-url-file> --wait-kind youtube|hls]
 #
 # POSTURE. Default is DRY RUN (no orders reach Kalshi). `--i-am-live` opts into a
 # real arm; `--fillable` is ACCEPTED (see the W7 FILL-HALF note at the flag
@@ -44,16 +45,30 @@
 # script from a PLAIN shell / nohup — never inside a sandboxed supervisor.
 # arm's own SIGTERM path is the validated kill mechanism.
 #
-# Abort: Ctrl-C (arm's kill watcher cancels session orders + writes the
-# report), or `touch state/<event>/STOP`.
+# Abort: Ctrl-C asks this wrapper to assert STOP, wait for the arm's session
+# cancellation/evidence/report finalizers, and escalate only on timeout. A
+# direct `touch state/<event>/STOP` reaches the same runtime boundary.
 set -euo pipefail
 
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+SCRIPT_REPO=$(cd "${SCRIPT_DIR}/.." && pwd -P)
+
 CONFIG="" ACCOUNT="" BIN="${EARSHOT_BIN:-}" WAIT_LIVE="" WAIT_KIND="" LIVE=0 FILLABLE=""
+RUN_DIR_OVERRIDE=""
+# Audio, book, FIX, cancellation, and report finalizers can legitimately use
+# most of a minute after STOP.  The launcher owns a larger outer budget; a
+# smaller value would turn a healthy coordinated drain into evidence loss.
+SHUTDOWN_GRACE_SECS="${EARSHOT_LAUNCH_SHUTDOWN_GRACE_SECS:-90}"
+ARM_PID="" SHUTDOWN_STARTED="" FINALIZERS_UNRESOLVED=0
+RUN_DIR="" PLAN_PATH="" PLAN_REPORT="" PLAN_SHA256="" PLAN_RUN_ID=""
+ACCOUNT_SOURCED=0 LIFECYCLE_LAUNCHED=0 LIFECYCLE_SUPERVISING=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --config)    CONFIG="$2"; shift 2 ;;
     --account)   ACCOUNT="$2"; shift 2 ;;
     --bin)       BIN="$2"; shift 2 ;;
+    --run-dir)   RUN_DIR_OVERRIDE="$2"; shift 2 ;;
+    --shutdown-grace-secs) SHUTDOWN_GRACE_SECS="$2"; shift 2 ;;
     --wait-live) WAIT_LIVE="$2"; shift 2 ;;
     --wait-kind) WAIT_KIND="$2"; shift 2 ;;
     --i-am-live) LIVE=1; shift ;;
@@ -90,10 +105,14 @@ if [[ -n "$FILLABLE" && $LIVE -eq 0 ]]; then
   exit 2
 fi
 [[ -n "$CONFIG" && -n "$ACCOUNT" ]] || {
-  echo "usage: $0 --config <cfg.toml> --account <env-file> [--bin <pinned>] [--i-am-live] [--wait-live <url-or-url-file> --wait-kind youtube|hls]" >&2; exit 2
+  echo "usage: $0 --config <cfg.toml> --account <env-file> [--bin <pinned>] [--run-dir <immutable-run>] [--shutdown-grace-secs N] [--i-am-live] [--wait-live <url-or-url-file> --wait-kind youtube|hls]" >&2; exit 2
 }
 [[ -f "$CONFIG" ]] || { echo "config not found: $CONFIG" >&2; exit 2; }
 [[ -f "$ACCOUNT" ]] || { echo "account env not found: $ACCOUNT" >&2; exit 2; }
+[[ "$SHUTDOWN_GRACE_SECS" =~ ^[0-9]+$ && "$SHUTDOWN_GRACE_SECS" -ge 75 ]] || {
+  echo "--shutdown-grace-secs must be an integer >= 75 (got ${SHUTDOWN_GRACE_SECS})" >&2
+  exit 2
+}
 
 for tool in ffmpeg; do
   command -v "$tool" >/dev/null 2>&1 || { echo "missing tool: $tool" >&2; exit 1; }
@@ -152,9 +171,159 @@ fi
 
 EVENT_ID=$(sed -n '/^\[event\]/,/^\[/s/^id[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$CONFIG" | head -1)
 [[ -n "$EVENT_ID" ]] || { echo "no [event].id in $CONFIG" >&2; exit 2; }
-STATE_DIR="state/${EVENT_ID}"
+
+# Dry/rehearsal launches keep their historical cwd-relative state/report
+# contract.  LIVE is different: execution must consume exactly one immutable
+# schema-3 RunPlan, and every identity/path handed to `arm` comes from it.
+REPO="${EARSHOT_REPO:-$SCRIPT_REPO}"
+[[ -d "$REPO" ]] || { echo "EARSHOT_REPO is not a directory: $REPO" >&2; exit 2; }
+REPO=$(cd "$REPO" && pwd -P)
+EVENTCTL="${EARSHOT_EVENTCTL:-${SCRIPT_REPO}/scripts/eventctl.py}"
+if (( LIVE )); then
+  if [[ -n "${EARSHOT_NO_SIDECAR+x}" ]]; then
+    echo "REFUSING live launch: EARSHOT_NO_SIDECAR is obsolete; in-process audio evidence is mandatory" >&2
+    exit 7
+  fi
+  # shellcheck disable=SC1090
+  source "$ACCOUNT"
+  ACCOUNT_SOURCED=1
+  [[ -f "$EVENTCTL" ]] || { echo "REFUSING live launch: eventctl not found: $EVENTCTL" >&2; exit 2; }
+  if [[ -n "$RUN_DIR_OVERRIDE" ]]; then
+    [[ -d "$RUN_DIR_OVERRIDE" ]] || {
+      echo "REFUSING live launch: --run-dir is not a directory: $RUN_DIR_OVERRIDE" >&2
+      exit 2
+    }
+    RUN_DIR=$(cd "$RUN_DIR_OVERRIDE" && pwd -P)
+  else
+    STATUS_JSON=$(EARSHOT_REPO="$REPO" python3 "$EVENTCTL" status --event "$EVENT_ID" --json) || {
+      echo "REFUSING live launch: eventctl could not resolve one active run for $EVENT_ID" >&2
+      exit 7
+    }
+    PLAN_RUN_ID=$(printf '%s' "$STATUS_JSON" | python3 -c 'import json,sys; v=json.load(sys.stdin); r=v.get("run"); print(r if isinstance(r,str) else "")') || {
+      echo "REFUSING live launch: eventctl status returned invalid JSON for $EVENT_ID" >&2
+      exit 7
+    }
+    [[ -n "$PLAN_RUN_ID" ]] || {
+      echo "REFUSING live launch: eventctl status omitted run id for $EVENT_ID" >&2
+      exit 7
+    }
+    RUN_DIR="${REPO}/var/runs/${EVENT_ID}/${PLAN_RUN_ID}"
+    [[ -d "$RUN_DIR" ]] || {
+      echo "REFUSING live launch: resolved run directory missing: $RUN_DIR" >&2
+      exit 7
+    }
+    RUN_DIR=$(cd "$RUN_DIR" && pwd -P)
+  fi
+  RUN_PARENT=$(dirname "$RUN_DIR")
+  EXPECTED_RUN_PARENT="${REPO}/var/runs/${EVENT_ID}"
+  [[ -d "$EXPECTED_RUN_PARENT" ]] || {
+    echo "REFUSING live launch: canonical event run directory missing: $EXPECTED_RUN_PARENT" >&2
+    exit 7
+  }
+  EXPECTED_RUN_PARENT=$(cd "$EXPECTED_RUN_PARENT" && pwd -P)
+  [[ "$RUN_PARENT" == "$EXPECTED_RUN_PARENT" ]] || {
+    echo "REFUSING live launch: run directory is outside ${EXPECTED_RUN_PARENT}: $RUN_DIR" >&2
+    exit 7
+  }
+  PLAN_PATH="${RUN_DIR}/control/run-plan.json"
+  [[ -f "$PLAN_PATH" ]] || {
+    echo "REFUSING live launch: immutable RunPlan missing: $PLAN_PATH" >&2
+    exit 7
+  }
+  EARSHOT_REPO="$REPO" python3 "$EVENTCTL" verify --run-dir "$RUN_DIR" || {
+    echo "REFUSING live launch: RunPlan/receipt/input verification failed: $RUN_DIR" >&2
+    exit 7
+  }
+  RUN_STATUS_JSON=$(EARSHOT_REPO="$REPO" python3 "$EVENTCTL" status --run-dir "$RUN_DIR" --json) || {
+    echo "REFUSING live launch: could not derive verified lifecycle state for $RUN_DIR" >&2
+    exit 7
+  }
+  printf '%s' "$RUN_STATUS_JSON" | python3 -c '
+import json, sys
+status = json.load(sys.stdin)
+state = status.get("state") or {}
+reached = {r.get("transition") for r in state.get("reached", [])}
+missing = {"scheduled", "capture_ready"} - reached
+if missing:
+    raise SystemExit("RunPlan is not launch-ready; missing " + ", ".join(sorted(missing)))
+if "launched" in reached:
+    raise SystemExit("RunPlan already records launched; duplicate activation refused")
+if state.get("terminal") or state.get("archived"):
+    raise SystemExit("RunPlan is terminal/archived; activation refused")
+' || { echo "REFUSING live launch: immutable lifecycle is not at the pre-launch gate" >&2; exit 7; }
+  PLAN_FIELDS=$(python3 - "$PLAN_PATH" "$RUN_DIR" "$EVENT_ID" "$REPO" <<'PY'
+import json, os, sys
+plan_path, run_dir, event, repo = sys.argv[1:]
+with open(plan_path, "r", encoding="utf-8") as fh:
+    plan = json.load(fh)
+if plan.get("schema") != 3 or plan.get("kind") != "run-plan":
+    raise SystemExit("launch-webcast.sh requires a schema-3 RunPlan")
+if plan.get("event_id") != event:
+    raise SystemExit("RunPlan event_id does not match config")
+if plan.get("lane") != "webcast":
+    raise SystemExit("launch-webcast.sh requires a webcast RunPlan")
+if plan.get("execution_enabled") is not True or plan.get("capture_only") is not False:
+    raise SystemExit("--i-am-live requires an execution-enabled RunPlan")
+if plan.get("canonical_state_root") != "state":
+    raise SystemExit("webcast live state must use RunPlan canonical_state_root=state")
+host = plan.get("execution_host_id")
+account = plan.get("account_fingerprint")
+run_id = plan.get("run_id")
+plan_sha = plan.get("plan_sha256")
+artifact = (plan.get("artifacts") or {}).get("runtime_report")
+config_rel = plan.get("config_path")
+values = (host, account, run_id, plan_sha, artifact, config_rel)
+if not all(isinstance(x, str) and x and "|" not in x for x in values):
+    raise SystemExit("RunPlan identity/config/runtime_report fields are invalid")
+root = os.path.realpath(run_dir)
+report = os.path.realpath(os.path.join(root, artifact))
+if os.path.commonpath((root, report)) != root:
+    raise SystemExit("RunPlan runtime_report escapes run directory")
+repo = os.path.realpath(repo)
+config = os.path.realpath(os.path.join(repo, config_rel))
+if os.path.commonpath((repo, config)) != repo:
+    raise SystemExit("RunPlan config escapes repository")
+print("|".join((host, account, run_id, plan_sha, report, config)))
+PY
+  ) || { echo "REFUSING live launch: could not bind immutable RunPlan fields" >&2; exit 7; }
+  IFS='|' read -r PLAN_HOST PLAN_ACCOUNT_FINGERPRINT PLAN_RUN_ID PLAN_SHA256 PLAN_REPORT PLAN_CONFIG <<EOF
+$PLAN_FIELDS
+EOF
+  CONFIG_REAL=$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$CONFIG")
+  [[ "$CONFIG_REAL" == "$PLAN_CONFIG" ]] || {
+    echo "REFUSING live launch: config '$CONFIG_REAL' is not immutable RunPlan config '$PLAN_CONFIG'" >&2
+    exit 7
+  }
+  [[ -n "${EARSHOT_EXECUTION_HOST:-}" ]] || {
+    echo "REFUSING live launch: EARSHOT_EXECUTION_HOST must be exported by the event/account environment" >&2
+    exit 7
+  }
+  [[ -n "${EARSHOT_KALSHI_ACCOUNT_FINGERPRINT:-}" ]] || {
+    echo "REFUSING live launch: EARSHOT_KALSHI_ACCOUNT_FINGERPRINT must be exported; it is never derived from private-key material in shell" >&2
+    exit 7
+  }
+  [[ "$EARSHOT_EXECUTION_HOST" == "$PLAN_HOST" ]] || {
+    echo "REFUSING live launch: execution host '$EARSHOT_EXECUTION_HOST' != RunPlan '$PLAN_HOST'" >&2
+    exit 7
+  }
+  [[ "$EARSHOT_KALSHI_ACCOUNT_FINGERPRINT" == "$PLAN_ACCOUNT_FINGERPRINT" ]] || {
+    echo "REFUSING live launch: account fingerprint does not match immutable RunPlan" >&2
+    exit 7
+  }
+  export EARSHOT_RUN_PLAN="$PLAN_PATH"
+  export EARSHOT_EXECUTION_HOST EARSHOT_KALSHI_ACCOUNT_FINGERPRINT
+  export EARSHOT_CANONICAL_STATE_ROOT="${REPO}/state"
+  STATE_DIR="${REPO}/state/${EVENT_ID}"
+  REPORT="$PLAN_REPORT"
+else
+  [[ -z "$RUN_DIR_OVERRIDE" ]] || {
+    echo "--run-dir is valid only with --i-am-live" >&2
+    exit 2
+  }
+  STATE_DIR="state/${EVENT_ID}"
+  REPORT="${STATE_DIR}/report.json"
+fi
 mkdir -p "$STATE_DIR"
-REPORT="${STATE_DIR}/report.json"
 # 2026-08-05 rehearsal catch: a launchd-fired watcher reached the exec with no
 # --bin and DIED on `exec: cargo: not found` (launchd's PATH has no ~/.cargo).
 # When preflight pinned a binary for this event, run the pin — which is also
@@ -163,11 +332,173 @@ if [[ -z "$BIN" && -x "${STATE_DIR}/earshot-pinned" ]]; then
   BIN="${STATE_DIR}/earshot-pinned"
   echo "pinned binary auto-selected: $BIN (preflight wrote it; cargo fallback never fires under launchd)"
 fi
-# Per-event log (2026-08-04): the final exec below inherits this redirect, so
-# the arm's own stdout is captured per-event for the first time.
-exec > >(tee -a "${STATE_DIR}/launch.log") 2>&1
-jnl() { scripts/journal.sh --event "$EVENT_ID" --actor launch-webcast.sh --action "$1" --outcome "$2" --detail "${3:-}" --log "${STATE_DIR}/launch.log" || true; }
-
+# Per-event log (2026-08-04). Production shells use tee; restricted test/
+# service sandboxes may refuse `/dev/fd` process substitution, so fall back to
+# an ordinary append fd instead of aborting before the arm can report why.
+if [[ "${EARSHOT_TEST_DISABLE_TEE:-0}" == 1 ]]; then
+  : # focused-test/service-sandbox compatibility: leave inherited fds intact
+else
+  exec > >(tee -a "${STATE_DIR}/launch.log") 2>&1
+fi
+jnl() { "$SCRIPT_REPO/scripts/journal.sh" --event "$EVENT_ID" --actor launch-webcast.sh --action "$1" --outcome "$2" --detail "${3:-}" --log "${STATE_DIR}/launch.log" || true; }
+page() {
+  local notify="${EARSHOT_NOTIFY:-$REPO/scripts/notify.sh}"
+  [[ -x "$notify" ]] && "$notify" "$1" "$2" --quiet || true
+}
+critical_alert() { # code, dedupe key, subject, body
+  local code="$1" dedupe="$2" subject="$3" body="$4"
+  local alertctl="${EARSHOT_ALERTCTL:-$REPO/scripts/alertctl.py}"
+  if [[ -n "$RUN_DIR" && -x "$alertctl" ]]; then
+    "$alertctl" raise --run-dir "$RUN_DIR" --severity critical \
+      --code "$code" --dedupe-key "$dedupe" --subject "$subject" \
+      --body "$body" \
+      --retry-delay "${EARSHOT_ALERT_RETRY_DELAY:-30}" \
+      || echo "CRITICAL ALERT DELIVERY UNRESOLVED: $subject" >&2
+  else
+    page "$subject" "$body"
+  fi
+}
+lifecycle_record() { # $1 = typed transition, $2 = detail
+  [[ -n "$RUN_DIR" ]] || return 0
+  EARSHOT_REPO="$REPO" python3 "$EVENTCTL" record --run-dir "$RUN_DIR" \
+    --transition "$1" --actor launch-webcast.sh --detail "$2"
+}
+listener_marker_matches_arm() {
+  [[ -f "${STATE_DIR}/listener.ready" ]] || return 1
+  python3 - "${STATE_DIR}/listener.ready" "$ARM_PID" <<'PY' >/dev/null 2>&1
+import json, sys
+with open(sys.argv[1], "r", encoding="utf-8") as fh:
+    marker = json.load(fh)
+raise SystemExit(0 if marker.get("pid") == int(sys.argv[2]) else 1)
+PY
+}
+source_marker_matches_run() {
+  [[ -f "${STATE_DIR}/source.attached" ]] || return 1
+  python3 - "${STATE_DIR}/source.attached" "$ARM_PID" "$EVENT_ID" "$PLAN_RUN_ID" "$PLAN_SHA256" <<'PY' >/dev/null 2>&1
+import json, sys
+with open(sys.argv[1], "r", encoding="utf-8") as fh:
+    marker = json.load(fh)
+expected = {
+    "pid": int(sys.argv[2]),
+    "event_id": sys.argv[3],
+    "run_id": sys.argv[4],
+    "plan_sha256": sys.argv[5],
+}
+raise SystemExit(0 if all(marker.get(k) == v for k, v in expected.items())
+                 and type(marker.get("accepted_frames")) is int
+                 and marker["accepted_frames"] > 0 else 1)
+PY
+}
+accept_source_marker() {
+  source_marker_matches_run || return 1
+  if lifecycle_record source_attached "source.attached accepted for arm_pid=${ARM_PID}" \
+      && lifecycle_record supervising "webcast detector-path media attached; launcher owns the live arm"; then
+    LIFECYCLE_SUPERVISING=1
+    echo "source attached and lifecycle supervising"
+    return 0
+  fi
+  return 2
+}
+reap_arm() {
+  [[ -n "$ARM_PID" && -z "${ARM_REAPED:-}" ]] || return 0
+  ARM_RC=0
+  wait "$ARM_PID" || ARM_RC=$?
+  ARM_REAPED=1
+}
+shutdown_arm() { # $1 = reason
+  local why="$1" waited=0 arm_done=""
+  [[ -n "$ARM_PID" ]] || return 0
+  [[ -z "$SHUTDOWN_STARTED" ]] || { reap_arm; return 0; }
+  SHUTDOWN_STARTED=1
+  : > "${STATE_DIR}/STOP"
+  jnl shutdown info "${why}: STOP asserted; drain budget ${SHUTDOWN_GRACE_SECS}s"
+  while (( waited < SHUTDOWN_GRACE_SECS * 10 )); do
+    if ! kill -0 "$ARM_PID" 2>/dev/null; then arm_done=1; break; fi
+    sleep 0.1
+    waited=$((waited + 1))
+  done
+  if [[ -z "$arm_done" ]] && kill -0 "$ARM_PID" 2>/dev/null; then
+    echo "shutdown: arm did not finalize within ${SHUTDOWN_GRACE_SECS}s; escalating TERM" >&2
+    jnl shutdown warn "arm drain timed out after ${SHUTDOWN_GRACE_SECS}s; TERM"
+    kill -TERM "$ARM_PID" 2>/dev/null || true
+    for _ in $(seq 1 100); do
+      kill -0 "$ARM_PID" 2>/dev/null || { arm_done=1; break; }
+      sleep 0.1
+    done
+  fi
+  if [[ -z "$arm_done" ]] && kill -0 "$ARM_PID" 2>/dev/null; then
+    echo "shutdown: arm ignored TERM for 10s; escalating KILL (finalizers unresolved)" >&2
+    jnl shutdown fail "arm ignored TERM for 10s; KILL — finalizers unresolved"
+    FINALIZERS_UNRESOLVED=1
+    kill -KILL "$ARM_PID" 2>/dev/null || true
+  fi
+  reap_arm
+}
+report_is_complete() {
+  python3 - "$REPORT" "$PLAN_RUN_ID" "$PLAN_SHA256" <<'PY'
+import json, os, stat, sys
+path, run_id, plan_sha = sys.argv[1:]
+try:
+    mode = os.lstat(path).st_mode
+    if not stat.S_ISREG(mode) or stat.S_ISLNK(mode):
+        raise ValueError("runtime report is not a regular non-symlink file")
+    with open(path, "r", encoding="utf-8") as fh:
+        report = json.load(fh)
+    checks = {
+        "run_id": report.get("run_id") == run_id,
+        "plan_sha256": report.get("plan_sha256") == plan_sha,
+        "finalized": report.get("finalized") is True,
+        "runtime_success": report.get("runtime_success") is True,
+        "required_evidence_healthy": report.get("required_evidence_healthy") is True,
+        "unresolved_cancellation_ids": report.get("unresolved_cancellation_ids") == [],
+    }
+    failed = [name for name, passed in checks.items() if not passed]
+    if failed:
+        raise ValueError("runtime report failed completion predicate: " + ", ".join(failed))
+except Exception as exc:
+    print(str(exc))
+    raise SystemExit(1)
+print("finalized=true runtime_success=true required_evidence_healthy=true unresolved_cancellation_ids=[] identity=matched")
+PY
+}
+finalize_lifecycle() {
+  [[ -n "$RUN_DIR" ]] || return 0
+  local report_check="" failure_detail="" report_ok=0
+  if report_check=$(report_is_complete 2>&1); then report_ok=1; fi
+  if [[ "$report_ok" == 1 ]] \
+      && [[ "$LIFECYCLE_SUPERVISING" == 1 ]] \
+      && [[ "$FINALIZERS_UNRESOLVED" == 0 ]]; then
+    if lifecycle_record draining "arm exited rc=${ARM_RC:-unknown}; ${report_check}" \
+        && lifecycle_record completed "runtime finalizers and all required evidence acknowledged; report=${REPORT}"; then
+      jnl lifecycle ok "draining -> completed; ${report_check}"
+      return 0
+    fi
+    failure_detail="could not append draining/completed lifecycle receipt"
+  else
+    if [[ "$report_ok" == 1 ]]; then
+      failure_detail="runtime report passed but lifecycle/finalizer gate did not"
+    else
+      failure_detail="${report_check:-runtime report missing or malformed}"
+    fi
+    [[ "$LIFECYCLE_SUPERVISING" == 1 ]] || failure_detail="pre-attachment runtime exit; ${failure_detail}"
+    [[ "$FINALIZERS_UNRESOLVED" == 0 ]] || failure_detail="forced KILL left finalizers unresolved; ${failure_detail}"
+  fi
+  echo "LIFECYCLE FAILED: ${failure_detail}" >&2
+  jnl lifecycle fail "$failure_detail"
+  lifecycle_record failed "${failure_detail}; arm_rc=${ARM_RC:-unknown}; report=${REPORT}" || true
+  critical_alert runtime_failed lifecycle_terminal \
+    "${EVENT_ID} runtime/evidence failure" \
+    "Run ${EVENT_ID}/${PLAN_RUN_ID:-unknown} reached a failed terminal path. Required audio, book, order, report, or cancellation evidence did not satisfy the completion predicate. Inspect the typed lifecycle and ${REPORT}."
+  return 1
+}
+handle_shutdown_signal() {
+  local why="$1" exit_code=143
+  [[ "$why" == "INT" ]] && exit_code=130
+  trap - TERM INT
+  shutdown_arm "$why"
+  finalize_lifecycle || true
+  exit "$exit_code"
+}
 # ── Green gate (2026-08-04, marker-activated) ───────────────────────────────
 # Enforces ONLY when a preflight verdict exists for this event. Override
 # EARSHOT_GREEN_OVERRIDE="<reason>" proceeds but pages.
@@ -176,11 +507,11 @@ if [[ -f "${STATE_DIR}/preflight-result.json" ]]; then
     echo "$GREEN_OUT"
   elif [[ -n "${EARSHOT_GREEN_OVERRIDE:-}" ]]; then
     echo "GREEN GATE OVERRIDDEN: $GREEN_OUT (reason: $EARSHOT_GREEN_OVERRIDE)"
-    scripts/notify.sh "GREEN GATE OVERRIDDEN: $EVENT_ID" "$GREEN_OUT — override reason: $EARSHOT_GREEN_OVERRIDE" --quiet || true
+    page "GREEN GATE OVERRIDDEN: $EVENT_ID" "$GREEN_OUT — override reason: $EARSHOT_GREEN_OVERRIDE"
     jnl note warn "green gate overridden: $EARSHOT_GREEN_OVERRIDE"
   else
     echo "REFUSED by green gate: $GREEN_OUT" >&2
-    scripts/notify.sh "$EVENT_ID REFUSED by green gate" "$GREEN_OUT — fix and relaunch, or EARSHOT_GREEN_OVERRIDE=\"<reason>\" (pages)." --quiet || true
+    page "$EVENT_ID REFUSED by green gate" "$GREEN_OUT — fix and relaunch, or EARSHOT_GREEN_OVERRIDE=\"<reason>\" (pages)."
     jnl launch-start refused "$GREEN_OUT"
     exit 7
   fi
@@ -196,6 +527,8 @@ touch "${STATE_DIR}/.launch-selfcheck" 2>/dev/null || {
 }
 rm -f "${STATE_DIR}/.launch-selfcheck"
 trap - TERM
+trap 'handle_shutdown_signal TERM' TERM
+trap 'handle_shutdown_signal INT' INT
 
 # --wait-live: poll until the stream is actually live, THEN arm (launch on
 # the flip; arm bring-up is ~8 s, cheap next to a pre-live stall).
@@ -213,8 +546,8 @@ if [[ -n "$WAIT_LIVE" ]]; then
       youtube)
         # RUNBOOK 07-22 fix #1: poll is_live; --wait-for-video is unvalidated
         # at the pre-live→live transition.
-        LIVE=$(yt-dlp --js-runtimes node --print "%(is_live)s" "$URL" 2>/dev/null || true)
-        [[ "$LIVE" == "True" ]] && break
+        IS_LIVE=$(yt-dlp --js-runtimes node --print "%(is_live)s" "$URL" 2>/dev/null || true)
+        [[ "$IS_LIVE" == "True" ]] && break
         ;;
       hls)
         # Live = manifest resolves and lists at least one media segment.
@@ -245,8 +578,11 @@ if [[ -n "$WAIT_LIVE" ]]; then
   echo "live gate: stream is LIVE ($(date -u +%FT%TZ)) — arming now"
 fi
 
-# shellcheck disable=SC1090
-source "$ACCOUNT"
+if (( ! ACCOUNT_SOURCED )); then
+  # shellcheck disable=SC1090
+  source "$ACCOUNT"
+  ACCOUNT_SOURCED=1
+fi
 
 # The posture line must state what this run ACTUALLY is. It previously printed
 # "(observe posture)" unconditionally, which was true only because the flag could
@@ -268,7 +604,7 @@ if (( LIVE )); then
                   | grep -oE '[0-9]+$' | sort -n | tail -1)
     CFG_MAX_SIZE=$(grep -oE '^budget_contracts[[:space:]]*=[[:space:]]*[0-9]+' "$CONFIG" \
                    | grep -oE '[0-9]+$' | sort -n | tail -1)
-    POSTURE="LIVE mention-FILL (orders MAY cross the ask and FILL; max cap ${CFG_MAX_CAP:-?}¢ × ${CFG_MAX_SIZE:-?} contract(s) per order, spend bound by notional caps + per-event \$1 probe ledger)"
+    POSTURE="LIVE mention-FILL (orders MAY cross the ask and FILL; max cap ${CFG_MAX_CAP:-?}¢ × ${CFG_MAX_SIZE:-?} contract(s) per order, spend bound by configured notional caps + the event ledger)"
   else
     POSTURE="LIVE mention-probe (cap ≤ 1¢ non-crossing — an order reaches the wire ONLY if the ask is ≤ 1¢; otherwise it short-circuits unsent)"
   fi
@@ -278,70 +614,83 @@ fi
 echo "webcast lane: event=${EVENT_ID}  config=${CONFIG}  state=${STATE_DIR}"
 echo "posture: ${POSTURE}"
 
-# ── AUDIO SIDE-CAR: always, not opt-in (2026-08-11) ────────────────────────
-# `arm` banks NO audio and NO transcript, so PRECISION — the false-positive
-# rate that gates position size — cannot be measured after the fact. The
-# readiness study measures RECALL only, on clean studio TTS.
-#
-# 26AUG11 is why this is automatic now: CAVA+CRWV filled 5 orders / $48.50 at
-# tranche 10 and banked no audio at all, so there is NO WAY to establish
-# whether "catering"/"same store"/"acceleration"/"dining"/"government" were
-# actually said. We bought positions we cannot audit. HIMS 26AUG10 WAS
-# auditable (scored 9/9 true-positive) purely because a sidecar happened to be
-# running that night.
-#
-# FAIL-OPEN BY CONSTRUCTION: every step below is `|| true`-guarded and the arm
-# is exec'd regardless. A recorder must never be able to block a trade path.
-# capture-bakeoff has no detector, no risk gate and no Kalshi connection, so it
-# cannot place, cancel or influence an order — and this ADDS a recording to an
-# armed run, which is not the "recorder instead of an arm" case CLAUDE.md bans.
-if [[ "${EARSHOT_NO_SIDECAR:-0}" != "1" ]]; then
-  SIDECAR_CFG="${STATE_DIR}/capture-sidecar.toml"
-  # Copy a leg BYTE-FOR-BYTE out of the arm's own config, so the banked audio
-  # is what the detector actually heard — not a second, differently-tuned pull.
-  SIDECAR_SLUG=$(python3 - "$CONFIG" "$EVENT_ID" "$SIDECAR_CFG" <<'PYEOF' 2>/dev/null || true
-import re, sys, tomllib
-cfg_path, event_id, out_path = sys.argv[1], sys.argv[2], sys.argv[3]
-cfg = tomllib.load(open(cfg_path, "rb"))
-srcs = [s for s in (cfg.get("sources") or []) if s.get("kind") == "pipe" and s.get("cmd")]
-if not srcs:
-    sys.exit(1)
-src = next((s for s in srcs if s.get("label") == "pipe_tuned"), srcs[-1])
-cmd = src["cmd"]
-m = re.search(r'\$HOME/([A-Za-z0-9_-]+)-stream\.url', " ".join(cmd))
-if not m:
-    sys.exit(1)
-starts = str((cfg.get("event") or {}).get("starts_at", ""))
-body = "".join(f'  {json_cmd},\n' for json_cmd in (__import__("json").dumps(c) for c in cmd))
-open(out_path, "w").write(
-    "# AUTO-GENERATED by launch-webcast.sh — audio side-car for the run above.\n"
-    "# One leg, copied byte-for-byte from the arm config's pipe leg, so the\n"
-    "# banked audio represents what the detector actually heard.\n"
-    f'[event]\nid        = "{event_id}-CAPTURE"\nstarts_at = "{starts}"\n\n'
-    "[pipeline]\nchunk_ms = 80\n\n"
-    '[[sources]]\nkind = "pipe"\nlabel = "sidecar"\nsample_rate_hz = 16000\ncmd = [\n'
-    + body + "]\n")
-print(m.group(1))
-PYEOF
-)
-  if [[ -n "$SIDECAR_SLUG" && -f "$SIDECAR_CFG" ]]; then
-    nohup scripts/capture-sidecar.sh --slug "$SIDECAR_SLUG" --config "$SIDECAR_CFG" \
-        --record-dir "${STATE_DIR}/capture" --event "$EVENT_ID" \
-        >> "${STATE_DIR}/capture-sidecar.log" 2>&1 &
-    echo "audio side-car: recording to ${STATE_DIR}/capture (slug ${SIDECAR_SLUG}, pid $!)"
-    jnl sidecar-start info "audio side-car recording to ${STATE_DIR}/capture" || true
-  else
-    # LOUD, because a silent skip is how tonight happened.
-    echo "⚠ audio side-car NOT started (no pipe leg with a \$HOME/<slug>-stream.url in $CONFIG)" >&2
-    echo "  → this run will be UNAUDITABLE: fills cannot be scored true/false afterwards." >&2
-    jnl sidecar-start warn "side-car not started — run will be unauditable" || true
-  fi
-fi
+# Audio evidence is now an in-process, fail-closed stage on the exact
+# post-preprocessor frames sent toward detection.  A second pull can drift from
+# what the detector heard and can never serve as the live run's audit record;
+# launch-webcast therefore starts exactly one source graph and no sidecar.
 if [[ -n "$BIN" ]]; then
   [[ -x "$BIN" ]] || { echo "pinned binary not executable: ${BIN}" >&2; exit 2; }
   jnl arm-start info "pinned $BIN — $POSTURE"
-  exec "$BIN" arm --config "$CONFIG" --state-dir "$STATE_DIR" --report "$REPORT" --allow-mention ${LIVE_ARGS[@]+"${LIVE_ARGS[@]}"}
+  echo "arming (pinned ${BIN}): arm --config ${CONFIG} --state-dir ${STATE_DIR} --report ${REPORT} --allow-mention ${LIVE_ARGS[*]:-}"
+  "$BIN" arm --config "$CONFIG" --state-dir "$STATE_DIR" --report "$REPORT" --allow-mention ${LIVE_ARGS[@]+"${LIVE_ARGS[@]}"} &
 else
   jnl arm-start warn "cargo run (UNPINNED — the runbook forbids this for real events) — $POSTURE"
-  exec cargo run --release -- arm --config "$CONFIG" --state-dir "$STATE_DIR" --report "$REPORT" --allow-mention ${LIVE_ARGS[@]+"${LIVE_ARGS[@]}"}
+  echo "arming (cargo run): arm --config ${CONFIG} --state-dir ${STATE_DIR} --report ${REPORT} --allow-mention ${LIVE_ARGS[*]:-}"
+  cargo run --release -- arm --config "$CONFIG" --state-dir "$STATE_DIR" --report "$REPORT" --allow-mention ${LIVE_ARGS[@]+"${LIVE_ARGS[@]}"} &
 fi
+ARM_PID=$!
+printf '%s\n' "$ARM_PID" > "${STATE_DIR}/arm.pid"
+
+# Dry runs preserve the old untyped behavior: no RunPlan lookup, no lifecycle
+# mutation, and the arm's own status remains the launcher status.
+if (( ! LIVE )); then
+  reap_arm
+  exit "${ARM_RC:-1}"
+fi
+
+# `earshot arm` writes listener.ready only after the graph is constructed and
+# released.  Require this process's PID so a stale/live sibling marker can
+# never advance the selected RunPlan.
+for _ in $(seq 1 240); do
+  listener_marker_matches_arm && break
+  kill -0 "$ARM_PID" 2>/dev/null || break
+  sleep 0.5
+done
+if ! listener_marker_matches_arm; then
+  echo "arm never wrote a matching ${STATE_DIR}/listener.ready within 120 s" >&2
+  if kill -0 "$ARM_PID" 2>/dev/null; then shutdown_arm "listener readiness timeout"; else reap_arm; fi
+  finalize_lifecycle || true
+  [[ "${ARM_RC:-0}" -ne 0 ]] && exit "$ARM_RC"
+  exit 7
+fi
+echo "listener ready for arm pid ${ARM_PID}"
+jnl listener-ready ok "pid=${ARM_PID}"
+if ! lifecycle_record launched "listener.ready accepted; arm_pid=${ARM_PID} state=${STATE_DIR}"; then
+  echo "REFUSING to supervise: failed to append durable launched receipt for ${RUN_DIR}" >&2
+  shutdown_arm "launched receipt failure"
+  finalize_lifecycle || true
+  exit 7
+fi
+LIFECYCLE_LAUNCHED=1
+
+# Source attachment is stronger than process existence or a decodable URL: the
+# runtime publishes this marker only after its in-process evidence bank has
+# durably accepted a post-preprocessor frame that is eligible for detection.
+while kill -0 "$ARM_PID" 2>/dev/null; do
+  ATTACH_RC=0
+  accept_source_marker || ATTACH_RC=$?
+  if [[ "$ATTACH_RC" -eq 0 ]]; then
+    break
+  elif [[ "$ATTACH_RC" -eq 2 ]]; then
+    echo "LIFECYCLE FAILURE: source attached but source_attached/supervising receipt failed" >&2
+    shutdown_arm "source lifecycle receipt failure"
+    break
+  fi
+  sleep 0.1
+done
+if [[ "$LIFECYCLE_SUPERVISING" == 0 ]] && source_marker_matches_run; then
+  ATTACH_RC=0
+  accept_source_marker || ATTACH_RC=$?
+  if [[ "$ATTACH_RC" -eq 2 ]]; then
+    echo "LIFECYCLE FAILURE: completed source attached but lifecycle receipt failed" >&2
+  fi
+fi
+
+reap_arm
+jnl arm-exit "$([[ "${ARM_RC:-1}" -eq 0 ]] && echo ok || echo fail)" "rc=${ARM_RC:-unknown} report=${REPORT}"
+LIFECYCLE_RC=0
+finalize_lifecycle || LIFECYCLE_RC=$?
+if [[ "$LIFECYCLE_RC" -ne 0 && "${ARM_RC:-0}" -eq 0 ]]; then
+  exit 7
+fi
+exit "${ARM_RC:-1}"

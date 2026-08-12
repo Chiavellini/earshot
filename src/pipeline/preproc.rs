@@ -19,7 +19,11 @@ pub struct PreprocCfg {
 }
 
 /// Runs until the upstream sender drops. Returns frames processed.
-pub fn run(mut rx: RingReceiver<AudioFrame>, mut tx: RingSender<AudioFrame>, cfg: PreprocCfg) -> u64 {
+pub fn run(
+    mut rx: RingReceiver<AudioFrame>,
+    mut tx: RingSender<AudioFrame>,
+    cfg: PreprocCfg,
+) -> u64 {
     let mut frames = 0u64;
     let mut upsampler: Option<HalfBandUpsampler2x> = None;
     while let Some(mut frame) = rx.recv() {
@@ -66,8 +70,8 @@ impl HalfBandUpsampler2x {
             // Ideal midpoint interpolator sinc(j − K + 0.5), Hamming-windowed.
             let x = j as f32 - k + 0.5;
             let sinc = (std::f32::consts::PI * x).sin() / (std::f32::consts::PI * x);
-            let w = 0.54
-                - 0.46 * (2.0 * std::f32::consts::PI * (j as f32 + 0.5) / TAPS as f32).cos();
+            let w =
+                0.54 - 0.46 * (2.0 * std::f32::consts::PI * (j as f32 + 0.5) / TAPS as f32).cos();
             *c = sinc * w;
             sum += *c;
         }
@@ -75,7 +79,10 @@ impl HalfBandUpsampler2x {
         for c in &mut coeffs {
             *c /= sum;
         }
-        HalfBandUpsampler2x { coeffs, hist: [0; TAPS] }
+        HalfBandUpsampler2x {
+            coeffs,
+            hist: [0; TAPS],
+        }
     }
 
     /// One input frame → 2× output samples. Output sample 2i is the input
@@ -115,7 +122,9 @@ mod tests {
 
     fn sine_8k(freq_hz: f32, n: usize, amp: f32) -> Vec<i16> {
         (0..n)
-            .map(|i| (amp * (2.0 * std::f32::consts::PI * freq_hz * i as f32 / 8000.0).sin()) as i16)
+            .map(|i| {
+                (amp * (2.0 * std::f32::consts::PI * freq_hz * i as f32 / 8000.0).sin()) as i16
+            })
             .collect()
     }
 
@@ -150,7 +159,12 @@ mod tests {
     fn non_2x_rate_panics_loud_not_silent() {
         let mut f = frame(sine_8k(440.0, 160, 10_000.0), 0);
         f.sample_rate_hz = 44_100; // neither 8 k nor 16 k: a wiring bug
-        run_stage(vec![f], PreprocCfg { resample_to_hz: Some(16_000) });
+        run_stage(
+            vec![f],
+            PreprocCfg {
+                resample_to_hz: Some(16_000),
+            },
+        );
     }
 
     #[test]
@@ -166,7 +180,9 @@ mod tests {
     #[test]
     fn resample_doubles_length_and_rate_preserving_identity() {
         let pcm = sine_8k(440.0, 160, 10_000.0);
-        let cfg = PreprocCfg { resample_to_hz: Some(16_000) };
+        let cfg = PreprocCfg {
+            resample_to_hz: Some(16_000),
+        };
         let out = run_stage(vec![frame(pcm.clone(), 0)], cfg);
         assert_eq!(out[0].sample_rate_hz, 16_000);
         assert_eq!(out[0].pcm.len(), 320);
@@ -180,7 +196,12 @@ mod tests {
         let mut f = frame(sine_8k(440.0, 160, 10_000.0).to_vec(), 0);
         f.sample_rate_hz = 16_000;
         let pcm_before: Vec<i16> = f.pcm.to_vec();
-        let out = run_stage(vec![f], PreprocCfg { resample_to_hz: Some(16_000) });
+        let out = run_stage(
+            vec![f],
+            PreprocCfg {
+                resample_to_hz: Some(16_000),
+            },
+        );
         assert_eq!(out[0].sample_rate_hz, 16_000);
         assert_eq!(&out[0].pcm[..], &pcm_before[..]);
     }

@@ -7,11 +7,7 @@ use crate::clock::MonotonicNs;
 use crate::ring::{RingReceiver, RingSender};
 use crate::types::{AudioChunk, AudioFrame, SourceId};
 
-pub fn run(
-    mut rx: RingReceiver<AudioFrame>,
-    mut tx: RingSender<AudioChunk>,
-    chunk_ms: u32,
-) -> u64 {
+pub fn run(mut rx: RingReceiver<AudioFrame>, mut tx: RingSender<AudioChunk>, chunk_ms: u32) -> u64 {
     let mut chunks = 0u64;
     let mut buf: Vec<i16> = Vec::new();
     let mut first_capture_ts = MonotonicNs(0);
@@ -22,13 +18,13 @@ pub fn run(
     let mut chunk_samples = 0usize;
 
     let seal = |buf: &mut Vec<i16>,
-                    chunks: &mut u64,
-                    tx: &mut RingSender<AudioChunk>,
-                    first_capture_ts: MonotonicNs,
-                    first_preproc_ts: MonotonicNs,
-                    last_capture_ts: MonotonicNs,
-                    sample_rate_hz: u32,
-                    source: SourceId| {
+                chunks: &mut u64,
+                tx: &mut RingSender<AudioChunk>,
+                first_capture_ts: MonotonicNs,
+                first_preproc_ts: MonotonicNs,
+                last_capture_ts: MonotonicNs,
+                sample_rate_hz: u32,
+                source: SourceId| {
         if buf.is_empty() {
             return;
         }
@@ -60,17 +56,27 @@ pub fn run(
         buf.extend_from_slice(&frame.pcm);
         if buf.len() >= chunk_samples {
             seal(
-                &mut buf, &mut chunks, &mut tx,
-                first_capture_ts, first_preproc_ts, last_capture_ts,
-                sample_rate_hz, source,
+                &mut buf,
+                &mut chunks,
+                &mut tx,
+                first_capture_ts,
+                first_preproc_ts,
+                last_capture_ts,
+                sample_rate_hz,
+                source,
             );
         }
     }
     // End of stream: flush the remainder so trailing audio is never lost.
     seal(
-        &mut buf, &mut chunks, &mut tx,
-        first_capture_ts, first_preproc_ts, last_capture_ts,
-        sample_rate_hz, source,
+        &mut buf,
+        &mut chunks,
+        &mut tx,
+        first_capture_ts,
+        first_preproc_ts,
+        last_capture_ts,
+        sample_rate_hz,
+        source,
     );
     chunks
 }
@@ -106,7 +112,7 @@ mod tests {
         let c2 = crx.recv().unwrap();
         assert!(crx.recv().is_none());
         assert_eq!(c1.pcm.len(), 1280); // 8 frames
-        assert_eq!(c2.pcm.len(), 320);  // remainder: 2 frames
+        assert_eq!(c2.pcm.len(), 320); // remainder: 2 frames
         assert_eq!(c1.first_capture_ts, MonotonicNs(1000));
         assert_eq!(c1.last_capture_ts, MonotonicNs(8000));
         assert_eq!(c1.first_preproc_ts, MonotonicNs(1010));

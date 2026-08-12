@@ -1,0 +1,315 @@
+# PHONE-ONLY arm — derived from configs/webcast-hims-26aug10-arm-wc.toml by scripts/phone-lane-derive.py on 2026-08-10.
+#
+# Where a participant dial-in exists, the phone lane IS the lane: 26JUL29 CMG
+# measured the phone 4.1-8.2 s AHEAD of the webcast on the SAME call, with one
+# extra recall win. The webcast legs are therefore REMOVED, not kept as a
+# backstop — a second leg costs CPU and buys false comfort.
+#
+# THE CONSEQUENCE: there is NO webcast fallback for this event. The phone leg is
+# the only capture path, so "refuse when unsure" is the WRONG default here —
+# declining to arm is zero coverage, which is worse than arming on partial
+# evidence. Where the evidence supports it, arm under an explicit
+# EARSHOT_GREEN_OVERRIDE="<reason>", which PAGES (scripts/launch-event.sh).
+#
+# Keywords are copied BYTE-FOR-BYTE from the twin except the posture numbers, so
+# keywords_sha256 is unchanged and configs/.readiness/hims-26aug10-phone-arm.json plus its
+# dead-word ack carry over (scripts/keywords-extract.py hashes ticker/phrase/
+# variants only, never caps or thresholds).
+#
+# Execution host: the us-east-1 box. Ingress wss://media.3-212-174-94.sslip.io/e/8081
+# (Caddy terminates TLS; /e/<port> must be routed in deploy/caddy/Caddyfile).
+# Verify the host BEFORE event day:  scripts/box-ready.sh --config configs/hims-26aug10-phone-arm.toml
+#
+# Posture: MENTION-FILL — max_price_cents = 97 (ceiling MENTION_FILL_CAP_CENTS = 97), budget_contracts = 1.
+# Orders MAY cross and fill. Launch needs --i-am-live --allow-mention --fillable
+# (src/main.rs:1062-1067 refuses --fillable without both).
+# min_confidence_confirmed = 0.22 — PROVENANCE: a single in-sample day
+# (26AUG05 tape, n=26). NOT validated out of sample. Treat as a working
+# default that has never been tested against a day it did not come from.
+
+
+[event]
+id        = "KXEARNINGSMENTIONHIMS-26AUG10-PHONE"
+starts_at = "2026-08-10T21:00:00Z"  # 15:00 CDMX (UTC−6) = 17:00 ET, operator-supplied 2026-08-07
+
+[pipeline]
+chunk_ms       = 80
+resample_to_hz = 16000
+
+[detector]
+engine = "streaming_ctc"
+
+[detector.streaming_ctc]
+model_dir         = "models/sherpa-onnx-streaming-zipformer-ctc-small-2024-03-18"
+num_threads       = 1
+default_threshold = 0.15
+refractory_ms     = 2000
+
+# sherpa_kws block kept so the engine reverts with a one-line change above.
+
+[detector.sherpa_kws]
+model_dir         = "models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
+num_threads       = 1
+max_active_paths  = 4
+default_threshold = 0.20
+default_boost     = 2.0
+refractory_ms     = 2000
+fp32              = true
+
+# NO [arbiter] section — deliberate. `fanout` requires >= 2 sources
+# (src/config.rs:704) and this arm has exactly one, so the default single-source
+# arbiter is correct. Adding [arbiter] here makes the config fail validation.
+
+[[sources]]
+# THE phone leg. max_reconnects/idle_timeout_secs are the Q-REDIAL production
+# values; they require EARSHOT_REDIAL_DIR, which scripts/launch-event.sh exports
+# (src/config.rs:588 refuses to arm otherwise). Without them a single mid-call
+# drop ends the run, and preflight FAILs the config unless launched
+# --one-shot-ok. Number + PIN are passed on the launcher command line and stay
+# OUT of git.
+kind = "twilio_stream"
+bind = "127.0.0.1:8081"
+max_reconnects = 2
+idle_timeout_secs = 8
+
+[kalshi]
+series = "KXEARNINGSMENTIONHIMS"
+env = "prod"
+
+# ── Placeholders below: replace with the `earshot prepare` output ──────────
+
+[risk]
+max_order_notional_cents = 100
+max_event_notional_cents = 1900
+book_stale_ms            = 2000
+audio_stale_ms           = 2000
+allowlist_tickers = [
+  "KXEARNINGSMENTIONHIMS-26AUG10-AMAZ",
+  "KXEARNINGSMENTIONHIMS-26AUG10-CANA",
+  "KXEARNINGSMENTIONHIMS-26AUG10-CANC",
+  "KXEARNINGSMENTIONHIMS-26AUG10-COLL",
+  "KXEARNINGSMENTIONHIMS-26AUG10-EUCA",
+  "KXEARNINGSMENTIONHIMS-26AUG10-EURO",
+  "KXEARNINGSMENTIONHIMS-26AUG10-FDA",
+  "KXEARNINGSMENTIONHIMS-26AUG10-LABT",
+  "KXEARNINGSMENTIONHIMS-26AUG10-LONG",
+  "KXEARNINGSMENTIONHIMS-26AUG10-MICR",
+  "KXEARNINGSMENTIONHIMS-26AUG10-PEPT",
+  "KXEARNINGSMENTIONHIMS-26AUG10-REGU",
+  "KXEARNINGSMENTIONHIMS-26AUG10-TARI",
+  "KXEARNINGSMENTIONHIMS-26AUG10-TEST",
+  "KXEARNINGSMENTIONHIMS-26AUG10-VITA",
+  "KXEARNINGSMENTIONHIMS-26AUG10-WEAR",
+  "KXEARNINGSMENTIONHIMS-26AUG10-WEGO",
+  "KXEARNINGSMENTIONHIMS-26AUG10-YOUR",
+  "KXEARNINGSMENTIONHIMS-26AUG10-ZAVA",
+]
+
+# Amazon (KXEARNINGSMENTIONHIMS-26AUG10-AMAZ) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-AMAZ"
+phrase           = "amazon"
+variants         = ["amazon", "amazons"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
+
+# Canada (KXEARNINGSMENTIONHIMS-26AUG10-CANA) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-CANA"
+phrase           = "canada"
+variants         = ["canada", "canadas"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
+
+# Cancer (KXEARNINGSMENTIONHIMS-26AUG10-CANC) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-CANC"
+phrase           = "cancer"
+variants         = ["cancer", "cancers"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
+
+# Collaboration (KXEARNINGSMENTIONHIMS-26AUG10-COLL) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-COLL"
+phrase           = "collaboration"
+variants         = ["collaboration", "collaborations"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
+
+# Eucalyptus (KXEARNINGSMENTIONHIMS-26AUG10-EUCA) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-EUCA"
+phrase           = "eucalyptus"
+variants         = ["eucalyptus"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
+
+# Europe (KXEARNINGSMENTIONHIMS-26AUG10-EURO) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-EURO"
+phrase           = "europe"
+variants         = ["europe", "europes"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
+
+# FDA (KXEARNINGSMENTIONHIMS-26AUG10-FDA) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-FDA"
+phrase           = "fda"
+variants         = ["fda", "fdas", "f d a"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
+
+# Lab Testing (KXEARNINGSMENTIONHIMS-26AUG10-LABT) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-LABT"
+phrase           = "lab testing"
+variants         = ["lab testing"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
+
+# Longevity (KXEARNINGSMENTIONHIMS-26AUG10-LONG) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-LONG"
+phrase           = "longevity"
+variants         = ["longevity", "longevitys"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
+
+# Microdose / Microdosing (KXEARNINGSMENTIONHIMS-26AUG10-MICR) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-MICR"
+phrase           = "microdose"
+variants         = ["microdose", "microdoses", "microdosing", "microdosings"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
+
+# Peptide (KXEARNINGSMENTIONHIMS-26AUG10-PEPT) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-PEPT"
+phrase           = "peptide"
+variants         = ["peptide", "peptides"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
+
+# Regulation (KXEARNINGSMENTIONHIMS-26AUG10-REGU) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-REGU"
+phrase           = "regulation"
+variants         = ["regulation", "regulations"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
+
+# Tariff (KXEARNINGSMENTIONHIMS-26AUG10-TARI) — corpus-tuned; cap: FILL 97c x1 (crossing; $1 per sub-market)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-TARI"
+phrase           = "tariff"
+variants         = ["tariff", "tariffs"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
+confirmed_threshold = 0.1
+boost            = 3.0
+
+# Testosterone (KXEARNINGSMENTIONHIMS-26AUG10-TEST) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-TEST"
+phrase           = "testosterone"
+variants         = ["testosterone", "testosterones"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
+
+# Vitamin (KXEARNINGSMENTIONHIMS-26AUG10-VITA) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-VITA"
+phrase           = "vitamin"
+variants         = ["vitamin", "vitamins"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
+
+# Wearable (KXEARNINGSMENTIONHIMS-26AUG10-WEAR) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-WEAR"
+phrase           = "wearable"
+variants         = ["wearable", "wearables"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
+
+# Wegovy (KXEARNINGSMENTIONHIMS-26AUG10-WEGO) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-WEGO"
+phrase           = "wegovy"
+variants         = ["wegovy", "wegovys"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
+
+# YourBio (KXEARNINGSMENTIONHIMS-26AUG10-YOUR) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-YOUR"
+phrase           = "yourbio"
+variants         = ["yourbio"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
+
+# Zava (KXEARNINGSMENTIONHIMS-26AUG10-ZAVA) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-ZAVA"
+phrase           = "zava"
+variants         = ["zava", "zavas"]
+max_price_cents  = 97
+budget_contracts = 1
+policy           = "confirmed_only"
+min_confidence_confirmed = 0.22
+
+# --- prepare summary: 19 tradeable, 0 skipped (said-N-times), 0 skipped (unencodable), 0 variants dropped of 19 markets ---
+
+# ── OPERATOR-SCREENED BRIDGE (Class B) — added live 2026-08-10T21:1xZ ────────
+# The 21:07Z probe transcript proved this venue screens: "If you know your
+# unique passcode, please enter it now. Otherwise to speak to the next
+# available operator stay on the line… Please have your first and last name…
+# I'm not able to hear anything." Meeting ID 782 611 911 is the WEBCAST id,
+# not a participant passcode, so every silent leg fell through to a human and
+# was hung up at 83-153 s. Q-CONF (2026-07-30) proved a <Start><Stream
+# track="inbound_track"> fork keeps carrying bridge audio while the call sits
+# in <Dial><Conference>, and that the paged human's voice stays OFF the
+# inbound track — so this is the designed admission path, not a workaround.
+[operator_handler]
+enabled           = true
+cell_number       = "+525545436717"
+conference_prefix = "earshot"

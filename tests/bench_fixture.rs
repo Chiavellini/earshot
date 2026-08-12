@@ -41,8 +41,17 @@ fn fixture_selftest_scores_perfect_recall_zero_fa() {
     let source = Box::new(ReplaySource::from_wav(&wav, 0.0, SourceId(0)).unwrap());
     let detector = Box::new(EnergyStubDetector::for_standard_fixture());
     let table = DecisionTable::from_keywords(&keywords());
-    let report =
-        run_pipeline("selftest", 160, PreprocCfg::default(), source, detector, table, None, Default::default()).unwrap();
+    let report = run_pipeline(
+        "selftest",
+        160,
+        PreprocCfg::default(),
+        source,
+        detector,
+        table,
+        None,
+        Default::default(),
+    )
+    .unwrap();
 
     assert_eq!(report.drops.total(), 0);
     assert!(report.first_capture_ts.is_some());
@@ -79,20 +88,36 @@ fn fixture_selftest_paced_latency_is_chunk_dominated() {
     let source = Box::new(ReplaySource::from_wav(&wav, 1.0, SourceId(0)).unwrap());
     let detector = Box::new(EnergyStubDetector::for_standard_fixture());
     let table = DecisionTable::from_keywords(&keywords());
-    let report =
-        run_pipeline("selftest-paced", 160, PreprocCfg::default(), source, detector, table, None, Default::default())
-            .unwrap();
+    let report = run_pipeline(
+        "selftest-paced",
+        160,
+        PreprocCfg::default(),
+        source,
+        detector,
+        table,
+        None,
+        Default::default(),
+    )
+    .unwrap();
 
     let occurrences = spec.occurrences("tone");
     let dets: Vec<_> = report.detections.iter().collect();
     let occs: Vec<_> = occurrences.iter().collect();
-    let scores =
-        score_phrase("tone", &dets, &occs, MatchWindow::default(), report.first_capture_ts);
+    let scores = score_phrase(
+        "tone",
+        &dets,
+        &occs,
+        MatchWindow::default(),
+        report.first_capture_ts,
+    );
     let fast = scores.iter().find(|s| s.tier == Tier::Fast).unwrap();
     assert_eq!(fast.latency_ms.len(), 3);
     for &l in &fast.latency_ms {
         // Burst onset → chunk seal (≤2 chunks: onset may straddle a boundary)
         // → detect. Generous scheduling headroom, but must be sub-second.
-        assert!((0..800).contains(&l), "implausible paced latency {l} ms: {scores:?}");
+        assert!(
+            (0..800).contains(&l),
+            "implausible paced latency {l} ms: {scores:?}"
+        );
     }
 }

@@ -1,4 +1,4 @@
-# Operator handler — gated design (approved 2026-07-29; v1 human-first BUILT, v2 clips/classifier NEXT)
+# Operator handler — gated design (v1 human-first + explicit pass receipt BUILT; v2 clips/classifier NEXT)
 
 **Problem (VERIFICATIONS Q-ADMIT / Q-OPS):** MSFT, CVNA, and WING route their
 dial-ins through LIVE OPERATOR SCREENS — a human asks who you are and
@@ -9,7 +9,7 @@ FULL, GATED build of a clip-based operator responder — and, same day, signed
 off on shipping the HUMAN-FIRST variant first: the clip/classifier build below
 becomes **v2**, answered by the same conference topology.
 
-## v1 — human-first (BUILT 2026-07-29, `control.operator`; wire pins PENDING)
+## v1 — human-first (BUILT; Q-OPERATOR-V1/Q-CONF/Q-UPDATE pinned)
 
 When we dial a Class B bridge, the call is placed into a named Twilio
 `<Conference>` that carries our media fork, and the USER'S CELL is paged into
@@ -31,12 +31,31 @@ stream persist for the whole call.
   carries ONLY the bridge's inbound audio (the user's voice rides the outbound
   track and never enters the pipeline — the Q-CONF hypothesis, pinned before
   any live use). Never `<Number>/<Sip>/<Connect>/<Say>/<Record>`.
+- `scripts/operator-redial.sh` — the replacement-leg wrapper used after a
+  drop. It gives the configured cell two 45-second answer chances by default,
+  closes a failed/ringing pager CallSid before originating the second, and
+  dials the bridge exactly once only after the human joins. A page failure
+  without a CallSid or a failed page hangup is ambiguous and refuses rather
+  than risking two legs. It never retries bridge origination in place.
 - **Double gate:** `[operator_handler] enabled = true` in the event config
   (`src/config.rs`, validated E.164 `cell_number` + `[a-z0-9-]{1,24}`
   `conference_prefix`) AND `--operator-i-am-paged` on every operator script.
 - Invariants frozen by `tests/twilio_operator_gated.rs`, which ALSO re-asserts
   the default `scripts/twilio-dial.sh` TwiML contains no
   `<Connect>/<Dial>/<Number>/<Sip>`.
+- **Explicit admission gate:** attached calls are not proof of operator pass.
+  Only after the human hears the live issuer call do they invoke:
+
+  ```sh
+  scripts/operator-page.sh --config <event.toml> --operator-i-am-paged \
+    --assert-admitted --state-dir <event-state-dir>
+  ```
+
+  That action verifies the live runtime challenge and current stream, durably
+  journals the assertion, and publishes the nonce/CallSid/attempt-bound
+  `admission.receipt.json`. Page answer, call/stream creation, registry belief,
+  and hangup never mint it. A replacement call leg invalidates the receipt and
+  requires a new explicit assertion.
 
 **Everything below the Phase-0 section is the v2 spec (clips + classifier +
 duplex stream). It is unchanged in scope; only the ordering moved.**
@@ -66,20 +85,20 @@ path with its own invariant and tests (all of these EXIST as of v1):
   `<Number>/<Sip>/<Connect>/<Say>/<Record>`; pager dial target constrained to
   the configured cell; DTMF charset unchanged.
 
-## Phase 0 — wire-fact pins (BLOCK all LIVE use; ~$1 of probe calls)
+## Phase 0 — wire-fact pins (completed for v1; rerun after topology changes)
 
-Per the VERIFICATIONS discipline, the unknowns must be pinned live before any
-operator dial touches a real bridge. Status as of 2026-07-29: **probe scripts
-exist and are runnable; NO pin has been executed yet.**
+Per the VERIFICATIONS discipline, the unknowns were pinned before v1 live use.
+See `VERIFICATIONS.md` Q-OPERATOR-V1, Q-CONF, and Q-UPDATE. The scripts remain
+the re-verification mechanism after any operator topology change.
 
-1. **Q-CONF** (v1's load-bearing pin — `scripts/probe-q-conf.sh`, EXECUTION
-   PENDING) — does a `<Start><Stream track="inbound_track">` fork survive and
+1. **Q-CONF** (v1's load-bearing pin — `scripts/probe-q-conf.sh`, PINNED) —
+   does a `<Start><Stream track="inbound_track">` fork survive and
    keep carrying the far end's audio while the call sits in
    `<Dial><Conference>`, and does the OTHER conference participant's voice
    (the paged human) stay OFF the inbound track? Step 1 runs unattended
    against the TTS rehearsal number; `--with-cell` adds the human marker-phrase
    test. Both destinations are hard-allowlisted.
-2. **Q-UPDATE** (`scripts/probe-q-update.sh`, EXECUTION PENDING) — does
+2. **Q-UPDATE** (`scripts/probe-q-update.sh`, PINNED) — does
    `POST /Calls/<sid>.json` with replacement TwiML kill a running
    `<Start><Stream>` fork? Decides whether mid-call REST re-steering ("listen
    + occasionally play a clip by REST update", v2) is even possible.
@@ -157,8 +176,17 @@ WING-class bridge, never near a traded event.
 
 ## Registry interaction
 
-`admission = "operator_screened"` FAILs preflight today. Once a venue's
-operator flow is rehearsed with this handler, its entry gains
-`operator_handler = "rehearsed-<date>"` and preflight downgrades to
-PASS-with-note for arms that have the gate enabled. (Field lands with the
-handler, not before.)
+For a known `admission = "operator_screened"` venue, the registry rehearsal pin
+remains mandatory before the first dial: once its flow is rehearsed with this
+handler, the entry gains `operator_handler = "rehearsed-<date>"` and preflight
+downgrades to PASS-with-note for arms that have the gate enabled. (Field lands
+with the handler, not before.)
+
+For an absent/`untested`/`unknown` admission verdict — especially a
+reservation-window bridge that cannot be classified off-hours — requiring that
+same venue pin would be circular. `control.supervise` may arm the generic
+enabled handler capability without the venue pin, keep the first dial plain,
+and select this wrapper only after the first qualifying early drop. That is a
+session-scoped recovery choice, not a registry mutation or admission claim;
+explicit `--assert-admitted` proof against the current challenge and stream is
+still required, and a later replacement invalidates it again.

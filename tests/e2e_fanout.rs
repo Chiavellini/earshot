@@ -47,7 +47,13 @@ fn silence(total_ms: u32) -> FixtureSpec {
     }
 }
 
-fn replay_leg(dir: &std::path::Path, name: &str, spec: &FixtureSpec, speed: f32, id: u16) -> PipelineLeg {
+fn replay_leg(
+    dir: &std::path::Path,
+    name: &str,
+    spec: &FixtureSpec,
+    speed: f32,
+    id: u16,
+) -> PipelineLeg {
     let wav = dir.join(format!("{name}.wav"));
     spec.write_wav(&wav).unwrap();
     PipelineLeg {
@@ -59,8 +65,16 @@ fn replay_leg(dir: &std::path::Path, name: &str, spec: &FixtureSpec, speed: f32,
 
 fn run_fanout(legs: Vec<PipelineLeg>) -> PipelineReport {
     let table = DecisionTable::from_keywords(&keywords());
-    run_pipeline_fanout("e2e-fanout", 160, PreprocCfg::default(), legs, table, None, Default::default())
-        .unwrap()
+    run_pipeline_fanout(
+        "e2e-fanout",
+        160,
+        PreprocCfg::default(),
+        legs,
+        table,
+        None,
+        Default::default(),
+    )
+    .unwrap()
 }
 
 #[test]
@@ -75,8 +89,19 @@ fn word_heard_by_one_leg_only_still_fires() {
     // Leg "hears" detects all three bursts; exactly one intent (one-shot).
     assert_eq!(report.detections.len(), 3);
     assert!(report.detections.iter().all(|d| d.leg == "hears"));
-    assert_eq!(report.detections.iter().filter(|d| d.intent.is_some()).count(), 1);
-    let intent = report.detections.iter().find_map(|d| d.intent.as_ref()).unwrap();
+    assert_eq!(
+        report
+            .detections
+            .iter()
+            .filter(|d| d.intent.is_some())
+            .count(),
+        1
+    );
+    let intent = report
+        .detections
+        .iter()
+        .find_map(|d| d.intent.as_ref())
+        .unwrap();
     assert_eq!(intent.source, SourceId(0));
 
     // Per-leg accounting: both legs ran to completion, silence leg heard 0.
@@ -105,17 +130,31 @@ fn word_heard_by_both_legs_fires_once_earlier_leg_wins() {
     // hand the single intent to "early" and ignore "late"'s detection.
     let dir = tempfile::tempdir().unwrap();
     let mut early = silence(2000);
-    early.bursts = vec![Burst { onset_ms: 500, dur_ms: 500 }];
+    early.bursts = vec![Burst {
+        onset_ms: 500,
+        dur_ms: 500,
+    }];
     let mut late = silence(2000);
-    late.bursts = vec![Burst { onset_ms: 1500, dur_ms: 500 }];
+    late.bursts = vec![Burst {
+        onset_ms: 1500,
+        dur_ms: 500,
+    }];
     let legs = vec![
         replay_leg(dir.path(), "early", &early, 1.0, 0),
         replay_leg(dir.path(), "late", &late, 1.0, 1),
     ];
     let report = run_fanout(legs);
 
-    assert_eq!(report.detections.len(), 2, "both legs must detect their burst");
-    let intents: Vec<_> = report.detections.iter().filter(|d| d.intent.is_some()).collect();
+    assert_eq!(
+        report.detections.len(),
+        2,
+        "both legs must detect their burst"
+    );
+    let intents: Vec<_> = report
+        .detections
+        .iter()
+        .filter(|d| d.intent.is_some())
+        .collect();
     assert_eq!(intents.len(), 1, "one-shot: exactly one intent across legs");
     assert_eq!(intents[0].leg, "early");
     assert_eq!(intents[0].intent.as_ref().unwrap().source, SourceId(0));
@@ -150,11 +189,22 @@ fn dead_leg_is_leg_local_and_the_race_continues() {
     ];
     let report = run_fanout(legs);
 
-    assert_eq!(report.detections.iter().filter(|d| d.intent.is_some()).count(), 1);
+    assert_eq!(
+        report
+            .detections
+            .iter()
+            .filter(|d| d.intent.is_some())
+            .count(),
+        1
+    );
     let per_leg = report.per_leg.as_ref().unwrap();
     let dead = per_leg.iter().find(|l| l.label == "dead").unwrap();
     let alive = per_leg.iter().find(|l| l.label == "alive").unwrap();
-    assert!(dead.died.as_deref().unwrap_or_default().contains("idle"), "died: {:?}", dead.died);
+    assert!(
+        dead.died.as_deref().unwrap_or_default().contains("idle"),
+        "died: {:?}",
+        dead.died
+    );
     assert!(alive.died.is_none());
     assert_eq!(alive.detections, 3);
 }
@@ -169,9 +219,13 @@ fn two_sherpa_legs_share_one_decision_table() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(MODEL_DIR);
     if !dir.exists() {
         if std::env::var_os("EARSHOT_REQUIRE_MODELS").is_some() {
-            panic!("EARSHOT_REQUIRE_MODELS set but {MODEL_DIR} missing — run scripts/fetch-models.sh");
+            panic!(
+                "EARSHOT_REQUIRE_MODELS set but {MODEL_DIR} missing — run scripts/fetch-models.sh"
+            );
         }
-        eprintln!("==== SKIP fanout sherpa: {MODEL_DIR} missing — run scripts/fetch-models.sh ====");
+        eprintln!(
+            "==== SKIP fanout sherpa: {MODEL_DIR} missing — run scripts/fetch-models.sh ===="
+        );
         return;
     }
     let sherpa_cfg: earshot::config::SherpaKwsConfig =
@@ -208,18 +262,33 @@ policy           = "confirmed_only"
         },
     ];
     let table = DecisionTable::from_keywords(&keywords);
-    let report =
-        run_pipeline_fanout("e2e-fanout-sherpa", 160, PreprocCfg::default(), legs, table, None, Default::default())
-            .unwrap();
+    let report = run_pipeline_fanout(
+        "e2e-fanout-sherpa",
+        160,
+        PreprocCfg::default(),
+        legs,
+        table,
+        None,
+        Default::default(),
+    )
+    .unwrap();
 
     let per_leg = report.per_leg.as_ref().unwrap();
     for l in per_leg {
-        assert!(l.detections >= 1, "leg {} heard nothing — sherpa instance dead?", l.label);
+        assert!(
+            l.detections >= 1,
+            "leg {} heard nothing — sherpa instance dead?",
+            l.label
+        );
         assert!(l.died.is_none());
     }
     // Both legs heard the same phrase; the shared one-shot fires exactly once.
     assert_eq!(
-        report.detections.iter().filter(|d| d.intent.is_some()).count(),
+        report
+            .detections
+            .iter()
+            .filter(|d| d.intent.is_some())
+            .count(),
         1,
         "detections: {:?}",
         report.detections
@@ -237,10 +306,26 @@ fn all_legs_dead_is_an_error() {
         )
     };
     let legs = vec![
-        PipelineLeg { label: "a".into(), source: mk(0), detector: Box::new(EnergyStubDetector::for_standard_fixture()) },
-        PipelineLeg { label: "b".into(), source: mk(1), detector: Box::new(EnergyStubDetector::for_standard_fixture()) },
+        PipelineLeg {
+            label: "a".into(),
+            source: mk(0),
+            detector: Box::new(EnergyStubDetector::for_standard_fixture()),
+        },
+        PipelineLeg {
+            label: "b".into(),
+            source: mk(1),
+            detector: Box::new(EnergyStubDetector::for_standard_fixture()),
+        },
     ];
     let table = DecisionTable::from_keywords(&keywords());
-    let out = run_pipeline_fanout("e2e-fanout", 160, PreprocCfg::default(), legs, table, None, Default::default());
+    let out = run_pipeline_fanout(
+        "e2e-fanout",
+        160,
+        PreprocCfg::default(),
+        legs,
+        table,
+        None,
+        Default::default(),
+    );
     assert!(out.is_err(), "every leg dead must surface as an error");
 }

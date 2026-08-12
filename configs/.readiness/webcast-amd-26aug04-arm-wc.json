@@ -1,7 +1,7 @@
 {
  "config": "webcast-amd-26aug04-arm-wc",
  "keywords_sha256": "bd66352d2a0fdc6630cb9ee5807d3727f3a364b4eae759cf5745c37cfa0f7821",
- "date": "2026-08-04",
+ "date": "2026-08-12",
  "engine": "streaming_ctc",
  "voices": [
   "Samantha",
@@ -27,8 +27,8 @@
     "china",
     "chinas"
    ],
-   "clips": 16,
-   "confirmed": 48
+   "clips": 18,
+   "confirmed": 56
   },
   {
    "ticker": "KXEARNINGSMENTIONAMD-26AUG04-EXPO",
@@ -39,8 +39,8 @@
     "export control",
     "export controls"
    ],
-   "clips": 28,
-   "confirmed": 122
+   "clips": 36,
+   "confirmed": 148
   },
   {
    "ticker": "KXEARNINGSMENTIONAMD-26AUG04-FRON",
@@ -70,8 +70,8 @@
     "h p c",
     "high performance computing"
    ],
-   "clips": 36,
-   "confirmed": 62
+   "clips": 26,
+   "confirmed": 42
   },
   {
    "ticker": "KXEARNINGSMENTIONAMD-26AUG04-INFE",
@@ -82,8 +82,8 @@
     "inferencing",
     "inferencings"
    ],
-   "clips": 36,
-   "confirmed": 134
+   "clips": 25,
+   "confirmed": 102
   },
   {
    "ticker": "KXEARNINGSMENTIONAMD-26AUG04-MEMO",
@@ -118,8 +118,8 @@
     "mi four five zero",
     "mi four fifty five x"
    ],
-   "clips": 44,
-   "confirmed": 70
+   "clips": 45,
+   "confirmed": 74
   },
   {
    "ticker": "KXEARNINGSMENTIONAMD-26AUG04-MICR",

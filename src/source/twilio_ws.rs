@@ -26,9 +26,7 @@ use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, 
 use tokio_tungstenite::tungstenite::http::StatusCode;
 use tokio_tungstenite::tungstenite::Message;
 
-use super::{
-    AudioSource, LatencyClass, SourceDescriptor, SourceError, SourceExit, SourceKind,
-};
+use super::{AudioSource, LatencyClass, SourceDescriptor, SourceError, SourceExit, SourceKind};
 use crate::clock::MonotonicNs;
 use crate::ring::RingSender;
 use crate::types::{AudioFrame, SourceId};
@@ -45,7 +43,11 @@ const fn build_ulaw_lut() -> [i16; 256] {
         let exponent = ((u >> 4) & 0x07) as i32;
         let mantissa = (u & 0x0F) as i32;
         let magnitude = (((mantissa << 3) + 0x84) << exponent) - 0x84;
-        lut[i] = if sign { -magnitude as i16 } else { magnitude as i16 };
+        lut[i] = if sign {
+            -magnitude as i16
+        } else {
+            magnitude as i16
+        };
         i += 1;
     }
     lut
@@ -85,7 +87,8 @@ pub fn twilio_signature(auth_token: &str, url: &str, sorted_params: &[(String, S
         data.push_str(k);
         data.push_str(v);
     }
-    base64::engine::general_purpose::STANDARD.encode(hmac_sha1(auth_token.as_bytes(), data.as_bytes()))
+    base64::engine::general_purpose::STANDARD
+        .encode(hmac_sha1(auth_token.as_bytes(), data.as_bytes()))
 }
 
 /// Constant-time compare of the provided signature against the expected one.
@@ -167,8 +170,12 @@ impl TwilioWsSource {
                 .ok()
                 .filter(|s| !s.is_empty())
                 .map(|d| std::path::Path::new(&d).join("stream.connected")),
-            auth_token: std::env::var("TWILIO_AUTH_TOKEN").ok().filter(|s| !s.is_empty()),
-            public_url: std::env::var("TWILIO_STREAM_URL").ok().filter(|s| !s.is_empty()),
+            auth_token: std::env::var("TWILIO_AUTH_TOKEN")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            public_url: std::env::var("TWILIO_STREAM_URL")
+                .ok()
+                .filter(|s| !s.is_empty()),
         })
     }
 
@@ -419,7 +426,11 @@ impl AudioSource for TwilioWsSource {
                 // rejected handshake must not kill the armed pipeline (that would
                 // let any unauthenticated TCP connect deny service mid-event).
                 // Fail-loud still applies to the accepted stream itself.
-                let window = if attempt == 0 { accept_timeout } else { reaccept_window };
+                let window = if attempt == 0 {
+                    accept_timeout
+                } else {
+                    reaccept_window
+                };
                 let deadline = tokio::time::Instant::now() + window;
                 let (ws, peer) = loop {
                     let Some(remaining) = deadline
@@ -443,15 +454,19 @@ impl AudioSource for TwilioWsSource {
                         );
                         return Ok(SourceExit::EndOfStream);
                     };
-                    let Ok(accepted) = tokio::time::timeout(remaining, listener.accept()).await else {
+                    let Ok(accepted) = tokio::time::timeout(remaining, listener.accept()).await
+                    else {
                         continue; // window elapsed — the deadline check above decides
                     };
                     let (stream, peer) = accepted?;
                     // TCP_NODELAY: 20 ms media frames must never wait on Nagle.
                     let _ = stream.set_nodelay(true);
-                    match tokio_tungstenite::accept_hdr_async(stream, |req: &Request, resp: Response| {
-                        check_signature(req, resp, auth_token.as_deref(), public_url.as_deref())
-                    })
+                    match tokio_tungstenite::accept_hdr_async(
+                        stream,
+                        |req: &Request, resp: Response| {
+                            check_signature(req, resp, auth_token.as_deref(), public_url.as_deref())
+                        },
+                    )
                     .await
                     {
                         Ok(ws) => break (ws, peer),
@@ -551,7 +566,10 @@ impl AudioSource for TwilioWsSource {
 
                 match v["event"].as_str().unwrap_or("?") {
                     "connected" => {
-                        tracing::info!(protocol = v["protocol"].as_str().unwrap_or("?"), "twilio: connected");
+                        tracing::info!(
+                            protocol = v["protocol"].as_str().unwrap_or("?"),
+                            "twilio: connected"
+                        );
                     }
                     "start" => {
                         check_media_format(&v)?;
@@ -582,10 +600,17 @@ impl AudioSource for TwilioWsSource {
                         if !started {
                             return Err(protocol_err("media before start event"));
                         }
-                        if let Some(ts) = v["sequenceNumber"].as_str().and_then(|s| s.parse::<u64>().ok()) {
+                        if let Some(ts) = v["sequenceNumber"]
+                            .as_str()
+                            .and_then(|s| s.parse::<u64>().ok())
+                        {
                             if let Some(prev) = last_twilio_seq {
                                 if ts != prev + 1 {
-                                    tracing::warn!(prev, got = ts, "twilio sequence gap — network loss");
+                                    tracing::warn!(
+                                        prev,
+                                        got = ts,
+                                        "twilio sequence gap — network loss"
+                                    );
                                 }
                             }
                             last_twilio_seq = Some(ts);
@@ -681,7 +706,12 @@ impl AudioSource for TwilioWsSource {
                         frames = seq,
                         "twilio stream ended mid-call — requesting redial, re-entering accept"
                     );
-                    request_redial(redial_request_path.as_deref(), last_call_sid.as_deref(), attempt, reason);
+                    request_redial(
+                        redial_request_path.as_deref(),
+                        last_call_sid.as_deref(),
+                        attempt,
+                        reason,
+                    );
                 }
             }
         }
@@ -694,9 +724,16 @@ impl AudioSource for TwilioWsSource {
 /// `scripts/redial-supervisor.sh`:
 /// `{"unix_ts":<int-seconds>,"old_call_sid":"<sid-or-empty>","attempt":<int>,
 /// "reason":"stop"|"idle"|"socket_closed"|"close_frame"|"ws_error"}`.
-fn request_redial(path: Option<&std::path::Path>, old_call_sid: Option<&str>, attempt: u32, reason: &str) {
+fn request_redial(
+    path: Option<&std::path::Path>,
+    old_call_sid: Option<&str>,
+    attempt: u32,
+    reason: &str,
+) {
     let Some(path) = path else {
-        tracing::warn!("no EARSHOT_REDIAL_DIR set — re-accept is open but nobody was asked to redial");
+        tracing::warn!(
+            "no EARSHOT_REDIAL_DIR set — re-accept is open but nobody was asked to redial"
+        );
         return;
     };
     let unix_ts = std::time::SystemTime::now()
@@ -774,7 +811,11 @@ mod tests {
         assert!(valid_twilio_signature(token, url, &sig));
         // Wrong token, wrong url, tampered signature, wrong length: all reject.
         assert!(!valid_twilio_signature("other_token", url, &sig));
-        assert!(!valid_twilio_signature(token, "wss://evil.example/audio", &sig));
+        assert!(!valid_twilio_signature(
+            token,
+            "wss://evil.example/audio",
+            &sig
+        ));
         let mut bad = sig.clone();
         bad.replace_range(0..1, if sig.starts_with('A') { "B" } else { "A" });
         assert!(!valid_twilio_signature(token, url, &bad));
@@ -786,7 +827,11 @@ mod tests {
         // POST-style params concatenate key+value in key order after the URL.
         let token = "tok";
         let url = "https://x/y";
-        let with = twilio_signature(token, url, &[("a".into(), "1".into()), ("b".into(), "2".into())]);
+        let with = twilio_signature(
+            token,
+            url,
+            &[("a".into(), "1".into()), ("b".into(), "2".into())],
+        );
         let url_only = twilio_signature(token, url, &[]);
         assert_ne!(with, url_only);
     }

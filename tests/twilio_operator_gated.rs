@@ -98,7 +98,10 @@ fn default_dial_path_is_still_one_way_start_stream() {
         let (code, twiml) = run("scripts/twilio-dial.sh", &args);
         assert_eq!(code, 0);
         assert!(twiml.contains("<Start><Stream"), "one-way fork: {twiml}");
-        assert!(twiml.contains("track=\"inbound_track\""), "inbound-only: {twiml}");
+        assert!(
+            twiml.contains("track=\"inbound_track\""),
+            "inbound-only: {twiml}"
+        );
         for forbidden in ["<Connect", "<Dial", "<Number", "<Sip"] {
             assert!(
                 !twiml.contains(forbidden),
@@ -113,7 +116,10 @@ fn default_dial_path_is_still_one_way_start_stream() {
 #[test]
 fn operator_dial_refuses_without_the_paged_flag() {
     let (code, _) = operator_dial(&enabled_config(), &[]);
-    assert_ne!(code, 0, "config enabled but no --operator-i-am-paged must refuse");
+    assert_ne!(
+        code, 0,
+        "config enabled but no --operator-i-am-paged must refuse"
+    );
 }
 
 #[test]
@@ -129,7 +135,10 @@ fn operator_dial_refuses_when_config_gate_is_closed() {
     // section missing entirely
     let missing = fixture_config("missing.toml", "");
     let (code, _) = operator_dial(&missing, &["--operator-i-am-paged"]);
-    assert_ne!(code, 0, "missing [operator_handler] must refuse even with the flag");
+    assert_ne!(
+        code, 0,
+        "missing [operator_handler] must refuse even with the flag"
+    );
 }
 
 // ── 3. the gated bridge-leg TwiML shape ─────────────────────────────────────
@@ -140,13 +149,25 @@ fn gated_bridge_twiml_is_conference_only_with_inbound_fork() {
     assert_eq!(code, 0, "gated dry-run must succeed: {out}");
     let twiml = out.lines().next().expect("TwiML on first line");
     assert!(twiml.contains("<Start><Stream"), "fork present: {twiml}");
-    assert!(twiml.contains("track=\"inbound_track\""), "inbound-only: {twiml}");
-    assert!(twiml.contains("<Dial><Conference"), "conference dial: {twiml}");
+    assert!(
+        twiml.contains("track=\"inbound_track\""),
+        "inbound-only: {twiml}"
+    );
+    assert!(
+        twiml.contains("<Dial><Conference"),
+        "conference dial: {twiml}"
+    );
     // Exact conference posture: bridge hears silence until the human enters;
     // the conference dies with the bridge leg.
-    assert!(twiml.contains("startConferenceOnEnter=\"false\""), "{twiml}");
+    assert!(
+        twiml.contains("startConferenceOnEnter=\"false\""),
+        "{twiml}"
+    );
     assert!(twiml.contains("endConferenceOnExit=\"true\""), "{twiml}");
-    assert!(!twiml.contains("startConferenceOnEnter=\"true\""), "{twiml}");
+    assert!(
+        !twiml.contains("startConferenceOnEnter=\"true\""),
+        "{twiml}"
+    );
     assert!(!twiml.contains("endConferenceOnExit=\"false\""), "{twiml}");
     for forbidden in ["<Number", "<Sip", "<Connect", "<Say", "<Record"] {
         assert!(
@@ -158,11 +179,17 @@ fn gated_bridge_twiml_is_conference_only_with_inbound_fork() {
 
 #[test]
 fn gated_bridge_twiml_keeps_the_dtmf_play_shape() {
-    let (code, out) = operator_dial(&enabled_config(), &["--operator-i-am-paged", "--dtmf", "1364784#"]);
+    let (code, out) = operator_dial(
+        &enabled_config(),
+        &["--operator-i-am-paged", "--dtmf", "1364784#"],
+    );
     assert_eq!(code, 0, "{out}");
     let twiml = out.lines().next().unwrap();
     // Same padding construction as the default dial (8 × 'w' = 4 s).
-    assert!(twiml.contains("<Play digits=\"wwwwwwww1364784#\"/>"), "{twiml}");
+    assert!(
+        twiml.contains("<Play digits=\"wwwwwwww1364784#\"/>"),
+        "{twiml}"
+    );
 }
 
 // ── 4. the pager leg ────────────────────────────────────────────────────────
@@ -172,7 +199,12 @@ fn pager_dial_contains_only_conference() {
     let cfg = enabled_config();
     let (code, out) = run(
         "scripts/operator-page.sh",
-        &["--config", cfg.to_str().unwrap(), "--operator-i-am-paged", "--dry-run"],
+        &[
+            "--config",
+            cfg.to_str().unwrap(),
+            "--operator-i-am-paged",
+            "--dry-run",
+        ],
     );
     assert_eq!(code, 0, "pager dry-run must succeed: {out}");
     let twiml = out.lines().next().expect("TwiML on first line");
@@ -181,8 +213,14 @@ fn pager_dial_contains_only_conference() {
     let start = twiml.find("<Dial>").expect("has <Dial>") + "<Dial>".len();
     let end = twiml.find("</Dial>").expect("has </Dial>");
     let inner = &twiml[start..end];
-    assert!(inner.starts_with("<Conference "), "Dial wraps Conference only: {inner}");
-    assert!(inner.ends_with("</Conference>"), "Dial wraps Conference only: {inner}");
+    assert!(
+        inner.starts_with("<Conference "),
+        "Dial wraps Conference only: {inner}"
+    );
+    assert!(
+        inner.ends_with("</Conference>"),
+        "Dial wraps Conference only: {inner}"
+    );
     assert_eq!(
         inner.matches('<').count(),
         2,
@@ -199,7 +237,10 @@ fn pager_dial_contains_only_conference() {
         );
     }
     // No media fork on the pager leg — the user's audio never enters capture.
-    assert!(!twiml.contains("<Stream"), "pager must not fork media: {twiml}");
+    assert!(
+        !twiml.contains("<Stream"),
+        "pager must not fork media: {twiml}"
+    );
 
     // Destination is EXACTLY the configured cell.
     assert!(
@@ -214,14 +255,28 @@ fn pager_refuses_any_other_destination() {
     // The configured cell itself is accepted (tripwire passes)…
     let (code, _) = run(
         "scripts/operator-page.sh",
-        &["--config", cfg.to_str().unwrap(), "--operator-i-am-paged", "--to", CELL, "--dry-run"],
+        &[
+            "--config",
+            cfg.to_str().unwrap(),
+            "--operator-i-am-paged",
+            "--to",
+            CELL,
+            "--dry-run",
+        ],
     );
     assert_eq!(code, 0, "--to equal to the configured cell must pass");
     // …anything else is refused.
     for bad in ["+15550001111", "+18774070666", "+525545436718"] {
         let (code, _) = run(
             "scripts/operator-page.sh",
-            &["--config", cfg.to_str().unwrap(), "--operator-i-am-paged", "--to", bad, "--dry-run"],
+            &[
+                "--config",
+                cfg.to_str().unwrap(),
+                "--operator-i-am-paged",
+                "--to",
+                bad,
+                "--dry-run",
+            ],
         );
         assert_ne!(code, 0, "pager --to {bad} must be refused");
     }
@@ -242,7 +297,12 @@ fn pager_is_double_gated_too() {
     );
     let (code, _) = run(
         "scripts/operator-page.sh",
-        &["--config", disabled.to_str().unwrap(), "--operator-i-am-paged", "--dry-run"],
+        &[
+            "--config",
+            disabled.to_str().unwrap(),
+            "--operator-i-am-paged",
+            "--dry-run",
+        ],
     );
     assert_ne!(code, 0, "pager with enabled = false must refuse");
 }
@@ -253,6 +313,186 @@ fn pager_is_double_gated_too() {
 fn operator_dtmf_star_and_junk_are_rejected() {
     for bad in ["12*34", "*", "*11", "1234*", "abc", "12 34", "12;rm"] {
         let (code, _) = operator_dial(&enabled_config(), &["--operator-i-am-paged", "--dtmf", bad]);
-        assert_eq!(code, 3, "operator dial DTMF {bad:?} must be rejected with exit 3");
+        assert_eq!(
+            code, 3,
+            "operator dial DTMF {bad:?} must be rejected with exit 3"
+        );
     }
+}
+
+// ── 6. explicit operator-pass admission assertion ───────────────────────
+
+fn operator_assert(config: &PathBuf, state: &std::path::Path) -> (i32, String) {
+    let out = Command::new("bash")
+        .arg("scripts/operator-page.sh")
+        .args([
+            "--config",
+            config.to_str().unwrap(),
+            "--operator-i-am-paged",
+            "--assert-admitted",
+            "--state-dir",
+            state.to_str().unwrap(),
+        ])
+        .current_dir(repo_root())
+        .output()
+        .expect("run explicit operator assertion");
+    (
+        out.status.code().unwrap_or(-1),
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        ),
+    )
+}
+
+fn write_admission_challenge(state: &std::path::Path, event: &str) {
+    let challenge = serde_json::json!({
+        "schema_version": 1,
+        "event_id": event,
+        "nonce": "a".repeat(64),
+        "pid": std::process::id(),
+        "receipt_path": state.join("admission.receipt.json"),
+        "stream_connected_path": state.join("stream.connected"),
+    });
+    std::fs::write(
+        state.join("admission.challenge.json"),
+        serde_json::to_vec_pretty(&challenge).unwrap(),
+    )
+    .unwrap();
+}
+
+#[test]
+fn admission_assertion_is_explicit_current_stream_bound_and_durable() {
+    let state = tempfile::tempdir().unwrap();
+    let cfg = enabled_config();
+
+    // A page/config alone is never admission evidence.
+    let (code, output) = operator_assert(&cfg, state.path());
+    assert_ne!(code, 0, "missing live challenge must refuse: {output}");
+    assert!(!state.path().join("admission.receipt.json").exists());
+
+    write_admission_challenge(state.path(), "OPTEST-26JUL29");
+    let sid0 = format!("CA{}", "1".repeat(32));
+    std::fs::write(
+        state.path().join("stream.connected"),
+        serde_json::to_vec(&serde_json::json!({
+            "unix_ts": 1,
+            "call_sid": sid0,
+            "attempt": 0,
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let (code, output) = operator_assert(&cfg, state.path());
+    assert_eq!(
+        code, 0,
+        "explicit current-stream assertion must pass: {output}"
+    );
+    let receipt: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(state.path().join("admission.receipt.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(receipt["event_id"], "OPTEST-26JUL29");
+    assert_eq!(receipt["nonce"], "a".repeat(64));
+    assert_eq!(receipt["status"], "admitted");
+    assert_eq!(receipt["call_sid"], sid0);
+    assert_eq!(receipt["stream_attempt"], 0);
+    assert_eq!(receipt["assertion_method"], "explicit_operator_pass_cli");
+    let audit = std::fs::read_to_string(state.path().join("admission.assertions.jsonl")).unwrap();
+    assert_eq!(
+        audit.lines().count(),
+        1,
+        "one explicit action = one audit row"
+    );
+
+    // Repeating the exact action is idempotent, but a replacement call leg
+    // needs a new explicit assertion tied to its new CallSid/attempt.
+    let (code, output) = operator_assert(&cfg, state.path());
+    assert_eq!(code, 0, "same-stream repeat should be harmless: {output}");
+    assert_eq!(
+        std::fs::read_to_string(state.path().join("admission.assertions.jsonl"))
+            .unwrap()
+            .lines()
+            .count(),
+        1
+    );
+
+    let sid1 = format!("CA{}", "2".repeat(32));
+    std::fs::write(
+        state.path().join("stream.connected"),
+        serde_json::to_vec(&serde_json::json!({
+            "unix_ts": 2,
+            "call_sid": sid1,
+            "attempt": 1,
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let (code, output) = operator_assert(&cfg, state.path());
+    assert_eq!(
+        code, 0,
+        "new leg requires and accepts a new assertion: {output}"
+    );
+    let receipt: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(state.path().join("admission.receipt.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(receipt["call_sid"], sid1);
+    assert_eq!(receipt["stream_attempt"], 1);
+    assert_eq!(
+        std::fs::read_to_string(state.path().join("admission.assertions.jsonl"))
+            .unwrap()
+            .lines()
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn admission_assertion_refuses_wrong_event_dead_owner_and_bad_stream() {
+    let cfg = enabled_config();
+
+    let wrong = tempfile::tempdir().unwrap();
+    write_admission_challenge(wrong.path(), "SOME-OTHER-EVENT");
+    std::fs::write(
+        wrong.path().join("stream.connected"),
+        r#"{"call_sid":"CA11111111111111111111111111111111","attempt":0}"#,
+    )
+    .unwrap();
+    assert_ne!(operator_assert(&cfg, wrong.path()).0, 0);
+    assert!(!wrong.path().join("admission.receipt.json").exists());
+
+    let bad_stream = tempfile::tempdir().unwrap();
+    write_admission_challenge(bad_stream.path(), "OPTEST-26JUL29");
+    std::fs::write(
+        bad_stream.path().join("stream.connected"),
+        r#"{"call_sid":"","attempt":0}"#,
+    )
+    .unwrap();
+    assert_ne!(operator_assert(&cfg, bad_stream.path()).0, 0);
+    assert!(!bad_stream.path().join("admission.receipt.json").exists());
+
+    let dead_owner = tempfile::tempdir().unwrap();
+    let challenge = serde_json::json!({
+        "schema_version": 1,
+        "event_id": "OPTEST-26JUL29",
+        "nonce": "b".repeat(64),
+        "pid": u32::MAX,
+        "receipt_path": dead_owner.path().join("admission.receipt.json"),
+        "stream_connected_path": dead_owner.path().join("stream.connected"),
+    });
+    std::fs::write(
+        dead_owner.path().join("admission.challenge.json"),
+        serde_json::to_vec(&challenge).unwrap(),
+    )
+    .unwrap();
+    std::fs::write(
+        dead_owner.path().join("stream.connected"),
+        r#"{"call_sid":"CA11111111111111111111111111111111","attempt":0}"#,
+    )
+    .unwrap();
+    assert_ne!(operator_assert(&cfg, dead_owner.path()).0, 0);
+    assert!(!dead_owner.path().join("admission.receipt.json").exists());
 }

@@ -1,0 +1,151 @@
+{
+ "config": "webcast-cohr-26aug12-arm-wc",
+ "keywords_sha256": "afd924a9e77962f332e729ad31720525ba3377cc1381e2c777df2c68fd4cd02e",
+ "date": "2026-08-12",
+ "engine": "streaming_ctc",
+ "voices": [
+  "Samantha",
+  "Daniel",
+  "Paulina"
+ ],
+ "carriers": 2,
+ "keywords": [
+  {
+   "ticker": "KXEARNINGSMENTIONCOHR-26AUG12-AMER",
+   "phrase": "american manufacturing",
+   "variants": [
+    "american manufacturing"
+   ],
+   "clips": 9,
+   "confirmed": 20
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCOHR-26AUG12-APPL",
+   "phrase": "apple",
+   "variants": [
+    "apple",
+    "apples"
+   ],
+   "clips": 12,
+   "confirmed": 28
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCOHR-26AUG12-CHIN",
+   "phrase": "china",
+   "variants": [
+    "china",
+    "chinas",
+    "chinese",
+    "chineses"
+   ],
+   "clips": 35,
+   "confirmed": 76
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCOHR-26AUG12-CHIP",
+   "phrase": "chips act",
+   "variants": [
+    "chips act"
+   ],
+   "clips": 9,
+   "confirmed": 6
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCOHR-26AUG12-INDI",
+   "phrase": "indium phosphide",
+   "variants": [
+    "indium phosphide",
+    "indium fosfide",
+    "indium phosphite",
+    "indium phos fide"
+   ],
+   "clips": 35,
+   "confirmed": 8
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCOHR-26AUG12-LIQI",
+   "phrase": "liquid crystal",
+   "variants": [
+    "liquid crystal"
+   ],
+   "clips": 9,
+   "confirmed": 16
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCOHR-26AUG12-MULT",
+   "phrase": "multi rail",
+   "variants": [
+    "multi rail"
+   ],
+   "clips": 9,
+   "confirmed": 12
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCOHR-26AUG12-NVID",
+   "phrase": "nvidia",
+   "variants": [
+    "nvidia",
+    "nvidias"
+   ],
+   "clips": 18,
+   "confirmed": 0
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCOHR-26AUG12-OPTI",
+   "phrase": "optical circuit switch",
+   "variants": [
+    "optical circuit switch"
+   ],
+   "clips": 1,
+   "confirmed": 2
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCOHR-26AUG12-SHER",
+   "phrase": "sherman",
+   "variants": [
+    "sherman",
+    "shermans"
+   ],
+   "clips": 10,
+   "confirmed": 16
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCOHR-26AUG12-SILI",
+   "phrase": "silicon photonics",
+   "variants": [
+    "silicon photonics"
+   ],
+   "clips": 9,
+   "confirmed": 4
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCOHR-26AUG12-THER",
+   "phrase": "thermadite",
+   "variants": [
+    "thermadite",
+    "thermadites"
+   ],
+   "clips": 2,
+   "confirmed": 2
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCOHR-26AUG12-THMA",
+   "phrase": "thermal management",
+   "variants": [
+    "thermal management"
+   ],
+   "clips": 3,
+   "confirmed": 8
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCOHR-26AUG12-ZURI",
+   "phrase": "zurich",
+   "variants": [
+    "zurich",
+    "zurichs"
+   ],
+   "clips": 18,
+   "confirmed": 24
+  }
+ ]
+}

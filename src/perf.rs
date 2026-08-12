@@ -105,7 +105,9 @@ pub fn apply_to_current_thread(name: &str, core: Option<usize>, priority: Option
         }
         if let Some(prio) = priority {
             let prio = prio.clamp(1, 99) as libc::c_int;
-            let param = libc::sched_param { sched_priority: prio };
+            let param = libc::sched_param {
+                sched_priority: prio,
+            };
             // SAFETY: plain syscall on the calling thread (pid 0 = self).
             let rc = unsafe { libc::sched_setscheduler(0, libc::SCHED_FIFO, &param) };
             if rc != 0 {
@@ -123,7 +125,10 @@ pub fn apply_to_current_thread(name: &str, core: Option<usize>, priority: Option
     #[cfg(not(target_os = "linux"))]
     {
         if core.is_some() || priority.is_some() {
-            tracing::debug!(thread = name, "perf tuning is Linux-only — no-op on this platform");
+            tracing::debug!(
+                thread = name,
+                "perf tuning is Linux-only — no-op on this platform"
+            );
         }
     }
 }

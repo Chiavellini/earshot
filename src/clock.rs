@@ -21,7 +21,10 @@ const CLOCK_ID: libc::clockid_t = libc::CLOCK_UPTIME_RAW;
 impl MonotonicNs {
     #[inline]
     pub fn now() -> Self {
-        let mut ts = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+        let mut ts = libc::timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
         // SAFETY: valid pointer to a timespec; clock id is a supported constant.
         let rc = unsafe { libc::clock_gettime(CLOCK_ID, &mut ts) };
         debug_assert_eq!(rc, 0, "clock_gettime failed");

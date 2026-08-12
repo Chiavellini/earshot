@@ -10,12 +10,22 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use base64::Engine as _;
 use serde::Serialize;
+use serde_json::Value;
 use tokio::sync::mpsc;
 
 use super::book::BookCache;
+use super::order_evidence::{
+    EvidenceTier, ExchangeObserved as DurableExchangeObserved, IntentEvaluated, InvocationPrepared,
+    NotAttempted, OrderAction, OrderEvidenceSink, OrderSide, OrderTimeInForce, RawEvidence,
+    ReconcileUnresolved, Reconciled, SendRequested, TransportFailed, TransportProtocol,
+    WireAttempted,
+};
 use super::rest::RestClient;
-use super::transport::{OrderTransport, StageWire, WireStaged};
+use super::transport::{
+    FillEvidence, OrderTransport, StageWire, SubmitResult, TransportObservation, WireStaged,
+};
 use crate::clock::MonotonicNs;
 use crate::config::KeywordConfig;
 use crate::decision::FAST_TRANCHE_PCT;
@@ -58,6 +68,9 @@ pub struct PreStaged {
     pub price_cents: u32,
     pub count: u32,
     pub client_order_id: String,
+    /// SHA-256 of the canonical logical request assembled at arm time. Exact
+    /// wire bytes are captured independently at the transport boundary.
+    pub request_sha256: String,
 }
 
 /// Key: (keyword index, tier, tranche count) — the decision table emits a
@@ -65,7 +78,24 @@ pub struct PreStaged {
 /// full), all enumerable at arm time.
 pub type PreStagedMap = HashMap<(u16, Tier, u32), PreStaged>;
 
-pub fn prestage_orders(event_id: &str, keywords: &[KeywordConfig], wire: StageWire) -> PreStagedMap {
+pub fn deterministic_order_client_id(
+    run_identity: &str,
+    ticker: &str,
+    price_cents: u32,
+    count: u32,
+    keyword_index: u16,
+    tier: Tier,
+) -> String {
+    super::rest::deterministic_client_order_id(&format!(
+        "{run_identity}:{ticker}:{price_cents}:{count}:{keyword_index}:{tier:?}"
+    ))
+}
+
+pub fn prestage_orders(
+    run_identity: &str,
+    keywords: &[KeywordConfig],
+    wire: StageWire,
+) -> PreStagedMap {
     let mut map = PreStagedMap::new();
     for (idx, kw) in keywords.iter().enumerate() {
         let idx = idx as u16;
@@ -84,26 +114,67 @@ pub fn prestage_orders(event_id: &str, keywords: &[KeywordConfig], wire: StageWi
             if count == 0 {
                 continue;
             }
-            let client_order_id =
-                super::rest::deterministic_client_order_id(&format!("{event_id}:{idx}:{tier:?}"));
+            // Idempotency is scoped to the immutable run and full logical
+            // request. A config revision gets a new RunPlan hash and cannot
+            // accidentally adopt a prior run's differently-shaped order.
+            let client_order_id = deterministic_order_client_id(
+                run_identity,
+                &kw.market_ticker,
+                kw.max_price_cents as u32,
+                count,
+                idx,
+                tier,
+            );
+            let wire = wire.stage(
+                &kw.market_ticker,
+                kw.max_price_cents as u32,
+                count,
+                client_order_id.clone(),
+            );
+            let request_sha256 = match &wire {
+                WireStaged::Rest { body } => super::order_evidence::sha256_hex(body),
+                WireStaged::Fix { template: _ } => {
+                    // The stable request identity is independent of FIX
+                    // session sequence/time. The exact assembled frame is
+                    // journaled by FixPreWriteHook before write_all.
+                    super::order_evidence::sha256_hex(
+                        format!(
+                            "{}:{}:{}:{}:{:?}",
+                            kw.market_ticker, kw.max_price_cents, count, client_order_id, tier
+                        )
+                        .as_bytes(),
+                    )
+                }
+            };
             map.insert(
                 (idx, tier, count),
                 PreStaged {
-                    wire: wire.stage(
-                        &kw.market_ticker,
-                        kw.max_price_cents as u32,
-                        count,
-                        client_order_id.clone(),
-                    ),
+                    wire,
                     ticker: kw.market_ticker.clone(),
                     price_cents: kw.max_price_cents as u32,
                     count,
                     client_order_id,
+                    request_sha256,
                 },
             );
         }
     }
     map
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OrderWireState {
+    /// An intent stopped before a transport socket-write boundary.
+    NotAttempted,
+    /// `send_ts` exists, but no exchange/protocol response was observed.
+    AttemptedUnobserved,
+    /// The armed protocol returned an observation (acceptance and terminal
+    /// state are independent fields on the record).
+    Observed,
+    /// A send failure was resolved through the idempotent client-order-id
+    /// query. The original attempt evidence remains alongside this state.
+    Reconciled,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -121,13 +192,34 @@ pub struct OrderRecord {
     pub audio_ts: u64,
     pub decision_ts: u64,
     pub exec_ts: u64,
+    pub wire_state: OrderWireState,
     pub send_ts: Option<u64>,
     /// Response-headers/TTFB timestamp (send→hdrs vs hdrs→ack forensics).
     pub hdrs_ts: Option<u64>,
     pub ack_ts: Option<u64>,
+    /// Wire-specific observation without throwing away protocol semantics.
+    pub transport_protocol: Option<String>,
+    pub protocol_status: Option<String>,
+    pub exchange_accepted: Option<bool>,
+    pub order_terminal: Option<bool>,
+    pub exchange_observed_ts: Option<u64>,
+    pub reconciliation_ts: Option<u64>,
+    pub reconciliation_status: Option<String>,
+    pub transport_error: Option<String>,
+    pub parse_error: Option<String>,
+    /// Parsed response/ExecutionReport and exact REST response bytes. Bytes
+    /// are base64 so report JSON remains portable and byte-for-byte replayable.
+    pub raw_response: Option<Value>,
+    pub raw_response_body_base64: Option<String>,
+    pub reconciliation_response: Option<Value>,
+    pub fill: Option<FillEvidence>,
     /// Book snapshot at decision time (LOST_RACE forensics, spec §5.6).
     /// (price_cents, qty_centi_contracts) at decision time — forensic only.
     pub best_ask: Option<(u32, u32)>,
+    /// Exact monotonic timestamp of the book snapshot used for the sweep
+    /// check. Together with `decision_ts` and `send_ts`, this makes
+    /// detector-vs-sweep timing reconstructible without log joins.
+    pub book_as_of_ts: Option<u64>,
     /// Age of that snapshot (exec_ts − book.as_of). Distinguishes "stale book"
     /// from "fast competitor": the MS RECE loss showed best_ask 20¢ at decision
     /// while the public tape had already swept to 98¢ ~250 ms earlier — without
@@ -151,17 +243,24 @@ pub struct OrderRecord {
 }
 
 impl OrderRecord {
-    /// Did this record actually reach Kalshi?
+    /// Did the process invoke the armed transport for this order?
     ///
     /// THE distinction the 2026-08-05 morning lost. `ExecReport.orders` holds
     /// every intent the executor processed, including the five non-fire early
     /// returns (non-crossing, EV gate, dry-run, risk refusal, send-failed), so
     /// `orders.len()` is an INTENT count and calling it "orders placed"
-    /// reported 23 when the true number was 0. `send_ts` is stamped at exactly
-    /// one place — immediately around `transport.send_order` — so it is the
-    /// only honest answer.
-    pub fn reached_wire(&self) -> bool {
+    /// reported 23 when the true number was 0. `send_ts` is the transport
+    /// invocation timestamp. It proves an attempt, not socket delivery or
+    /// exchange receipt; those have their own observation fields.
+    pub fn send_attempted(&self) -> bool {
         self.send_ts.is_some()
+    }
+
+    /// Compatibility spelling retained for existing report readers. Despite
+    /// its historical name, this means only `send_attempted()`; it must never
+    /// be cited as proof that bytes reached Kalshi.
+    pub fn reached_wire(&self) -> bool {
+        self.send_attempted()
     }
 
     /// Did Kalshi acknowledge it with an order id? Strictly stronger than
@@ -186,6 +285,24 @@ pub struct ExecCtx {
     /// Every acked order id lands here; the kill switch cancels exactly this
     /// set (never account-wide — other systems' orders share this account).
     pub registry: super::OrderRegistry,
+    /// Present on live RunPlan-backed arms. Every transition is durably
+    /// acknowledged before the next lifecycle boundary may execute.
+    pub order_evidence: Option<OrderEvidenceSink>,
+    pub decision_plan_sha1: String,
+    pub keyword_text: HashMap<u16, String>,
+    pub rest_endpoint_id: String,
+}
+
+impl ExecCtx {
+    /// Compatibility defaults for rehearsals and focused executor tests. Live
+    /// assembly overwrites the evidence fields from its verified RunPlan.
+    pub fn without_order_evidence(mut self) -> Self {
+        self.order_evidence = None;
+        self.decision_plan_sha1 = "0".repeat(40);
+        self.keyword_text = HashMap::new();
+        self.rest_endpoint_id = self.rest.endpoint_id();
+        self
+    }
 }
 
 pub struct ExecReport {
@@ -239,7 +356,12 @@ pub async fn run_executor(mut rx: mpsc::Receiver<DecisionIntent>, ctx: Arc<ExecC
         .filter(|o| o.lost_race && o.price_cents <= OBSERVE_PRICE_CENTS)
         .count() as u32;
     let recorder = recorder.into_inner().unwrap();
-    ExecReport { orders, lost_races, observe_noncross, recorder }
+    ExecReport {
+        orders,
+        lost_races,
+        observe_noncross,
+        recorder,
+    }
 }
 
 /// Edge values measured before the send but recorded only AFTER the wire (or
@@ -273,6 +395,368 @@ impl PendingEdges {
     }
 }
 
+fn order_status_terminal(status: &str) -> Option<bool> {
+    match status {
+        "filled" | "canceled" | "rejected" | "expired" => Some(true),
+        "resting" | "pending" | "partial" => Some(false),
+        _ => None,
+    }
+}
+
+fn exact_value_string(value: &Value, key: &str) -> Option<String> {
+    let value = value.get(key)?;
+    value
+        .as_str()
+        .map(String::from)
+        .or_else(|| value.as_number().map(ToString::to_string))
+}
+
+fn rest_fill_from_order(order: &Value) -> Option<FillEvidence> {
+    let fill = FillEvidence {
+        cumulative_contracts: exact_value_string(order, "fill_count"),
+        remaining_contracts: exact_value_string(order, "remaining_count"),
+        last_fill_contracts: None,
+        last_fill_price: None,
+        average_price: exact_value_string(order, "average_fill_price"),
+        price_unit: "dollars",
+    };
+    if fill.cumulative_contracts.is_some()
+        || fill.remaining_contracts.is_some()
+        || fill.average_price.is_some()
+    {
+        Some(fill)
+    } else {
+        None
+    }
+}
+
+fn durable_tier(tier: Tier) -> EvidenceTier {
+    match tier {
+        Tier::Fast => EvidenceTier::Fast,
+        Tier::Confirmed => EvidenceTier::Confirmed,
+    }
+}
+
+fn fix_endpoint_id(cfg: &super::fix::FixConfig) -> String {
+    format!(
+        "fix://{}:{}?tls={}&sender={}&target={}",
+        cfg.host, cfg.port, cfg.tls, cfg.sender_comp_id, cfg.target_comp_id
+    )
+}
+
+fn durable_protocol(protocol: &str) -> Option<TransportProtocol> {
+    match protocol {
+        "rest" => Some(TransportProtocol::Rest),
+        "fix" => Some(TransportProtocol::Fix),
+        _ => None,
+    }
+}
+
+fn durable_fill(
+    fill: &FillEvidence,
+    exchange_event_ts: Option<String>,
+) -> super::order_evidence::FillEvidence {
+    let average_price_dollars = match (fill.average_price.as_deref(), fill.price_unit) {
+        (Some(value), "cents") => cents_fixed_point_to_dollars(value),
+        (Some(value), _) => Some(value.to_owned()),
+        (None, _) => None,
+    };
+    let latest_fill_price_dollars = match (fill.last_fill_price.as_deref(), fill.price_unit) {
+        (Some(value), "cents") => cents_fixed_point_to_dollars(value),
+        (Some(value), _) => Some(value.to_owned()),
+        (None, _) => None,
+    };
+    let has_latest_fill = fill.last_fill_contracts.is_some() || fill.last_fill_price.is_some();
+    super::order_evidence::FillEvidence {
+        filled_count_fp: fill.cumulative_contracts.clone(),
+        remaining_count_fp: fill.remaining_contracts.clone(),
+        average_price_dollars,
+        latest_fill_count_fp: fill.last_fill_contracts.clone(),
+        latest_fill_price_dollars,
+        latest_fill_exchange_ts: has_latest_fill.then_some(exchange_event_ts).flatten(),
+    }
+}
+
+fn cents_fixed_point_to_dollars(value: &str) -> Option<String> {
+    let (whole, fraction) = value.split_once('.').unwrap_or((value, ""));
+    if whole.is_empty()
+        || !whole.bytes().all(|byte| byte.is_ascii_digit())
+        || !fraction.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return None;
+    }
+    let cents = whole.parse::<u128>().ok()?;
+    let mut rendered = format!("{}.{:02}", cents / 100, cents % 100);
+    if !fraction.is_empty() {
+        rendered.push_str(fraction);
+    }
+    Some(rendered)
+}
+
+fn fix_tag(raw: &[u8], tag: &[u8]) -> Option<String> {
+    raw.split(|byte| *byte == 1).find_map(|field| {
+        let position = field.iter().position(|byte| *byte == b'=')?;
+        let (key, tail) = field.split_at(position);
+        let value = tail.get(1..)?;
+        (key == tag).then(|| String::from_utf8_lossy(value).into_owned())
+    })
+}
+
+fn raw_observation(observation: &TransportObservation) -> RawEvidence {
+    match observation.raw_body.as_deref() {
+        Some(bytes) => RawEvidence::from_bytes(
+            if observation.protocol == "fix" {
+                "application/fix"
+            } else {
+                "application/json"
+            },
+            bytes,
+        ),
+        None => RawEvidence::from_bytes(
+            "application/json",
+            &serde_json::to_vec(&observation.raw).unwrap_or_default(),
+        ),
+    }
+}
+
+async fn durable_not_attempted(
+    sink: Option<&OrderEvidenceSink>,
+    staged: &PreStaged,
+    reason: impl Into<String>,
+) -> Result<(), String> {
+    let Some(sink) = sink else {
+        return Ok(());
+    };
+    sink.record_not_attempted(NotAttempted {
+        client_order_id: staged.client_order_id.clone(),
+        market_ticker: staged.ticker.clone(),
+        refusal_ts: MonotonicNs::now().0,
+        reason: reason.into(),
+    })
+    .await
+    .map(|_| ())
+    .map_err(|error| error.to_string())
+}
+
+async fn durable_intent_evaluated(
+    sink: Option<&OrderEvidenceSink>,
+    staged: &PreStaged,
+    ctx: &ExecCtx,
+    intent: &DecisionIntent,
+    keyword_id: u16,
+    exec_ts: MonotonicNs,
+    book_as_of_ts: u64,
+    best_ask_cents: Option<u8>,
+) -> Result<(), String> {
+    let Some(sink) = sink else {
+        return Ok(());
+    };
+    sink.record_intent_evaluated(IntentEvaluated {
+        client_order_id: staged.client_order_id.clone(),
+        market_ticker: staged.ticker.clone(),
+        side: OrderSide::Yes,
+        action: OrderAction::Buy,
+        price_cents: u8::try_from(staged.price_cents).unwrap_or(u8::MAX),
+        contract_count: staged.count,
+        time_in_force: OrderTimeInForce::ImmediateOrCancel,
+        tier: durable_tier(intent.tier),
+        keyword_id,
+        keyword: ctx
+            .keyword_text
+            .get(&keyword_id)
+            .cloned()
+            .unwrap_or_else(|| format!("keyword-{keyword_id}")),
+        source_id: intent.source.0,
+        audio_ts: intent.audio_ts.0,
+        decision_ts: intent.decision_ts.0,
+        exec_ts: exec_ts.0,
+        book_as_of_ts,
+        best_ask_cents,
+        request_sha256: staged.request_sha256.clone(),
+        decision_plan_sha1: ctx.decision_plan_sha1.clone(),
+    })
+    .await
+    .map(|_| ())
+    .map_err(|error| error.to_string())
+}
+
+async fn durable_observation(
+    sink: Option<&OrderEvidenceSink>,
+    staged: &PreStaged,
+    endpoint_id: &str,
+    observation: &TransportObservation,
+) -> Result<(), String> {
+    let Some(sink) = sink else {
+        return Ok(());
+    };
+    let protocol = durable_protocol(observation.protocol)
+        .ok_or_else(|| format!("unknown evidence transport {}", observation.protocol))?;
+    let exchange_event_ts = observation
+        .raw_body
+        .as_deref()
+        .filter(|_| observation.protocol == "fix")
+        .and_then(|raw| fix_tag(raw, b"60").or_else(|| fix_tag(raw, b"52")));
+    sink.record_exchange_observed(DurableExchangeObserved {
+        client_order_id: staged.client_order_id.clone(),
+        market_ticker: staged.ticker.clone(),
+        protocol,
+        endpoint_id: endpoint_id.to_owned(),
+        observed_ts: observation.observed_ts.0,
+        protocol_status: observation.protocol_status.clone(),
+        exchange_accepted: observation.accepted,
+        order_terminal: observation.order_terminal.unwrap_or(false),
+        echoed_client_order_id: observation.echoed_client_order_id.clone(),
+        order_id: observation.order_id.clone(),
+        order_status: observation.order_status.clone(),
+        exchange_event_ts: exchange_event_ts.clone(),
+        fill: observation
+            .fill
+            .as_ref()
+            .map(|fill| durable_fill(fill, exchange_event_ts)),
+        raw: raw_observation(observation),
+        parsed: Some(observation.raw.clone()),
+        detail: observation.parse_error.clone(),
+    })
+    .await
+    .map(|_| ())
+    .map_err(|error| error.to_string())
+}
+
+/// An exchange order id is cancellable identity only when the same response
+/// exactly echoes our client id. Preserve untrusted values in the raw bytes,
+/// but do not promote them into the reducer or session registry.
+fn retain_only_verified_correlation(
+    staged: &PreStaged,
+    mut observation: TransportObservation,
+) -> TransportObservation {
+    let exact_echo =
+        observation.echoed_client_order_id.as_deref() == Some(staged.client_order_id.as_str());
+    if !exact_echo
+        && (observation.order_id.is_some() || observation.echoed_client_order_id.is_some())
+    {
+        let detail = "response did not carry the exact expected client_order_id; observed identity remains in raw/parsed evidence and is not promoted into the reducer";
+        observation.parse_error = Some(match observation.parse_error.take() {
+            Some(existing) => format!("{existing}; {detail}"),
+            None => detail.into(),
+        });
+        observation.order_id = None;
+        observation.echoed_client_order_id = None;
+        // A terminal acceptance without verified exchange identity cannot be
+        // adopted as terminal state: it cannot be cancelled or audited.
+        if observation.accepted != Some(false) {
+            observation.order_terminal = Some(false);
+        }
+    }
+    observation
+}
+
+pub struct FixOrderEvidenceHook {
+    sink: OrderEvidenceSink,
+    ticker_by_client_id: HashMap<String, String>,
+}
+
+impl FixOrderEvidenceHook {
+    pub fn new(sink: OrderEvidenceSink, prestaged: &PreStagedMap) -> Self {
+        Self {
+            sink,
+            ticker_by_client_id: prestaged
+                .values()
+                .map(|order| (order.client_order_id.clone(), order.ticker.clone()))
+                .collect(),
+        }
+    }
+}
+
+impl super::fix::transport::FixPreWriteHook for FixOrderEvidenceHook {
+    fn before_write<'a>(
+        &'a self,
+        evidence: &'a super::fix::transport::FixPreWriteEvidence,
+    ) -> super::fix::transport::FixPreWriteFuture<'a> {
+        Box::pin(async move {
+            let ticker = self
+                .ticker_by_client_id
+                .get(&evidence.client_order_id)
+                .cloned()
+                .ok_or_else(|| {
+                    super::KalshiError::Validation(format!(
+                        "FIX evidence hook has no prestaged ticker for {}",
+                        evidence.client_order_id
+                    ))
+                })?;
+            let cfg = super::fix::FixConfig {
+                host: evidence.endpoint.host.clone(),
+                port: evidence.endpoint.port,
+                sender_comp_id: evidence.endpoint.sender_comp_id.clone(),
+                target_comp_id: evidence.endpoint.target_comp_id.clone(),
+                heartbeat_secs: 1,
+                tls: evidence.endpoint.tls,
+            };
+            self.sink
+                .record_invocation_prepared(InvocationPrepared {
+                    client_order_id: evidence.client_order_id.clone(),
+                    market_ticker: ticker,
+                    protocol: TransportProtocol::Fix,
+                    endpoint_id: fix_endpoint_id(&cfg),
+                    prepared_ts: evidence.prepared_ts.0,
+                    raw: RawEvidence::from_bytes("application/fix", &evidence.outbound_frame),
+                })
+                .await
+                .map(|_| ())
+                .map_err(|error| {
+                    super::KalshiError::Validation(format!(
+                        "durable FIX invocation-prepared evidence failed: {error}"
+                    ))
+                })
+        })
+    }
+}
+
+fn apply_transport_observation(record: &mut OrderRecord, observation: TransportObservation) {
+    record.wire_state = OrderWireState::Observed;
+    record.transport_protocol = Some(observation.protocol.to_string());
+    record.protocol_status = Some(observation.protocol_status);
+    record.exchange_accepted = observation.accepted;
+    record.order_terminal = observation.order_terminal;
+    record.order_id = observation.order_id;
+    record.order_status = observation.order_status;
+    record.exchange_observed_ts = Some(observation.observed_ts.0);
+    record.hdrs_ts = Some(observation.observed_ts.0);
+    record.ack_ts = observation.ack_ts.map(|ts| ts.0);
+    record.parse_error = observation.parse_error;
+    record.raw_response = Some(observation.raw);
+    record.raw_response_body_base64 = observation
+        .raw_body
+        .map(|bytes| base64::engine::general_purpose::STANDARD.encode(bytes));
+    record.fill = observation.fill;
+}
+
+fn record_attempt_edges(
+    recorder: &Mutex<LatencyRecorder>,
+    pending: &PendingEdges,
+    exec_ts: MonotonicNs,
+    intent: &DecisionIntent,
+    record: &OrderRecord,
+) {
+    let Some(send_ts) = record.send_ts.map(MonotonicNs) else {
+        pending.flush(recorder);
+        return;
+    };
+    let mut rec = recorder.lock().unwrap();
+    pending.record_into(&mut rec);
+    rec.record("exec→send", send_ts.saturating_since(exec_ts));
+    if let Some(observed_ts) = record.exchange_observed_ts.map(MonotonicNs) {
+        rec.record("send→hdrs", observed_ts.saturating_since(send_ts));
+        if let Some(ack_ts) = record.ack_ts.map(MonotonicNs) {
+            rec.record("hdrs→ack", ack_ts.saturating_since(observed_ts));
+        }
+    }
+    if let Some(ack_ts) = record.ack_ts.map(MonotonicNs) {
+        rec.record("send→ack", ack_ts.saturating_since(send_ts));
+        rec.record("decision→ack", ack_ts.saturating_since(intent.decision_ts));
+        rec.record("capture→ack", ack_ts.saturating_since(intent.audio_ts));
+    }
+}
+
 async fn handle_intent(
     ctx: &ExecCtx,
     recorder: &Mutex<LatencyRecorder>,
@@ -293,30 +777,33 @@ async fn handle_intent(
     let staged = ctx
         .prestaged
         .get(&(kw, intent.tier, intent.tranche_contracts))
-        .cloned()
-        .unwrap_or_else(|| {
-            // Should never happen: tranches are enumerated at arm time.
-            tracing::warn!(kw, ?intent.tier, intent.tranche_contracts, "no pre-staged body; building inline");
-            let id = super::rest::deterministic_client_order_id(&format!("inline:{kw}:{:?}", intent.tier));
-            PreStaged {
-                wire: ctx.transport.stage_wire().stage(
-                    &intent.market_ticker,
-                    intent.max_price_cents as u32,
-                    intent.tranche_contracts,
-                    id.clone(),
-                ),
-                ticker: intent.market_ticker.clone(),
-                price_cents: intent.max_price_cents as u32,
-                count: intent.tranche_contracts,
-                client_order_id: id,
-            }
-        });
+        .cloned();
+    // A missing arm-time artifact is an assembly defect. Never manufacture a
+    // different order on the live fire path: that would evade the reviewed
+    // body, deterministic id, and evidence plan.
+    let (client_order_id, ticker, price_cents, count) = match staged.as_ref() {
+        Some(staged) => (
+            staged.client_order_id.clone(),
+            staged.ticker.clone(),
+            staged.price_cents,
+            staged.count,
+        ),
+        None => (
+            super::rest::deterministic_client_order_id(&format!(
+                "unstaged:{kw}:{:?}:{}",
+                intent.tier, intent.tranche_contracts
+            )),
+            intent.market_ticker.clone(),
+            intent.max_price_cents as u32,
+            intent.tranche_contracts,
+        ),
+    };
 
     let mut record = OrderRecord {
-        client_order_id: staged.client_order_id.clone(),
-        ticker: staged.ticker.clone(),
-        price_cents: staged.price_cents,
-        count: staged.count,
+        client_order_id,
+        ticker,
+        price_cents,
+        count,
         tier: intent.tier,
         dry_run: ctx.dry_run,
         lost_race: false,
@@ -326,12 +813,40 @@ async fn handle_intent(
         audio_ts: intent.audio_ts.0,
         decision_ts: intent.decision_ts.0,
         exec_ts: exec_ts.0,
+        wire_state: OrderWireState::NotAttempted,
         send_ts: None,
         hdrs_ts: None,
         ack_ts: None,
+        transport_protocol: None,
+        protocol_status: None,
+        exchange_accepted: None,
+        order_terminal: None,
+        exchange_observed_ts: None,
+        reconciliation_ts: None,
+        reconciliation_status: None,
+        transport_error: None,
+        parse_error: None,
+        raw_response: None,
+        raw_response_body_base64: None,
+        reconciliation_response: None,
+        fill: None,
         best_ask: None,
+        book_as_of_ts: None,
         book_age_ns: None,
         ev_at_ask_cents: None,
+    };
+
+    let Some(staged) = staged else {
+        record.refusal =
+            Some("missing arm-time prestaged order; live inline construction is forbidden".into());
+        tracing::error!(
+            kw,
+            ?intent.tier,
+            intent.tranche_contracts,
+            "missing prestaged order — refusing before book/risk/transport"
+        );
+        pending.flush(recorder);
+        return record;
     };
 
     // Local book read — never a blocking REST fetch (spec §5.6).
@@ -347,9 +862,34 @@ async fn handle_intent(
     // seq 0 = the placeholder Book::default() (as_of 0) — no snapshot yet, so
     // an "age" would be time-since-boot noise.
     if let Some(b) = book.as_ref().filter(|b| b.seq > 0) {
+        record.book_as_of_ts = Some(b.as_of.0);
         let age = exec_ts.saturating_since(b.as_of);
         record.book_age_ns = Some(age);
         pending.book_age = Some(age);
+    }
+
+    // Evaluation is evidence in its own right, including every no-send
+    // outcome below. Persist it before any branch can return so a crash cannot
+    // bias the performance sample toward only transport attempts.
+    if let Err(error) = durable_intent_evaluated(
+        ctx.order_evidence.as_ref(),
+        &staged,
+        ctx,
+        &intent,
+        kw,
+        exec_ts,
+        record.book_as_of_ts.unwrap_or(0),
+        record
+            .best_ask
+            .and_then(|(price, _)| u8::try_from(price).ok()),
+    )
+    .await
+    {
+        let detail = format!("order evidence refused intent evaluation: {error}");
+        record.refusal = Some(detail.clone());
+        record.transport_error = Some(detail);
+        pending.flush(recorder);
+        return record;
     }
 
     // LOST_RACE: nothing offered at or under the cap. Primary edge-decay metric
@@ -368,14 +908,41 @@ async fn handle_intent(
             tracing::info!(ticker = %staged.ticker, ?best_ask,
                 "observe non-crossing (1¢ cap, by design — not a lost race)");
         }
+        if let Err(error) = durable_not_attempted(
+            ctx.order_evidence.as_ref(),
+            &staged,
+            "book had no ask at or below the immutable price cap",
+        )
+        .await
+        {
+            record.transport_error = Some(format!(
+                "order evidence lost-race termination failed: {error}"
+            ));
+        }
         pending.flush(recorder);
         return record;
     }
 
     // Fee/EV gate at the worst-case (fill entirely at the cap).
     let haircut = ctx.haircuts.get(&kw).copied().unwrap_or(0);
-    if !ev_gate(staged.price_cents, staged.count, haircut, ctx.gate.cfg().min_ev_cents) {
+    if !ev_gate(
+        staged.price_cents,
+        staged.count,
+        haircut,
+        ctx.gate.cfg().min_ev_cents,
+    ) {
         record.refusal = Some("EV gate".into());
+        if let Err(error) = durable_not_attempted(
+            ctx.order_evidence.as_ref(),
+            &staged,
+            "expected-value gate refused the evaluated intent",
+        )
+        .await
+        {
+            record.transport_error = Some(format!(
+                "order evidence EV-gate termination failed: {error}"
+            ));
+        }
         pending.flush(recorder);
         return record;
     }
@@ -385,6 +952,17 @@ async fn handle_intent(
     // tests and the live drills.
     if ctx.dry_run {
         record.refusal = Some("dry_run".into());
+        if let Err(error) = durable_not_attempted(
+            ctx.order_evidence.as_ref(),
+            &staged,
+            "dry-run posture forbids transport invocation",
+        )
+        .await
+        {
+            record.transport_error = Some(format!(
+                "order evidence dry-run termination failed: {error}"
+            ));
+        }
         pending.flush(recorder);
         return record;
     }
@@ -408,6 +986,69 @@ async fn handle_intent(
     ) {
         record.refusal = Some(refusal.to_string());
         tracing::error!(ticker = %staged.ticker, "risk refusal: {refusal}");
+        if let Err(error) = durable_not_attempted(
+            ctx.order_evidence.as_ref(),
+            &staged,
+            format!("risk gate refused the evaluated intent: {refusal}"),
+        )
+        .await
+        {
+            record.transport_error = Some(format!(
+                "order evidence risk-refusal termination failed: {error}"
+            ));
+        }
+        pending.flush(recorder);
+        return record;
+    }
+
+    let request = SendRequested {
+        client_order_id: staged.client_order_id.clone(),
+        market_ticker: staged.ticker.clone(),
+        requested_ts: MonotonicNs::now().0,
+    };
+    if let Some(sink) = ctx.order_evidence.as_ref() {
+        if let Err(error) = sink.record_send_requested(request).await {
+            let detail = format!("order evidence refused send request: {error}");
+            record.refusal = Some(detail.clone());
+            tracing::error!(%detail, "order prevented before send boundary");
+            pending.flush(recorder);
+            return record;
+        }
+    }
+
+    // Linearize the attempt against kill before any debit or transport call.
+    // If kill wins first this client id can never enter the wire. If this call
+    // wins first, kill sees the exact client id as pending and waits/reconciles
+    // it even when no exchange order id has arrived yet.
+    let attempt_permit = match ctx.registry.begin_attempt(staged.client_order_id.clone()) {
+        Ok(permit) => permit,
+        Err(detail) => {
+            let reason = format!("send boundary refused: {detail}");
+            if let Err(error) =
+                durable_not_attempted(ctx.order_evidence.as_ref(), &staged, reason.clone()).await
+            {
+                tracing::error!(%error, "failed to terminate refused order evidence");
+            }
+            record.refusal = Some(reason);
+            tracing::error!(ticker = %staged.ticker, %detail, "send boundary closed");
+            pending.flush(recorder);
+            return record;
+        }
+    };
+
+    // The risk gate may have been killed between its earlier full policy check
+    // and the registry boundary. Recheck only the kill/armed state now; a
+    // failure resolves the pending client id as conclusively not attempted.
+    if ctx.gate.is_killed() {
+        ctx.registry.resolve_without_order(&staged.client_order_id);
+        drop(attempt_permit);
+        let reason = "kill switch engaged at final send boundary";
+        if let Err(error) =
+            durable_not_attempted(ctx.order_evidence.as_ref(), &staged, reason).await
+        {
+            tracing::error!(%error, "failed to terminate killed order evidence");
+        }
+        record.refusal = Some(reason.into());
         pending.flush(recorder);
         return record;
     }
@@ -417,50 +1058,353 @@ async fn handle_intent(
     // headers, RSA off the hot path).
     ctx.gate.record_send(staged.price_cents, staged.count);
 
-    match ctx.transport.send_order(&staged).await {
-        Ok(outcome) => {
-            let (ack, send_ts) = (outcome.ack, outcome.send_ts);
-            pending.presign_age = outcome.presign_age_ns;
-            record.send_ts = Some(send_ts.0);
-            record.hdrs_ts = Some(ack.hdrs_ts.0);
-            record.ack_ts = Some(ack.ack_ts.0);
-            record.order_status = ack.order_status;
-            record.order_id = ack.order_id;
-            if let Some(id) = &record.order_id {
-                ctx.registry.register(id.clone());
-            }
-            // One lock, after the wire: the deferred pre-send edges plus the
-            // TTFB split of send→ack (all recorded on the success path so
-            // e2e's all-edges-populated assertion holds).
-            let mut rec = recorder.lock().unwrap();
-            pending.record_into(&mut rec);
-            rec.record("exec→send", send_ts.saturating_since(exec_ts));
-            rec.record("send→hdrs", ack.hdrs_ts.saturating_since(send_ts));
-            rec.record("hdrs→ack", ack.ack_ts.saturating_since(ack.hdrs_ts));
-            rec.record("send→ack", ack.ack_ts.saturating_since(send_ts));
-            rec.record("decision→ack", ack.ack_ts.saturating_since(intent.decision_ts));
-            rec.record("capture→ack", ack.ack_ts.saturating_since(intent.audio_ts));
-        }
-        Err(e) => {
-            // Ambiguous outcome: query by client id before assuming failure.
-            // Never blind-retry (idempotent id makes a retry safe server-side,
-            // but a query is cheaper and unambiguous).
-            pending.flush(recorder);
-            tracing::error!("order send error: {e}; querying status");
-            match ctx.rest.order_by_client_id(&staged.client_order_id).await {
-                Ok(Some(order)) => {
-                    record.order_status = order["status"].as_str().map(String::from);
-                    record.order_id = order["order_id"].as_str().map(String::from);
-                    if let Some(id) = &record.order_id {
-                        ctx.registry.register(id.clone());
-                    }
-                    tracing::warn!("order WAS accepted despite send error");
-                }
-                Ok(None) => record.refusal = Some(format!("send failed, not on book: {e}")),
-                Err(q) => record.refusal = Some(format!("send failed ({e}); status query failed ({q})")),
+    let mut reconcile = false;
+    if matches!(staged.wire, WireStaged::Rest { .. }) {
+        if let (Some(sink), WireStaged::Rest { body }) = (ctx.order_evidence.as_ref(), &staged.wire)
+        {
+            let prepared_ts = MonotonicNs::now();
+            if let Err(error) = sink
+                .record_invocation_prepared(InvocationPrepared {
+                    client_order_id: staged.client_order_id.clone(),
+                    market_ticker: staged.ticker.clone(),
+                    protocol: TransportProtocol::Rest,
+                    endpoint_id: ctx.rest_endpoint_id.clone(),
+                    prepared_ts: prepared_ts.0,
+                    raw: RawEvidence::from_bytes("application/json", body),
+                })
+                .await
+            {
+                ctx.registry.resolve_without_order(&staged.client_order_id);
+                drop(attempt_permit);
+                record.refusal = Some(format!(
+                    "order evidence refused REST invocation preparation: {error}"
+                ));
+                record.transport_error = Some(error.to_string());
+                pending.flush(recorder);
+                return record;
             }
         }
     }
+    match ctx.transport.submit_order(&staged).await {
+        SubmitResult::NotAttempted { error } => {
+            // Known pre-write refusal: no send timestamp and no status query.
+            // The risk ledger remains conservative because it was debited
+            // before asking the transport to enter its write boundary.
+            record.transport_error = Some(error.to_string());
+            record.refusal = Some(format!("transport did not attempt: {error}"));
+            if let Err(journal_error) =
+                durable_not_attempted(ctx.order_evidence.as_ref(), &staged, error.to_string()).await
+            {
+                record.transport_error = Some(format!(
+                    "{error}; order evidence not_attempted failed: {journal_error}"
+                ));
+            }
+            ctx.registry.resolve_without_order(&staged.client_order_id);
+            pending.flush(recorder);
+        }
+        SubmitResult::Attempted(attempt) => {
+            let super::transport::SendAttempt {
+                protocol,
+                send_ts,
+                presign_age_ns,
+                observations,
+                outcome,
+            } = attempt;
+            record.wire_state = OrderWireState::AttemptedUnobserved;
+            record.transport_protocol = Some(protocol.to_string());
+            record.send_ts = Some(send_ts.0);
+            pending.presign_age = presign_age_ns;
+            let endpoint_id = if protocol == "fix" {
+                match &ctx.transport {
+                    OrderTransport::Fix { fix } => fix_endpoint_id(fix.config()),
+                    _ => ctx.rest_endpoint_id.clone(),
+                }
+            } else {
+                ctx.rest_endpoint_id.clone()
+            };
+            let observations: Vec<_> = observations
+                .into_iter()
+                .map(|observation| retain_only_verified_correlation(&staged, observation))
+                .collect();
+            let mut terminal_observed = false;
+            // The transport has already returned these observations. Promote
+            // verified cancellation identity before awaiting any journal fsync.
+            // If storage stalls, the kill watcher can still cancel the order.
+            for observation in &observations {
+                terminal_observed |= observation.order_terminal == Some(true);
+                apply_transport_observation(&mut record, observation.clone());
+                if let Some(id) = &record.order_id {
+                    ctx.registry
+                        .register_for_client(&staged.client_order_id, id.clone());
+                } else if record.exchange_accepted == Some(false)
+                    && record.order_terminal == Some(true)
+                {
+                    ctx.registry.resolve_without_order(&staged.client_order_id);
+                }
+            }
+            // `send_ts` comes from the transport at its actual invocation
+            // boundary. It is intentionally persisted after the call returns:
+            // if the process dies inside the call, InvocationPrepared remains
+            // delivery-ambiguous and startup reconciles the exact client ID.
+            if let Some(sink) = ctx.order_evidence.as_ref() {
+                if let Some(protocol) = durable_protocol(protocol) {
+                    if let Err(error) = sink
+                        .record_wire_attempted(WireAttempted {
+                            client_order_id: staged.client_order_id.clone(),
+                            market_ticker: staged.ticker.clone(),
+                            protocol,
+                            endpoint_id: endpoint_id.clone(),
+                            send_ts: send_ts.0,
+                        })
+                        .await
+                    {
+                        record.transport_error = Some(format!(
+                            "order evidence wire-attempt receipt failed: {error}"
+                        ));
+                    }
+                }
+            }
+            for observation in &observations {
+                if let Err(error) = durable_observation(
+                    ctx.order_evidence.as_ref(),
+                    &staged,
+                    &endpoint_id,
+                    &observation,
+                )
+                .await
+                {
+                    record.transport_error =
+                        Some(format!("order evidence observation failed: {error}"));
+                }
+            }
+            match outcome {
+                Ok(()) => {
+                    if record.exchange_accepted == Some(false) {
+                        record.refusal = Some(format!(
+                            "exchange rejected: {}",
+                            record
+                                .protocol_status
+                                .as_deref()
+                                .unwrap_or("unknown status")
+                        ));
+                    } else if record.order_id.is_none() {
+                        // A 2xx/malformed body is observed but still ambiguous:
+                        // the exact bytes stay on the record and reconciliation
+                        // determines whether an order exists.
+                        reconcile = true;
+                    }
+                }
+                Err(failure) => {
+                    record.transport_error = Some(failure.error.to_string());
+                    // A conclusive terminal exchange observation closes the
+                    // reducer. Appending transport_failed afterward would be
+                    // both false and an illegal post-terminal transition.
+                    if !terminal_observed {
+                        if let Some(sink) = ctx.order_evidence.as_ref() {
+                            if let Some(protocol) = record
+                                .transport_protocol
+                                .as_deref()
+                                .and_then(durable_protocol)
+                            {
+                                if let Err(error) = sink
+                                    .record_transport_failed(TransportFailed {
+                                        client_order_id: staged.client_order_id.clone(),
+                                        market_ticker: staged.ticker.clone(),
+                                        protocol,
+                                        endpoint_id: endpoint_id.clone(),
+                                        failure_ts: MonotonicNs::now().0,
+                                        detail: failure.error.to_string(),
+                                    })
+                                    .await
+                                {
+                                    record.transport_error =
+                                        Some(format!("{}; evidence: {error}", failure.error));
+                                }
+                            }
+                        }
+                    }
+                    if record.exchange_accepted == Some(false) {
+                        record.refusal = Some(format!(
+                            "exchange rejected before response completed: {}",
+                            record
+                                .protocol_status
+                                .as_deref()
+                                .unwrap_or("unknown status")
+                        ));
+                    } else {
+                        reconcile = true;
+                    }
+                }
+            }
+
+            if let Some(id) = &record.order_id {
+                ctx.registry
+                    .register_for_client(&staged.client_order_id, id.clone());
+            } else if record.exchange_accepted == Some(false) && record.order_terminal == Some(true)
+            {
+                ctx.registry.resolve_without_order(&staged.client_order_id);
+            }
+            // One lock after the send boundary. Partial attempts still record
+            // exec→send and any observation split that actually exists.
+            record_attempt_edges(recorder, &pending, exec_ts, &intent, &record);
+        }
+    }
+
+    if reconcile {
+        // Ambiguous outcome: query by client id before assuming failure.
+        // Never blind-retry. Preserve the original attempt/partial response
+        // separately from this later REST observation.
+        tracing::error!(
+            transport_error = record.transport_error.as_deref().unwrap_or("none"),
+            "ambiguous order attempt; querying by client order id"
+        );
+        match ctx
+            .rest
+            .order_by_client_id_evidence(&staged.client_order_id)
+            .await
+        {
+            Ok(query) if query.matched_order.is_some() => {
+                let order = query.matched_order.expect("guarded exact row");
+                record.wire_state = OrderWireState::Reconciled;
+                record.reconciliation_ts = Some(MonotonicNs::now().0);
+                record.reconciliation_response = Some(order.clone());
+                record.order_status = order["status"].as_str().map(String::from);
+                record.reconciliation_status = record.order_status.clone();
+                record.order_id = order["order_id"].as_str().map(String::from);
+                if let Some(status) = record.order_status.as_deref() {
+                    record.order_terminal = order_status_terminal(status);
+                    record.exchange_accepted = match status {
+                        "rejected" => Some(false),
+                        "new" | "resting" | "pending" | "partial" | "filled" | "canceled"
+                        | "expired" => Some(true),
+                        _ => None,
+                    };
+                } else {
+                    // Existence under the exact client id is itself proof the
+                    // exchange observed the attempt, even when status is absent.
+                    record.exchange_accepted = Some(true);
+                }
+                if let Some(fill) = rest_fill_from_order(&order) {
+                    record.fill = Some(fill);
+                }
+                if let Some(sink) = ctx.order_evidence.as_ref() {
+                    let durable_fill = record.fill.as_ref().map(|fill| {
+                        durable_fill(fill, order["updated_time"].as_str().map(str::to_owned))
+                    });
+                    if let Err(error) = sink
+                        .record_reconciled(Reconciled {
+                            client_order_id: staged.client_order_id.clone(),
+                            market_ticker: staged.ticker.clone(),
+                            protocol: TransportProtocol::Rest,
+                            endpoint_id: ctx.rest_endpoint_id.clone(),
+                            observed_ts: query.observed_ts.0,
+                            queried_client_order_id: query.queried_client_order_id,
+                            echoed_client_order_id: staged.client_order_id.clone(),
+                            order_id: record.order_id.clone(),
+                            order_status: record
+                                .order_status
+                                .clone()
+                                .unwrap_or_else(|| "unknown".into()),
+                            exchange_accepted: record.exchange_accepted,
+                            order_terminal: record.order_terminal.unwrap_or(false),
+                            exchange_event_ts: order["updated_time"].as_str().map(str::to_owned),
+                            fill: durable_fill,
+                            raw: RawEvidence::from_bytes("application/json", &query.raw_body),
+                            parsed: query.parsed,
+                        })
+                        .await
+                    {
+                        record.transport_error =
+                            Some(format!("order reconciliation evidence failed: {error}"));
+                    }
+                }
+                if let Some(id) = &record.order_id {
+                    ctx.registry
+                        .register_for_client(&staged.client_order_id, id.clone());
+                } else if record.exchange_accepted != Some(false)
+                    || record.order_terminal != Some(true)
+                {
+                    // An echoed client id without an exchange order id is not
+                    // cancellable proof. Preserve the row but keep delivery
+                    // ambiguous unless it is a conclusive terminal rejection.
+                    record.wire_state = OrderWireState::AttemptedUnobserved;
+                    record.refusal = Some(
+                        "AMBIGUOUS exact-id reconciliation row had no order_id; do not retry"
+                            .into(),
+                    );
+                }
+                tracing::warn!("order WAS present despite ambiguous send outcome");
+            }
+            Ok(query) => {
+                record.reconciliation_ts = Some(query.observed_ts.0);
+                if let Some(sink) = ctx.order_evidence.as_ref() {
+                    if let Err(journal_error) = sink
+                        .record_reconcile_unresolved(ReconcileUnresolved {
+                            client_order_id: staged.client_order_id.clone(),
+                            market_ticker: staged.ticker.clone(),
+                            protocol: TransportProtocol::Rest,
+                            endpoint_id: ctx.rest_endpoint_id.clone(),
+                            observed_ts: query.observed_ts.0,
+                            queried_client_order_id: query.queried_client_order_id,
+                            raw: Some(RawEvidence::from_bytes("application/json", &query.raw_body)),
+                            parsed: query.parsed,
+                            detail: query
+                                .parse_error
+                                .unwrap_or_else(|| "no exact echoed client ID".into()),
+                        })
+                        .await
+                    {
+                        record.transport_error =
+                            Some(format!("order unresolved evidence failed: {journal_error}"));
+                    }
+                }
+                let error = record
+                    .transport_error
+                    .as_deref()
+                    .unwrap_or("ambiguous response");
+                record.refusal = Some(format!(
+                    "AMBIGUOUS attempted send ({error}); one exact-id query found no \
+                     verifiable row — absence is not proven, do not retry"
+                ));
+            }
+            Err(query_error) => {
+                let observed_ts = MonotonicNs::now();
+                record.reconciliation_ts = Some(observed_ts.0);
+                if let Some(sink) = ctx.order_evidence.as_ref() {
+                    if let Err(journal_error) = sink
+                        .record_reconcile_unresolved(ReconcileUnresolved {
+                            client_order_id: staged.client_order_id.clone(),
+                            market_ticker: staged.ticker.clone(),
+                            protocol: TransportProtocol::Rest,
+                            endpoint_id: ctx.rest_endpoint_id.clone(),
+                            observed_ts: observed_ts.0,
+                            queried_client_order_id: staged.client_order_id.clone(),
+                            raw: None,
+                            parsed: None,
+                            detail: format!(
+                                "exact-id reconciliation failed before response headers: {query_error}"
+                            ),
+                        })
+                        .await
+                    {
+                        record.transport_error = Some(format!(
+                            "{}; unresolved-query evidence failed: {journal_error}",
+                            record.transport_error.as_deref().unwrap_or("ambiguous response")
+                        ));
+                    }
+                }
+                let error = record
+                    .transport_error
+                    .as_deref()
+                    .unwrap_or("ambiguous response");
+                record.refusal = Some(format!(
+                    "AMBIGUOUS attempted send ({error}); exact-id reconciliation query \
+                     failed ({query_error}) — do not retry"
+                ));
+            }
+        }
+    }
+    drop(attempt_permit);
     record
 }
 
@@ -484,10 +1428,25 @@ mod tests {
             audio_ts: 1,
             decision_ts: 2,
             exec_ts: 3,
+            wire_state: OrderWireState::NotAttempted,
             send_ts: None,
             hdrs_ts: None,
             ack_ts: None,
+            transport_protocol: None,
+            protocol_status: None,
+            exchange_accepted: None,
+            order_terminal: None,
+            exchange_observed_ts: None,
+            reconciliation_ts: None,
+            reconciliation_status: None,
+            transport_error: None,
+            parse_error: None,
+            raw_response: None,
+            raw_response_body_base64: None,
+            reconciliation_response: None,
+            fill: None,
             best_ask: None,
+            book_as_of_ts: None,
             book_age_ns: None,
             ev_at_ask_cents: None,
         }
@@ -496,7 +1455,8 @@ mod tests {
     /// 2026-08-05: "23 orders placed" was reported when the true number was 0.
     /// Every non-fire exit returns a record that lands in `ExecReport.orders`,
     /// so the list length is an INTENT count. Only `send_ts` — stamped once,
-    /// around `transport.send_order` — answers "did this reach Kalshi".
+    /// at `transport.submit_order`'s socket-write boundary — answers "did
+    /// this reach Kalshi".
     #[test]
     fn no_early_return_counts_as_having_reached_the_wire() {
         // 1. non-crossing (LOST_RACE): the 26AUG05 morning's entire population.
@@ -512,16 +1472,11 @@ mod tests {
         // 4. risk gate.
         let mut risk = rec();
         risk.refusal = Some("event notional would reach 194¢, cap 100¢".into());
-        // 5. send failed and the status query proved it never landed.
-        let mut absent = rec();
-        absent.refusal = Some("send failed, not on book".into());
-
         for (name, r) in [
             ("non-crossing", non_crossing),
             ("ev gate", ev),
             ("dry run", dry),
             ("risk gate", risk),
-            ("send failed", absent),
         ] {
             assert!(!r.reached_wire(), "{name} must NOT count as sent");
             assert!(!r.acked(), "{name} must NOT count as acked");
@@ -536,7 +1491,10 @@ mod tests {
         let mut sent_only = rec();
         sent_only.send_ts = Some(10);
         assert!(sent_only.reached_wire());
-        assert!(!sent_only.acked(), "a send without an order id is not acked");
+        assert!(
+            !sent_only.acked(),
+            "a send without an order id is not acked"
+        );
 
         let mut full = rec();
         full.send_ts = Some(10);
@@ -551,7 +1509,10 @@ mod tests {
         recovered.send_ts = Some(10);
         recovered.order_id = Some("ord-2".into());
         recovered.refusal = None;
-        assert!(recovered.acked(), "a recovered order is on the book and must count");
+        assert!(
+            recovered.acked(),
+            "a recovered order is on the book and must count"
+        );
     }
 
     /// The report must carry the counts, not force every reader to re-derive
@@ -585,9 +1546,17 @@ mod tests {
         .unwrap();
 
         assert_eq!(json["intents"], 4, "every processed intent is counted");
+        assert_eq!(json["send_attempted"], 2);
         assert_eq!(json["sent"], 2, "only records with send_ts reached Kalshi");
-        assert_eq!(json["acked"], 1, "only records with an order id were acknowledged");
-        assert_eq!(json["orders"].as_array().unwrap().len(), 4, "records are still all present");
+        assert_eq!(
+            json["acked"], 1,
+            "only records with an order id were acknowledged"
+        );
+        assert_eq!(
+            json["orders"].as_array().unwrap().len(),
+            4,
+            "records are still all present"
+        );
     }
 
     #[test]

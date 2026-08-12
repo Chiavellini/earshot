@@ -28,20 +28,16 @@
 //!       --event KXEARNINGSMENTIONAMD-26AUG04 --out state/xvenue/AMD/kalshi.jsonl --secs 5400
 //!   cargo run --release --example book-tape -- --tickers T1,T2 --out /tmp/k.jsonl --secs 60
 
-use std::io::{BufWriter, Write};
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use clap::Parser;
 use earshot::kalshi::auth::Signer;
-use earshot::kalshi::book::{run_ws_url_tapped, BookCache, FrameTap};
+use earshot::kalshi::book::{
+    run_ws_url_tapped, BookCache, BookTapeCloseReason, BookTapeOptions, BookTapeSession,
+    BookTapeSummary, BookTapeTask, BOOK_TAPE_SCHEMA_VERSION,
+};
 use earshot::kalshi::rest::RestClient;
 use earshot::kalshi::KalshiEnv;
-
-/// Frozen tape schema. Bumping this REQUIRES updating docs/layers/book-cache.md
-/// and scripts/xvenue-normalize.py in the same change — the normalizer refuses
-/// a version it does not know rather than guessing.
-const XV_SCHEMA: u32 = 1;
 
 /// Channel depth between the WS reader and the writer. Deep enough that a disk
 /// hiccup never costs a frame; bounded so a wedged writer drops (and COUNTS)
@@ -49,7 +45,10 @@ const XV_SCHEMA: u32 = 1;
 const TAP_CAPACITY: usize = 16_384;
 
 #[derive(Parser)]
-#[command(name = "book-tape", about = "Record the Kalshi WS order book to a raw tape")]
+#[command(
+    name = "book-tape",
+    about = "Record the Kalshi WS order book to a raw tape"
+)]
 struct Args {
     /// Event ticker; expands to every market on the board.
     #[arg(long)]
@@ -66,13 +65,6 @@ struct Args {
     /// Free-form label recorded in the session header (e.g. the pair_id).
     #[arg(long, default_value = "")]
     label: String,
-}
-
-fn wall_ns() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos() as u64)
-        .unwrap_or(0)
 }
 
 fn git_sha() -> String {
@@ -127,31 +119,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Δt honest rather than merely precise.
     let clock_offset_s = rest.clock_offset_estimate().await.unwrap_or(f64::NAN);
 
-    let file = std::fs::File::create(&args.out)?;
-    let mut w = BufWriter::new(file);
-    let header = serde_json::json!({
-        "t": "session",
-        "schema_version": XV_SCHEMA,
-        "venue": "kalshi",
-        "feed_kind": "push",
-        "endpoint": env.ws_url,
-        "channel": "orderbook_delta",
-        "event": args.event,
-        "label": args.label,
-        "tickers": tickers,
-        "host": hostname(),
-        "git_sha": git_sha(),
-        "clock_offset_s": if clock_offset_s.is_nan() { serde_json::Value::Null }
-                          else { serde_json::json!(clock_offset_s) },
-        "start_wall_ns": wall_ns(),
-        "planned_secs": args.secs,
-    });
-    writeln!(w, "{header}")?;
-    w.flush()?;
-
-    let (tap, mut rx) = FrameTap::new(TAP_CAPACITY);
-    let dropped = tap.dropped.clone();
     let cache = BookCache::new(&tickers);
+    // The blocking writer exclusively creates and syncs the session row
+    // BEFORE it hands us a tap. A rerun into an existing run artifact refuses
+    // before the feed starts; it can never truncate prior evidence.
+    let (tap, mut tape) = BookTapeTask::start_new(
+        &args.out,
+        BookTapeSession {
+            endpoint: env.ws_url.to_string(),
+            event: args.event.clone(),
+            label: args.label.clone(),
+            tickers: tickers.clone(),
+            host: hostname(),
+            git_sha: git_sha(),
+            clock_offset_s: clock_offset_s.is_finite().then_some(clock_offset_s),
+            planned_secs: Some(args.secs),
+        },
+        cache.clone(),
+        TAP_CAPACITY,
+        BookTapeOptions::default(),
+    )
+    .await?;
+    let mut writer_failures = tape.subscribe_failures();
     let ws = tokio::spawn(run_ws_url_tapped(
         env.ws_url.to_string(),
         signer,
@@ -161,10 +150,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
 
     eprintln!(
-        "book-tape: {} markets → {} (schema {}, {} s)",
+        "book-tape: {} markets → {} (evidence protocol {}, {} s)",
         tickers.len(),
         args.out,
-        XV_SCHEMA,
+        BOOK_TAPE_SCHEMA_VERSION,
         args.secs
     );
 
@@ -174,56 +163,82 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // repo's unattended rule is explicit that a STOP-file drill validates the
     // wrong path, so the real signal is the one handled here.
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
-    let mut rows: u64 = 0;
-    let mut last_beat = std::time::Instant::now();
-    let reason;
-
-    loop {
-        tokio::select! {
-            frame = rx.recv() => {
-                let Some(f) = frame else { reason = "feed closed"; break };
-                // `text` is embedded as a STRING, not spliced as JSON, so a
-                // malformed or unexpected wire frame can never corrupt the tape
-                // it is evidence in.
-                let row = serde_json::json!({
-                    "t": "frame",
-                    "wall_ns": f.wall_ns,
-                    "mono_ns": f.mono_ns,
-                    "raw": f.text,
-                });
-                writeln!(w, "{row}")?;
-                rows += 1;
-                if last_beat.elapsed() >= std::time::Duration::from_secs(60) {
-                    last_beat = std::time::Instant::now();
-                    w.flush()?;
-                    eprintln!(
-                        "book-tape beat: rows={rows} dropped={}",
-                        dropped.load(Ordering::Relaxed)
-                    );
-                }
-            }
-            _ = &mut deadline => { reason = "deadline"; break }
-            _ = sigterm.recv() => { reason = "SIGTERM"; break }
-            _ = tokio::signal::ctrl_c() => { reason = "SIGINT"; break }
-        }
+    enum Stop {
+        Requested(BookTapeCloseReason),
+        WriterFailed(String),
+        WriterCompleted(Result<BookTapeSummary, String>),
     }
+    let stop = tokio::select! {
+        _ = &mut deadline => Stop::Requested(BookTapeCloseReason::Deadline),
+        _ = sigterm.recv() => Stop::Requested(BookTapeCloseReason::Sigterm),
+        _ = tokio::signal::ctrl_c() => Stop::Requested(BookTapeCloseReason::Sigint),
+        changed = writer_failures.changed() => {
+            let detail = match changed {
+                Ok(()) => writer_failures.borrow().clone()
+                    .unwrap_or_else(|| "writer failure notification had no detail".to_string()),
+                Err(_) => "writer failure channel closed unexpectedly".to_string(),
+            };
+            Stop::WriterFailed(detail)
+        }
+        completed = tape.wait() => Stop::WriterCompleted(completed),
+    };
 
+    let requested = match stop {
+        Stop::Requested(reason) => Some(reason),
+        Stop::WriterFailed(error) => {
+            ws.abort();
+            let _ = ws.await;
+            let terminal = tape.wait().await;
+            return Err(
+                format!("book tape writer failed during capture: {error}; {terminal:?}").into(),
+            );
+        }
+        Stop::WriterCompleted(terminal) => {
+            ws.abort();
+            let _ = ws.await;
+            return Err(format!(
+                "book tape writer stopped before the event deadline: {terminal:?}"
+            )
+            .into());
+        }
+    };
+
+    if let Some(reason) = requested {
+        // Intent first, then producer quiescence: abort + join drops the last
+        // FrameTap sender. Only after observing that disconnect may the writer
+        // snapshot drops and publish its terminal commit receipt.
+        tape.request_close(reason)?;
+    }
     ws.abort();
-    let lost = dropped.load(Ordering::Relaxed);
-    let trailer = serde_json::json!({
-        "t": "close",
-        "reason": reason,
-        "rows": rows,
-        // A truncated tape must be visible as a NUMBER. Silence here would let
-        // a partial recording be read as a complete one.
-        "dropped": lost,
-        "end_wall_ns": wall_ns(),
-    });
-    writeln!(w, "{trailer}")?;
-    w.flush()?;
-    eprintln!("book-tape done: rows={rows} dropped={lost} reason={reason}");
-    if lost > 0 {
-        eprintln!("book-tape WARNING: {lost} frames dropped — tape is INCOMPLETE");
+    let _ = ws.await;
+    let summary = tape
+        .wait()
+        .await
+        .map_err(|error| format!("book tape join failed: {error}"))?;
+    eprintln!(
+        "book-tape done: rows={} heartbeats={} dropped={} \
+         feed={:?} quiesced={} accounting_complete={} committed={} status={:?} reason={}",
+        summary.frame_rows,
+        summary.heartbeat_rows,
+        summary.tap_dropped,
+        summary.terminal_feed_health,
+        summary.producer_quiesced,
+        summary.terminal_accounting_complete,
+        summary.committed,
+        summary.status,
+        summary.reason
+    );
+    if summary.tap_dropped > 0 {
+        eprintln!(
+            "book-tape WARNING: {} frames dropped — tape is INCOMPLETE",
+            summary.tap_dropped
+        );
+    }
+    if let Some(error) = summary.writer_error {
+        return Err(format!("book tape writer failed: {error}").into());
+    }
+    if !summary.complete {
+        return Err(format!("book tape closed partially: {}", summary.reason).into());
     }
     Ok(())
 }

@@ -6,27 +6,74 @@
 #   scripts/event-status.sh 2026-08-05
 #   scripts/event-status.sh today
 #
-# Event mode: merge-sorts state/<E>/journal.jsonl with state/<E>/box/journal.jsonl
+# Event mode: verifies and renders every exact typed run first, then may
+# merge-sort historical state journals as a compatibility view.
 # (box copies rsync down post-event), prints the lifecycle, a "stopped at" line
 # (last non-info entry), and the artifact checklist. Date mode: resolves the
-# day's slate and renders one block per event. Read-only, exit 0.
+# day's union of RunPlans and slate entries and renders one block per event.
+# Read-only. Exit 1 means at least one typed run is corrupt or its remote-owned
+# tail may be stale; the printed local prefix remains useful but not authoritative.
 set -uo pipefail
 REPO="${EARSHOT_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "$REPO"
 
 ARG="${1:?usage: event-status.sh <EVENT_ID | YYYY-MM-DD | today>}"
+PROBLEMS=0
 
 render_event() { # <EVENT_ID or bare EVENT_TICKER>
   local ev="$1"
-  # accept a bare ticker: pick every state dir that starts with it
-  local dirs=()
-  for d in state/"$ev" state/"$ev"-*; do [[ -d "$d" ]] && dirs+=("$d"); done
-  if [[ ${#dirs[@]} -eq 0 ]]; then
+  # accept a bare ticker: pick every state dir AND typed-run dir that starts
+  # with it (a run plan can exist before anything ever journals into state/).
+  local ids=() d id x seen
+  for d in state/"$ev" state/"$ev"-* var/runs/"$ev" var/runs/"$ev"-*; do
+    [[ -d "$d" ]] || continue
+    id="${d#state/}"; id="${id#var/runs/}"
+    seen=0
+    if [[ ${#ids[@]} -gt 0 ]]; then
+      for x in "${ids[@]}"; do [[ "$x" == "$id" ]] && seen=1; done
+    fi
+    [[ $seen -eq 0 ]] && ids+=("$id")
+  done
+  if [[ ${#ids[@]} -eq 0 ]]; then
     echo "── $ev: NO state dir — nothing ever touched this event (not staged? not preflighted? journal would exist otherwise)"
     return
   fi
-  for d in "${dirs[@]}"; do
-    echo "── ${d#state/}"
+  for id in "${ids[@]}"; do
+    echo "── $id"
+    # Typed ledger first (control.run.receipts). Corruption is never hidden by
+    # the legacy projection. A scheduled active run's laptop ledger may be only
+    # a dispatch prefix, so status names that uncertainty and returns nonzero.
+    local typed="" typed_json="" authority=""
+    if [[ -d "var/runs/$id" ]]; then
+      if ! typed_json=$(python3 scripts/eventctl.py status --event "$id" --json 2>&1); then
+        echo "   TYPED STATUS INVALID → $typed_json"
+        PROBLEMS=$((PROBLEMS + 1))
+        continue
+      fi
+      typed=$(python3 scripts/eventctl.py status --event "$id" 2>&1) || {
+        echo "   TYPED STATUS INVALID → $typed"
+        PROBLEMS=$((PROBLEMS + 1))
+        continue
+      }
+      authority=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["authority"]["remote_status"])' <<< "$typed_json") || {
+        echo "   TYPED STATUS INVALID → missing authority metadata"
+        PROBLEMS=$((PROBLEMS + 1))
+        continue
+      }
+      if [[ "$authority" == stale_prefix_possible ]]; then
+        PROBLEMS=$((PROBLEMS + 1))
+      fi
+    fi
+    if [[ -n "$typed" && "$typed" == *"active: yes"* ]]; then
+      printf '%s\n' "$typed"
+      continue
+    fi
+    if [[ ! -d "state/$id" ]]; then
+      echo "   (typed run present but not active; no legacy state dir)"
+      [[ -n "$typed" ]] && printf '%s\n' "$typed"
+      continue
+    fi
+    d="state/$id"
     D="$d" python3 - <<'PY'
 import json, os
 from pathlib import Path
@@ -82,18 +129,51 @@ if [[ "$MODE" == event ]]; then
   render_event "$ARG"
 else
   echo "═══ event day $DATE ═══"
-  TICKERS=$(python3 -c "
+  TICKERS=$(python3 - "$DATE" <<'PY'
+import datetime as dt
 import json
+import sys
+from pathlib import Path
+
+wanted = dt.date.fromisoformat(sys.argv[1])
+typed_ids = set()
+for path in sorted(Path("var/runs").glob("*/*/control/run-plan.json")):
+    try:
+        plan = json.loads(path.read_text())
+        starts = dt.datetime.fromisoformat(plan["starts_at_utc"].replace("Z", "+00:00"))
+    except Exception as exc:
+        raise SystemExit(f"invalid RunPlan candidate {path}: {exc}")
+    if starts.date() == wanted:
+        typed_ids.add(plan["event_id"])
 try:
-    d = json.load(open('slate/latest.json'))
-    print(' '.join(e['event_ticker'] for e in d.get('events', []) if e.get('call_date') == '$DATE'))
-except Exception as e:
-    print('')")
+    slate = json.load(open("slate/latest.json"))
+except FileNotFoundError:
+    slate = {"events": []}
+except Exception as exc:
+    raise SystemExit(f"invalid slate/latest.json: {exc}")
+slate_ids = set()
+for event in slate.get("events", []):
+    if event.get("call_date") == str(wanted) and event.get("event_ticker"):
+        slate_ids.add(event["event_ticker"])
+# A slate market-event ticker deliberately expands to all of its lane IDs in
+# render_event(). Do not also render the exact typed child: that duplicates the
+# same run block whenever both authorities know the event.
+for base in slate_ids:
+    typed_ids = {
+        event_id for event_id in typed_ids
+        if event_id != base and not event_id.startswith(base + "-")
+    }
+tickers = typed_ids | slate_ids
+print("\n".join(sorted(tickers)))
+PY
+  ) || { echo "REFUSED: could not enumerate date authority" >&2; exit 1; }
   if [[ -z "$TICKERS" ]]; then
     echo "(no slate events dated $DATE in slate/latest.json)"
   fi
-  for t in $TICKERS; do
+  while IFS= read -r t; do
+    [[ -n "$t" ]] || continue
     render_event "$t"
     echo
-  done
+  done <<< "$TICKERS"
 fi
+exit "$([[ "$PROBLEMS" -eq 0 ]] && echo 0 || echo 1)"

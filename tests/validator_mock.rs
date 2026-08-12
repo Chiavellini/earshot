@@ -64,7 +64,10 @@ async fn unfetchable_market_refuses_to_arm() {
     // No mock: 404. Validation must refuse, not guess (P3).
     let rest = test_rest(&server);
     let state = tempfile::tempdir().unwrap();
-    let v = LiveMarketValidator { rest: &rest, state_dir: state.path() };
+    let v = LiveMarketValidator {
+        rest: &rest,
+        state_dir: state.path(),
+    };
     let err = v.validate(&cfg_with_ticker()).await.unwrap_err();
     assert!(err.to_string().contains("not fetchable"), "got: {err}");
 }
@@ -79,7 +82,10 @@ async fn non_active_market_refuses_to_arm() {
         .await;
     let rest = test_rest(&server);
     let state = tempfile::tempdir().unwrap();
-    let v = LiveMarketValidator { rest: &rest, state_dir: state.path() };
+    let v = LiveMarketValidator {
+        rest: &rest,
+        state_dir: state.path(),
+    };
     let err = v.validate(&cfg_with_ticker()).await.unwrap_err();
     assert!(err.to_string().contains("not active"), "got: {err}");
 }
@@ -102,7 +108,10 @@ async fn happy_path_stores_rules_and_resolves_category() {
 
     let rest = test_rest(&server);
     let state = tempfile::tempdir().unwrap();
-    let v = LiveMarketValidator { rest: &rest, state_dir: state.path() };
+    let v = LiveMarketValidator {
+        rest: &rest,
+        state_dir: state.path(),
+    };
     let markets = v.validate(&cfg_with_ticker()).await.unwrap();
 
     assert_eq!(markets.len(), 1);
@@ -130,7 +139,10 @@ async fn series_failure_yields_none_category_and_gates_stay_conservative() {
     // No /series mock: category lookup fails softly.
     let rest = test_rest(&server);
     let state = tempfile::tempdir().unwrap();
-    let v = LiveMarketValidator { rest: &rest, state_dir: state.path() };
+    let v = LiveMarketValidator {
+        rest: &rest,
+        state_dir: state.path(),
+    };
     let markets = v.validate(&cfg_with_ticker()).await.unwrap();
     assert_eq!(markets[0].category, None);
     // Pinned behavior: an unknown category is NOT treated as Mentions by the
@@ -150,7 +162,8 @@ async fn ack_status_for(body: serde_json::Value) -> Option<String> {
         .mount(&server)
         .await;
     let rest = test_rest(&server);
-    let order = OrderBodyV2::ioc_buy_yes(TICKER, 1, 1, "11111111-1111-4111-8111-111111111111".into());
+    let order =
+        OrderBodyV2::ioc_buy_yes(TICKER, 1, 1, "11111111-1111-4111-8111-111111111111".into());
     let (ack, _send_ts) = rest.create_order(&order).await.unwrap();
     ack.order_status
 }
@@ -177,7 +190,8 @@ async fn unwrapped_ack_infers_filled_partial_and_canceled() {
     assert_eq!(canceled.as_deref(), Some("canceled"));
 
     // Wrapped legacy/mock shape still honored via the explicit status field.
-    let wrapped = ack_status_for(json!({"order": {"order_id": "srv-4", "status": "executed"}})).await;
+    let wrapped =
+        ack_status_for(json!({"order": {"order_id": "srv-4", "status": "executed"}})).await;
     assert_eq!(wrapped.as_deref(), Some("executed"));
 }
 
@@ -200,5 +214,8 @@ async fn clock_offset_sign_and_magnitude() {
     assert!(ahead > 1.0e9, "expected huge positive offset, got {ahead}");
     // Server clock far in the past → large negative offset.
     let behind = offset_with_date("Sun, 06 Nov 1994 08:49:37 GMT").await;
-    assert!(behind < -1.0e8, "expected huge negative offset, got {behind}");
+    assert!(
+        behind < -1.0e8,
+        "expected huge negative offset, got {behind}"
+    );
 }

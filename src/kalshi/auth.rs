@@ -34,7 +34,10 @@ pub const PRESIGN_MAX_AGE: Duration = Duration::from_secs(20);
 pub const PRESIGN_REFRESH: Duration = Duration::from_secs(10);
 
 pub fn now_ms() -> u128 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
 }
 
 pub struct Signer {
@@ -59,16 +62,40 @@ impl Signer {
         let key = RsaPrivateKey::from_pkcs1_pem(pem)
             .or_else(|_| RsaPrivateKey::from_pkcs8_pem(pem))
             .map_err(|e| KalshiError::Credentials(format!("parse private key: {e}")))?;
-        Ok(Signer { key_id, signing_key: SigningKey::new(key) })
+        Ok(Signer {
+            key_id,
+            signing_key: SigningKey::new(key),
+        })
     }
 
     pub fn key_id(&self) -> &str {
         &self.key_id
     }
 
+    /// Stable, non-secret credential identity used by immutable RunPlans.
+    /// Binding both the API key id and RSA public key prevents a correctly
+    /// labelled environment variable from masking the wrong private key.
+    pub fn account_fingerprint(&self) -> String {
+        use rsa::pkcs8::EncodePublicKey;
+        use rsa::sha2::Digest;
+
+        let public = self.signing_key.as_ref().to_public_key();
+        let der = public
+            .to_public_key_der()
+            .expect("RSA public key DER encoding is infallible");
+        let mut digest = Sha256::new();
+        digest.update(self.key_id.as_bytes());
+        digest.update([0]);
+        digest.update(der.as_ref());
+        format!("sha256:{:x}", digest.finalize())
+    }
+
     /// `path` must include `/trade-api/v2` and exclude any query string.
     pub fn headers(&self, method: &str, path: &str, ts_ms: u128) -> Headers3 {
-        debug_assert!(path.starts_with("/trade-api/"), "sign full path from API root");
+        debug_assert!(
+            path.starts_with("/trade-api/"),
+            "sign full path from API root"
+        );
         debug_assert!(!path.contains('?'), "never sign the query string");
         let msg = format!("{ts_ms}{method}{path}");
         let sig = self
@@ -76,7 +103,10 @@ impl Signer {
             .sign_with_rng(&mut rsa::rand_core::OsRng, msg.as_bytes());
         [
             (HDR_KEY, self.key_id.clone()),
-            (HDR_SIG, base64::engine::general_purpose::STANDARD.encode(sig.to_bytes())),
+            (
+                HDR_SIG,
+                base64::engine::general_purpose::STANDARD.encode(sig.to_bytes()),
+            ),
             (HDR_TS, ts_ms.to_string()),
         ]
     }
@@ -89,7 +119,9 @@ impl Signer {
     /// output. Used by the FIX Logon RawData (tag 96), whose canonical string
     /// differs from the REST `{ts}{METHOD}{path}` scheme (VERIFICATIONS Q-FIX).
     pub fn sign_raw(&self, msg: &[u8]) -> String {
-        let sig = self.signing_key.sign_with_rng(&mut rsa::rand_core::OsRng, msg);
+        let sig = self
+            .signing_key
+            .sign_with_rng(&mut rsa::rand_core::OsRng, msg);
         base64::engine::general_purpose::STANDARD.encode(sig.to_bytes())
     }
 }
@@ -153,7 +185,10 @@ impl Presigner {
         if age <= PRESIGN_MAX_AGE.as_nanos() as u64 {
             (cur.headers.clone(), age)
         } else {
-            tracing::warn!(age_ms = age / 1_000_000, "presigned headers stale; inline signing");
+            tracing::warn!(
+                age_ms = age / 1_000_000,
+                "presigned headers stale; inline signing"
+            );
             (self.signer.headers_now(self.method, &self.path), age)
         }
     }
@@ -163,6 +198,7 @@ impl Presigner {
 mod tests {
     use super::*;
     use rsa::pkcs1::EncodeRsaPrivateKey;
+    use rsa::pkcs8::EncodePrivateKey;
     use rsa::pss::VerifyingKey;
     use rsa::signature::Verifier;
 
@@ -195,6 +231,42 @@ mod tests {
         assert!(verifying
             .verify(format!("{ts}GET/portfolio/balance").as_bytes(), &sig)
             .is_err());
+    }
+
+    #[test]
+    fn account_fingerprint_is_stable_and_binds_key_id_plus_public_key() {
+        // Fingerprinting never signs, so smaller test-only keys keep this
+        // identity test fast without weakening any production key posture.
+        let key = RsaPrivateKey::new(&mut rsa::rand_core::OsRng, 1024).unwrap();
+        let pkcs1 = key.to_pkcs1_pem(rsa::pkcs8::LineEnding::LF).unwrap();
+        let pkcs8 = key.to_pkcs8_pem(rsa::pkcs8::LineEnding::LF).unwrap();
+        let from_pkcs1 = Signer::from_pem("account-a".into(), &pkcs1).unwrap();
+        let from_pkcs8 = Signer::from_pem("account-a".into(), &pkcs8).unwrap();
+        let relabelled = Signer::from_pem("account-b".into(), &pkcs1).unwrap();
+        let other = RsaPrivateKey::new(&mut rsa::rand_core::OsRng, 1024).unwrap();
+        let other_pem = other.to_pkcs1_pem(rsa::pkcs8::LineEnding::LF).unwrap();
+        let other_key = Signer::from_pem("account-a".into(), &other_pem).unwrap();
+
+        let fingerprint = from_pkcs1.account_fingerprint();
+        assert_eq!(fingerprint.len(), "sha256:".len() + 64);
+        assert!(fingerprint.strip_prefix("sha256:").is_some_and(|hex| hex
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())));
+        assert_eq!(
+            fingerprint,
+            from_pkcs8.account_fingerprint(),
+            "private-key serialization must not change public account identity"
+        );
+        assert_ne!(
+            fingerprint,
+            relabelled.account_fingerprint(),
+            "the access-key id is part of account identity"
+        );
+        assert_ne!(
+            fingerprint,
+            other_key.account_fingerprint(),
+            "the RSA public key is part of account identity"
+        );
     }
 
     #[test]

@@ -115,6 +115,7 @@ owns = [
   "README.md",
   "architecture/claims.toml",
   "architecture/nodes.toml",
+  "architecture/operations.toml",
   "docs/ARCHITECTURE.md",
   "docs/NODES.md",
   "docs/ROADMAP.md",
@@ -124,6 +125,8 @@ owns = [
   "docs/work/ACTIVE.md",
   "scripts/doc-lint.py",
   "scripts/doc-lint.sh",
+  "scripts/ops-surface-check.py",
+  "tests/ops_surface.py",
   "tests/architecture_contract.rs",
 ]
 inputs = []
@@ -276,6 +279,7 @@ doc = "docs/nodes/source-pipe.md"
 doc_style = "node"
 owns = [
   "src/source/pipe.rs",
+  "scripts/cdn-cachebust-fetch.sh",
   "scripts/hls-edge-fetch.py",
   "scripts/test-deaf-leg.py",
   "tests/pipe_source.rs",
@@ -495,6 +499,7 @@ doc = "docs/layers/fix-transport.md"
 doc_style = "layer"
 owns = [
   "src/kalshi/fix/*.rs",
+  "tests/fix_observation_tape.rs",
   "tests/fix_session_mock.rs",
 ]
 inputs = [
@@ -537,9 +542,25 @@ inputs = [
   "runtime.market.books",
   "runtime.market.plan",
   "runtime.order.api",
+  "runtime.order.evidence",
   "runtime.risk.permission",
 ]
 outputs = ["runtime.execution.records"]
+
+[[node]]
+id = "runtime.order_evidence"
+job = "Durably journal every order request, wire attempt, exchange observation, reconciliation, and fill as a restart-replayable transition stream."
+status = "active"
+doc = "docs/nodes/runtime-order-evidence.md"
+doc_style = "node"
+owns = [
+  "src/kalshi/order_evidence.rs",
+  "tests/order_evidence.rs",
+]
+inputs = [
+  "runtime.core",
+]
+outputs = ["runtime.order.evidence"]
 
 [[node]]
 id = "runtime.telemetry"
@@ -555,6 +576,7 @@ inputs = [
   "runtime.execution.intents",
   "runtime.market.books",
   "runtime.execution.records",
+  "runtime.order.evidence",
   "control.phone.attached",
 ]
 outputs = ["runtime.telemetry.report"]
@@ -626,6 +648,8 @@ owns = [
   "scripts/stage-webcast-arm.sh",
   "scripts/stage-webcast-capture.sh",
   "scripts/slate-stage.sh",
+  "scripts/stage-reconcile.py",
+  "tests/stage_reconcile.py",
   # staging input shaping: hand-verified call times merged into the slate the
   # stager consumes (slate/latest-timed.json is generated → gitignored).
   "scripts/slate-time-merge.py",
@@ -645,6 +669,7 @@ status = "active"
 doc = "docs/nodes/control-operate.md"
 doc_style = "node"
 owns = [
+  "HANDOFF-EVENT-LIFECYCLE.md",
   "docs/runbooks/**",
   "scripts/journal.sh",
   "scripts/assert-ready.sh",
@@ -656,9 +681,25 @@ owns = [
   "scripts/event-status.sh",
   "scripts/green-guardian.sh",
   "scripts/night-before-sweep.sh",
+  # 2026-08-11: the typed run control plane — immutable run plan + append-only
+  # hash-chained receipts under var/runs/<EVENT_ID>/<RUN_ID>/. Orchestrates
+  # existing entry points; deliberately NOT a third runtime composer.
+  "scripts/eventctl.py",
+  "scripts/run-host-boundary.py",
+  "scripts/schedule-nightly.sh",
+  # One-time, external-account-profile bootstrap: derives the stable public
+  # signer fingerprint through the pinned binary and atomically maintains only
+  # non-secret host/account identity fields in the already external account
+  # env.  Event configs never carry this host-specific identity.
+  "scripts/execution-profile.sh",
+  "scripts/opsctl.sh",
+  "tests/eventctl_lifecycle.py",
+  "tests/execution_profile.sh",
+  "tests/run_host_boundary.py",
+  "tests/opsctl.py",
 ]
 inputs = []
-outputs = []
+outputs = ["control.run.plan", "control.run.receipts"]
 
 [[node]]
 id = "control.preflight"
@@ -672,8 +713,10 @@ owns = [
   "scripts/collision-screen.py",
   "scripts/market-phrase-screen.py",
   "scripts/preflight-event.sh",
+  "scripts/preflight-proof.py",
   "scripts/preflight-nightly.sh",
   "scripts/posture-from-study.py",
+  "tests/preflight_proof.py",
 ]
 inputs = [
   "control.event.prepared",
@@ -695,6 +738,13 @@ doc_style = "node"
 owns = [
   "scripts/hunt-dial-in.py",
   "scripts/hunt-daily.sh",
+  # Reads the governing VERB of a published credential and refuses to emit a
+  # DTMF suffix for one that is spoken to a human ("referencing Meeting ID").
+  # Owned here, not by control.admission: it parses published source text into
+  # a number candidate (control.bridge.numbers), which is this node's job. It
+  # emits an admission PRIOR only — never a verdict — so THE MSFT RULE stands
+  # and no admission->hunt->admission cycle is created.
+  "scripts/dial-in-intake.py",
   "docs/HUNT.md",
   "slate/hunt-status.json",
 ]
@@ -725,6 +775,13 @@ owns = [
   # only by a probe dial; this just stops the answer dying on a terminal, which
   # is how SPOT's proven bridge went unregistered on 2026-08-04.
   "scripts/registry-admit.py",
+  # Converts a still-fresh, probe-established `admission = "held"` verdict
+  # into a current-run/current-stream admission receipt.  It does not probe,
+  # dial, page, or infer operator passage: the immutable RunPlan, lifecycle
+  # chain, live challenge, detector-path attachment, and Twilio CallSid/attempt
+  # must all agree before the runtime interlock can open.
+  "scripts/held-admission-receipt.py",
+  "tests/held_admission_receipt.py",
 ]
 inputs = [
   "control.event.qualified",
@@ -735,11 +792,12 @@ outputs = ["control.event.admitted"]
 
 [[node]]
 id = "control.acquire"
-job = "Resolve and establish an event's usable phone or webcast media endpoint."
+job = "Bind a qualified event's non-secret access strategy and resolve a host-usable webcast endpoint without dialing or launching."
 status = "active"
 doc = "docs/nodes/control-acquire.md"
 doc_style = "node"
 owns = [
+  "scripts/access-plan.py",
   "scripts/choruscall-resolve.py",
   "scripts/manifest-probe.sh",
   "scripts/venue-probe.sh",
@@ -749,9 +807,11 @@ owns = [
   "scripts/shop-resolve-stream.sh",
   "scripts/q4-register-resolve.py",
   "scripts/chorus-register-resolve.py",
+  "tests/access_plan.py",
 ]
 inputs = [
   "control.event.qualified",
+  "control.run.plan",
   "platform.deploy.artifact",
   "platform.notification",
 ]
@@ -766,6 +826,7 @@ doc_style = "node"
 owns = [
   "docs/MULTI-EVENT.md",
   "scripts/arm-on-url.sh",
+  "scripts/capture-ready.py",
   "scripts/launch-event.sh",
   "scripts/launch-webcast.sh",
   "scripts/ms-morning.sh",
@@ -773,6 +834,7 @@ owns = [
   "scripts/run-arm.sh",
   "tests/launch_event_posture.rs",
   "tests/launch_webcast_posture.rs",
+  "tests/capture_ready.py",
 ]
 inputs = [
   "control.event.preflighted",
@@ -782,6 +844,7 @@ inputs = [
   "runtime.source.twilio.stream_connected",
   "platform.deploy.artifact",
   "platform.runtime.profile",
+  "platform.notification",
 ]
 outputs = ["control.session.launched"]
 
@@ -842,11 +905,19 @@ owns = [
   "scripts/arm-when-url.sh",
   "scripts/event-autorun.sh",
   "scripts/install-event-timer.sh",
+  "scripts/schedule-proof.py",
   "scripts/redial-supervisor.sh",
   "scripts/url-escalate.sh",
   "scripts/webcast-autorun.sh",
   "scripts/wing-autorun.sh",
   "tests/redial_supervisor.rs",
+  # Asserts the loop escalates to the operator handler from the registry's own
+  # admission verdict, at fire time, without anyone setting OPERATOR_HANDLER by
+  # hand (HIMS 26AUG10: 17 legs / 31m47s / zero coverage while the verdict sat
+  # unread in configs/dial-ins.toml).
+  "tests/operator_escalation.sh",
+  "tests/schedule_proof.py",
+  "tests/typed_scheduler_boundary.sh",
 ]
 inputs = [
   "control.session.launched",
@@ -872,6 +943,18 @@ owns = [
   # the call. An execution verdict on a run that never happened is still an
   # execution verdict, which is why it lives here.
   "scripts/missed-arm-check.py",
+  # Brings a BOX-HOSTED run's artifacts to where every grader here reads.
+  # deploy-box.sh excludes state/ in both directions, so a box run left nothing
+  # on the laptop and was invisible to this node entirely — HIMS 26AUG10's
+  # phone lane traded 2 orders and graded as "0 orders" for exactly that reason.
+  # Owned here, not by control.supervise: supervision runs the event, grading is
+  # what needs the evidence local, and the puller is read-only on the box.
+  "scripts/pull-box-state.sh",
+  "scripts/run-audit.py",
+  # Reconciles every immutable attempt on one UTC date, continues across
+  # siblings, and publishes a derived performance index bound to exact grade
+  # and lifecycle-tail fingerprints.
+  "scripts/audit-day.py",
   # the checker writes nothing and alerts nothing by design; the wrapper owns
   # the daily firing's notify path (PYPL/BA lesson: a check nobody hears is
   # not a check). Its launchd plist lives with the others under
@@ -880,10 +963,15 @@ owns = [
   "scripts/run-verdict.sh",
   "scripts/validate-from-log.py",
   "scripts/post-event-report.sh",
+  "scripts/score-precision.py",
+  "tests/run_audit.py",
+  "tests/audit_day.py",
+  "tests/score_precision.py",
 ]
 inputs = [
   "control.session.completed",
   "runtime.execution.records",
+  "runtime.order.evidence",
   "runtime.telemetry.report",
   "evidence.corpus.dataset",
   "evidence.benchmark.result",
@@ -929,12 +1017,17 @@ outputs = ["platform.deploy.artifact"]
 
 [[node]]
 id = "platform.notify"
-job = "Deliver one operational alert through the configured notification channels."
+job = "Durably require, deliver, retry, and explicitly acknowledge one operational alert."
 status = "active"
 doc = "docs/nodes/platform-notify.md"
 doc_style = "node"
-owns = ["scripts/notify.sh"]
-inputs = []
+owns = [
+  "scripts/notify.sh",
+  "scripts/alertctl.py",
+  "scripts/alert-phone.sh",
+  "tests/alertctl.py",
+]
+inputs = ["control.run.plan", "control.run.receipts"]
 outputs = ["platform.notification"]
 
 [[node]]
@@ -951,6 +1044,10 @@ owns = [
   "state/KXEARNINGSMENTIONAAL-26JUL23/box/capture-report.json",
   "state/KXEARNINGSMENTIONINTC-26JUL23/report-box.json",
   "state/KXEARNINGSMENTIONLMT-26JUL23/box/capture-report.json",
+  # Planned run-scoped recorder for the exact audio frames consumed by the
+  # detector path. The active admission.capture claim reserves both files.
+  "src/audio_evidence.rs",
+  "tests/audio_evidence.rs",
   "src/capture_bakeoff/*.rs",
   # Chained multi-leg bridge recorder. Owned HERE and not by control.admission
   # (which owns bridge-probe.sh) because it banks corpus, never classifies
@@ -960,6 +1057,7 @@ owns = [
   # Its refuse-to-record guard enforces this node's own contract line:
   # evidence.capture does not launch a traded arm.
   "scripts/chain-capture.sh",
+  "scripts/capture-sidecar.sh",
   "scripts/fetch-tape.sh",
   "scripts/pdt-log.py",
   "scripts/wnt-captions-parse.py",
@@ -1034,6 +1132,7 @@ status = "active"
 doc = "docs/nodes/evidence-measure.md"
 doc_style = "node"
 owns = [
+  "casino143.md",
   "HANDOFF-26AUG04-MISSED-ARM.md",
   "HANDOFF-RACE-PROGRAM.md",
   "VERIFICATIONS.md",
@@ -1047,6 +1146,11 @@ owns = [
   "docs/POSTMORTEM-26AUG04.md",
   "docs/POSTMORTEM-26AUG05.md",
   "docs/RACE-STRATEGY.md",
+  # Versioned, offline system-performance analysis: normalizes runtime,
+  # benchmark, and measurement evidence; refuses invalid comparisons; and
+  # distinguishes hash-bound diagnostics from validator-recomputed proof
+  # without changing production posture.
+  "docs/SYSTEM-ANALYSIS.md",
   "src/latprobe/*.rs",
   "scripts/abs-lag.py",
   "scripts/arrival-ab.sh",
@@ -1069,9 +1173,12 @@ owns = [
   "scripts/rival-decompose.py",
   "scripts/settle-score.py",
   "scripts/spec-probe.py",
+  "scripts/system-analysis.py",
+  "scripts/race-postmortem.py",
 ]
 inputs = [
   "runtime.core",
+  "runtime.order.evidence",
   "runtime.telemetry.report",
   "evidence.capture.raw",
   "evidence.corpus.dataset",
@@ -1153,6 +1260,7 @@ consumers = [
   "runtime.kalshi.fix",
   "runtime.risk",
   "runtime.kalshi.executor",
+  "runtime.order_evidence",
   "runtime.telemetry",
   "control.prepare",
   "platform.runtime",
@@ -1428,6 +1536,19 @@ consumers = [
 ]
 
 [[contract]]
+id = "runtime.order.evidence"
+kind = "stream"
+maturity = "implemented"
+door = "locked append-only order transition journal with durable pre-invocation receipts and strict replay"
+producer = "runtime.order_evidence"
+consumers = [
+  "runtime.kalshi.executor",
+  "runtime.telemetry",
+  "control.grade",
+  "evidence.measure",
+]
+
+[[contract]]
 id = "runtime.telemetry.report"
 kind = "artifact"
 maturity = "implemented"
@@ -1511,7 +1632,7 @@ consumers = [
 id = "control.endpoint.resolved"
 kind = "artifact"
 maturity = "compatibility"
-door = "resolver stdout or run-scoped file containing a verified media endpoint"
+door = "canonical webcast strategy is immutable schema-2 control/access-plan.json bound to one schema-3 RunPlan plus an explicit satisfied public/session prerequisite; current media remains a later capture_ready fact, while resolver stdout and $HOME URL files are the compatibility endpoint publication surface"
 producer = "control.acquire"
 consumers = [
   "runtime.source.sip",
@@ -1568,6 +1689,22 @@ producer = "control.grade"
 consumers = []
 
 [[contract]]
+id = "control.run.plan"
+kind = "artifact"
+maturity = "implemented"
+door = "immutable run plan var/runs/<EVENT_ID>/<RUN_ID>/control/run-plan.json: schema/event/run ids, UTC creation+start timestamps, ingress lane, execution host, repo-relative config+env paths with sha256, the lane's required preparation receipts, run-relative artifact destinations, self plan_sha256 (computed with the field omitted); idempotent re-init, divergent plan at the same path refused"
+producer = "control.operate"
+consumers = ["platform.notify", "control.acquire"]
+
+[[contract]]
+id = "control.run.receipts"
+kind = "artifact"
+maturity = "implemented"
+door = "append-only hash-chained lifecycle receipts var/runs/<EVENT_ID>/<RUN_ID>/control/receipts.jsonl (exclusive flock + O_APPEND, one canonical JSON line per write; previous_sha256 chain anchored at plan_sha256; typed transitions re-verify chain + config/env hashes; compat receipts are observations that never advance typed state); control/status.json is a derived snapshot, never authoritative"
+producer = "control.operate"
+consumers = ["platform.notify"]
+
+[[contract]]
 id = "platform.runtime.profile"
 kind = "capability"
 maturity = "compatibility"
@@ -1595,8 +1732,8 @@ consumers = [
 [[contract]]
 id = "platform.notification"
 kind = "event"
-maturity = "compatibility"
-door = "notify.sh channel delivery attempt and exit status"
+maturity = "implemented"
+door = "run-bound AlertRequest plus delivery-start/delivery-receipt/explicit-ack facts in the append-only lifecycle ledger; notify.sh and alert-phone.sh are delivery adapters, never acknowledgement authorities"
 producer = "platform.notify"
 consumers = [
   "control.discover",
@@ -1605,7 +1742,7 @@ consumers = [
   "control.supervise",
   "control.grade",
   "control.operator",
-
+  "control.launch",
   "control.hunt",
 ]
 

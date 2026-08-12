@@ -235,14 +235,16 @@ SOURCE_BLOCK = """\
 
 [[sources]]
 # THE phone leg. max_reconnects/idle_timeout_secs are the Q-REDIAL production
-# values; they require EARSHOT_REDIAL_DIR, which scripts/launch-event.sh exports
+# values; they require EARSHOT_REDIAL_DIR, which scripts/launch-event.sh exports.
+# The budget spans the whole event because event-autorun starts exactly one
+# Rust arm; call-leg replacements must never reconstruct that process.
 # (src/config.rs:588 refuses to arm otherwise). Without them a single mid-call
 # drop ends the run, and preflight FAILs the config unless launched
 # --one-shot-ok. Number + PIN are passed on the launcher command line and stay
 # OUT of git.
 kind = "twilio_stream"
 bind = "127.0.0.1:{port}"
-max_reconnects = 2
+max_reconnects = 20
 idle_timeout_secs = 8"""
 
 # Emitted on EVERY generated phone config. This block is a CAPABILITY
@@ -438,6 +440,10 @@ LABEL="com.earshot.{slug}"
 EVENT_DATE="{event_date}"
 END_HHMM_LIVE={end_hhmm}             # call + 150 min UTC
 COMPLETE_EARLIEST_HHMM={complete_hhmm}     # call + 45 min UTC
+# Literal profile locator for the immutable RunPlan compiler. eventctl never
+# sources this generated file, so it cannot safely recover identity from the
+# computed ACCOUNT_ENV search below. This path is portable across laptop/box.
+EARSHOT_ACCOUNT_PROFILE="$HOME/.earshot/{account_base}"
 # ACCOUNT_ENV is resolved by BASENAME, never by the absolute path this script
 # was invoked with. Derivation runs on the LAPTOP ($HOME/Code/ear, creds in
 # /Users/bernardodelrio/.earshot/) but this file is only ever SOURCED on the BOX
@@ -736,6 +742,13 @@ def self_test():
     for probe in ("market_ticker", "phrase", "variants"):
         assert new.count(probe) == tail.count(probe)
     assert 8099 in RESERVED_PORTS
+    assert "max_reconnects = 20" in SOURCE_BLOCK, (
+        "new phone configs must carry the event-wide reconnect budget; "
+        "event-autorun no longer reconstructs Rust after budget exhaustion"
+    )
+    assert 'EARSHOT_ACCOUNT_PROFILE="$HOME/.earshot/{account_base}"' in ENV_TMPL, (
+        "generated envs need a literal portable identity profile locator"
+    )
 
     # The derived lane must own its own state dir. TLN 26AUG05 shipped a phone
     # config declaring the WEBCAST twin's event id, so both arms shared one

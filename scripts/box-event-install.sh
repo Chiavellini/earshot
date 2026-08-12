@@ -2,7 +2,8 @@
 # Schedule ONE phone event on the us-east-1 box, then prove the installed job is
 # the job you meant.
 #
-#   scripts/box-event-install.sh --event-env configs/<ev>-phone-autorun.env
+#   scripts/box-event-install.sh --event-env configs/<ev>-phone-autorun.env \
+#       --run-dir var/runs/<EVENT_ID>/<RUN_ID>
 #       [--date YYYY-MM-DD] [--test] [--verify-only] [--disarm] [--no-digits]
 #
 # WHY THIS EXISTS. Three separate 2026-08-05 costs, all in the gap between
@@ -26,16 +27,20 @@
 # Digits are piped over stdin, never passed as arguments: an argv is visible in
 # `ps` to every user on the host and lands in shell history.
 #
-# This script does NOT dial and does NOT arm. It schedules, and it verifies.
+# This script does NOT dial and does NOT arm. Before scheduling, it transfers
+# the exact verified RunPlan + receipt prefix into a private box staging path,
+# verifies it again against the box's pinned config/env, and publishes it only
+# through scripts/run-host-boundary.py. The box owns every later append.
 set -uo pipefail
 
 REPO="${EARSHOT_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "$REPO" || exit 2
 
-EVENT_ENV="" DATE="" TEST=0 VERIFY_ONLY=0 DISARM=0 PUSH_DIGITS=1
+EVENT_ENV="" RUN_DIR_RAW="" DATE="" TEST=0 VERIFY_ONLY=0 DISARM=0 PUSH_DIGITS=1
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --event-env)  EVENT_ENV="$2"; shift 2 ;;
+    --run-dir)    RUN_DIR_RAW="$2"; shift 2 ;;
     --date)       DATE="$2"; shift 2 ;;
     --test)       TEST=1; shift ;;
     --verify-only) VERIFY_ONLY=1; shift ;;
@@ -46,7 +51,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 [[ -n "$EVENT_ENV" && -f "$EVENT_ENV" ]] || {
-  echo "usage: $0 --event-env configs/<ev>-phone-autorun.env [--date YYYY-MM-DD] [--test] [--verify-only] [--disarm]" >&2
+  echo "usage: $0 --event-env configs/<ev>-phone-autorun.env --run-dir var/runs/<EVENT_ID>/<RUN_ID> [--date YYYY-MM-DD] [--test] [--verify-only] [--disarm]" >&2
   exit 2
 }
 
@@ -60,6 +65,71 @@ BOX="${EARSHOT_BOX:-ubuntu@3.212.174.94}"
 KEY="${EARSHOT_BOX_KEY:-$HOME/.ssh/earshot-useast1.pem}"
 BOX_REPO="${EARSHOT_BOX_REPO:-~/ear}"
 SSH=(ssh -o ConnectTimeout=15 -o BatchMode=yes -i "$KEY" "$BOX")
+
+# ── Exact typed run selection (read-only locally) ─────────────────────────
+# Disarm keeps its legacy label-only form so an operator can stop a stale unit
+# even if the corresponding laptop run tree is unavailable. Every install or
+# verification, however, is schema-3-only and must name one canonical run.
+if [[ "$DISARM" != 1 ]]; then
+  [[ -n "$RUN_DIR_RAW" ]] || {
+    echo "REFUSED: --run-dir is required; scheduling by mutable event env alone is no longer supported" >&2
+    exit 2
+  }
+  RUN_DIR=$(python3 - "$REPO" "$RUN_DIR_RAW" <<'PY'
+from pathlib import Path
+import sys
+repo = Path(sys.argv[1]).resolve()
+raw = Path(sys.argv[2])
+run = (raw if raw.is_absolute() else repo / raw).resolve()
+try:
+    run.relative_to(repo / "var" / "runs")
+except ValueError:
+    raise SystemExit("run directory is outside canonical var/runs")
+print(run)
+PY
+  ) || { echo "REFUSED: unsafe --run-dir '$RUN_DIR_RAW'" >&2; exit 2; }
+  EARSHOT_REPO="$REPO" python3 scripts/eventctl.py verify --run-dir "$RUN_DIR" || {
+    echo "REFUSED: local RunPlan/ledger verification failed" >&2; exit 1;
+  }
+  PLAN_EXPORTS=$(python3 - "$REPO" "$RUN_DIR" "$EVENT_ENV" <<'PY'
+import hashlib, json, shlex, subprocess, sys
+from pathlib import Path
+repo, run, event_env = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
+plan = json.loads((run / "control/run-plan.json").read_text())
+if plan.get("schema") != 3 or plan.get("kind") != "run-plan":
+    raise SystemExit("not a schema-3 RunPlan")
+if plan.get("lane") != "phone":
+    raise SystemExit(f"box-event-install is phone-only; plan lane={plan.get('lane')!r}")
+if not plan.get("execution_enabled"):
+    raise SystemExit("box-event-install refuses a capture-only plan")
+want = (repo / plan["event_env_path"]).resolve() if plan.get("event_env_path") else None
+if want != event_env.resolve():
+    raise SystemExit(f"event env mismatch: plan pins {plan.get('event_env_path')!r}")
+status = subprocess.run(
+    [sys.executable, str(repo / "scripts/eventctl.py"), "status", "--run-dir", str(run), "--json"],
+    cwd=repo, text=True, capture_output=True, check=True,
+    env={**__import__('os').environ, "EARSHOT_REPO": str(repo)},
+)
+payload = json.loads(status.stdout)
+reached = {x["transition"] for x in payload["state"]["reached"]}
+if "preflight_passed" not in reached:
+    raise SystemExit("RunPlan has not reached preflight_passed")
+if not payload["state"]["active"]:
+    raise SystemExit("RunPlan is terminal/archived")
+values = {
+    "PLAN_EVENT_ID": plan["event_id"],
+    "PLAN_RUN_ID": plan["run_id"],
+    "PLAN_SHA256": plan["plan_sha256"],
+    "PLAN_HOST": plan["execution_host_id"],
+    "PLAN_CONFIG_PATH": plan["config_path"],
+    "PLAN_ENV_PATH": plan["event_env_path"],
+}
+for key, value in values.items():
+    print(f"{key}={shlex.quote(str(value))}")
+PY
+  ) || { echo "REFUSED: --run-dir does not match this phone event/env" >&2; exit 1; }
+  eval "$PLAN_EXPORTS"
+fi
 
 # ── Read the event env WITHOUT letting it leak into this shell ─────────────
 # It contains command substitutions that read the digit store; evaluate them in
@@ -123,6 +193,63 @@ fi
 
 (( FAILS )) && { echo; echo "REFUSED: $FAILS coherence failure(s) — nothing installed"; exit 1; }
 
+# ── Transfer the exact RunPlan + receipt prefix ───────────────────────────
+# A normal source deploy explicitly excludes var/runs. This is the only path
+# that may publish a run on the execution host. rsync lands in a private
+# namespace first; a checksum dry-run proves the source did not change during
+# transfer, then the box's eventctl and run-host-boundary helper verify/publish.
+REMOTE_REPO=""
+REMOTE_RUN=""
+if [[ "$VERIFY_ONLY" != 1 ]]; then
+  REMOTE_REPO=$("${SSH[@]}" "cd ${BOX_REPO} && pwd -P") || {
+    echo "REFUSED: cannot resolve the box repository" >&2; exit 1;
+  }
+  [[ "$REMOTE_REPO" == /* && "$REMOTE_REPO" != *[$'\t\r\n ']* ]] || {
+    echo "REFUSED: box returned an unsafe repository path" >&2; exit 1;
+  }
+  STAGING=$("${SSH[@]}" "mkdir -p '$REMOTE_REPO/var/host-boundary-staging' && mktemp -d '$REMOTE_REPO/var/host-boundary-staging/dispatch.XXXXXX'") || {
+    echo "REFUSED: cannot allocate private box run staging" >&2; exit 1;
+  }
+  [[ "$STAGING" == "$REMOTE_REPO"/var/host-boundary-staging/dispatch.* ]] || {
+    echo "REFUSED: box returned an unsafe staging path '$STAGING'" >&2; exit 1;
+  }
+  STAGED_RUN="$STAGING/$PLAN_EVENT_ID/$PLAN_RUN_ID"
+  REMOTE_RUN="$REMOTE_REPO/var/runs/$PLAN_EVENT_ID/$PLAN_RUN_ID"
+  cleanup_staging() {
+    "${SSH[@]}" "case '$STAGING' in '$REMOTE_REPO'/var/host-boundary-staging/dispatch.*) rm -rf -- '$STAGING';; esac" >/dev/null 2>&1 || true
+  }
+  trap cleanup_staging EXIT
+  "${SSH[@]}" "mkdir -p '$STAGING/$PLAN_EVENT_ID'" || {
+    echo "REFUSED: cannot create staged event directory" >&2; exit 1;
+  }
+  RSYNC_RSH="ssh -o ConnectTimeout=15 -o BatchMode=yes -i $KEY"
+  rsync -a --delete -e "$RSYNC_RSH" "$RUN_DIR/" "$BOX:$STAGED_RUN/" || {
+    echo "REFUSED: RunPlan prefix transfer failed" >&2; exit 1;
+  }
+  STABILITY=$(rsync -ani --checksum --delete -e "$RSYNC_RSH" \
+    "$RUN_DIR/" "$BOX:$STAGED_RUN/") || {
+      echo "REFUSED: RunPlan prefix stability check failed" >&2; exit 1;
+    }
+  [[ -z "$STABILITY" ]] || {
+    printf '%s\n' "$STABILITY" >&2
+    echo "REFUSED: RunPlan prefix changed during transfer" >&2
+    exit 1
+  }
+  "${SSH[@]}" "cd '$REMOTE_REPO' && EARSHOT_REPO='$REMOTE_REPO' python3 scripts/eventctl.py verify --run-dir '$STAGED_RUN' && EARSHOT_REPO='$REMOTE_REPO' python3 scripts/run-host-boundary.py reconcile --repo '$REMOTE_REPO' --incoming '$STAGED_RUN' --destination '$REMOTE_RUN' --expected-host '$PLAN_HOST'" || {
+    echo "REFUSED: box rejected the staged RunPlan prefix" >&2; exit 1;
+  }
+  cleanup_staging
+  trap - EXIT
+else
+  REMOTE_REPO=$("${SSH[@]}" "cd ${BOX_REPO} && pwd -P") || {
+    echo "REFUSED: cannot resolve the box repository" >&2; exit 1;
+  }
+  REMOTE_RUN="$REMOTE_REPO/var/runs/$PLAN_EVENT_ID/$PLAN_RUN_ID"
+  "${SSH[@]}" "cd '$REMOTE_REPO' && EARSHOT_REPO='$REMOTE_REPO' python3 scripts/eventctl.py verify --run-dir '$REMOTE_RUN'" || {
+    echo "REFUSED: installed box RunPlan/ledger is missing or invalid" >&2; exit 1;
+  }
+fi
+
 # ── Push the digit store (stdin, 0600, never argv) ─────────────────────────
 if [[ "$PUSH_DIGITS" == 1 && "$VERIFY_ONLY" != 1 ]]; then
   if [[ -f state/hunt/numbers.env ]]; then
@@ -139,84 +266,37 @@ fi
 
 # ── Install ────────────────────────────────────────────────────────────────
 if [[ "$VERIFY_ONLY" != 1 ]]; then
-  TEST_ENV=""
-  TEST_FLAG=""
   if [[ "$TEST" == 1 ]]; then
-    # Rehearsal posture. install-event-timer.sh --test bakes EARSHOT_AUTORUN_TEST=1
-    # into the unit and forwards any EARSHOT_AUTORUN_TEST_* already exported, so
-    # the drill runs through the REAL production mechanism (a timer-fired unit),
-    # not a manual shell run — the distinction CLAUDE.md makes load-bearing.
-    TEST_FLAG="--test"
-    TEST_ENV="EARSHOT_AUTORUN_TEST_CONFIG=${EARSHOT_AUTORUN_TEST_CONFIG:-} EARSHOT_AUTORUN_TEST_DIAL=${EARSHOT_AUTORUN_TEST_DIAL:-} EARSHOT_AUTORUN_TEST_TO=${EARSHOT_AUTORUN_TEST_TO:-} EARSHOT_AUTORUN_TEST_LONG_S=${EARSHOT_AUTORUN_TEST_LONG_S:-}"
-    if [[ "${EARSHOT_AUTORUN_TEST_DIAL:-0}" == 1 && -z "${EARSHOT_AUTORUN_TEST_TO:-}" ]]; then
-      echo "REFUSED: EARSHOT_AUTORUN_TEST_DIAL=1 without EARSHOT_AUTORUN_TEST_TO — a drill must never ring a real bridge" >&2
-      exit 1
-    fi
+    echo "REFUSED: --test is not a schema-3 scheduling posture. Compile a capture-only rehearsal RunPlan instead." >&2
+    exit 2
   fi
   echo "installing $EV_LABEL on $BOX …"
-  "${SSH[@]}" "cd ${BOX_REPO} && export $TEST_ENV && scripts/install-event-timer.sh --event-env '$EVENT_ENV' --fire-hhmm '$EV_FIRE_HHMM' --date '$DATE' $TEST_FLAG" || {
+  "${SSH[@]}" "cd '$REMOTE_REPO' && EARSHOT_REPO='$REMOTE_REPO' scripts/install-event-timer.sh --run-dir '$REMOTE_RUN' --expected-host '$PLAN_HOST'" || {
     echo "REFUSED: install-event-timer.sh failed on the box (lingering off? not Linux? env env missing?)" >&2
+    exit 1
+  }
+else
+  # Verification is delegated to the same loaded-readback boundary used at
+  # install time. It performs no descriptor write/reload/enable operation and
+  # requires the durable proof + `scheduled` receipt to already exist.
+  "${SSH[@]}" "cd '$REMOTE_REPO' && EARSHOT_REPO='$REMOTE_REPO' scripts/install-event-timer.sh --run-dir '$REMOTE_RUN' --expected-host '$PLAN_HOST' --verify-only" || {
+    echo "REFUSED: installed box job/proof does not match the exact RunPlan" >&2
     exit 1
   }
 fi
 
-# ── VERIFY THE INSTALLED JOB — never the file you wrote ────────────────────
-echo
-echo "── re-reading the INSTALLED unit (not the file that was written) ──"
-INSTALLED=$("${SSH[@]}" "systemctl --user cat '$EV_LABEL.service' '$EV_LABEL.timer' 2>/dev/null; echo '---TIMERS---'; systemctl --user list-timers --all --no-legend 2>/dev/null | grep -F '$EV_LABEL'")
-# `systemctl --user cat` prints nothing for an unknown unit, so the marker echo
-# is all that comes back. Say "nothing is loaded" plainly instead of listing six
-# individual mismatches against an empty document.
-if ! grep -q 'ExecStart=' <<<"$INSTALLED"; then
-  echo "REFUSED: NO unit named $EV_LABEL is loaded on the box — nothing will fire." >&2
-  echo "  Install it: $0 --event-env $EVENT_ENV --date $DATE" >&2
+# Re-read the box-owned ledger after installation. A green scheduler command
+# without a persisted scheduled receipt is not an installed event.
+"${SSH[@]}" "cd '$REMOTE_REPO' && EARSHOT_REPO='$REMOTE_REPO' python3 scripts/eventctl.py verify --run-dir '$REMOTE_RUN' && EARSHOT_REPO='$REMOTE_REPO' python3 scripts/eventctl.py status --run-dir '$REMOTE_RUN' --json" >/dev/null || {
+  echo "REFUSED: box ledger failed post-install verification" >&2
   exit 1
-fi
-
-VFAILS=0
-vcheck() { # vcheck <needle> <description>
-  if grep -qF -- "$1" <<<"$INSTALLED"; then
-    echo "  OK   $2"
-  else
-    echo "  MISS $2  (looked for '$1')"
-    VFAILS=$((VFAILS+1))
-  fi
 }
-EVENT_ENV_ABS_BOX="${BOX_REPO/#\~/\/home\/ubuntu}/$EVENT_ENV"
-vcheck "EARSHOT_EVENT_ENV=" "unit carries EARSHOT_EVENT_ENV"
-grep -qF "$EVENT_ENV" <<<"$INSTALLED" \
-  && echo "  OK   it points at $EVENT_ENV" \
-  || { echo "  MISS the loaded unit points at a DIFFERENT event env than $EVENT_ENV"; VFAILS=$((VFAILS+1)); }
-vcheck "scripts/event-autorun.sh" "ExecStart is event-autorun.sh"
-vcheck "OnCalendar=$DATE ${EV_FIRE_HHMM:0:2}:${EV_FIRE_HHMM:2:2}:00" "fires at $DATE ${EV_FIRE_HHMM:0:2}:${EV_FIRE_HHMM:2:2}:00 box-local (=UTC)"
-if [[ "$TEST" == 1 ]]; then
-  vcheck "EARSHOT_AUTORUN_TEST=1" "REHEARSAL posture (dry-run flags, no live orders)"
-else
-  grep -qF "EARSHOT_AUTORUN_TEST=1" <<<"$INSTALLED" \
-    && { echo "  MISS the loaded unit is in TEST posture but this is a LIVE install"; VFAILS=$((VFAILS+1)); } \
-    || echo "  OK   LIVE posture (event-autorun applies --i-am-live --allow-mention --fillable)"
-fi
-if grep -q -- '---TIMERS---' <<<"$INSTALLED"; then
-  NEXT=$(sed -n '/---TIMERS---/,$p' <<<"$INSTALLED" | tail -n +2 | head -1)
-  [[ -n "$NEXT" ]] \
-    && echo "  OK   timer listed: $NEXT" \
-    || { echo "  MISS timer is not in systemctl --user list-timers — it will not fire"; VFAILS=$((VFAILS+1)); }
-fi
 
-echo
-if (( VFAILS )); then
-  echo "SUSPECT: the loaded job does not match what was asked for ($VFAILS mismatch(es))."
-  echo "Inspect:  ssh -i $KEY $BOX \"systemctl --user cat $EV_LABEL.service\""
-  "$REPO/scripts/notify.sh" "PHONE ARM SUSPECT: ${EV_EVENT_NAME:-?}" \
-    "The installed systemd job for $EV_LABEL does not match the requested posture ($VFAILS mismatch). It will fire anyway — inspect before the call." --quiet >/dev/null 2>&1 || true
-  exit 1
-fi
-
-echo "ARMED: $EV_LABEL fires ${EV_FIRE_HHMM}Z on $DATE, box $BOX"
+echo "ARMED: $PLAN_EVENT_ID/$PLAN_RUN_ID at T-25 on $DATE, box $BOX"
 echo "  ingress  $EV_EARSHOT_STREAM_URL"
 echo "  dial     attempts=${EV_DIAL_ATTEMPTS:-launch-event default 3}, stream-confirm=${EV_STREAM_CONFIRM_SECS:-90}s"
 echo "  disarm   scripts/box-event-install.sh --event-env $EVENT_ENV --disarm"
 echo "  kill     ssh -i $KEY $BOX 'touch ${BOX_REPO}/state/<EVENT_ID>/STOP'"
 "$REPO/scripts/notify.sh" "PHONE ARM SCHEDULED: ${EV_EVENT_NAME:-?}" \
-  "$EV_LABEL fires ${EV_FIRE_HHMM}Z on $DATE on $BOX. Ingress $EV_EARSHOT_STREAM_URL. Verified against the loaded unit." --quiet >/dev/null 2>&1 || true
+  "$PLAN_EVENT_ID/$PLAN_RUN_ID fires at RunPlan T-25 on $BOX. Ingress $EV_EARSHOT_STREAM_URL. Verified against loaded unit + durable schedule proof." --quiet >/dev/null 2>&1 || true
 exit 0

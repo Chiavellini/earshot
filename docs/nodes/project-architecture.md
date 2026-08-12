@@ -30,7 +30,11 @@ change supplies updated producer and consumer contracts before registry edits.
 
 `architecture/nodes.toml` is the machine-readable ownership graph;
 `docs/NODES.md` is its human projection; every registered contract uses the
-headings in `docs/nodes/TEMPLATE.md`.
+headings in `docs/nodes/TEMPLATE.md`. `architecture/operations.toml` is the
+separate machine-readable operator surface: generic public commands, internal
+adapters, hard-retired live entrypoints, and historical scripts. The normal
+documentation lint invokes `scripts/ops-surface-check.py`; a new dated script
+or trade/schedule-capable top-level script that is not classified fails CI.
 
 ## Side effects and exclusive resources
 
@@ -52,9 +56,9 @@ land separately from implementation changes.
 
 ## Verification
 
-Run `scripts/doc-lint.sh` and inspect `architecture/nodes.toml` against
-`docs/NODES.md`. For legacy runtime topology, compare the result with
-`docs/ARCHITECTURE.md`.
+Run `scripts/doc-lint.sh`, `python3 tests/ops_surface.py`, and inspect
+`architecture/nodes.toml` against `docs/NODES.md`. For legacy runtime topology,
+compare the result with `docs/ARCHITECTURE.md`.
 
 ## Migration status
 

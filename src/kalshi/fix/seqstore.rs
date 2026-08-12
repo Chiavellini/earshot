@@ -31,7 +31,9 @@ pub struct FileSeqStore {
 
 impl FileSeqStore {
     pub fn new(state_dir: &std::path::Path) -> Self {
-        FileSeqStore { path: state_dir.join("fix_seq.json") }
+        FileSeqStore {
+            path: state_dir.join("fix_seq.json"),
+        }
     }
 }
 
@@ -41,7 +43,10 @@ impl SeqStore for FileSeqStore {
             return (1, 1);
         };
         let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or_default();
-        (v["next_out"].as_u64().unwrap_or(1), v["next_in"].as_u64().unwrap_or(1))
+        (
+            v["next_out"].as_u64().unwrap_or(1),
+            v["next_in"].as_u64().unwrap_or(1),
+        )
     }
 
     fn save(&self, next_out: u64, next_in: u64) {

@@ -32,6 +32,12 @@ state directories are current compatibility surfaces, not implicit APIs. New
 connections should prefer versioned TOML/JSON records with explicit paths and
 failure states.
 
+The operator surface is separately machine-declared in
+`architecture/operations.toml` and rendered by `scripts/opsctl.sh surface`.
+It is intentionally smaller than the node implementation map: public generic
+commands call node-owned internal adapters; dated and issuer-specific scripts
+are historical or hard-retired, never alternate production procedures.
+
 Every registry contract declares three boundary facts:
 
 - `kind`: `artifact` is a durable or immutable value, `event` is a lifecycle
@@ -77,6 +83,7 @@ support nodes.
 | `runtime.risk` | [existing risk contract](layers/risk.md) |
 | `runtime.kalshi.executor` | [existing executor contract](layers/executor.md) |
 | `runtime.order_transport` | [runtime-order-transport](nodes/runtime-order-transport.md) |
+| `runtime.order_evidence` | [runtime-order-evidence](nodes/runtime-order-evidence.md) |
 | `runtime.telemetry` | [existing telemetry contract](layers/telemetry.md) |
 
 ## Event control graph
@@ -115,6 +122,7 @@ capture remain behind their own contracts.
 | `control.phone_session` | [control-phone-session](nodes/control-phone-session.md) |
 | `control.supervise` | [control-supervise](nodes/control-supervise.md) |
 | `control.grade` | [control-grade](nodes/control-grade.md) |
+| `control.operate` | [control-operate](nodes/control-operate.md) |
 
 ## Platform graph
 

@@ -30,16 +30,24 @@ pub fn build_detector(cfg: &EventConfig) -> Result<Box<dyn Detector>, DetectorBu
                     "sherpa_kws without pipeline.resample_to_hz = 16000: only valid if every source is 16 kHz-native"
                 );
             }
-            Ok(Box::new(crate::detector::sherpa_kws::SherpaKwsDetector::new(sk, &cfg.keywords)?))
+            Ok(Box::new(
+                crate::detector::sherpa_kws::SherpaKwsDetector::new(sk, &cfg.keywords)?,
+            ))
         }
         EngineKind::StreamingCtc => {
-            let sc = cfg.detector.streaming_ctc.as_ref().expect("validated config");
+            let sc = cfg
+                .detector
+                .streaming_ctc
+                .as_ref()
+                .expect("validated config");
             if cfg.pipeline.resample_to_hz != Some(16_000) {
                 tracing::warn!(
                     "streaming_ctc without pipeline.resample_to_hz = 16000: only valid if every source is 16 kHz-native"
                 );
             }
-            Ok(Box::new(crate::detector::streaming_ctc::StreamingCtcDetector::new(sc, &cfg.keywords)?))
+            Ok(Box::new(
+                crate::detector::streaming_ctc::StreamingCtcDetector::new(sc, &cfg.keywords)?,
+            ))
         }
     }
 }
@@ -50,7 +58,8 @@ mod tests {
     use crate::config;
 
     fn example_cfg() -> EventConfig {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("configs/example-event.toml");
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("configs/example-event.toml");
         config::load(&path).unwrap()
     }
 
@@ -66,6 +75,9 @@ mod tests {
         cfg.detector.engine = EngineKind::SherpaKws;
         cfg.detector.sherpa_kws =
             Some(toml::from_str(r#"model_dir = "/nonexistent/model/dir""#).unwrap());
-        assert!(matches!(build_detector(&cfg), Err(DetectorBuildError::SherpaKws(_))));
+        assert!(matches!(
+            build_detector(&cfg),
+            Err(DetectorBuildError::SherpaKws(_))
+        ));
     }
 }

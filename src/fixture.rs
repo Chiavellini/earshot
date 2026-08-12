@@ -30,9 +30,18 @@ impl FixtureSpec {
             tone_hz: 440.0,
             amplitude: 0.6,
             bursts: vec![
-                Burst { onset_ms: 2000, dur_ms: 500 },
-                Burst { onset_ms: 5000, dur_ms: 500 },
-                Burst { onset_ms: 8000, dur_ms: 500 },
+                Burst {
+                    onset_ms: 2000,
+                    dur_ms: 500,
+                },
+                Burst {
+                    onset_ms: 5000,
+                    dur_ms: 500,
+                },
+                Burst {
+                    onset_ms: 8000,
+                    dur_ms: 500,
+                },
             ],
         }
     }

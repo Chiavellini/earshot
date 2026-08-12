@@ -16,8 +16,18 @@
 # 07-22 post-mortems #1/#2). YouTube events: do NOT use this template; keep
 # the frozen yt-dlp leg (configs/webcast-tsla.toml) until a streamlink-vs-
 # YouTube ladder number exists (capture first).
-# Posture: mention-probe observe (1¢ non-crossing) — fill posture is gated on
-# the Phase-4 precision verdict (docs/RACE-STRATEGY.md).
+# Posture: mention-FILL, $1 PER SUB-MARKET (operator ruling 2026-08-10).
+# All 19 words carry max_price_cents = 97 (= risk::MENTION_FILL_CAP_CENTS) x 1
+# contract, so each sub-market can cross a real ask and fill independently;
+# max_event_notional_cents = 1900 admits all 19 (19 x 97 = 1843c = $18.43 worst
+# case). This REQUIRES --fillable on the arm: without it the executor
+# short-circuits every intent non-crossing and nothing reaches the wire
+# (26AUG05: four events reported "23 orders" that were never sent). The
+# com.earshot.hims-26aug10-watch agent passes --i-am-live --fillable.
+# NOTE the Phase-4 precision verdict this file used to defer to is still
+# UNRESOLVED — the .readiness study measures RECALL, not precision. Money is
+# bounded by the caps above and by risk::PROBE_LEDGER_CAP_CENTS, not by any
+# evidence that a detection is correct.
 
 [event]
 id        = "KXEARNINGSMENTIONHIMS-26AUG10-WEBCAST"
@@ -91,7 +101,7 @@ env = "prod"
 # ── Placeholders below: replace with the `earshot prepare` output ──────────
 [risk]
 max_order_notional_cents = 100
-max_event_notional_cents = 100
+max_event_notional_cents = 1900
 book_stale_ms            = 2000
 audio_stale_ms           = 2000
 allowlist_tickers = [
@@ -116,176 +126,176 @@ allowlist_tickers = [
   "KXEARNINGSMENTIONHIMS-26AUG10-ZAVA",
 ]
 
-# Amazon (KXEARNINGSMENTIONHIMS-26AUG10-AMAZ) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+# Amazon (KXEARNINGSMENTIONHIMS-26AUG10-AMAZ) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-AMAZ"
 phrase           = "amazon"
 variants         = ["amazon", "amazons"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
 
-# Canada (KXEARNINGSMENTIONHIMS-26AUG10-CANA) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+# Canada (KXEARNINGSMENTIONHIMS-26AUG10-CANA) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-CANA"
 phrase           = "canada"
 variants         = ["canada", "canadas"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
 
-# Cancer (KXEARNINGSMENTIONHIMS-26AUG10-CANC) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+# Cancer (KXEARNINGSMENTIONHIMS-26AUG10-CANC) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-CANC"
 phrase           = "cancer"
 variants         = ["cancer", "cancers"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
 
-# Collaboration (KXEARNINGSMENTIONHIMS-26AUG10-COLL) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+# Collaboration (KXEARNINGSMENTIONHIMS-26AUG10-COLL) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-COLL"
 phrase           = "collaboration"
 variants         = ["collaboration", "collaborations"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
 
-# Eucalyptus (KXEARNINGSMENTIONHIMS-26AUG10-EUCA) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+# Eucalyptus (KXEARNINGSMENTIONHIMS-26AUG10-EUCA) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-EUCA"
 phrase           = "eucalyptus"
 variants         = ["eucalyptus"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
 
-# Europe (KXEARNINGSMENTIONHIMS-26AUG10-EURO) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+# Europe (KXEARNINGSMENTIONHIMS-26AUG10-EURO) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-EURO"
 phrase           = "europe"
 variants         = ["europe", "europes"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
 
-# FDA (KXEARNINGSMENTIONHIMS-26AUG10-FDA) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+# FDA (KXEARNINGSMENTIONHIMS-26AUG10-FDA) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-FDA"
 phrase           = "fda"
 variants         = ["fda", "fdas", "f d a"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
 
-# Lab Testing (KXEARNINGSMENTIONHIMS-26AUG10-LABT) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+# Lab Testing (KXEARNINGSMENTIONHIMS-26AUG10-LABT) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-LABT"
 phrase           = "lab testing"
 variants         = ["lab testing"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
 
-# Longevity (KXEARNINGSMENTIONHIMS-26AUG10-LONG) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+# Longevity (KXEARNINGSMENTIONHIMS-26AUG10-LONG) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-LONG"
 phrase           = "longevity"
 variants         = ["longevity", "longevitys"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
 
-# Microdose / Microdosing (KXEARNINGSMENTIONHIMS-26AUG10-MICR) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+# Microdose / Microdosing (KXEARNINGSMENTIONHIMS-26AUG10-MICR) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market) ; ⚠ compound/symbol phrase — review variants
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-MICR"
 phrase           = "microdose"
 variants         = ["microdose", "microdoses", "microdosing", "microdosings"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
 
-# Peptide (KXEARNINGSMENTIONHIMS-26AUG10-PEPT) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+# Peptide (KXEARNINGSMENTIONHIMS-26AUG10-PEPT) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-PEPT"
 phrase           = "peptide"
 variants         = ["peptide", "peptides"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
 
-# Regulation (KXEARNINGSMENTIONHIMS-26AUG10-REGU) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+# Regulation (KXEARNINGSMENTIONHIMS-26AUG10-REGU) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-REGU"
 phrase           = "regulation"
 variants         = ["regulation", "regulations"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
 
-# Tariff (KXEARNINGSMENTIONHIMS-26AUG10-TARI) — corpus-tuned; cap: probe (non-crossing, no fill)
+# Tariff (KXEARNINGSMENTIONHIMS-26AUG10-TARI) — corpus-tuned; cap: FILL 97c x1 (crossing; $1 per sub-market)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-TARI"
 phrase           = "tariff"
 variants         = ["tariff", "tariffs"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
 confirmed_threshold = 0.1
 boost            = 3.0
 
-# Testosterone (KXEARNINGSMENTIONHIMS-26AUG10-TEST) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+# Testosterone (KXEARNINGSMENTIONHIMS-26AUG10-TEST) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-TEST"
 phrase           = "testosterone"
 variants         = ["testosterone", "testosterones"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
 
-# Vitamin (KXEARNINGSMENTIONHIMS-26AUG10-VITA) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+# Vitamin (KXEARNINGSMENTIONHIMS-26AUG10-VITA) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-VITA"
 phrase           = "vitamin"
 variants         = ["vitamin", "vitamins"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
 
-# Wearable (KXEARNINGSMENTIONHIMS-26AUG10-WEAR) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+# Wearable (KXEARNINGSMENTIONHIMS-26AUG10-WEAR) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-WEAR"
 phrase           = "wearable"
 variants         = ["wearable", "wearables"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
 
-# Wegovy (KXEARNINGSMENTIONHIMS-26AUG10-WEGO) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+# Wegovy (KXEARNINGSMENTIONHIMS-26AUG10-WEGO) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-WEGO"
 phrase           = "wegovy"
 variants         = ["wegovy", "wegovys"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
 
-# YourBio (KXEARNINGSMENTIONHIMS-26AUG10-YOUR) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+# YourBio (KXEARNINGSMENTIONHIMS-26AUG10-YOUR) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-YOUR"
 phrase           = "yourbio"
-variants         = ["yourbio", "yourbios"]
-max_price_cents  = 1
+variants         = ["yourbio"]
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
 
-# Zava (KXEARNINGSMENTIONHIMS-26AUG10-ZAVA) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+# Zava (KXEARNINGSMENTIONHIMS-26AUG10-ZAVA) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: FILL 97c x1 (crossing; $1 per sub-market)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONHIMS-26AUG10-ZAVA"
 phrase           = "zava"
 variants         = ["zava", "zavas"]
-max_price_cents  = 1
+max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
 

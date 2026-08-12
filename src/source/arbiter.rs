@@ -88,7 +88,11 @@ impl SourceArbiter {
                 "SourceArbiter needs at least 2 inner sources".into(),
             ));
         }
-        Ok(SourceArbiter { inners, params, source_id })
+        Ok(SourceArbiter {
+            inners,
+            params,
+            source_id,
+        })
     }
 }
 
@@ -150,18 +154,23 @@ impl AudioSource for SourceArbiter {
         }
     }
 
-    async fn run(
-        self: Box<Self>,
-        tx: RingSender<AudioFrame>,
-    ) -> Result<SourceExit, SourceError> {
-        let SourceArbiter { inners, params, source_id } = *self;
+    async fn run(self: Box<Self>, tx: RingSender<AudioFrame>) -> Result<SourceExit, SourceError> {
+        let SourceArbiter {
+            inners,
+            params,
+            source_id,
+        } = *self;
         tracing::info!(legs = inners.len(), mode = ?params.mode, "arbiter: starting dual dial-in");
 
         let mut legs = Vec::with_capacity(inners.len());
         for (idx, inner) in inners.into_iter().enumerate() {
             let (leg_tx, leg_rx) = ring::ring::<AudioFrame>(LEG_RING_CAP);
             let handle = tokio::spawn(async move { inner.run(leg_tx).await });
-            legs.push(Leg { idx, rx: leg_rx, handle });
+            legs.push(Leg {
+                idx,
+                rx: leg_rx,
+                handle,
+            });
         }
 
         match params.mode {
@@ -216,7 +225,11 @@ async fn run_failover(
                 tracing::warn!(
                     from = active,
                     to = next,
-                    reason = if active_finished { "finished" } else { "stalled" },
+                    reason = if active_finished {
+                        "finished"
+                    } else {
+                        "stalled"
+                    },
                     "arbiter: failover switch"
                 );
                 active = next;
@@ -289,7 +302,11 @@ async fn run_take_first(
             }
             let (lag, peak) = xcorr::best_lag(&ref_pcm, &jpcm, max_lag);
             if peak < ALIGN_MIN_PEAK {
-                tracing::warn!(leg = j, peak, "arbiter: leg failed to align — TakeFirst degraded");
+                tracing::warn!(
+                    leg = j,
+                    peak,
+                    "arbiter: leg failed to align — TakeFirst degraded"
+                );
                 aligned_ok = false;
                 break;
             }
@@ -297,7 +314,12 @@ async fn run_take_first(
             first_seq[j] = buf[j][0].seq;
             // lag is in samples; a positive lag means leg j is delayed vs ref.
             lag_frames[j] = (lag as f64 / spf as f64).round() as i64;
-            tracing::info!(leg = j, lag_frames = lag_frames[j], peak, "arbiter: leg aligned");
+            tracing::info!(
+                leg = j,
+                lag_frames = lag_frames[j],
+                peak,
+                "arbiter: leg aligned"
+            );
         }
     }
 
@@ -313,13 +335,13 @@ async fn run_take_first(
     }
 
     // refpos maps a leg-local seq onto the common reference timeline.
-    let refpos = |leg: usize, seq: u64| -> i64 {
-        (seq as i64 - first_seq[leg] as i64) - lag_frames[leg]
-    };
+    let refpos =
+        |leg: usize, seq: u64| -> i64 { (seq as i64 - first_seq[leg] as i64) - lag_frames[leg] };
 
     // Flush Phase A: forward each distinct audio position once, in order.
     let mut out_seq = 0u64;
-    let mut pending: std::collections::BTreeMap<i64, AudioFrame> = std::collections::BTreeMap::new();
+    let mut pending: std::collections::BTreeMap<i64, AudioFrame> =
+        std::collections::BTreeMap::new();
     for (leg, frames) in buf.into_iter().enumerate() {
         if !usable[leg] {
             continue;
@@ -523,7 +545,11 @@ mod tests {
         let arb = SourceArbiter::new(vec![primary, standby], params, SourceId(9)).unwrap();
         let out = drain(arb);
 
-        assert!(out.len() >= 30, "standby should carry past the primary cut, got {}", out.len());
+        assert!(
+            out.len() >= 30,
+            "standby should carry past the primary cut, got {}",
+            out.len()
+        );
         for (i, f) in out.iter().enumerate() {
             assert_eq!(f.seq, i as u64, "dense arbiter seq across the switch");
         }

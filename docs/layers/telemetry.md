@@ -49,16 +49,23 @@ layer — it never sits between two stages.
   the content timeline for the bench's paced onset→emit latency), per-edge
   `EdgeStats` (count + p50/p90/p95/p99/max in µs; zero-count edges omitted
   by `snapshot()`), `DetectionRecord`s (each carries `leg: String` — the
-  fanout leg label; empty and JSON-omitted in single-source mode),
+  fanout leg label; empty and JSON-omitted in single-source mode — plus an
+  optional `suppression`; `pre_admission` proves a phone detection was logged
+  before the one-shot table and therefore created no intent),
   `DropCounters`, and `per_leg: Option<Vec<LegSummary>>` — fanout only
   (`label`, `frames_in`, `chunks_in`, `detections`, per-leg `DropCounters`,
   `died: Option<String>`); `None`/omitted in single-source mode so those
   reports keep their exact shape. Fanout top-level numbers are folds:
   edges via `LatencyRecorder::merge`, frame/chunk/drop sums,
-  `first_capture_ts` = min across legs. `main.rs::arm`
+  `first_capture_ts` = min across legs. `decision_journal_error` is omitted on
+  healthy runs and carries the first durable one-shot-state fault otherwise;
+  its presence means assembly killed the risk session and refused every later
+  decision. `main.rs::arm`
   extends the JSON with `orders` (OrderRecords), `lost_races` (fillable-tier
   only), and `observe_noncross` (designed 1¢ non-crossing — see
-  `docs/layers/executor.md`).
+  `docs/layers/executor.md`). It also emits `intents`, `send_attempted`, and
+  `acked`. Historical `sent` remains as a compatibility alias for
+  `send_attempted`; neither key proves socket delivery or exchange receipt.
 - **Mechanism:** `render_table()` (terminal) and `write_json(path)`
   (`report.json`) — the replay/regression artifacts (spec P4).
 - **Run record assembly:** `build_run_json(event_id, report:
@@ -71,14 +78,20 @@ layer — it never sits between two stages.
   `executor_report_missing: true`.
 - **Exit record:** `ExitRecord { reason: ExitReason, detail: Option<String> }`,
   serialized under the `exit` key on EVERY terminated run.
-  `ExitReason` ∈ `clean_drain | source_error | all_legs_died | sigterm |
-  stop_file | panic_or_join` (snake_case on the wire; ops scripts branch on
-  these strings, so renaming one is a contract change). `detail` is omitted,
-  not null, when there is nothing to say.
-- **SIGTERM stub:** `sigterm_stub_json(session_order_ids, ledger_spent_cents)`
+  `ExitReason` ∈ `startup_error | clean_drain | source_error | all_legs_died |
+  decision_state_error | sigterm | stop_file | panic_or_join` (snake_case on
+  the wire; ops scripts branch on these strings, so renaming one is a contract
+  change). `startup_error` means the graph was constructed but its durable
+  readiness receipt/start door failed, so no source frame or order intent was
+  released. Decision journal append/sync failure is deliberately distinct from
+  audio failure and panic. `detail` is omitted, not null, when there is nothing
+  to say.
+- **SIGTERM stub:** `sigterm_stub_json(session_order_ids,
+  pending_client_order_ids, ledger_spent_cents)`
   — an unattended kill cannot drain, so it emits the same `exit` shape plus
-  `session_order_ids` and `ledger_spent_cents`. `terminated: "SIGTERM"` is
-  retained for readers that predate `exit`.
+  `session_order_ids`, still-ambiguous `pending_client_order_ids`, and
+  `ledger_spent_cents`. `terminated: "SIGTERM"` is retained for readers that
+  predate `exit`.
 - **Why (2026-08-05):** `arm()` wrote a report on exactly ONE of ~14 exit
   paths. MELI armed, took 4 detections and sent a real order, then hit the pipe
   idle guard — the error propagated past the writer and the event's whole

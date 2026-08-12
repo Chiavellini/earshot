@@ -18,7 +18,12 @@ pub struct EnergyStubDetector {
 
 impl EnergyStubDetector {
     pub fn new(threshold_rms: f32, refractory_chunks: u32) -> Self {
-        EnergyStubDetector { threshold_rms, refractory_chunks, cooldown: 0, samples_seen: 0 }
+        EnergyStubDetector {
+            threshold_rms,
+            refractory_chunks,
+            cooldown: 0,
+            samples_seen: 0,
+        }
     }
 
     /// Tuned for `FixtureSpec::standard()`: fires once per 500 ms burst.
@@ -85,7 +90,9 @@ mod tests {
     }
 
     fn loud() -> Vec<i16> {
-        (0..1280).map(|i| if i % 2 == 0 { 12_000 } else { -12_000 }).collect()
+        (0..1280)
+            .map(|i| if i % 2 == 0 { 12_000 } else { -12_000 })
+            .collect()
     }
 
     #[test]
@@ -103,6 +110,10 @@ mod tests {
         for _ in 0..3 {
             assert!(d.process(&chunk(loud())).is_empty(), "refractory violated");
         }
-        assert_eq!(d.process(&chunk(loud())).len(), 1, "should re-arm after refractory");
+        assert_eq!(
+            d.process(&chunk(loud())).len(),
+            1,
+            "should re-arm after refractory"
+        );
     }
 }

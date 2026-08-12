@@ -29,14 +29,26 @@ pub const KWS_MODEL_DIR: &str = "models/sherpa-onnx-kws-zipformer-gigaspeech-3.3
 /// because dropping a keyword forfeits that market and that is a trading
 /// decision, not a code one.
 const HIGH_RISK_COLLISIONS: &[(&str, &str, &str)] = &[
-    ("record",  "quarter over quarter",
-     "the most common phrase on an earnings call; measured precision 5/19"),
-    ("weather", "whether",
-     "a TRUE HOMOPHONE — no acoustic model separates these, ever"),
-    ("ultra",   "ultramaritime (and any ultra- compound)",
-     "substring of a closed compound; Q4 semantics do NOT settle on substrings"),
-    ("trump",   "strong",
-     "small phonetic distance and 'strong' is ubiquitous on earnings calls"),
+    (
+        "record",
+        "quarter over quarter",
+        "the most common phrase on an earnings call; measured precision 5/19",
+    ),
+    (
+        "weather",
+        "whether",
+        "a TRUE HOMOPHONE — no acoustic model separates these, ever",
+    ),
+    (
+        "ultra",
+        "ultramaritime (and any ultra- compound)",
+        "substring of a closed compound; Q4 semantics do NOT settle on substrings",
+    ),
+    (
+        "trump",
+        "strong",
+        "small phonetic distance and 'strong' is ubiquitous on earnings calls",
+    ),
 ];
 
 /// Shortest variant we will emit. Two-letter keywords match a syllable, not a
@@ -165,7 +177,10 @@ fn prep_market(m: &Value) -> Option<PreppedKeyword> {
             }
         }
     }
-    let phrase = variants.first().cloned().unwrap_or_else(|| word.to_lowercase());
+    let phrase = variants
+        .first()
+        .cloned()
+        .unwrap_or_else(|| word.to_lowercase());
 
     let ask_cents = m["yes_ask_dollars"]
         .as_str()
@@ -210,9 +225,10 @@ fn strip_short_variants(preps: &mut [PreppedKeyword]) {
             .cloned()
             .collect();
         let doomed: Vec<String> = short_bases.iter().map(|b| format!("{b}s")).collect();
-        let (kept, short): (Vec<String>, Vec<String>) = k.variants.drain(..).partition(|v| {
-            v.trim().len() >= MIN_VARIANT_CHARS && !doomed.contains(v)
-        });
+        let (kept, short): (Vec<String>, Vec<String>) = k
+            .variants
+            .drain(..)
+            .partition(|v| v.trim().len() >= MIN_VARIANT_CHARS && !doomed.contains(v));
         k.variants = kept;
         for s in short {
             tracing::warn!(keyword = %k.word, variant = %s, "dropped ultra-short variant");
@@ -241,11 +257,18 @@ fn fill_cap_cents(k: &PreppedKeyword, fillable: bool, fill_all: bool) -> (u8, &'
         return (1, "probe (non-crossing, no fill)");
     }
     if k.tuned.is_none() && !fill_all {
-        return (1, "unvalidated — observe (1¢); promote via the validation loop");
+        return (
+            1,
+            "unvalidated — observe (1¢); promote via the validation loop",
+        );
     }
     match k.ask_cents {
-        Some(a) if a >= 1 && (a as u64) <= MENTION_FILL_CAP_CENTS => (a as u8, "min fill = live ask (vetted)"),
-        Some(a) if (a as u64) > MENTION_FILL_CAP_CENTS => (1, "ask above fill ceiling — left non-crossing"),
+        Some(a) if a >= 1 && (a as u64) <= MENTION_FILL_CAP_CENTS => {
+            (a as u8, "min fill = live ask (vetted)")
+        }
+        Some(a) if (a as u64) > MENTION_FILL_CAP_CENTS => {
+            (1, "ask above fill ceiling — left non-crossing")
+        }
         _ => (1, "no live ask — left non-crossing"),
     }
 }
@@ -306,8 +329,10 @@ pub async fn run_prepare(
     }
 
     let mut body = String::new();
-    let tradeable: Vec<&PreppedKeyword> =
-        preps.iter().filter(|k| !k.said_n_times && !k.variants.is_empty()).collect();
+    let tradeable: Vec<&PreppedKeyword> = preps
+        .iter()
+        .filter(|k| !k.said_n_times && !k.variants.is_empty())
+        .collect();
 
     // Header + fixed sections (mirror configs/twilio-live.toml).
     body.push_str(&format!(
@@ -316,10 +341,12 @@ pub async fn run_prepare(
          # research the dial-in (number + passcode) — NOT in the repo.\n\
          # Posture: {}.\n\n",
         match (fillable, fill_all) {
-            (true, false) => "MENTION-FILL, TIERED (arm --i-am-live --allow-mention --fillable) — \
+            (true, false) =>
+                "MENTION-FILL, TIERED (arm --i-am-live --allow-mention --fillable) — \
                 only precision-vetted words fill at the live ask; unvalidated words observe at 1¢. \
                 Bounded by config notional caps + $1 probe ledger",
-            (true, true) => "MENTION-FILL, ALL words (--fillable --fill-all) — every word ≤ceiling \
+            (true, true) =>
+                "MENTION-FILL, ALL words (--fillable --fill-all) — every word ≤ceiling \
                 fills, including UNVALIDATED ones (false-alarm + ledger-starvation risk)",
             _ => "mention-probe (arm --i-am-live --allow-mention) — 1¢ non-crossing, no fill",
         }
@@ -348,9 +375,11 @@ pub async fn run_prepare(
     body.push_str(&format!("[kalshi]\nseries = \"{series}\"\n\n"));
 
     // Risk: allowlist = tradeable tickers; keep notional caps tight.
-    body.push_str("[risk]\nmax_order_notional_cents = 100\nmax_event_notional_cents = 100\n\
+    body.push_str(
+        "[risk]\nmax_order_notional_cents = 100\nmax_event_notional_cents = 100\n\
                    book_stale_ms            = 2000\naudio_stale_ms           = 2000\n\
-                   allowlist_tickers = [\n");
+                   allowlist_tickers = [\n",
+    );
     for k in &tradeable {
         body.push_str(&format!("  \"{}\",\n", k.ticker));
     }
@@ -426,8 +455,10 @@ pub async fn run_prepare(
 
     // Footer summary as comments (also logged to stderr by the caller).
     let skipped: Vec<&PreppedKeyword> = preps.iter().filter(|k| k.said_n_times).collect();
-    let unencodable: Vec<&PreppedKeyword> =
-        preps.iter().filter(|k| !k.said_n_times && k.variants.is_empty()).collect();
+    let unencodable: Vec<&PreppedKeyword> = preps
+        .iter()
+        .filter(|k| !k.said_n_times && k.variants.is_empty())
+        .collect();
     let dropped_total: usize = preps.iter().map(|k| k.dropped.len()).sum();
     body.push_str(&format!(
         "# --- prepare summary: {} tradeable, {} skipped (said-N-times), {} skipped \
@@ -439,7 +470,10 @@ pub async fn run_prepare(
         preps.len()
     ));
     for k in &skipped {
-        body.push_str(&format!("#   SKIPPED {} ({}) — multi-count market\n", k.word, k.ticker));
+        body.push_str(&format!(
+            "#   SKIPPED {} ({}) — multi-count market\n",
+            k.word, k.ticker
+        ));
     }
     for k in &unencodable {
         body.push_str(&format!(
@@ -478,7 +512,10 @@ mod tests {
         });
         let k = prep_market(&m).unwrap();
         assert_eq!(k.variants, vec!["nonstop", "nonstops", "non stop"]);
-        assert!(k.variants.iter().all(|v| v.chars().all(|c| c.is_ascii_lowercase() || c == ' ')));
+        assert!(k
+            .variants
+            .iter()
+            .all(|v| v.chars().all(|c| c.is_ascii_lowercase() || c == ' ')));
     }
 
     /// Model-gated gate (skips unless models/ is present). Two raw-subtitle
@@ -498,19 +535,33 @@ mod tests {
             if std::env::var_os("EARSHOT_REQUIRE_MODELS").is_some() {
                 panic!("EARSHOT_REQUIRE_MODELS set but {} missing", path.display());
             }
-            eprintln!("SKIP: {} not present — run scripts/fetch-models.sh", path.display());
+            eprintln!(
+                "SKIP: {} not present — run scripts/fetch-models.sh",
+                path.display()
+            );
             return;
         }
         let t = TokenTable::from_bpe_model(&path).unwrap();
-        for good in ["warner bros", "non stop", "shut down", "atc", "jetblue", "newark"] {
+        for good in [
+            "warner bros",
+            "non stop",
+            "shut down",
+            "atc",
+            "jetblue",
+            "newark",
+        ] {
             let toks = t.encode("test", good).expect("sanitized form must encode");
             assert!(
-                toks.iter().all(|p| p.chars().all(|c| c == '▁' || c.is_ascii_alphabetic())),
+                toks.iter()
+                    .all(|p| p.chars().all(|c| c == '▁' || c.is_ascii_alphabetic())),
                 "sanitized {good:?} must encode to letter pieces only, got {toks:?}"
             );
         }
         for bad in ["warner bros.", "7-eleven"] {
-            assert!(t.encode("test", bad).is_err(), "raw {bad:?} must be unencodable (loud)");
+            assert!(
+                t.encode("test", bad).is_err(),
+                "raw {bad:?} must be unencodable (loud)"
+            );
         }
         // The silent class: encodes, but via a literal `-` piece — dead entry.
         let toks = t.encode("test", "non-stop").unwrap();
@@ -532,14 +583,29 @@ mod tests {
             "can_close_early": true,
         });
         let mut preps = vec![prep_market(&m).expect("prepped")];
-        assert!(preps[0].variants.iter().any(|v| v == "ev"), "generator still emits the short alternate");
+        assert!(
+            preps[0].variants.iter().any(|v| v == "ev"),
+            "generator still emits the short alternate"
+        );
 
         strip_short_variants(&mut preps);
         let k = &preps[0];
-        assert!(!k.variants.iter().any(|v| v == "ev" || v == "evs"), "short variants must not survive");
-        assert!(k.variants.contains(&"electric vehicle".to_string()), "the real phrase must survive");
-        assert!(k.dropped_short.contains(&"ev".to_string()), "the drop must be recorded, not silent");
-        assert_eq!(k.phrase, "electric vehicle", "phrase must stay a kept variant");
+        assert!(
+            !k.variants.iter().any(|v| v == "ev" || v == "evs"),
+            "short variants must not survive"
+        );
+        assert!(
+            k.variants.contains(&"electric vehicle".to_string()),
+            "the real phrase must survive"
+        );
+        assert!(
+            k.dropped_short.contains(&"ev".to_string()),
+            "the drop must be recorded, not silent"
+        );
+        assert_eq!(
+            k.phrase, "electric vehicle",
+            "phrase must stay a kept variant"
+        );
     }
 
     #[test]
@@ -563,8 +629,14 @@ mod tests {
         );
         strip_short_variants(&mut preps);
         let k = &preps[0];
-        assert!(!k.variants.iter().any(|v| v == "ai" || v == "ais"), "joined 2-char forms still die at the floor");
-        assert!(k.variants.contains(&"a i".to_string()), "letter form must survive the floor");
+        assert!(
+            !k.variants.iter().any(|v| v == "ai" || v == "ais"),
+            "joined 2-char forms still die at the floor"
+        );
+        assert!(
+            k.variants.contains(&"a i".to_string()),
+            "letter form must survive the floor"
+        );
         assert_eq!(k.phrase, "a i", "phrase must stay a kept variant");
     }
 
@@ -581,7 +653,11 @@ mod tests {
             "can_close_early": true,
         });
         let k = prep_market(&m).expect("prepped");
-        assert_eq!(k.variants, vec!["chipotle", "chipotles"], "no letter form for a normal word");
+        assert_eq!(
+            k.variants,
+            vec!["chipotle", "chipotles"],
+            "no letter form for a normal word"
+        );
 
         let m = json!({
             "ticker": "KX-T-EVLC",
@@ -616,7 +692,10 @@ mod tests {
         strip_short_variants(&mut preps);
         let k = &preps[0];
         assert_eq!(k.variants, vec!["electric vehicle", "e v"]);
-        assert_eq!(k.phrase, "electric vehicle", "phrase stays the real first variant");
+        assert_eq!(
+            k.phrase, "electric vehicle",
+            "phrase stays the real first variant"
+        );
     }
 
     #[test]
@@ -645,7 +724,10 @@ mod tests {
         // "record" is the load-bearing case: it collides with "quarter over
         // quarter", which every earnings call says repeatedly.
         let rec = HIGH_RISK_COLLISIONS.iter().find(|(w, _, _)| *w == "record");
-        assert!(rec.is_some(), "record must stay flagged — measured precision 5/19");
+        assert!(
+            rec.is_some(),
+            "record must stay flagged — measured precision 5/19"
+        );
         assert!(rec.unwrap().1.contains("quarter"));
     }
 }

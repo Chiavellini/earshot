@@ -1,0 +1,11 @@
+{
+  "label": "q4chime-cava-mid-2026-08-11",
+  "frames": 1068,
+  "samples": 170880,
+  "sample_rate_hz": 8000,
+  "duration_ms": 21360,
+  "held_ms": 21135,
+  "stalls_over_100ms": 0,
+  "wav_path": "corpus/bridge-probes/q4chime_cava_mid_2026_08_11.wav",
+  "jsonl_path": "corpus/bridge-probes/q4chime_cava_mid_2026_08_11.jsonl"
+}

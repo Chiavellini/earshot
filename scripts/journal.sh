@@ -60,4 +60,16 @@ print(json.dumps({
     "pid": int(os.environ.get("J_PID", "0")),
 }, separators=(",", ":")))
 PY
+
+# Typed-ledger bridge (control.run.receipts): mirror this line into the
+# active run's receipts.jsonl as a `compat` OBSERVATION — it can never
+# advance or kill typed state, and a bridge failure can never reach the
+# caller. The dir test is a cheap pre-filter; eventctl itself resolves the
+# active run (0 active = clean no-op, ambiguity = suppressed error here).
+if [ -d "$REPO/var/runs/$EVENT" ]; then
+  python3 "$REPO/scripts/eventctl.py" compat --event "$EVENT" --actor "$ACTOR" \
+    --action "$ACTION" --outcome "$OUTCOME" \
+    ${DETAIL:+--detail "$DETAIL"} ${LOGPATH:+--log "$LOGPATH"} \
+    >/dev/null 2>&1 || true
+fi
 exit 0

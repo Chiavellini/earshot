@@ -1,6 +1,7 @@
 //! Earshot — modular audio-signal runtime for Kalshi mention markets.
 //! Stable node boundaries and contracts are indexed in `docs/NODES.md`.
 
+pub mod audio_evidence;
 pub mod bench;
 pub mod capture_bakeoff;
 pub mod clock;

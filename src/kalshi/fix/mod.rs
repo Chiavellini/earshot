@@ -16,6 +16,7 @@
 //! endpoint yet; every "verify at live logon" item is listed in Q-FIX.
 
 pub mod encode;
+pub mod observation_tape;
 pub mod parse;
 pub mod seqstore;
 pub mod session;

@@ -140,7 +140,9 @@ impl StreamingCtcModel {
                 .ok_or_else(|| build_err("model metadata missing integer `decode_chunk_len`"))?
         };
         if shift == 0 || shift > t {
-            return Err(build_err(format!("nonsensical decode_chunk_len={shift} (T={t})")));
+            return Err(build_err(format!(
+                "nonsensical decode_chunk_len={shift} (T={t})"
+            )));
         }
 
         // Init all streaming states from the signature: batch dim (-1) → 1,
@@ -152,8 +154,10 @@ impl StreamingCtcModel {
                 continue;
             }
             if let ValueType::Tensor { ty, shape, .. } = inp.dtype() {
-                let dims: Vec<usize> =
-                    shape.iter().map(|&d| if d < 0 { 1 } else { d as usize }).collect();
+                let dims: Vec<usize> = shape
+                    .iter()
+                    .map(|&d| if d < 0 { 1 } else { d as usize })
+                    .collect();
                 let numel: usize = dims.iter().product();
                 let st = if *ty == TensorElementType::Int64 {
                     State::I64(dims, vec![0i64; numel])
@@ -212,8 +216,12 @@ impl StreamingCtcModel {
             inputs.push(("x".to_string(), x.into()));
             for (name, st) in &self.states {
                 let v: ort::session::SessionInputValue = match st {
-                    State::F32(shape, data) => Tensor::from_array((shape.clone(), data.clone()))?.into(),
-                    State::I64(shape, data) => Tensor::from_array((shape.clone(), data.clone()))?.into(),
+                    State::F32(shape, data) => {
+                        Tensor::from_array((shape.clone(), data.clone()))?.into()
+                    }
+                    State::I64(shape, data) => {
+                        Tensor::from_array((shape.clone(), data.clone()))?.into()
+                    }
                 };
                 inputs.push((name.clone(), v));
             }
@@ -224,20 +232,32 @@ impl StreamingCtcModel {
             let tt = shape[1] as usize;
             self.out_per_chunk.get_or_insert(tt);
             for t in 0..tt {
-                out.push((self.out_frames, data[t * self.vocab..(t + 1) * self.vocab].to_vec()));
+                out.push((
+                    self.out_frames,
+                    data[t * self.vocab..(t + 1) * self.vocab].to_vec(),
+                ));
                 self.out_frames += 1;
             }
 
             let mut updates: Vec<(String, State)> = Vec::new();
             for out_name in &self.state_out_names {
-                let target = out_name.strip_prefix("new_").unwrap_or(out_name).to_string();
+                let target = out_name
+                    .strip_prefix("new_")
+                    .unwrap_or(out_name)
+                    .to_string();
                 let is_i64 = matches!(self.states.get(&target), Some(State::I64(..)));
                 if is_i64 {
                     let (sh, d) = outputs[out_name.as_str()].try_extract_tensor::<i64>()?;
-                    updates.push((target, State::I64(sh.iter().map(|&x| x as usize).collect(), d.to_vec())));
+                    updates.push((
+                        target,
+                        State::I64(sh.iter().map(|&x| x as usize).collect(), d.to_vec()),
+                    ));
                 } else {
                     let (sh, d) = outputs[out_name.as_str()].try_extract_tensor::<f32>()?;
-                    updates.push((target, State::F32(sh.iter().map(|&x| x as usize).collect(), d.to_vec())));
+                    updates.push((
+                        target,
+                        State::F32(sh.iter().map(|&x| x as usize).collect(), d.to_vec()),
+                    ));
                 }
             }
             for (k, v) in updates {
@@ -267,7 +287,8 @@ fn find_encoder_onnx(
     dir: &Path,
     precision: Precision,
 ) -> Result<std::path::PathBuf, DetectorBuildError> {
-    let rd = std::fs::read_dir(dir).map_err(|e| build_err(format!("read {}: {e}", dir.display())))?;
+    let rd =
+        std::fs::read_dir(dir).map_err(|e| build_err(format!("read {}: {e}", dir.display())))?;
     let candidates: Vec<std::path::PathBuf> = rd
         .flatten()
         .map(|e| e.path())
@@ -280,7 +301,9 @@ fn find_encoder_onnx(
 /// Classified on the file NAME only, so a model dir whose path happens to
 /// contain "int8" cannot poison every candidate.
 fn is_int8_export(p: &Path) -> bool {
-    p.file_name().map(|n| n.to_string_lossy().contains("int8")).unwrap_or(false)
+    p.file_name()
+        .map(|n| n.to_string_lossy().contains("int8"))
+        .unwrap_or(false)
 }
 
 /// Pure model-file selection over the `*.onnx` candidates found in a model
@@ -292,7 +315,9 @@ fn select_encoder_onnx(
     dir_label: &str,
 ) -> Result<std::path::PathBuf, String> {
     if candidates.is_empty() {
-        return Err(format!("no *.onnx in {dir_label} — run scripts/fetch-models.sh"));
+        return Err(format!(
+            "no *.onnx in {dir_label} — run scripts/fetch-models.sh"
+        ));
     }
     match precision {
         // Prefer an int8 export (smaller/faster) when several exist; a dir
@@ -307,7 +332,12 @@ fn select_encoder_onnx(
         Precision::Fp32 => {
             let found: Vec<String> = candidates
                 .iter()
-                .map(|p| p.file_name().unwrap_or_default().to_string_lossy().into_owned())
+                .map(|p| {
+                    p.file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .into_owned()
+                })
                 .collect();
             candidates.retain(|p| !is_int8_export(p));
             candidates.into_iter().next().ok_or_else(|| {
@@ -361,10 +391,20 @@ impl StreamingCtcDetector {
                     .ok_or_else(|| build_err(format!("token piece {piece:?} not in tokens.txt")))?;
                 ids.push(id);
             }
-            targets.push(KeywordTarget { keyword: e.keyword, tier: e.tier, tokens: ids, threshold: e.threshold });
+            targets.push(KeywordTarget {
+                keyword: e.keyword,
+                tier: e.tier,
+                tokens: ids,
+                threshold: e.threshold,
+            });
         }
         let scorer = CtcKeywordScorer::new(&targets, cfg.blank_id as usize);
-        Ok(StreamingCtcDetector { model, scorer, refractory_ms: cfg.refractory_ms, samples_fed: 0 })
+        Ok(StreamingCtcDetector {
+            model,
+            scorer,
+            refractory_ms: cfg.refractory_ms,
+            samples_fed: 0,
+        })
     }
 
     /// Construct directly from token-id targets, bypassing text compilation.
@@ -422,7 +462,11 @@ impl Detector for StreamingCtcDetector {
 
         // Output-frame duration = fbank shift × subsampling (known after the
         // first inference); converts frame indices to stream-time and ms.
-        let subsample = self.model.out_per_chunk().map(|n| self.model.shift / n.max(1)).unwrap_or(1);
+        let subsample = self
+            .model
+            .out_per_chunk()
+            .map(|n| self.model.shift / n.max(1))
+            .unwrap_or(1);
         let frame_shift_ms = FBANK_FRAME_SHIFT_MS * subsample as f32;
         let refractory_frames = (self.refractory_ms as f32 / frame_shift_ms).round() as u64;
 
@@ -460,7 +504,10 @@ fn load_tokens(path: &Path) -> Result<HashMap<String, u32>, DetectorBuildError> 
         }
     }
     if map.is_empty() {
-        return Err(build_err(format!("no tokens parsed from {}", path.display())));
+        return Err(build_err(format!(
+            "no tokens parsed from {}",
+            path.display()
+        )));
     }
     Ok(map)
 }
@@ -481,9 +528,10 @@ mod tests {
         let mut r = hound::WavReader::open(path).unwrap();
         match r.spec().sample_format {
             hound::SampleFormat::Int => r.samples::<i16>().map(|s| s.unwrap()).collect(),
-            hound::SampleFormat::Float => {
-                r.samples::<f32>().map(|s| (s.unwrap() * 32768.0) as i16).collect()
-            }
+            hound::SampleFormat::Float => r
+                .samples::<f32>()
+                .map(|s| (s.unwrap() * 32768.0) as i16)
+                .collect(),
         }
     }
 
@@ -537,8 +585,12 @@ mod tests {
         // Classification is on the file NAME: a dir path containing "int8"
         // must not poison the fp32 candidate.
         assert_eq!(
-            select_encoder_onnx(vec![pb("models/int8-lab/enc.onnx")], Precision::Fp32, "models/int8-lab")
-                .unwrap(),
+            select_encoder_onnx(
+                vec![pb("models/int8-lab/enc.onnx")],
+                Precision::Fp32,
+                "models/int8-lab"
+            )
+            .unwrap(),
             pb("models/int8-lab/enc.onnx")
         );
     }
@@ -566,7 +618,9 @@ mod tests {
         // out/chunk is export-specific (decode_chunk_len / subsampling): 16 for
         // the zh stand-in (640 ms quantum), 8 for ctc-small-en 2024-03-18
         // (320 ms quantum). The invariant is that the model measured one.
-        let opc = model.out_per_chunk().expect("model never measured out frames/chunk");
+        let opc = model
+            .out_per_chunk()
+            .expect("model never measured out frames/chunk");
         assert!(opc > 0, "nonsensical out frames/chunk {opc}");
 
         // Greedy-decode to find a real 3-token subsequence, then confirm the CTC
@@ -574,7 +628,12 @@ mod tests {
         let mut prev = usize::MAX;
         let mut ids = Vec::new();
         for (_, lp) in &frames {
-            let best = lp.iter().enumerate().max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).unwrap().0;
+            let best = lp
+                .iter()
+                .enumerate()
+                .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+                .unwrap()
+                .0;
             if best != 0 && best != prev {
                 ids.push(best as u32);
             }
@@ -594,7 +653,11 @@ mod tests {
                 fired = true;
             }
         }
-        assert!(fired, "scorer did not fire on a greedy-present subsequence {:?}", &ids[1..4]);
+        assert!(
+            fired,
+            "scorer did not fire on a greedy-present subsequence {:?}",
+            &ids[1..4]
+        );
     }
 
     /// Detector-trait path: feed 0.wav as AudioChunks, assert a Detection for a
@@ -612,7 +675,12 @@ mod tests {
         let mut prev = usize::MAX;
         let mut ids = Vec::new();
         for (_, lp) in &frames {
-            let best = lp.iter().enumerate().max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).unwrap().0;
+            let best = lp
+                .iter()
+                .enumerate()
+                .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+                .unwrap()
+                .0;
             if best != 0 && best != prev {
                 ids.push(best as u32);
             }
@@ -643,6 +711,9 @@ mod tests {
             };
             detections += det.process(&chunk).len();
         }
-        assert!(detections >= 1, "Detector emitted no Detection for a present keyword");
+        assert!(
+            detections >= 1,
+            "Detector emitted no Detection for a present keyword"
+        );
     }
 }

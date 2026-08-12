@@ -20,8 +20,12 @@ fn sh(script: &str) -> Vec<String> {
 #[tokio::test]
 async fn frames_from_child_stdout_dense_seq_and_eof() {
     // 100 exact frames of zeros, then EOF.
-    let src = PipeSource::new(sh(&format!("head -c {} /dev/zero", FRAME_BYTES * 100)), RATE, SourceId(0))
-        .unwrap();
+    let src = PipeSource::new(
+        sh(&format!("head -c {} /dev/zero", FRAME_BYTES * 100)),
+        RATE,
+        SourceId(0),
+    )
+    .unwrap();
     let (tx, mut rx) = ring::ring(256);
     let exit = Box::new(src).run(tx).await.unwrap();
     assert_eq!(exit, SourceExit::EndOfStream);
@@ -41,7 +45,8 @@ async fn frames_from_child_stdout_dense_seq_and_eof() {
 async fn trailing_partial_frame_is_flushed_at_eof() {
     // 2 full frames + 100 samples (200 bytes): expect 3 frames, last short.
     let bytes = FRAME_BYTES * 2 + 200;
-    let src = PipeSource::new(sh(&format!("head -c {bytes} /dev/zero")), RATE, SourceId(0)).unwrap();
+    let src =
+        PipeSource::new(sh(&format!("head -c {bytes} /dev/zero")), RATE, SourceId(0)).unwrap();
     let (tx, mut rx) = ring::ring(64);
     Box::new(src).run(tx).await.unwrap();
 
@@ -63,7 +68,10 @@ async fn dead_stream_guard_kills_and_fails_loud() {
     let (tx, _rx) = ring::ring(16);
     let started = std::time::Instant::now();
     let err = Box::new(src).run(tx).await.unwrap_err();
-    assert!(started.elapsed() < Duration::from_secs(5), "guard must fire fast");
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "guard must fire fast"
+    );
     match err {
         SourceError::Protocol(msg) => assert!(msg.contains("idle"), "got: {msg}"),
         other => panic!("expected Protocol idle error, got {other:?}"),
@@ -124,21 +132,37 @@ async fn pipeline_detection_parity_with_replay() {
         total_ms: 2000,
         tone_hz: 440.0,
         amplitude: 0.6,
-        bursts: vec![Burst { onset_ms: 1000, dur_ms: 500 }],
+        bursts: vec![Burst {
+            onset_ms: 1000,
+            dur_ms: 500,
+        }],
     };
     let dir = tempfile::tempdir().unwrap();
     let wav = dir.path().join("f.wav");
     spec.write_wav(&wav).unwrap();
     // Same samples as raw s16le for the pipe lane.
     let raw = dir.path().join("f.s16le");
-    let bytes: Vec<u8> = spec.samples().iter().flat_map(|s| s.to_le_bytes()).collect();
+    let bytes: Vec<u8> = spec
+        .samples()
+        .iter()
+        .flat_map(|s| s.to_le_bytes())
+        .collect();
     std::fs::write(&raw, &bytes).unwrap();
 
     let run = |source: Box<dyn AudioSource>, kws: Vec<KeywordConfig>| async move {
         let detector = Box::new(EnergyStubDetector::for_standard_fixture());
         let table = DecisionTable::from_keywords(&kws);
         tokio::task::spawn_blocking(move || {
-            run_pipeline("PARITY", 160, PreprocCfg::default(), source, detector, table, None, Default::default())
+            run_pipeline(
+                "PARITY",
+                160,
+                PreprocCfg::default(),
+                source,
+                detector,
+                table,
+                None,
+                Default::default(),
+            )
         })
         .await
         .unwrap()
@@ -158,11 +182,18 @@ async fn pipeline_detection_parity_with_replay() {
     )
     .await;
 
-    assert!(!replay_report.detections.is_empty(), "fixture must fire the stub detector");
+    assert!(
+        !replay_report.detections.is_empty(),
+        "fixture must fire the stub detector"
+    );
     assert_eq!(
         replay_report.detections.len(),
         pipe_report.detections.len(),
         "pipe lane must detect exactly what replay detects"
     );
-    assert_eq!(pipe_report.drops.total(), 0, "unpaced local pipe must not drop");
+    assert_eq!(
+        pipe_report.drops.total(),
+        0,
+        "unpaced local pipe must not drop"
+    );
 }

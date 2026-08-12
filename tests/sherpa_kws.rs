@@ -46,8 +46,16 @@ policy           = "two_tier"
 fast_prefixes    = [{}]
 fast_threshold   = {fast_threshold}
 "#,
-        variants.iter().map(|v| format!("{v:?}")).collect::<Vec<_>>().join(", "),
-        prefixes.iter().map(|p| format!("{p:?}")).collect::<Vec<_>>().join(", "),
+        variants
+            .iter()
+            .map(|v| format!("{v:?}"))
+            .collect::<Vec<_>>()
+            .join(", "),
+        prefixes
+            .iter()
+            .map(|p| format!("{p:?}"))
+            .collect::<Vec<_>>()
+            .join(", "),
     );
     toml::from_str(&toml).unwrap()
 }
@@ -101,7 +109,11 @@ fn fast_and_confirmed_both_fire_fast_first() {
     let fast: Vec<&Detection> = dets.iter().filter(|d| d.tier == Tier::Fast).collect();
     let conf: Vec<&Detection> = dets.iter().filter(|d| d.tier == Tier::Confirmed).collect();
     assert_eq!(fast.len(), 1, "expected exactly one Fast hit, got {dets:?}");
-    assert_eq!(conf.len(), 1, "expected exactly one Confirmed hit, got {dets:?}");
+    assert_eq!(
+        conf.len(),
+        1,
+        "expected exactly one Confirmed hit, got {dets:?}"
+    );
     assert_eq!(fast[0].keyword.0, 0);
 
     // The prefix must become actionable no later than the full phrase (equal
@@ -151,7 +163,11 @@ fn multiple_keywords_fire_independently() {
         kw0.iter().any(|d| d.tier == Tier::Fast) && kw0.iter().any(|d| d.tier == Tier::Confirmed),
         "lovely child needs both tiers: {dets:?}"
     );
-    assert_eq!(kw1.len(), 1, "for ever fires once (no fast prefix): {dets:?}");
+    assert_eq!(
+        kw1.len(),
+        1,
+        "for ever fires once (no fast prefix): {dets:?}"
+    );
     assert_eq!(kw1[0].tier, Tier::Confirmed);
     // "for ever" (~11 s) sits after "lovely child" (~6 s) on the timeline.
     assert!(kw1[0].audio_pos_ms > kw0[0].audio_pos_ms + 3_000);
@@ -164,7 +180,11 @@ fn silence_and_absent_keywords_stay_quiet() {
     let Some(dir) = model_dir() else { return };
     let mut det = SherpaKwsDetector::new(
         &sherpa_cfg(&dir),
-        &[keyword("recession", &["recession", "recessions"], &["reces"])],
+        &[keyword(
+            "recession",
+            &["recession", "recessions"],
+            &["reces"],
+        )],
     )
     .unwrap();
 
@@ -173,5 +193,8 @@ fn silence_and_absent_keywords_stay_quiet() {
 
     let pcm = read_wav_16k(&dir.join("test_wavs/0.wav"));
     let dets = run_detector(&mut det, &pcm);
-    assert!(dets.is_empty(), "'recession' fired on audio that never says it: {dets:?}");
+    assert!(
+        dets.is_empty(),
+        "'recession' fired on audio that never says it: {dets:?}"
+    );
 }

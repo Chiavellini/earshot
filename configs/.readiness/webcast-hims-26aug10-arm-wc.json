@@ -1,0 +1,204 @@
+{
+ "config": "webcast-hims-26aug10-arm-wc",
+ "keywords_sha256": "58bc57f137c15af848c5f6d46dde3cec2725bb6bb23bd63d8aa0bd8dc0c5a0e5",
+ "date": "2026-08-10",
+ "engine": "streaming_ctc",
+ "voices": [
+  "Samantha",
+  "Daniel",
+  "Paulina"
+ ],
+ "carriers": 2,
+ "keywords": [
+  {
+   "ticker": "KXEARNINGSMENTIONHIMS-26AUG10-AMAZ",
+   "phrase": "amazon",
+   "variants": [
+    "amazon",
+    "amazons"
+   ],
+   "clips": 18,
+   "confirmed": 60
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONHIMS-26AUG10-CANA",
+   "phrase": "canada",
+   "variants": [
+    "canada",
+    "canadas"
+   ],
+   "clips": 18,
+   "confirmed": 42
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONHIMS-26AUG10-CANC",
+   "phrase": "cancer",
+   "variants": [
+    "cancer",
+    "cancers"
+   ],
+   "clips": 18,
+   "confirmed": 30
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONHIMS-26AUG10-COLL",
+   "phrase": "collaboration",
+   "variants": [
+    "collaboration",
+    "collaborations"
+   ],
+   "clips": 18,
+   "confirmed": 52
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONHIMS-26AUG10-EUCA",
+   "phrase": "eucalyptus",
+   "variants": [
+    "eucalyptus"
+   ],
+   "clips": 9,
+   "confirmed": 16
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONHIMS-26AUG10-EURO",
+   "phrase": "europe",
+   "variants": [
+    "europe",
+    "europes"
+   ],
+   "clips": 18,
+   "confirmed": 42
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONHIMS-26AUG10-FDA",
+   "phrase": "fda",
+   "variants": [
+    "fda",
+    "fdas",
+    "f d a"
+   ],
+   "clips": 27,
+   "confirmed": 18
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONHIMS-26AUG10-LABT",
+   "phrase": "lab testing",
+   "variants": [
+    "lab testing"
+   ],
+   "clips": 9,
+   "confirmed": 16
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONHIMS-26AUG10-LONG",
+   "phrase": "longevity",
+   "variants": [
+    "longevity",
+    "longevitys"
+   ],
+   "clips": 18,
+   "confirmed": 18
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONHIMS-26AUG10-MICR",
+   "phrase": "microdose",
+   "variants": [
+    "microdose",
+    "microdoses",
+    "microdosing",
+    "microdosings"
+   ],
+   "clips": 33,
+   "confirmed": 78
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONHIMS-26AUG10-PEPT",
+   "phrase": "peptide",
+   "variants": [
+    "peptide",
+    "peptides"
+   ],
+   "clips": 18,
+   "confirmed": 8
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONHIMS-26AUG10-REGU",
+   "phrase": "regulation",
+   "variants": [
+    "regulation",
+    "regulations"
+   ],
+   "clips": 18,
+   "confirmed": 56
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONHIMS-26AUG10-TARI",
+   "phrase": "tariff",
+   "variants": [
+    "tariff",
+    "tariffs"
+   ],
+   "clips": 18,
+   "confirmed": 34
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONHIMS-26AUG10-TEST",
+   "phrase": "testosterone",
+   "variants": [
+    "testosterone",
+    "testosterones"
+   ],
+   "clips": 18,
+   "confirmed": 12
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONHIMS-26AUG10-VITA",
+   "phrase": "vitamin",
+   "variants": [
+    "vitamin",
+    "vitamins"
+   ],
+   "clips": 17,
+   "confirmed": 20
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONHIMS-26AUG10-WEAR",
+   "phrase": "wearable",
+   "variants": [
+    "wearable",
+    "wearables"
+   ],
+   "clips": 18,
+   "confirmed": 30
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONHIMS-26AUG10-WEGO",
+   "phrase": "wegovy",
+   "variants": [
+    "wegovy",
+    "wegovys"
+   ],
+   "clips": 18,
+   "confirmed": 18
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONHIMS-26AUG10-YOUR",
+   "phrase": "yourbio",
+   "variants": [
+    "yourbio"
+   ],
+   "clips": 9,
+   "confirmed": 8
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONHIMS-26AUG10-ZAVA",
+   "phrase": "zava",
+   "variants": [
+    "zava",
+    "zavas"
+   ],
+   "clips": 18,
+   "confirmed": 42
+  }
+ ]
+}

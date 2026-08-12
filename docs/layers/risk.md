@@ -27,15 +27,22 @@ for: EV/fee economics (executor) or market validation (validator).
   `RiskGate::new` takes the state dir as a `&Path`; `arm`'s `--state-dir` flag
   (default `state/`) sets it, so concurrent events each get their own ledger +
   STOP and never collide (`docs/MULTI-EVENT.md` §8).
-- **Kill watcher:** `spawn_kill_watcher(gate, stop_file, on_kill, on_terminate)`
-  — polls `<state-dir>/STOP` every 200 ms + SIGINT + SIGTERM; on any trigger
-  flips the gate, runs `on_kill` (cancel the session's orders), then forces a
-  durable ledger `flush()`. STOP/SIGINT let the process live (pipeline winds
-  down disarmed). SIGTERM is the UNATTENDED kill (launchd, launch-event.sh's
-  trap, the supervisor's port cleanup): it additionally runs `on_terminate`
-  (last-words report in `main.rs::arm`) and exits the process with 143 —
-  swallowing SIGTERM would leak the process and wedge the bind port.
-  Measured STOP→cancelled: 140 ms.
+- **Coordinated kill watcher:**
+  `spawn_coordinated_kill_watcher(gate, stop_file, on_kill) ->
+  (JoinHandle, Receiver<CoordinatedKill<T>>)` polls `<state-dir>/STOP` every
+  200 ms and listens for SIGINT/SIGTERM. Every trigger first kills the gate,
+  awaits session-scoped cancellation, and durably flushes the ledger; only
+  then does it deliver `CoordinatedKill { trigger, kill_to_cancel_ms,
+  cancellation }` to runtime assembly. Runtime drains sources/pipeline/report
+  and consumes `event.acknowledge()`. The coordinated watcher itself never
+  exits the process. A missing receiver or an event dropped without ack is a
+  loud failure and releases the watcher instead of hanging. `KillTrigger` is
+  a copyable/serializable evidence value (`stop_file`, `sigint`, `sigterm`).
+- **Compatibility wrapper:** `spawn_kill_watcher(gate, stop_file, on_kill,
+  on_terminate)` retains the old contract for callers not yet migrated.
+  STOP/SIGINT acknowledge and return. Only this wrapper runs `on_terminate`
+  and `process::exit(143)` after a coordinated SIGTERM; the new API never
+  short-circuits runtime finalizers. Measured STOP→cancelled: 140 ms.
 
 ## Obligations
 - Hard consts (`HARD_MAX_ORDER_NOTIONAL_CENTS`, `HARD_MAX_EVENT_…`,
@@ -114,7 +121,9 @@ selected by `arm`/`probe-order` differs:
 - Pure unit tests with tempdir state (see `risk.rs` tests: clamping,
   refusal ordering, ledger cap + persistence across gates, corrupt-ledger
   refusal, atomic-persist residue).
-- Kill watcher: `tests/exec_mock.rs::kill_switch_stop_file_cancels_and_disarms`
-  (STOP path) and `tests/kill_sigterm.rs` (REAL SIGTERM raised at the test
-  process — the production kill path; own binary because the handler is
-  process-global). Live: `earshot kill-drill --auto`.
+- Kill watcher: `risk.rs` unit tests cover typed STOP delivery, gate-kill and
+  cancellation ordering, acknowledgement, a missing event receiver, and an
+  unacknowledged dropped event. `tests/exec_mock.rs::kill_switch_stop_file_cancels_and_disarms`
+  covers the compatibility STOP path; `tests/kill_sigterm.rs` raises a REAL
+  SIGTERM at its own test process and pins compatibility exit/report behavior.
+  Live: `earshot kill-drill --auto`.

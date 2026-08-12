@@ -136,7 +136,9 @@ impl SessionMachine {
 
     fn disconnect(&mut self, reason: impl Into<String>) -> Vec<Action> {
         self.state = SessionState::Disconnected;
-        vec![Action::Disconnect { reason: reason.into() }]
+        vec![Action::Disconnect {
+            reason: reason.into(),
+        }]
     }
 
     /// One complete inbound message (as framed by `parse::frame_len`).
@@ -152,7 +154,10 @@ impl SessionMachine {
         // CompID tolerance (Q-FIX open question #1): log, never die on it.
         if let Some(sender) = msg.get_str(49) {
             if sender != self.cfg.target_comp_id && sender != "Kalshi" {
-                tracing::warn!(inbound_sender = sender, "unexpected server CompID (tolerated)");
+                tracing::warn!(
+                    inbound_sender = sender,
+                    "unexpected server CompID (tolerated)"
+                );
             }
         }
 
@@ -173,7 +178,10 @@ impl SessionMachine {
         }
         if msg.seq < self.next_in {
             // Fatal per F9 (dup delivery after our counter advanced).
-            return self.disconnect(format!("inbound seq too low ({} < {})", msg.seq, self.next_in));
+            return self.disconnect(format!(
+                "inbound seq too low ({} < {})",
+                msg.seq, self.next_in
+            ));
         }
         if msg.seq > self.next_in {
             // A gap is unrecoverable on KalshiNR — reconnect fresh.
@@ -210,7 +218,12 @@ impl SessionMachine {
                 let ts = utc_sending_time(now_ms);
                 self.last_sent_ms = now_ms;
                 let gapfill_seq = if begin > 0 { begin } else { self.next_out };
-                vec![Action::Send(sequence_reset_gapfill(&self.cfg, gapfill_seq, &ts, self.next_out))]
+                vec![Action::Send(sequence_reset_gapfill(
+                    &self.cfg,
+                    gapfill_seq,
+                    &ts,
+                    self.next_out,
+                ))]
             }
             Inbound::Logout { text } => {
                 if self.state == SessionState::LogoutSent {
@@ -224,7 +237,11 @@ impl SessionMachine {
                     acts
                 }
             }
-            Inbound::Reject { ref_seq, reason, text } => {
+            Inbound::Reject {
+                ref_seq,
+                reason,
+                text,
+            } => {
                 tracing::error!(?ref_seq, ?reason, ?text, "FIX session Reject (35=3)");
                 Vec::new()
             }
@@ -242,7 +259,11 @@ impl SessionMachine {
                     raw: er.to_json(),
                 })]
             }
-            Inbound::CancelReject { cl_ord_id, reason, text } => {
+            Inbound::CancelReject {
+                cl_ord_id,
+                reason,
+                text,
+            } => {
                 tracing::error!(?cl_ord_id, ?reason, ?text, "FIX OrderCancelReject (35=9)");
                 Vec::new()
             }
@@ -364,7 +385,10 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert!(sent.iter().any(|s| s.contains("|35=1|")), "TestRequest expected: {sent:?}");
+        assert!(
+            sent.iter().any(|s| s.contains("|35=1|")),
+            "TestRequest expected: {sent:?}"
+        );
         // A server heartbeat clears the probe.
         assert!(m.on_message(&server_heartbeat(2), 13_500).is_empty());
         assert!(m.pending_test_req.is_none());
@@ -399,7 +423,9 @@ mod tests {
             w.tag_str(112, "srv-ping");
         });
         let acts = m.on_message(&tr, 2_000);
-        let [Action::Send(b)] = acts.as_slice() else { panic!("expected echo, got {acts:?}") };
+        let [Action::Send(b)] = acts.as_slice() else {
+            panic!("expected echo, got {acts:?}")
+        };
         let s = String::from_utf8_lossy(b);
         assert!(s.contains("35=0\u{1}"), "heartbeat echo");
         assert!(s.contains("112=srv-ping\u{1}"), "TestReqID echoed");
@@ -414,7 +440,9 @@ mod tests {
             w.tag_str(16, "0");
         });
         let acts = m.on_message(&rr, 2_000);
-        let [Action::Send(b)] = acts.as_slice() else { panic!("expected gapfill") };
+        let [Action::Send(b)] = acts.as_slice() else {
+            panic!("expected gapfill")
+        };
         let s = String::from_utf8_lossy(b).replace('\u{1}', "|");
         assert!(s.contains("|35=4|"), "SequenceReset: {s}");
         assert!(s.contains("|123=Y|"), "GapFill flag: {s}");
@@ -426,12 +454,16 @@ mod tests {
         let mut m = established();
         // Replay of seq 1 (< expected 2): fatal.
         let acts = m.on_message(&server_heartbeat(1), 2_000);
-        assert!(matches!(acts.as_slice(), [Action::Disconnect { reason }] if reason.contains("too low")));
+        assert!(
+            matches!(acts.as_slice(), [Action::Disconnect { reason }] if reason.contains("too low"))
+        );
 
         let mut m = established();
         // Gap (4 > expected 2): fatal on NR.
         let acts = m.on_message(&server_heartbeat(4), 2_000);
-        assert!(matches!(acts.as_slice(), [Action::Disconnect { reason }] if reason.contains("gap")));
+        assert!(
+            matches!(acts.as_slice(), [Action::Disconnect { reason }] if reason.contains("gap"))
+        );
     }
 
     #[test]
@@ -447,7 +479,9 @@ mod tests {
             w.tag_str(151, "0");
         });
         let acts = m.on_message(&er, 2_000);
-        let [Action::Deliver(rep)] = acts.as_slice() else { panic!("expected Deliver") };
+        let [Action::Deliver(rep)] = acts.as_slice() else {
+            panic!("expected Deliver")
+        };
         assert_eq!(rep.cl_ord_id.as_deref(), Some("cl-1"));
         assert_eq!(rep.order_id.as_deref(), Some("srv-1"));
         assert_eq!(rep.status, "filled");
@@ -459,9 +493,12 @@ mod tests {
         let mut m = established();
         let acts = m.start_logout(2_000);
         assert!(matches!(acts.as_slice(), [Action::Send(b)] if b.windows(4).any(|w| w == b"35=5")));
-        let bye = server_msg(|w| w.begin("5", "KalshiNR", "SENDER-KEY", 2, "20260721-12:00:02.000"));
+        let bye =
+            server_msg(|w| w.begin("5", "KalshiNR", "SENDER-KEY", 2, "20260721-12:00:02.000"));
         let acts = m.on_message(&bye, 2_500);
-        assert!(matches!(acts.as_slice(), [Action::Disconnect { reason }] if reason.contains("complete")));
+        assert!(
+            matches!(acts.as_slice(), [Action::Disconnect { reason }] if reason.contains("complete"))
+        );
     }
 
     #[test]
@@ -483,6 +520,8 @@ mod tests {
         let _ = m.connect(1_000);
         assert!(m.on_tick(5_000).is_empty());
         let acts = m.on_tick(11_100);
-        assert!(matches!(acts.as_slice(), [Action::Disconnect { reason }] if reason.contains("logon")));
+        assert!(
+            matches!(acts.as_slice(), [Action::Disconnect { reason }] if reason.contains("logon"))
+        );
     }
 }

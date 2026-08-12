@@ -70,7 +70,11 @@ pub async fn run_latprobe(args: &LatprobeArgs) -> LatprobeReport {
         None => "no target met the loss threshold — widen the set or check connectivity".into(),
     };
 
-    LatprobeReport { samples: args.samples, targets, recommendation }
+    LatprobeReport {
+        samples: args.samples,
+        targets,
+        recommendation,
+    }
 }
 
 async fn probe_target(target: &str, samples: u32, timeout: Duration) -> TargetStat {
@@ -123,7 +127,10 @@ impl LatprobeReport {
                 t.target, t.ok, t.loss_pct, t.rtt_p50_us, t.rtt_p95_us, t.rtt_p99_us
             ));
         }
-        out.push_str(&format!("\nrecommend region/edge: {}\n", self.recommendation));
+        out.push_str(&format!(
+            "\nrecommend region/edge: {}\n",
+            self.recommendation
+        ));
         out
     }
 }
@@ -172,7 +179,13 @@ mod tests {
 
     #[test]
     fn default_port_appended() {
-        assert_eq!(with_default_port("edge.example.com"), "edge.example.com:443");
-        assert_eq!(with_default_port("edge.example.com:5060"), "edge.example.com:5060");
+        assert_eq!(
+            with_default_port("edge.example.com"),
+            "edge.example.com:443"
+        );
+        assert_eq!(
+            with_default_port("edge.example.com:5060"),
+            "edge.example.com:5060"
+        );
     }
 }

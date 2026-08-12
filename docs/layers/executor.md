@@ -4,7 +4,7 @@
 Turns `DecisionIntent`s into IOC marketable-limit orders on Kalshi within
 single-digit milliseconds of software time (spec §5.7): local book read →
 LOST_RACE check → EV gate → risk gate → pre-staged wire form →
-`OrderTransport::send_order` → ack bookkeeping. NOT responsible for:
+`OrderTransport::submit_order` → observation/reconciliation bookkeeping. NOT responsible for:
 deciding WHAT to buy (decision layer), maintaining the book (book-cache
 layer), or the wire itself (transport seam — see
 `docs/layers/fix-transport.md` for the FIX arm).
@@ -28,7 +28,7 @@ layer), or the wire itself (transport seam — see
   measured as `handoff→exec`, separate from `decision→exec` (the aggregate).
 
 ## Exit door
-- **Wire:** `transport::OrderTransport::send_order(&PreStaged)`
+- **Wire:** `transport::OrderTransport::submit_order(&PreStaged)`
   (`src/kalshi/transport.rs`) — an enum over the two order wires, selected by
   config `[kalshi] transport` (default `rest`) and wired in `main.rs::arm`:
   - `Rest`: `POST {base}/portfolio/events/orders` with pre-serialized `Bytes`
@@ -42,20 +42,27 @@ layer), or the wire itself (transport seam — see
     (VERIFICATIONS §Q-FIX).
   Each transport prestages its own wire form (`WireStaged::Rest{body}` /
   `WireStaged::Fix{template}`) via `StageWire`; the executor is wire-blind.
-  Returns `SendOutcome { ack: TransportAck, send_ts, presign_age_ns }`
-  (`presign_age_ns: None` on FIX — no presign step exists there).
+  Returns `SubmitResult`: `NotAttempted` has no wire timestamp;
+  `Attempted(SendAttempt)` always carries `send_ts` plus either a normalized
+  protocol observation or a failure with its latest partial observation.
+  `presign_age_ns` is `None` on FIX because no presign step exists there.
 - **Type:** `executor::OrderRecord` per intent (ticker, price, count, tier,
   `dry_run`, `lost_race`, refusal, status, order_id, full ts chain,
-  `best_ask` book snapshot + `book_age_ns` snapshot age + `ev_at_ask_cents`)
+  `wire_state`, protocol status, independent accepted/terminal flags, exact
+  parsed response plus base64 exact REST bytes, transport/parse errors, exact
+  fill strings, reconciliation receipt, `best_ask` book snapshot + exact
+  `book_as_of_ts` + `book_age_ns` snapshot age + `ev_at_ask_cents`)
   aggregated into
   `ExecReport { orders, lost_races, observe_noncross, recorder }`, returned
   when the channel closes.
 - **`orders` is a list of INTENTS, not of orders placed.** Every one of the
   five non-fire early returns (non-crossing, EV gate, dry-run, risk refusal,
   send-failed-and-proven-absent) pushes a record into it. The only honest
-  answers are the two predicates on `OrderRecord`:
-  - `reached_wire()` ⇔ `send_ts.is_some()` — stamped at exactly one place,
-    around `transport.send_order`.
+  answers are the predicates on `OrderRecord`:
+  - `send_attempted()` ⇔ `send_ts.is_some()` — the transport invocation
+    timestamp. It does **not** by itself prove socket delivery or exchange
+    receipt. `reached_wire()` remains only as a compatibility alias with
+    exactly these weaker semantics.
   - `acked()` ⇔ `order_id.is_some()` — strictly stronger; also true for an
     order recovered by the ambiguous-outcome status query, which is why it
     keys on the id rather than `ack_ts`.
@@ -65,8 +72,37 @@ layer), or the wire itself (transport seam — see
   at the non-crossing branch. `scripts/missed-arm-check.py` and
   `scripts/run-verdict.sh` count `sent`, falling back to `send_ts != null` for
   reports written before that key existed.
-- Every acked `order_id` is pushed into `kalshi::OrderRegistry` — the kill
-  switch's cancel set.
+- Before transport invocation, the deterministic `client_order_id` enters
+  `kalshi::OrderRegistry` through `begin_attempt`. This is the linearization
+  boundary with kill: kill closes future attempts and can exact-id reconcile
+  every earlier ambiguous attempt even before an exchange `order_id` arrives.
+  Verified order ids are attached to that client id and form the cancel set;
+  terminal rejection/pre-write failure resolves it without widening scope.
+  Duplicate client-id attempts in one process are refused.
+- On a RunPlan-backed live arm, the executor first durably appends
+  `IntentEvaluated` with the complete immutable request/evaluation context:
+  request SHA, decision-plan SHA-1, keyword/source identity, all
+  audio/decision/exec/book timestamps, and the exact book state. This occurs
+  before every send and no-send branch, so lost-race, EV, dry-run, risk, and
+  kill refusals remain measurable. A later `SendRequested` records only that
+  execution asked transport to proceed; it is not wire evidence.
+- REST and FIX then durably append `InvocationPrepared` with the exact
+  assembled outbound bytes before invoking their transport boundary. The
+  subsequent `WireAttempted` records the actual transport invocation and its
+  `send_ts`; it does not duplicate or invent raw bytes. Each exchange
+  observation/fill, transport failure, reconciliation result, and no-send
+  conclusion is durably acknowledged independently. Evidence refusal prevents
+  a new wire attempt and poisons health so assembly kills the session.
+- `wire_state` is stable evidence vocabulary: `not_attempted`,
+  `attempted_unobserved`, `observed`, or `reconciled`. A response rejection is
+  `observed` with `exchange_accepted=false`; it is not rewritten as “send
+  failed.” A body-read failure retains response headers/status, exact bytes
+  received, and its parse/read error. A reconciled row retains the original
+  attempt/partial response and banks the later query response separately.
+- `FillEvidence` preserves exchange fixed-point strings verbatim. REST price
+  fields have `price_unit=dollars`; FIX price fields have `price_unit=cents`.
+  Filled quantity/status is therefore auditable without inferring from a
+  generic acknowledgement flag.
 
 ## Obligations
 - Read books ONLY via `BookCache::read` (wait-free); never a REST fetch on
@@ -101,13 +137,19 @@ layer), or the wire itself (transport seam — see
 - Debit the ledger (`RiskGate::record_send`) BEFORE the send — an ambiguous
   timeout still counts as spent. The debit is in-memory only; the durable disk
   write runs off this path (risk layer's background persister).
-- Ambiguous send error → `order_by_client_id` status query; NEVER blind
-  retry. `client_order_id` is a deterministic UUID from
+- The full risk policy check precedes `OrderRegistry::begin_attempt`; after
+  that atomic send/kill boundary, the executor rechecks kill before debiting.
+  A permit that wins just before kill is classified as pre-kill in-flight,
+  remains visible through `active_attempts`, and must be reconciled/cancelled;
+  no new permit can start after kill closes the registry.
+- Any attempted outcome without a conclusive rejection or order id →
+  `order_by_client_id` status query; NEVER blind retry. `client_order_id` is a deterministic UUID from
   `rest::deterministic_client_order_id("{event}:{kw}:{tier}")` so a retry
   would be server-deduped anyway.
 - Pre-staged bodies (`prestage_orders`) MUST mirror the decision layer's
-  tranche arithmetic per policy; the inline-build fallback is a logged
-  should-never-happen.
+  tranche arithmetic per policy. A missing arm-time artifact is a terminal
+  `not_attempted` refusal. Live inline construction is forbidden: it would
+  evade the reviewed body, deterministic id, and evidence plan.
 - Record edges `decision→exec`, `handoff→exec`, `book_age`, `presign_age`,
   `exec→send`, `send→hdrs`, `hdrs→ack`, `send→ack`, `decision→ack`,
   `capture→ack` into its own `LatencyRecorder` (merged into the pipeline
@@ -128,8 +170,10 @@ layer), or the wire itself (transport seam — see
 
 ## Failure policy
 - Risk refusal / EV failure / LOST_RACE → recorded on the OrderRecord, no
-  order, loud log. HTTP ≥300 → `KalshiError::Api` recorded. Nothing here may
-  panic; every intent produces exactly one OrderRecord.
+  order, loud log. HTTP ≥300 and FIX rejection are protocol observations with
+  `exchange_accepted=false`; transport failures after `send_ts` remain
+  attempted and trigger reconciliation. Nothing here may panic; every intent
+  produces exactly one OrderRecord.
 
 ## How to replace or edit this layer
 - Everything is `src/kalshi/executor.rs` (+ the wire seam in
@@ -142,10 +186,12 @@ layer), or the wire itself (transport seam — see
 ## How to test in isolation
 - `tests/exec_mock.rs`: wiremock REST server + hand-published `BookCache`
   books + tempdir `RiskGate`. Covers fire path (exactly one signed POST),
-  LOST_RACE, dry-run, ambiguous-timeout-no-repost, kill-switch scope.
+  exact fill/HTTP evidence, LOST_RACE, dry-run,
+  ambiguous-timeout-no-repost/reconciliation, kill-switch scope.
 - `tests/exec_fix_mock.rs`: the same executor through `OrderTransport::Fix`
-  against an in-process mock FIX server — fill mapping, gates upstream of the
-  wire, and the dual-wire ambiguous path (no ER → REST status query).
+  against an in-process mock FIX server — exact ExecutionReport/fill mapping,
+  gates upstream of the wire, and the dual-wire ambiguous path (no ER → REST
+  status query while retaining the FIX attempt).
 - Wire truth — `cargo test --lib executor`:
   `no_early_return_counts_as_having_reached_the_wire` walks all five non-fire
   exits and asserts none is `reached_wire()`/`acked()`;

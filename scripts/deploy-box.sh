@@ -5,7 +5,14 @@
 # DELETED the box's linux-x64 ORT — every new process futex-hung in ort's
 # dlopen: a missing lib and a wrong-platform lib hang identically, silently).
 # vendor/ is PLATFORM-SPECIFIC and must never cross machines. Neither must
-# target/, models/, corpus/, state/ (box-local artifacts).
+# target/, models/, corpus/, state/, or var/runs/ (box-local artifacts).
+#
+# var/runs/ is especially load-bearing: after a typed RunPlan is dispatched,
+# the box owns the authoritative receipt extension and all live evidence.  A
+# normal source deploy uses --delete, so failing to exclude that tree can both
+# replace the box ledger with the laptop's shorter preflight prefix and delete
+# a box-only run outright.  The private host-boundary staging namespace is
+# protected for the same reason.
 #
 #   scripts/deploy-box.sh                 # laptop tree → box ~/ear/
 #   scripts/deploy-box.sh --check-only    # dry-run, show what would change
@@ -42,6 +49,7 @@ cd "$(dirname "$0")/.."
 rsync -az --delete ${DRY[@]+"${DRY[@]}"} \
   --exclude target --exclude models --exclude .git \
   --exclude state --exclude corpus --exclude vendor \
+  --exclude /var/runs/ --exclude /var/host-boundary-staging/ \
   -e "ssh -i $KEY" ./ "$BOX":~/ear/
 
 [[ "${1:-}" == "--check-only" ]] && exit 0

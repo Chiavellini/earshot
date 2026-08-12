@@ -107,16 +107,33 @@ impl<'a> FixMsg<'a> {
         }
         let measured = checksum_at - body_start;
         if measured != declared_len {
-            return Err(ParseError::BadBodyLength { declared: declared_len, measured });
+            return Err(ParseError::BadBodyLength {
+                declared: declared_len,
+                measured,
+            });
         }
-        let computed = raw[..checksum_at].iter().fold(0u8, |a, b| a.wrapping_add(*b));
+        let computed = raw[..checksum_at]
+            .iter()
+            .fold(0u8, |a, b| a.wrapping_add(*b));
         if computed != declared_cks {
-            return Err(ParseError::BadChecksum { declared: declared_cks, computed });
+            return Err(ParseError::BadChecksum {
+                declared: declared_cks,
+                computed,
+            });
         }
-        let msg = FixMsg { msg_type: b"", seq: 0, fields, raw };
+        let msg = FixMsg {
+            msg_type: b"",
+            seq: 0,
+            fields,
+            raw,
+        };
         let msg_type = msg.get(35).ok_or(ParseError::Malformed(body_start))?;
         let seq = msg.get_u64(34).ok_or(ParseError::Malformed(body_start))?;
-        Ok(FixMsg { msg_type, seq, ..msg })
+        Ok(FixMsg {
+            msg_type,
+            seq,
+            ..msg
+        })
     }
 
     pub fn get(&self, tag: u32) -> Option<&'a [u8]> {
@@ -144,15 +161,15 @@ impl<'a> FixMsg<'a> {
 /// executor forensically records (F7).
 #[derive(Debug, Clone)]
 pub struct ExecReportView<'a> {
-    pub exec_type: u8,   // 150
-    pub ord_status: u8,  // 39
-    pub order_id: Option<&'a str>,   // 37 (exchange id)
-    pub cl_ord_id: Option<&'a str>,  // 11 (our idempotency key)
-    pub cum_qty: Option<&'a str>,    // 14
-    pub leaves_qty: Option<&'a str>, // 151
-    pub last_px: Option<&'a str>,    // 31 (cents)
-    pub last_qty: Option<&'a str>,   // 32
-    pub avg_px: Option<&'a str>,     // 6
+    pub exec_type: u8,                   // 150
+    pub ord_status: u8,                  // 39
+    pub order_id: Option<&'a str>,       // 37 (exchange id)
+    pub cl_ord_id: Option<&'a str>,      // 11 (our idempotency key)
+    pub cum_qty: Option<&'a str>,        // 14
+    pub leaves_qty: Option<&'a str>,     // 151
+    pub last_px: Option<&'a str>,        // 31 (cents)
+    pub last_qty: Option<&'a str>,       // 32
+    pub avg_px: Option<&'a str>,         // 6
     pub ord_rej_reason: Option<&'a str>, // 103
     pub text: Option<&'a str>,           // 58
 }
@@ -217,26 +234,57 @@ impl<'a> ExecReportView<'a> {
 /// Typed inbound message for the session machine.
 #[derive(Debug)]
 pub enum Inbound<'a> {
-    Logon { heartbeat_secs: Option<u64> },
-    Heartbeat { test_req_id: Option<&'a str> },
-    TestRequest { id: Option<&'a str> },
-    ResendRequest { begin: u64, end: u64 },
-    SequenceReset { new_seq: u64, gap_fill: bool },
-    Logout { text: Option<&'a str> },
+    Logon {
+        heartbeat_secs: Option<u64>,
+    },
+    Heartbeat {
+        test_req_id: Option<&'a str>,
+    },
+    TestRequest {
+        id: Option<&'a str>,
+    },
+    ResendRequest {
+        begin: u64,
+        end: u64,
+    },
+    SequenceReset {
+        new_seq: u64,
+        gap_fill: bool,
+    },
+    Logout {
+        text: Option<&'a str>,
+    },
     /// Session-level Reject (35=3): 45=RefSeqNum, 373=SessionRejectReason.
-    Reject { ref_seq: Option<u64>, reason: Option<&'a str>, text: Option<&'a str> },
+    Reject {
+        ref_seq: Option<u64>,
+        reason: Option<&'a str>,
+        text: Option<&'a str>,
+    },
     /// BusinessMessageReject (35=j): 380=BusinessRejectReason (8 = rate limit).
-    BusinessReject { reason: Option<&'a str>, text: Option<&'a str> },
+    BusinessReject {
+        reason: Option<&'a str>,
+        text: Option<&'a str>,
+    },
     ExecReport(ExecReportView<'a>),
     /// OrderCancelReject (35=9).
-    CancelReject { cl_ord_id: Option<&'a str>, reason: Option<&'a str>, text: Option<&'a str> },
-    Other { msg_type: &'a [u8] },
+    CancelReject {
+        cl_ord_id: Option<&'a str>,
+        reason: Option<&'a str>,
+        text: Option<&'a str>,
+    },
+    Other {
+        msg_type: &'a [u8],
+    },
 }
 
 pub fn classify<'a>(m: &FixMsg<'a>) -> Inbound<'a> {
     match m.msg_type {
-        b"A" => Inbound::Logon { heartbeat_secs: m.get_u64(108) },
-        b"0" => Inbound::Heartbeat { test_req_id: m.get_str(112) },
+        b"A" => Inbound::Logon {
+            heartbeat_secs: m.get_u64(108),
+        },
+        b"0" => Inbound::Heartbeat {
+            test_req_id: m.get_str(112),
+        },
         b"1" => Inbound::TestRequest { id: m.get_str(112) },
         b"2" => Inbound::ResendRequest {
             begin: m.get_u64(7).unwrap_or(0),
@@ -246,16 +294,23 @@ pub fn classify<'a>(m: &FixMsg<'a>) -> Inbound<'a> {
             new_seq: m.get_u64(36).unwrap_or(0),
             gap_fill: m.get(123) == Some(b"Y"),
         },
-        b"5" => Inbound::Logout { text: m.get_str(58) },
+        b"5" => Inbound::Logout {
+            text: m.get_str(58),
+        },
         b"3" => Inbound::Reject {
             ref_seq: m.get_u64(45),
             reason: m.get_str(373),
             text: m.get_str(58),
         },
-        b"j" => Inbound::BusinessReject { reason: m.get_str(380), text: m.get_str(58) },
+        b"j" => Inbound::BusinessReject {
+            reason: m.get_str(380),
+            text: m.get_str(58),
+        },
         b"8" => match ExecReportView::from_msg(m) {
             Some(er) => Inbound::ExecReport(er),
-            None => Inbound::Other { msg_type: m.msg_type },
+            None => Inbound::Other {
+                msg_type: m.msg_type,
+            },
         },
         b"9" => Inbound::CancelReject {
             cl_ord_id: m.get_str(11),
@@ -292,7 +347,12 @@ mod tests {
         assert_eq!(parsed.get_str(112), Some("ping-1"));
         assert_eq!(parsed.get_str(49), Some("SENDER-KEY"));
         assert_eq!(parsed.get_str(56), Some("KalshiNR"));
-        assert!(matches!(classify(&parsed), Inbound::Heartbeat { test_req_id: Some("ping-1") }));
+        assert!(matches!(
+            classify(&parsed),
+            Inbound::Heartbeat {
+                test_req_id: Some("ping-1")
+            }
+        ));
     }
 
     /// Canned ExecutionReport byte vector → typed view.

@@ -77,7 +77,11 @@ async fn reordered_packets_are_delivered_in_sequence() {
     let packets = vec![(0, vec![0]), (2, vec![2]), (1, vec![1])];
     let frames = run_with_packets(packets).await;
     let order: Vec<u8> = frames.iter().map(|f| ulaw_first_byte_marker(f)).collect();
-    assert_eq!(order, vec![0, 1, 2], "jitter buffer must reorder to sequence order");
+    assert_eq!(
+        order,
+        vec![0, 1, 2],
+        "jitter buffer must reorder to sequence order"
+    );
 }
 
 #[tokio::test]
@@ -101,7 +105,10 @@ async fn non_rtp_datagram_ignored() {
     let handle = tokio::spawn(async move { Box::new(src).run(tx).await });
     let client = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
     client.connect(("127.0.0.1", port)).await.unwrap();
-    client.send(&[0x40, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).await.unwrap(); // version 1
+    client
+        .send(&[0x40, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+        .await
+        .unwrap(); // version 1
     client.send(&rtp(1, &[0x12])).await.unwrap(); // one valid packet
     let exit = handle.await.unwrap().unwrap();
     assert_eq!(exit, SourceExit::EndOfStream);
@@ -122,7 +129,10 @@ async fn idle_timeout_ends_a_dead_stream() {
     let started = std::time::Instant::now();
     let exit = Box::new(src).run(tx).await.unwrap();
     assert_eq!(exit, SourceExit::EndOfStream);
-    assert!(started.elapsed() < Duration::from_secs(3), "idle guard must fire fast");
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "idle guard must fire fast"
+    );
 }
 
 /// The test packets carry a single byte = the intended ordering marker; decode

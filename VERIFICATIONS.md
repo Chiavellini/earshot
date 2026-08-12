@@ -2409,3 +2409,51 @@ public phone number, returned the issuer's own event and its start time.
 **Re-verify:** if Q4 rotates the shared bridge numbers, moves off Chime, or
 starts requiring the passcode before announcing event status — the first two are
 visible in the payload, the third only by dial.
+
+## Q-26AUG12-MISSED — Air Canada and Nebius were same-time webcast regressions, not future events (2026-08-12)
+
+**Time authority.** Air Canada's official advisory says its Q2 call was
+Wednesday 2026-08-12 at 08:00 ET and identifies the public/media listen-only
+webcast (`edge.media-server.com/mmc/p/5vxkq96v`). Nebius's official newsroom
+and Investor Hub say its Q2 call was the same day at 08:00 ET and link a
+registration endpoint on the event's OpenExchange subdomain. With the timezone
+rules in force that is `2026-08-12T12:00:00Z` and 06:00 in
+`America/Mexico_City`. Rechecked at `2026-08-12T18:44Z`: both calls were already
+over; neither was “tomorrow.”
+
+- Air Canada source:
+  <https://www.aircanada.com/media/media-advisory-air-canada-to-present-second-quarter-2026-results/>
+- Nebius announcement:
+  <https://nebius.com/newsroom/nebius-group-announces-date-of-second-quarter-2026-results-and-conference-call>
+- Nebius Investor Hub registration authority:
+  <https://nebius.com/investor-hub>
+
+**Access classification.** These are both webcast lanes, but an issuer link is
+not itself acquisition proof. Air Canada explicitly labels public access
+listen-only; its MediaServer attendee endpoint presented identity/firm fields
+before player access in the event-day inspection. Nebius explicitly directs
+listeners through registration; its OpenExchange registration/sign-in session
+must exist before capture. Under the canonical contract these are schema-2
+`registered-session` AccessPlans (or `signed-in-session` if an already-signed-in
+profile is the actual prerequisite), with only a non-secret session label,
+attester, and expiry recorded. Registration/login is an explicit external act;
+the system must never infer success, submit identity autonomously, or bank a
+cookie/token in the repository.
+
+**Repository regression state, preserved read-only.** AC's historical webcast
+config still carried a TODO start placeholder, so timer installation refused;
+its legacy preflight/study failed and there is no schema-3 RunPlan, launch,
+audio, book, order, or report evidence. NBIS's config held the correct
+`2026-08-12T12:00:00Z` time but its only attempt is a schema-1 RunPlan with no
+pinned event env; the schema-3 status boundary rejects it and the canonical
+access date gate reports zero eligible RunPlans. `opsctl status 2026-08-12`
+returns nonzero. No late RunPlan, registration, schedule, capture, or lifecycle
+claim may be manufactured after the missed calls.
+
+**Regression requirement.** A future event with either access class is ready
+only if the same UTC-date pipeline produces: schema-3 RunPlan; explicit
+schema-2 AccessPlan; measured readiness without changing pinned config bytes;
+proof-bearing preflight; loaded scheduler readback; fire-time PCM and capture
+proof; mandatory audio/book/order/FIX evidence; terminal audit; and explicit
+alert acknowledgement. Missing any join keeps the date red while siblings
+continue.

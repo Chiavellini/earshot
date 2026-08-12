@@ -67,7 +67,10 @@ fn default_chunk_ms() -> u32 {
 
 impl Default for PipelineSection {
     fn default() -> Self {
-        PipelineSection { chunk_ms: 160, resample_to_hz: None }
+        PipelineSection {
+            chunk_ms: 160,
+            resample_to_hz: None,
+        }
     }
 }
 
@@ -300,7 +303,11 @@ pub struct ArbiterConfig {
 
 impl Default for ArbiterConfig {
     fn default() -> Self {
-        ArbiterConfig { mode: ArbiterMode::default(), switch_ms: 200, align_ms: 2000 }
+        ArbiterConfig {
+            mode: ArbiterMode::default(),
+            switch_ms: 200,
+            align_ms: 2000,
+        }
     }
 }
 
@@ -464,9 +471,7 @@ fn is_e164(s: &str) -> bool {
         return false;
     };
     let b = rest.as_bytes();
-    (8..=15).contains(&b.len())
-        && b[0] != b'0'
-        && b.iter().all(|c| c.is_ascii_digit())
+    (8..=15).contains(&b.len()) && b[0] != b'0' && b.iter().all(|c| c.is_ascii_digit())
 }
 
 fn default_env() -> String {
@@ -589,9 +594,10 @@ pub fn check_redial_dir_for_persistence(
     cfg: &EventConfig,
     redial_dir: Option<&str>,
 ) -> Result<(), ConfigError> {
-    let wants_persistence = cfg.sources.iter().any(|s| {
-        matches!(s, SourceConfig::TwilioStream { max_reconnects: Some(n), .. } if *n > 0)
-    });
+    let wants_persistence = cfg
+        .sources
+        .iter()
+        .any(|s| matches!(s, SourceConfig::TwilioStream { max_reconnects: Some(n), .. } if *n > 0));
     if wants_persistence && redial_dir.map_or(true, str::is_empty) {
         return Err(ConfigError::Invalid(
             "twilio_stream.max_reconnects > 0 but EARSHOT_REDIAL_DIR is unset — the source \
@@ -647,7 +653,11 @@ fn validate(cfg: &EventConfig) -> Result<(), ConfigError> {
             SourceConfig::Hls { url } if url.is_empty() => {
                 return fail("hls.url must be non-empty".into());
             }
-            SourceConfig::Pipe { cmd, sample_rate_hz, .. } => {
+            SourceConfig::Pipe {
+                cmd,
+                sample_rate_hz,
+                ..
+            } => {
                 if cmd.is_empty() {
                     return fail("pipe.cmd must be non-empty".into());
                 }
@@ -676,17 +686,23 @@ fn validate(cfg: &EventConfig) -> Result<(), ConfigError> {
             // (idle=0 would spin; idle=30000 would never notice a dead call).
             if let Some(v) = idle_timeout_secs {
                 if !(5..=300).contains(v) {
-                    return fail(format!("twilio_stream.idle_timeout_secs {v} outside 5..=300"));
+                    return fail(format!(
+                        "twilio_stream.idle_timeout_secs {v} outside 5..=300"
+                    ));
                 }
             }
             if let Some(v) = accept_timeout_secs {
                 if !(10..=7200).contains(v) {
-                    return fail(format!("twilio_stream.accept_timeout_secs {v} outside 10..=7200"));
+                    return fail(format!(
+                        "twilio_stream.accept_timeout_secs {v} outside 10..=7200"
+                    ));
                 }
             }
             if let Some(v) = reaccept_window_secs {
                 if !(10..=900).contains(v) {
-                    return fail(format!("twilio_stream.reaccept_window_secs {v} outside 10..=900"));
+                    return fail(format!(
+                        "twilio_stream.reaccept_window_secs {v} outside 10..=900"
+                    ));
                 }
             }
             if let Some(v) = max_reconnects {
@@ -838,10 +854,15 @@ fn validate(cfg: &EventConfig) -> Result<(), ConfigError> {
         ];
         for (name, c) in [cores[1], cores[2], cores[3]] {
             if c.is_none() {
-                return fail(format!("perf.spin_hot_rings requires perf.{name} to be set"));
+                return fail(format!(
+                    "perf.spin_hot_rings requires perf.{name} to be set"
+                ));
             }
         }
-        let assigned: Vec<_> = cores.iter().filter_map(|(n, c)| c.map(|c| (*n, c))).collect();
+        let assigned: Vec<_> = cores
+            .iter()
+            .filter_map(|(n, c)| c.map(|c| (*n, c)))
+            .collect();
         for i in 0..assigned.len() {
             for j in i + 1..assigned.len() {
                 if assigned[i].1 == assigned[j].1 {
@@ -861,7 +882,9 @@ fn validate(cfg: &EventConfig) -> Result<(), ConfigError> {
         }
     }
     if cfg.detector.engine == EngineKind::SherpaKws && cfg.detector.sherpa_kws.is_none() {
-        return fail("detector.engine = \"sherpa_kws\" requires a [detector.sherpa_kws] section".into());
+        return fail(
+            "detector.engine = \"sherpa_kws\" requires a [detector.sherpa_kws] section".into(),
+        );
     }
     if let Some(sk) = &cfg.detector.sherpa_kws {
         if !(0.0..=1.0).contains(&sk.default_threshold) || sk.default_threshold == 0.0 {
@@ -876,7 +899,8 @@ fn validate(cfg: &EventConfig) -> Result<(), ConfigError> {
     }
     if cfg.detector.engine == EngineKind::StreamingCtc && cfg.detector.streaming_ctc.is_none() {
         return fail(
-            "detector.engine = \"streaming_ctc\" requires a [detector.streaming_ctc] section".into(),
+            "detector.engine = \"streaming_ctc\" requires a [detector.streaming_ctc] section"
+                .into(),
         );
     }
     if let Some(sc) = &cfg.detector.streaming_ctc {
@@ -915,7 +939,10 @@ fn validate(cfg: &EventConfig) -> Result<(), ConfigError> {
             ));
         }
         if kw.budget_contracts == 0 {
-            return fail(format!("keyword {:?}: budget_contracts must be > 0", kw.phrase));
+            return fail(format!(
+                "keyword {:?}: budget_contracts must be > 0",
+                kw.phrase
+            ));
         }
         for p in &kw.fast_prefixes {
             let p_lc = p.to_lowercase();
@@ -936,7 +963,10 @@ fn validate(cfg: &EventConfig) -> Result<(), ConfigError> {
         ] {
             if let Some(t) = t {
                 if !(t > 0.0 && t <= 1.0) {
-                    return fail(format!("keyword {:?}: {name} must be in (0, 1], got {t}", kw.phrase));
+                    return fail(format!(
+                        "keyword {:?}: {name} must be in (0, 1], got {t}",
+                        kw.phrase
+                    ));
                 }
             }
         }
@@ -945,7 +975,10 @@ fn validate(cfg: &EventConfig) -> Result<(), ConfigError> {
             ("min_confidence_confirmed", kw.min_confidence_confirmed),
         ] {
             if !(0.0..=1.0).contains(&c) {
-                return fail(format!("keyword {:?}: {name} must be in [0, 1], got {c}", kw.phrase));
+                return fail(format!(
+                    "keyword {:?}: {name} must be in [0, 1], got {c}",
+                    kw.phrase
+                ));
             }
         }
     }
@@ -996,7 +1029,10 @@ mod tests {
                 allowlist_covers_keywords(&cfg).unwrap_err()
             );
         }
-        assert!(checked > 5, "expected to scan several configs, scanned {checked}");
+        assert!(
+            checked > 5,
+            "expected to scan several configs, scanned {checked}"
+        );
     }
 
     #[test]
@@ -1109,7 +1145,11 @@ mod tests {
         assert!(super::validate(&cfg).is_ok());
         assert!(matches!(
             cfg.sources[0],
-            SourceConfig::TwilioStream { max_reconnects: None, reaccept_window_secs: None, .. }
+            SourceConfig::TwilioStream {
+                max_reconnects: None,
+                reaccept_window_secs: None,
+                ..
+            }
         ));
 
         let cfg: EventConfig = toml::from_str(&twilio_toml(
@@ -1149,9 +1189,13 @@ mod tests {
         // ever asked to redial. Arm-time refusal, env passed in as a value so
         // this test never touches process env.
         let cfg: EventConfig = toml::from_str(&twilio_toml("max_reconnects = 2")).unwrap();
-        let err = check_redial_dir_for_persistence(&cfg, None).unwrap_err().to_string();
+        let err = check_redial_dir_for_persistence(&cfg, None)
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("EARSHOT_REDIAL_DIR"), "{err}");
-        let err = check_redial_dir_for_persistence(&cfg, Some("")).unwrap_err().to_string();
+        let err = check_redial_dir_for_persistence(&cfg, Some(""))
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("EARSHOT_REDIAL_DIR"), "{err}");
         assert!(check_redial_dir_for_persistence(&cfg, Some("state/EV")).is_ok());
 
@@ -1171,7 +1215,10 @@ mod tests {
 
     #[test]
     fn rejects_price_cap_100() {
-        let text = base_toml().replace("max_price_cents         = 97", "max_price_cents         = 100");
+        let text = base_toml().replace(
+            "max_price_cents         = 97",
+            "max_price_cents         = 100",
+        );
         let cfg: EventConfig = toml::from_str(&text).unwrap();
         assert!(validate(&cfg).is_err());
     }
@@ -1389,8 +1436,8 @@ mod tests {
         assert_eq!(cfg.arbiter.align_ms, 2000);
 
         // Explicit [arbiter] parses.
-        let text = base_toml()
-            + "\n[arbiter]\nmode = \"take_first\"\nswitch_ms = 120\nalign_ms = 1500\n";
+        let text =
+            base_toml() + "\n[arbiter]\nmode = \"take_first\"\nswitch_ms = 120\nalign_ms = 1500\n";
         let cfg: EventConfig = toml::from_str(&text).unwrap();
         validate(&cfg).unwrap();
         assert_eq!(cfg.arbiter.mode, ArbiterMode::TakeFirst);
@@ -1404,7 +1451,9 @@ mod tests {
         let cfg: EventConfig = toml::from_str(&text).unwrap();
         validate(&cfg).unwrap();
         assert_eq!(cfg.sources.len(), 2);
-        assert!(matches!(&cfg.sources[1], SourceConfig::Sip { carrier, .. } if carrier == "telnyx"));
+        assert!(
+            matches!(&cfg.sources[1], SourceConfig::Sip { carrier, .. } if carrier == "telnyx")
+        );
     }
 
     #[test]
@@ -1421,8 +1470,10 @@ mod tests {
 
     /// Inject lines under the example's `[kalshi]` section.
     fn with_kalshi(extra: &str) -> EventConfig {
-        let text = base_toml()
-            .replace("series = \"KXAAPLMENTION\"", &format!("series = \"KXAAPLMENTION\"\n{extra}"));
+        let text = base_toml().replace(
+            "series = \"KXAAPLMENTION\"",
+            &format!("series = \"KXAAPLMENTION\"\n{extra}"),
+        );
         toml::from_str(&text).unwrap()
     }
 
@@ -1507,13 +1558,13 @@ mod tests {
     #[test]
     fn operator_handler_enabled_rejects_bad_cell_numbers() {
         for bad in [
-            "",                      // empty
-            "5545436717",            // no +
-            "+05545436717",          // leading zero
-            "+52 55 4543 6717",      // spaces
-            "+521234",               // too short (< 8 digits)
-            "+5255454367171234567",  // too long (> 15 digits)
-            "+52554543671a",         // non-digit
+            "",                     // empty
+            "5545436717",           // no +
+            "+05545436717",         // leading zero
+            "+52 55 4543 6717",     // spaces
+            "+521234",              // too short (< 8 digits)
+            "+5255454367171234567", // too long (> 15 digits)
+            "+52554543671a",        // non-digit
         ] {
             let cfg = with_operator(&format!("enabled = true\ncell_number = \"{bad}\""));
             let err = validate(&cfg).unwrap_err().to_string();
@@ -1525,10 +1576,10 @@ mod tests {
     fn operator_handler_enabled_rejects_bad_conference_prefix() {
         for bad in [
             "",
-            "Earshot",                     // uppercase
-            "ear shot",                    // space
-            "ear_shot",                    // underscore
-            "abcdefghijklmnopqrstuvwxy",   // 25 chars
+            "Earshot",                   // uppercase
+            "ear shot",                  // space
+            "ear_shot",                  // underscore
+            "abcdefghijklmnopqrstuvwxy", // 25 chars
         ] {
             let cfg = with_operator(&format!(
                 "enabled = true\ncell_number = \"+525545436717\"\nconference_prefix = \"{bad}\""
@@ -1555,7 +1606,10 @@ mod tests {
             + "\n[twilio]\nauth_token_path = \"tok.txt\"\nstream_url = \"wss://a.ngrok.io/media\"\n";
         let cfg: EventConfig = toml::from_str(&ok).unwrap();
         validate(&cfg).unwrap();
-        assert_eq!(cfg.twilio.as_ref().unwrap().stream_url, "wss://a.ngrok.io/media");
+        assert_eq!(
+            cfg.twilio.as_ref().unwrap().stream_url,
+            "wss://a.ngrok.io/media"
+        );
 
         let bad = base_toml()
             + "\n[twilio]\nauth_token_path = \"tok.txt\"\nstream_url = \"https://a.ngrok.io/media\"\n";

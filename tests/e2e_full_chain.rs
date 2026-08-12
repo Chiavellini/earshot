@@ -17,7 +17,7 @@ use earshot::kalshi::executor::{prestage_orders, run_executor, ExecCtx};
 use earshot::kalshi::rest::RestClient;
 use earshot::kalshi::transport::{OrderTransport, StageWire};
 use earshot::pipeline::preproc::PreprocCfg;
-use earshot::pipeline::run_pipeline;
+use earshot::pipeline::{decision_journal_path, prepare_decision_state, run_pipeline};
 use earshot::risk::{RiskConfig, RiskGate};
 use earshot::source::replay::ReplaySource;
 use earshot::types::SourceId;
@@ -42,9 +42,19 @@ async fn audio_in_order_out_with_all_edges_recorded() {
             "count": "1.00",
             "time_in_force": "immediate_or_cancel",
         })))
-        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
-            "order": {"order_id": "srv-e2e", "status": "canceled"}
-        })))
+        .respond_with(|request: &wiremock::Request| {
+            let request_body: serde_json::Value = request.body_json().unwrap();
+            let client_order_id = request_body["client_order_id"]
+                .as_str()
+                .expect("executor request omitted client_order_id");
+            ResponseTemplate::new(201).set_body_json(serde_json::json!({
+                "order": {
+                    "order_id": "srv-e2e",
+                    "client_order_id": client_order_id,
+                    "status": "canceled"
+                }
+            }))
+        })
         .expect(1) // the one-shot decision machine must yield exactly one POST
         .mount(&server)
         .await;
@@ -70,7 +80,10 @@ async fn audio_in_order_out_with_all_edges_recorded() {
     let state = tempfile::tempdir().unwrap();
     let gate = Arc::new(
         RiskGate::new(
-            RiskConfig { allowlist_tickers: vec![TICKER.into()], ..Default::default() },
+            RiskConfig {
+                allowlist_tickers: vec![TICKER.into()],
+                ..Default::default()
+            },
             state.path(),
         )
         .unwrap(),
@@ -91,16 +104,27 @@ async fn audio_in_order_out_with_all_edges_recorded() {
         min_confidence_fast: 0.0,
         min_confidence_confirmed: 0.0,
     }];
-    let presigner = Presigner::new(signer, "POST", "/trade-api/v2/portfolio/events/orders".into());
+    let presigner = Presigner::new(
+        signer,
+        "POST",
+        "/trade-api/v2/portfolio/events/orders".into(),
+    );
     let ctx = Arc::new(ExecCtx {
-        transport: OrderTransport::Rest { client: rest.clone(), presigner },
-        rest,
+        transport: OrderTransport::Rest {
+            client: rest.clone(),
+            presigner,
+        },
+        rest: rest.clone(),
         cache,
         gate: gate.clone(),
         prestaged: prestage_orders("E2E", &keywords, StageWire::Rest),
         haircuts: HashMap::from([(0u16, 0u32)]),
         dry_run: false,
         registry: earshot::kalshi::OrderRegistry::default(),
+        order_evidence: None,
+        decision_plan_sha1: "0".repeat(40),
+        keyword_text: HashMap::new(),
+        rest_endpoint_id: rest.endpoint_id(),
     });
 
     // Audio side: 2 s fixture, one burst at 1 s, real-time pacing — the
@@ -112,7 +136,10 @@ async fn audio_in_order_out_with_all_edges_recorded() {
         total_ms: 2000,
         tone_hz: 440.0,
         amplitude: 0.6,
-        bursts: vec![Burst { onset_ms: 1000, dur_ms: 500 }],
+        bursts: vec![Burst {
+            onset_ms: 1000,
+            dur_ms: 500,
+        }],
     }
     .write_wav(&wav)
     .unwrap();
@@ -123,7 +150,16 @@ async fn audio_in_order_out_with_all_edges_recorded() {
     let (intent_tx, intent_rx) = tokio::sync::mpsc::channel(64);
     let exec_task = tokio::spawn(run_executor(intent_rx, ctx.clone()));
     let mut report = tokio::task::spawn_blocking(move || {
-        run_pipeline("E2E", 160, PreprocCfg::default(), source, detector, table, Some(intent_tx), Default::default())
+        run_pipeline(
+            "E2E",
+            160,
+            PreprocCfg::default(),
+            source,
+            detector,
+            table,
+            Some(intent_tx),
+            Default::default(),
+        )
     })
     .await
     .unwrap()
@@ -146,7 +182,10 @@ async fn audio_in_order_out_with_all_edges_recorded() {
     // ALL 11 edges must be populated in one report, capture→ack included.
     report.edges.extend(exec_report.recorder.snapshot());
     for edge in earshot::telemetry::EDGES {
-        let stats = report.edges.get(edge).unwrap_or_else(|| panic!("edge {edge} missing"));
+        let stats = report
+            .edges
+            .get(edge)
+            .unwrap_or_else(|| panic!("edge {edge} missing"));
         assert!(stats.count > 0, "edge {edge} recorded nothing");
     }
     // Sanity on the headline number: audio capture → order ack against a
@@ -157,4 +196,126 @@ async fn audio_in_order_out_with_all_edges_recorded() {
         "capture→ack p95 {} µs — chain is stalling somewhere",
         full.p95_us
     );
+}
+
+/// The operational restart loop used to construct a fresh in-memory table,
+/// allowing the same market to fire again. Exercise the actual pipeline twice
+/// against one event journal: attempt one emits, attempt two still detects the
+/// audio but cannot emit a second intent.
+#[test]
+fn pipeline_reconstruction_preserves_event_one_shot_state() {
+    let dir = tempfile::tempdir().unwrap();
+    let wav = dir.path().join("restart.wav");
+    let journal = dir.path().join("decision.jsonl");
+    FixtureSpec {
+        sample_rate_hz: 8000,
+        total_ms: 1200,
+        tone_hz: 440.0,
+        amplitude: 0.6,
+        bursts: vec![Burst {
+            onset_ms: 400,
+            dur_ms: 500,
+        }],
+    }
+    .write_wav(&wav)
+    .unwrap();
+    let keywords = vec![KeywordConfig {
+        market_ticker: TICKER.into(),
+        phrase: "tone".into(),
+        variants: vec!["tone".into()],
+        max_price_cents: 90,
+        budget_contracts: 1,
+        policy: Policy::FastOnly,
+        rule_risk_haircut_cents: 0,
+        fast_prefixes: vec![],
+        fast_threshold: None,
+        confirmed_threshold: None,
+        boost: None,
+        min_confidence_fast: 0.0,
+        min_confidence_confirmed: 0.0,
+    }];
+
+    for (attempt, expected_intents) in [(1, 1), (2, 0)] {
+        let source = Box::new(ReplaySource::from_wav(&wav, 0.0, SourceId(0)).unwrap());
+        let detector = Box::new(EnergyStubDetector::for_standard_fixture());
+        let table = DecisionTable::from_keywords_with_journal(&keywords, &journal).unwrap();
+        let (intent_tx, mut intent_rx) = tokio::sync::mpsc::channel(64);
+        let report = run_pipeline(
+            "E2E-RESTART",
+            160,
+            PreprocCfg::default(),
+            source,
+            detector,
+            table,
+            Some(intent_tx),
+            Default::default(),
+        )
+        .unwrap();
+        assert!(
+            !report.detections.is_empty(),
+            "attempt {attempt} heard no tone"
+        );
+
+        let mut intents = 0;
+        while intent_rx.try_recv().is_ok() {
+            intents += 1;
+        }
+        assert_eq!(
+            intents, expected_intents,
+            "attempt {attempt} violated persistent one-shot state"
+        );
+    }
+}
+
+#[test]
+fn assembly_boundary_shares_live_state_across_source_lane_ids() {
+    let root = tempfile::tempdir().unwrap();
+    let state_root = root.path().join("state");
+    let phone_state = state_root.join("KXEARNINGSMENTIONTEST-26AUG11-PHONE");
+    let webcast_state = state_root.join("KXEARNINGSMENTIONTEST-26AUG11-WEBCAST");
+    std::fs::create_dir_all(&phone_state).unwrap();
+    std::fs::create_dir_all(&webcast_state).unwrap();
+    let keywords = vec![KeywordConfig {
+        market_ticker: "KXEARNINGSMENTIONTEST-26AUG11-TONE".into(),
+        phrase: "tone".into(),
+        variants: vec!["tone".into()],
+        max_price_cents: 90,
+        budget_contracts: 1,
+        policy: Policy::FastOnly,
+        rule_risk_haircut_cents: 0,
+        fast_prefixes: vec![],
+        fast_threshold: None,
+        confirmed_threshold: None,
+        boost: None,
+        min_confidence_fast: 0.0,
+        min_confidence_confirmed: 0.0,
+    }];
+
+    let phone_path = decision_journal_path(&phone_state, "prod", &keywords).unwrap();
+    let webcast_path = decision_journal_path(&webcast_state, "prod", &keywords).unwrap();
+    assert_eq!(
+        phone_path, webcast_path,
+        "source-lane suffix split one-shot state"
+    );
+
+    let dry = prepare_decision_state(&keywords, "prod", &phone_state, false).unwrap();
+    assert!(dry.journal_path.is_none() && dry.lease.is_none());
+    assert!(!phone_path.exists(), "dry arm created live decision state");
+
+    let first = prepare_decision_state(&keywords, "prod", &phone_state, true).unwrap();
+    assert_eq!(first.journal_path.as_deref(), Some(phone_path.as_path()));
+    assert!(
+        prepare_decision_state(&keywords, "prod", &webcast_state, true).is_err(),
+        "webcast lane acquired a second live table for the phone lane's markets"
+    );
+
+    // Pipeline teardown drops the table first; the composer-held lease must
+    // keep exclusivity until executor/report teardown completes.
+    drop(first.table);
+    assert!(
+        prepare_decision_state(&keywords, "prod", &webcast_state, true).is_err(),
+        "journal unlocked before the arm-lifetime lease was dropped"
+    );
+    drop(first.lease);
+    assert!(prepare_decision_state(&keywords, "prod", &webcast_state, true).is_ok());
 }

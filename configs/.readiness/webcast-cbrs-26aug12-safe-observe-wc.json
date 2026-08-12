@@ -1,0 +1,155 @@
+{
+ "config": "webcast-cbrs-26aug12-safe-observe-wc",
+ "keywords_sha256": "94955d9831fd1ee4272a41a560e2899e708240db59d27643d794d8ab63b48f65",
+ "date": "2026-08-12",
+ "engine": "streaming_ctc",
+ "voices": [
+  "Samantha",
+  "Daniel",
+  "Paulina"
+ ],
+ "carriers": 2,
+ "keywords": [
+  {
+   "ticker": "KXEARNINGSMENTIONCBRS-26AUG12-AMD",
+   "phrase": "amd",
+   "variants": [
+    "amd",
+    "amds",
+    "a m d"
+   ],
+   "clips": 27,
+   "confirmed": 16
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCBRS-26AUG12-AWS",
+   "phrase": "aws",
+   "variants": [
+    "aws",
+    "a w s"
+   ],
+   "clips": 18,
+   "confirmed": 10
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCBRS-26AUG12-BELL",
+   "phrase": "bell canada",
+   "variants": [
+    "bell canada"
+   ],
+   "clips": 9,
+   "confirmed": 12
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCBRS-26AUG12-CROW",
+   "phrase": "crowdstrike",
+   "variants": [
+    "crowdstrike",
+    "crowdstrikes",
+    "crowd strike"
+   ],
+   "clips": 27,
+   "confirmed": 114
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCBRS-26AUG12-CUST",
+   "phrase": "customer concentration",
+   "variants": [
+    "customer concentration"
+   ],
+   "clips": 9,
+   "confirmed": 18
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCBRS-26AUG12-DISA",
+   "phrase": "disaggregated",
+   "variants": [
+    "disaggregated",
+    "disaggregateds"
+   ],
+   "clips": 18,
+   "confirmed": 42
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCBRS-26AUG12-EURO",
+   "phrase": "europe",
+   "variants": [
+    "europe",
+    "europes"
+   ],
+   "clips": 18,
+   "confirmed": 42
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCBRS-26AUG12-FALC",
+   "phrase": "falcon",
+   "variants": [
+    "falcon",
+    "falcons"
+   ],
+   "clips": 18,
+   "confirmed": 48
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCBRS-26AUG12-FLEX",
+   "phrase": "flex",
+   "variants": [
+    "flex",
+    "flexs"
+   ],
+   "clips": 18,
+   "confirmed": 54
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCBRS-26AUG12-HELI",
+   "phrase": "helios",
+   "variants": [
+    "helios"
+   ],
+   "clips": 9,
+   "confirmed": 20
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCBRS-26AUG12-KIMI",
+   "phrase": "kimi",
+   "variants": [
+    "kimi",
+    "kimis"
+   ],
+   "clips": 18,
+   "confirmed": 2
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCBRS-26AUG12-OPEN",
+   "phrase": "openai",
+   "variants": [
+    "openai",
+    "openais",
+    "open ai",
+    "open a i",
+    "open eye"
+   ],
+   "clips": 45,
+   "confirmed": 20
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCBRS-26AUG12-TRAI",
+   "phrase": "trainium",
+   "variants": [
+    "trainium",
+    "trainiums"
+   ],
+   "clips": 18,
+   "confirmed": 36
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONCBRS-26AUG12-WAFE",
+   "phrase": "wafer scale engine",
+   "variants": [
+    "wafer scale engine"
+   ],
+   "clips": 9,
+   "confirmed": 14
+  }
+ ]
+}

@@ -130,12 +130,24 @@ pub struct RiskConfig {
     pub allowlist_tickers: Vec<String>,
 }
 
-fn d_order() -> u64 { 100 }
-fn d_event() -> u64 { 100 }
-fn d_loss() -> u64 { 100 }
-fn d_book_stale() -> u64 { 2000 }
-fn d_audio_stale() -> u64 { 1000 }
-fn d_min_ev() -> u32 { 2 }
+fn d_order() -> u64 {
+    100
+}
+fn d_event() -> u64 {
+    100
+}
+fn d_loss() -> u64 {
+    100
+}
+fn d_book_stale() -> u64 {
+    2000
+}
+fn d_audio_stale() -> u64 {
+    1000
+}
+fn d_min_ev() -> u32 {
+    2
+}
 
 impl Default for RiskConfig {
     fn default() -> Self {
@@ -156,10 +168,12 @@ impl RiskConfig {
     /// Clamp config to the hard ceilings — silently tightening is fine,
     /// loosening is impossible.
     pub fn clamped(mut self) -> Self {
-        self.max_order_notional_cents =
-            self.max_order_notional_cents.min(HARD_MAX_ORDER_NOTIONAL_CENTS);
-        self.max_event_notional_cents =
-            self.max_event_notional_cents.min(HARD_MAX_EVENT_NOTIONAL_CENTS);
+        self.max_order_notional_cents = self
+            .max_order_notional_cents
+            .min(HARD_MAX_ORDER_NOTIONAL_CENTS);
+        self.max_event_notional_cents = self
+            .max_event_notional_cents
+            .min(HARD_MAX_EVENT_NOTIONAL_CENTS);
         self.daily_loss_cap_cents = self.daily_loss_cap_cents.min(HARD_DAILY_LOSS_CENTS);
         self
     }
@@ -321,35 +335,55 @@ impl RiskGate {
         // signal whose enforcement is opt-in; see `book_stale_enforce`.
         let book_age_ms = book_age_ns / 1_000_000;
         if book_age_ns == u64::MAX {
-            return Err(Refusal::BookStale { age_ms: book_age_ms, limit_ms: self.cfg.book_stale_ms });
+            return Err(Refusal::BookStale {
+                age_ms: book_age_ms,
+                limit_ms: self.cfg.book_stale_ms,
+            });
         }
         if book_age_ms > self.cfg.book_stale_ms {
             if self.cfg.book_stale_enforce {
-                return Err(Refusal::BookStale { age_ms: book_age_ms, limit_ms: self.cfg.book_stale_ms });
+                return Err(Refusal::BookStale {
+                    age_ms: book_age_ms,
+                    limit_ms: self.cfg.book_stale_ms,
+                });
             }
             // Recorded, not refused. The age is already on the OrderRecord;
             // this makes it greppable in a live log without changing the run.
             tracing::warn!(
-                ticker, age_ms = book_age_ms, limit_ms = self.cfg.book_stale_ms,
+                ticker,
+                age_ms = book_age_ms,
+                limit_ms = self.cfg.book_stale_ms,
                 "book snapshot older than book_stale_ms (not enforced)"
             );
         }
         let audio_age_ms = audio_age_ns / 1_000_000;
         if audio_age_ms > self.cfg.audio_stale_ms {
-            return Err(Refusal::AudioStale { age_ms: audio_age_ms, limit_ms: self.cfg.audio_stale_ms });
+            return Err(Refusal::AudioStale {
+                age_ms: audio_age_ms,
+                limit_ms: self.cfg.audio_stale_ms,
+            });
         }
         let notional = price_cents as u64 * count as u64;
         if notional > self.cfg.max_order_notional_cents {
-            return Err(Refusal::OrderNotional { notional, cap: self.cfg.max_order_notional_cents });
+            return Err(Refusal::OrderNotional {
+                notional,
+                cap: self.cfg.max_order_notional_cents,
+            });
         }
         let would_event = self.event_spent_cents.load(Ordering::SeqCst) + notional;
         if would_event > self.cfg.max_event_notional_cents {
-            return Err(Refusal::EventNotional { would: would_event, cap: self.cfg.max_event_notional_cents });
+            return Err(Refusal::EventNotional {
+                would: would_event,
+                cap: self.cfg.max_event_notional_cents,
+            });
         }
         let ledger = self.store.ledger.lock().unwrap();
         let would_ledger = ledger.spent_cents + notional;
         if would_ledger > PROBE_LEDGER_CAP_CENTS {
-            return Err(Refusal::ProbeLedger { would: would_ledger, cap: PROBE_LEDGER_CAP_CENTS });
+            return Err(Refusal::ProbeLedger {
+                would: would_ledger,
+                cap: PROBE_LEDGER_CAP_CENTS,
+            });
         }
         Ok(())
     }
@@ -396,6 +430,198 @@ impl RiskGate {
 #[doc(hidden)]
 pub static SIGTERM_EXITS: AtomicBool = AtomicBool::new(true);
 
+/// The external reason a run crossed its session-scoped kill boundary.
+///
+/// This value is deliberately small, copyable, and serializable so runtime
+/// assembly can put the same reason in its final report/evidence without
+/// inferring it from a process exit code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum KillTrigger {
+    StopFile,
+    Sigint,
+    Sigterm,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TeardownDisposition {
+    Acknowledged,
+    EventDropped,
+}
+
+/// Typed handoff from the risk kill boundary to runtime assembly.
+///
+/// Delivery happens only after the gate is killed, session cancellation has
+/// completed, and the risk ledger is durably flushed. Runtime assembly owns
+/// the remaining source/pipeline/report drain and calls [`Self::acknowledge`]
+/// after those finalizers finish. Dropping this value without acknowledgement
+/// is an explicit failure that releases (rather than strands) the watcher.
+pub struct CoordinatedKill<T> {
+    pub trigger: KillTrigger,
+    pub kill_to_cancel_ms: u64,
+    pub cancellation: T,
+    acknowledgement: TeardownAcknowledgement,
+}
+
+impl<T> CoordinatedKill<T> {
+    /// Confirm that runtime-owned source/pipeline/report teardown completed.
+    /// The watcher is released even if it has already gone away. Returns the
+    /// cancellation result intact so callers can retain unresolved IDs in
+    /// their terminal classification after consuming the event.
+    pub fn acknowledge(self) -> T {
+        let CoordinatedKill {
+            cancellation,
+            mut acknowledgement,
+            ..
+        } = self;
+        acknowledgement.acknowledge();
+        cancellation
+    }
+}
+
+struct TeardownAcknowledgement {
+    sender: Option<tokio::sync::oneshot::Sender<TeardownDisposition>>,
+}
+
+impl TeardownAcknowledgement {
+    fn acknowledge(&mut self) {
+        if let Some(tx) = self.sender.take() {
+            if tx.send(TeardownDisposition::Acknowledged).is_err() {
+                tracing::error!("coordinated kill acknowledgement receiver disappeared");
+            }
+        }
+    }
+}
+
+impl Drop for TeardownAcknowledgement {
+    fn drop(&mut self) {
+        if let Some(tx) = self.sender.take() {
+            tracing::error!("coordinated kill event dropped without teardown acknowledgement");
+            let _ = tx.send(TeardownDisposition::EventDropped);
+        }
+    }
+}
+
+/// Coordinated kill watcher for long-lived runtimes.
+///
+/// STOP/SIGINT/SIGTERM all follow the same ordered path:
+///
+/// 1. kill/disarm the gate;
+/// 2. await the caller's session-scoped cancellation work;
+/// 3. flush the money ledger;
+/// 4. deliver a typed event carrying the cancellation result;
+/// 5. wait for runtime teardown acknowledgement.
+///
+/// This API never exits the process. If the event receiver is gone, or the
+/// delivered event is dropped without acknowledgement, the watcher records
+/// the failure and terminates instead of hanging forever.
+pub fn spawn_coordinated_kill_watcher<F, Fut, T>(
+    gate: Arc<RiskGate>,
+    stop_file: PathBuf,
+    on_kill: F,
+) -> (
+    tokio::task::JoinHandle<()>,
+    tokio::sync::oneshot::Receiver<CoordinatedKill<T>>,
+)
+where
+    F: FnOnce() -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = T> + Send,
+    T: Send + 'static,
+{
+    let (event_tx, event_rx) = tokio::sync::oneshot::channel();
+    let watcher = tokio::spawn(async move {
+        let mut tick = tokio::time::interval(std::time::Duration::from_millis(200));
+        let ctrl_c = tokio::signal::ctrl_c();
+        tokio::pin!(ctrl_c);
+        // Install failure would leave SIGTERM at its default (instant death,
+        // no cancel) — degrade loudly to STOP/SIGINT-only rather than
+        // panicking the watcher (a dead watcher is a dead kill switch).
+        let mut sigterm = match tokio::signal::unix::signal(
+            tokio::signal::unix::SignalKind::terminate(),
+        ) {
+            Ok(s) => Some(s),
+            Err(e) => {
+                tracing::error!(
+                        "SIGTERM handler install FAILED ({e}) — unattended kills will not cancel orders"
+                    );
+                None
+            }
+        };
+        let trigger = loop {
+            tokio::select! {
+                _ = tick.tick() => {
+                    if stop_file.exists() {
+                        tracing::error!("STOP file detected — killing");
+                        break KillTrigger::StopFile;
+                    }
+                }
+                _ = &mut ctrl_c => {
+                    tracing::error!("SIGINT — killing");
+                    break KillTrigger::Sigint;
+                }
+                _ = async {
+                    match sigterm.as_mut() {
+                        Some(s) => { s.recv().await; }
+                        None => std::future::pending::<()>().await,
+                    }
+                } => {
+                    tracing::error!("SIGTERM — killing");
+                    break KillTrigger::Sigterm;
+                }
+            }
+        };
+
+        let t0 = MonotonicNs::now();
+        gate.kill();
+        let cancellation = on_kill().await;
+        // Kill is an emergency: make the ledger durable before handing
+        // teardown to runtime assembly.
+        gate.flush();
+        let kill_to_cancel_ms = MonotonicNs::now().saturating_since(t0) / 1_000_000;
+        tracing::info!(
+            ?trigger,
+            kill_to_cancel_ms,
+            "kill boundary complete: cancelled, disarmed, ledger flushed; awaiting runtime teardown"
+        );
+
+        let (ack_tx, ack_rx) = tokio::sync::oneshot::channel();
+        let event = CoordinatedKill {
+            trigger,
+            kill_to_cancel_ms,
+            cancellation,
+            acknowledgement: TeardownAcknowledgement {
+                sender: Some(ack_tx),
+            },
+        };
+        if let Err(event) = event_tx.send(event) {
+            tracing::error!(
+                ?trigger,
+                "coordinated kill receiver disappeared before event delivery"
+            );
+            drop(event); // emits the explicit unacknowledged-event diagnostic
+            return;
+        }
+        match ack_rx.await {
+            Ok(TeardownDisposition::Acknowledged) => {
+                tracing::info!(?trigger, "coordinated runtime teardown acknowledged");
+            }
+            Ok(TeardownDisposition::EventDropped) => {
+                tracing::error!(
+                    ?trigger,
+                    "runtime dropped coordinated kill without acknowledgement"
+                );
+            }
+            Err(_) => {
+                tracing::error!(
+                    ?trigger,
+                    "coordinated teardown acknowledgement channel disappeared"
+                );
+            }
+        }
+    });
+    (watcher, event_rx)
+}
+
 /// Kill-switch watcher: polls `state/STOP` every 200 ms and listens for
 /// SIGINT and SIGTERM. On any trigger: flip the gate, run `on_kill`
 /// (cancel-all), force a durable ledger flush.
@@ -418,60 +644,21 @@ where
     Fut: std::future::Future<Output = ()> + Send,
     G: FnOnce() + Send + 'static,
 {
+    let (coordinator, event_rx) = spawn_coordinated_kill_watcher(gate, stop_file, on_kill);
     tokio::spawn(async move {
-        let mut tick = tokio::time::interval(std::time::Duration::from_millis(200));
-        let ctrl_c = tokio::signal::ctrl_c();
-        tokio::pin!(ctrl_c);
-        // Install failure would leave SIGTERM at its default (instant death,
-        // no cancel) — degrade loudly to STOP/SIGINT-only rather than
-        // panicking the watcher (a dead watcher is a dead kill switch).
-        let mut sigterm = match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
-            Ok(s) => Some(s),
-            Err(e) => {
-                tracing::error!("SIGTERM handler install FAILED ({e}) — unattended kills will not cancel orders");
-                None
-            }
+        let Ok(event) = event_rx.await else {
+            tracing::error!("compatibility kill watcher lost coordinated event");
+            let _ = coordinator.await;
+            return;
         };
-        let mut terminated = false;
-        loop {
-            tokio::select! {
-                _ = tick.tick() => {
-                    if stop_file.exists() {
-                        tracing::error!("STOP file detected — killing");
-                        break;
-                    }
-                }
-                _ = &mut ctrl_c => {
-                    tracing::error!("SIGINT — killing");
-                    break;
-                }
-                _ = async {
-                    match sigterm.as_mut() {
-                        Some(s) => { s.recv().await; }
-                        None => std::future::pending::<()>().await,
-                    }
-                } => {
-                    tracing::error!("SIGTERM — killing, then exiting");
-                    terminated = true;
-                    break;
-                }
-            }
-        }
-        let t0 = MonotonicNs::now();
-        gate.kill();
-        on_kill().await;
-        // Kill is an emergency: make the ledger durable NOW — on SIGTERM
-        // neither the persister nor the Drop flush will get another chance.
-        gate.flush();
-        tracing::info!(
-            kill_to_cancel_ms = MonotonicNs::now().saturating_since(t0) / 1_000_000,
-            "kill switch complete: orders cancelled, disarmed, ledger flushed"
-        );
+        let terminated = event.trigger == KillTrigger::Sigterm;
         if terminated {
             on_terminate();
-            if SIGTERM_EXITS.load(Ordering::SeqCst) {
-                std::process::exit(143);
-            }
+        }
+        event.acknowledge();
+        let _ = coordinator.await;
+        if terminated && SIGTERM_EXITS.load(Ordering::SeqCst) {
+            std::process::exit(143);
         }
     })
 }
@@ -508,7 +695,10 @@ mod tests {
         assert_eq!(g.check_order("T", 1, 1, old, 0), Ok(()));
 
         // Same age with enforcement ON: refuses.
-        let g = gate(RiskConfig { book_stale_enforce: true, ..permissive() });
+        let g = gate(RiskConfig {
+            book_stale_enforce: true,
+            ..permissive()
+        });
         g.arm();
         assert!(matches!(
             g.check_order("T", 1, 1, old, 0),
@@ -518,10 +708,16 @@ mod tests {
         // UNKNOWN age refuses either way — `book_stale_enforce` must never
         // relax P3 (refuse and page, never guess).
         for enforce in [false, true] {
-            let g = gate(RiskConfig { book_stale_enforce: enforce, ..permissive() });
+            let g = gate(RiskConfig {
+                book_stale_enforce: enforce,
+                ..permissive()
+            });
             g.arm();
             assert!(
-                matches!(g.check_order("T", 1, 1, u64::MAX, 0), Err(Refusal::BookStale { .. })),
+                matches!(
+                    g.check_order("T", 1, 1, u64::MAX, 0),
+                    Err(Refusal::BookStale { .. })
+                ),
                 "unknown book age must refuse with enforce={enforce}"
             );
         }
@@ -548,10 +744,19 @@ mod tests {
         assert_eq!(g.check_order("T", 1, 1, 0, 0), Err(Refusal::NotArmed));
         g.arm();
         // Unknown staleness is stale.
-        assert!(matches!(g.check_order("T", 1, 1, u64::MAX, 0), Err(Refusal::BookStale { .. })));
-        assert!(matches!(g.check_order("T", 1, 1, 0, u64::MAX), Err(Refusal::AudioStale { .. })));
+        assert!(matches!(
+            g.check_order("T", 1, 1, u64::MAX, 0),
+            Err(Refusal::BookStale { .. })
+        ));
+        assert!(matches!(
+            g.check_order("T", 1, 1, 0, u64::MAX),
+            Err(Refusal::AudioStale { .. })
+        ));
         // Allowlist.
-        assert!(matches!(g.check_order("X", 1, 1, 0, 0), Err(Refusal::NotAllowlisted(_))));
+        assert!(matches!(
+            g.check_order("X", 1, 1, 0, 0),
+            Err(Refusal::NotAllowlisted(_))
+        ));
         // Clean pass.
         assert_eq!(g.check_order("T", 1, 1, 0, 0), Ok(()));
         // Kill dominates everything.
@@ -580,9 +785,15 @@ mod tests {
         }
         assert_eq!(g.ledger_spent_cents(), cap - 1);
         assert_eq!(g.check_order("T", 1, 1, 0, 0), Ok(()));
-        assert!(matches!(g.check_order("T", 2, 1, 0, 0), Err(Refusal::ProbeLedger { .. })));
+        assert!(matches!(
+            g.check_order("T", 2, 1, 0, 0),
+            Err(Refusal::ProbeLedger { .. })
+        ));
         g.record_send(1, 1);
-        assert!(matches!(g.check_order("T", 1, 1, 0, 0), Err(Refusal::ProbeLedger { .. })));
+        assert!(matches!(
+            g.check_order("T", 1, 1, 0, 0),
+            Err(Refusal::ProbeLedger { .. })
+        ));
     }
 
     #[test]
@@ -591,11 +802,18 @@ mod tests {
         // would erase the cross-run money backstop (post-mortem 2026-07-15).
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("probe_ledger.json"), "{\"spent_c").unwrap();
-        let err = RiskGate::new(permissive(), dir.path()).map(|_| ()).unwrap_err();
+        let err = RiskGate::new(permissive(), dir.path())
+            .map(|_| ())
+            .unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
         // Missing file stays fine: fresh event starts at zero.
         let dir2 = tempfile::tempdir().unwrap();
-        assert_eq!(RiskGate::new(permissive(), dir2.path()).unwrap().ledger_spent_cents(), 0);
+        assert_eq!(
+            RiskGate::new(permissive(), dir2.path())
+                .unwrap()
+                .ledger_spent_cents(),
+            0
+        );
     }
 
     #[test]
@@ -608,7 +826,11 @@ mod tests {
             .unwrap()
             .map(|e| e.unwrap().file_name().into_string().unwrap())
             .collect();
-        assert_eq!(names, vec!["probe_ledger.json"], "unexpected files: {names:?}");
+        assert_eq!(
+            names,
+            vec!["probe_ledger.json"],
+            "unexpected files: {names:?}"
+        );
         // And the flushed file round-trips.
         let g2 = RiskGate::new(permissive(), dir.path()).unwrap();
         assert_eq!(g2.ledger_spent_cents(), 30);
@@ -635,7 +857,101 @@ mod tests {
         g.arm();
         assert!(matches!(
             g.check_order("T", 51, 1, 0, 0),
-            Err(Refusal::OrderNotional { notional: 51, cap: 50 })
+            Err(Refusal::OrderNotional {
+                notional: 51,
+                cap: 50
+            })
         ));
+    }
+
+    #[test]
+    fn kill_trigger_is_stable_serializable_evidence() {
+        assert_eq!(
+            serde_json::to_string(&KillTrigger::StopFile).unwrap(),
+            r#""stop_file""#
+        );
+        assert_eq!(
+            serde_json::from_str::<KillTrigger>(r#""sigterm""#).unwrap(),
+            KillTrigger::Sigterm
+        );
+    }
+
+    #[tokio::test]
+    async fn coordinated_stop_kills_gate_and_finishes_cancel_before_delivery() {
+        let dir = tempfile::tempdir().unwrap();
+        let gate = Arc::new(RiskGate::new(permissive(), dir.path()).unwrap());
+        gate.arm();
+        gate.record_send(7, 1);
+        let cancellation_finished = Arc::new(AtomicBool::new(false));
+        let finished = cancellation_finished.clone();
+        let stop = dir.path().join("STOP");
+        let (watcher, event_rx) =
+            spawn_coordinated_kill_watcher(gate.clone(), stop.clone(), move || async move {
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                finished.store(true, Ordering::SeqCst);
+                (3_u64, vec!["client-unresolved".to_owned()])
+            });
+        std::fs::write(&stop, "test").unwrap();
+        let event = tokio::time::timeout(std::time::Duration::from_secs(2), event_rx)
+            .await
+            .expect("typed kill event timed out")
+            .expect("typed kill event sender disappeared");
+        assert!(gate.is_killed(), "gate must be killed before delivery");
+        assert!(
+            cancellation_finished.load(Ordering::SeqCst),
+            "cancellation must complete before delivery"
+        );
+        assert_eq!(event.trigger, KillTrigger::StopFile);
+        assert_eq!(
+            event.cancellation,
+            (3, vec!["client-unresolved".to_owned()])
+        );
+        let ledger = std::fs::read_to_string(dir.path().join("probe_ledger.json")).unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&ledger).unwrap()["spent_cents"],
+            7
+        );
+        event.acknowledge();
+        tokio::time::timeout(std::time::Duration::from_secs(2), watcher)
+            .await
+            .expect("watcher did not finish after acknowledgement")
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn coordinated_watcher_finishes_when_event_receiver_is_gone() {
+        let dir = tempfile::tempdir().unwrap();
+        let gate = Arc::new(RiskGate::new(permissive(), dir.path()).unwrap());
+        gate.arm();
+        let stop = dir.path().join("STOP");
+        let (watcher, event_rx) =
+            spawn_coordinated_kill_watcher(gate.clone(), stop.clone(), || async { 9_u8 });
+        drop(event_rx);
+        std::fs::write(stop, "test").unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(2), watcher)
+            .await
+            .expect("watcher hung after event receiver disappeared")
+            .unwrap();
+        assert!(gate.is_killed());
+    }
+
+    #[tokio::test]
+    async fn dropping_delivered_event_releases_watcher() {
+        let dir = tempfile::tempdir().unwrap();
+        let gate = Arc::new(RiskGate::new(permissive(), dir.path()).unwrap());
+        gate.arm();
+        let stop = dir.path().join("STOP");
+        let (watcher, event_rx) =
+            spawn_coordinated_kill_watcher(gate, stop.clone(), || async { () });
+        std::fs::write(stop, "test").unwrap();
+        let event = tokio::time::timeout(std::time::Duration::from_secs(2), event_rx)
+            .await
+            .expect("typed kill event timed out")
+            .unwrap();
+        drop(event); // deliberately omit acknowledge()
+        tokio::time::timeout(std::time::Duration::from_secs(2), watcher)
+            .await
+            .expect("watcher hung on an unacknowledged dropped event")
+            .unwrap();
     }
 }

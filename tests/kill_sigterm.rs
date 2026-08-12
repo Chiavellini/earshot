@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use earshot::risk::{RiskConfig, RiskGate, spawn_kill_watcher, SIGTERM_EXITS};
+use earshot::risk::{spawn_kill_watcher, RiskConfig, RiskGate, SIGTERM_EXITS};
 
 #[tokio::test]
 async fn sigterm_cancels_flushes_and_reports() {
@@ -20,7 +20,10 @@ async fn sigterm_cancels_flushes_and_reports() {
     let state = tempfile::tempdir().unwrap();
     let gate = Arc::new(
         RiskGate::new(
-            RiskConfig { allowlist_tickers: vec!["T".into()], ..Default::default() },
+            RiskConfig {
+                allowlist_tickers: vec!["T".into()],
+                ..Default::default()
+            },
             state.path(),
         )
         .unwrap(),
@@ -58,8 +61,14 @@ async fn sigterm_cancels_flushes_and_reports() {
 
     watcher.await.unwrap();
     assert!(gate.is_killed(), "gate must disarm on SIGTERM");
-    assert!(cancelled.load(Ordering::SeqCst), "cancel path must run on SIGTERM");
-    assert!(terminated.load(Ordering::SeqCst), "on_terminate must run on SIGTERM");
+    assert!(
+        cancelled.load(Ordering::SeqCst),
+        "cancel path must run on SIGTERM"
+    );
+    assert!(
+        terminated.load(Ordering::SeqCst),
+        "on_terminate must run on SIGTERM"
+    );
     // The in-memory debit reached disk (the flush the old code never did).
     let ledger = std::fs::read_to_string(state.path().join("probe_ledger.json")).unwrap();
     let v: serde_json::Value = serde_json::from_str(&ledger).unwrap();

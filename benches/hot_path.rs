@@ -58,7 +58,11 @@ fn bench_chunk_seal_copy(c: &mut Criterion) {
     // Detector-side sample rate is 16 kHz (preproc upsamples 8→16). Prod
     // chunk_ms is 80 → 1280 samples; the WS-2 candidates (40/20 ms) seal more
     // often but copy less each, so bench the span.
-    for &samples in &[320usize /*20ms*/, 640 /*40ms*/, 1280 /*80ms*/] {
+    for &samples in &[
+        320usize, /*20ms*/
+        640,      /*40ms*/
+        1280,     /*80ms*/
+    ] {
         let buf: Vec<i16> = (0..samples as i16).collect();
         g.throughput(Throughput::Elements(samples as u64));
         g.bench_with_input(BenchmarkId::from_parameter(samples), &buf, |b, buf| {

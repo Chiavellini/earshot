@@ -35,7 +35,10 @@ const TICKER: &str = "KX-FIX-EXEC";
 fn test_keypair() -> (Arc<Signer>, rsa::RsaPublicKey) {
     let key = rsa::RsaPrivateKey::new(&mut rsa::rand_core::OsRng, 2048).unwrap();
     let pem = key.to_pkcs1_pem(rsa::pkcs8::LineEnding::LF).unwrap();
-    (Arc::new(Signer::from_pem("SENDER-KEY".into(), &pem).unwrap()), key.to_public_key())
+    (
+        Arc::new(Signer::from_pem("SENDER-KEY".into(), &pem).unwrap()),
+        key.to_public_key(),
+    )
 }
 
 fn fix_cfg(port: u16) -> FixConfig {
@@ -95,21 +98,31 @@ async fn read_frame(stream: &mut TcpStream, buf: &mut Vec<u8>) -> Option<Vec<u8>
     }
 }
 
-async fn accept_with_logon(listener: TcpListener, pubkey: rsa::RsaPublicKey) -> (TcpStream, Vec<u8>) {
+async fn accept_with_logon(
+    listener: TcpListener,
+    pubkey: rsa::RsaPublicKey,
+) -> (TcpStream, Vec<u8>) {
     let (mut stream, _) = listener.accept().await.unwrap();
     let mut buf = Vec::new();
-    let frame = read_frame(&mut stream, &mut buf).await.expect("logon frame");
+    let frame = read_frame(&mut stream, &mut buf)
+        .await
+        .expect("logon frame");
     let msg = FixMsg::parse(&frame).expect("parseable logon");
     assert_eq!(msg.msg_type, b"A");
     let sending_time = msg.get_str(52).unwrap();
     let sig_bytes = {
         use base64::Engine;
-        base64::engine::general_purpose::STANDARD.decode(msg.get_str(96).unwrap()).unwrap()
+        base64::engine::general_purpose::STANDARD
+            .decode(msg.get_str(96).unwrap())
+            .unwrap()
     };
     let verifying: VerifyingKey<Sha256> = VerifyingKey::new(pubkey);
     let sig = rsa::pss::Signature::try_from(sig_bytes.as_slice()).unwrap();
     verifying
-        .verify(&logon_prehash(sending_time, msg.seq, "SENDER-KEY", "KalshiNR"), &sig)
+        .verify(
+            &logon_prehash(sending_time, msg.seq, "SENDER-KEY", "KalshiNR"),
+            &sig,
+        )
         .expect("logon signature");
     let mut w = FixWriter::new();
     w.begin("A", "KalshiNR", "SENDER-KEY", 1, sending_time);
@@ -128,16 +141,25 @@ struct Rig {
 /// Executor context wired to a live `FixTransport` + a wiremock REST base
 /// (the ambiguous-path status-query wire).
 async fn rig(fix: Arc<FixTransport>, signer: Arc<Signer>, rest_base: String, cap: u8) -> Rig {
-    let rest = RestClient::with_base_and_timeout(rest_base, signer, Duration::from_secs(5)).unwrap();
+    let rest =
+        RestClient::with_base_and_timeout(rest_base, signer, Duration::from_secs(5)).unwrap();
     let cache = BookCache::new(&[TICKER.to_string()]);
     cache.touch();
     cache.publish(
         TICKER,
-        Book { yes_bids: vec![(5, 100)], yes_asks: vec![(10, 500)], seq: 1, as_of: MonotonicNs::now() },
+        Book {
+            yes_bids: vec![(5, 100)],
+            yes_asks: vec![(10, 500)],
+            seq: 1,
+            as_of: MonotonicNs::now(),
+        },
     );
     let state = tempfile::tempdir().unwrap();
     let gate = RiskGate::new(
-        RiskConfig { allowlist_tickers: vec![TICKER.into()], ..Default::default() },
+        RiskConfig {
+            allowlist_tickers: vec![TICKER.into()],
+            ..Default::default()
+        },
         state.path(),
     )
     .unwrap();
@@ -147,13 +169,17 @@ async fn rig(fix: Arc<FixTransport>, signer: Arc<Signer>, rest_base: String, cap
     Rig {
         ctx: Arc::new(ExecCtx {
             transport: OrderTransport::Fix { fix },
-            rest,
+            rest: rest.clone(),
             cache,
             gate: Arc::new(gate),
             prestaged,
             haircuts: HashMap::from([(0u16, 0u32)]),
             dry_run: false,
             registry: earshot::kalshi::OrderRegistry::default(),
+            order_evidence: None,
+            decision_plan_sha1: "0".repeat(40),
+            keyword_text: HashMap::new(),
+            rest_endpoint_id: rest.endpoint_id(),
         }),
         _state: state,
     }
@@ -167,7 +193,9 @@ async fn executor_fires_through_fix_and_records_the_fill() {
 
     let server = tokio::spawn(async move {
         let (mut stream, mut buf) = accept_with_logon(listener, pubkey).await;
-        let frame = read_frame(&mut stream, &mut buf).await.expect("order frame");
+        let frame = read_frame(&mut stream, &mut buf)
+            .await
+            .expect("order frame");
         let msg = FixMsg::parse(&frame).unwrap();
         assert_eq!(msg.msg_type, b"D");
         assert_eq!(msg.get_str(55), Some(TICKER));
@@ -202,6 +230,27 @@ async fn executor_fires_through_fix_and_records_the_fill() {
     let o = &report.orders[0];
     assert_eq!(o.order_id.as_deref(), Some("srv-fix-exec"));
     assert_eq!(o.order_status.as_deref(), Some("filled"));
+    assert_eq!(
+        o.wire_state,
+        earshot::kalshi::executor::OrderWireState::Observed
+    );
+    assert_eq!(o.transport_protocol.as_deref(), Some("fix"));
+    assert_eq!(
+        o.protocol_status.as_deref(),
+        Some("exec_type:F;ord_status:2")
+    );
+    assert_eq!(o.exchange_accepted, Some(true));
+    assert_eq!(o.order_terminal, Some(true));
+    assert_eq!(
+        o.fill
+            .as_ref()
+            .and_then(|f| f.cumulative_contracts.as_deref()),
+        Some("1")
+    );
+    assert_eq!(
+        o.fill.as_ref().and_then(|f| f.last_fill_price.as_deref()),
+        Some("10")
+    );
     assert!(!o.lost_race);
     assert!(o.reached_wire() && o.hdrs_ts.is_some() && o.ack_ts.is_some());
     assert!(o.ack_ts.unwrap() >= o.hdrs_ts.unwrap());
@@ -213,10 +262,23 @@ async fn executor_fires_through_fix_and_records_the_fill() {
     // Per-transport honest telemetry: send→ack edges recorded, presign_age
     // ABSENT (FIX has no presign step — a fake zero would poison the stats).
     let edges = report.recorder.snapshot();
-    for edge in ["exec→send", "send→hdrs", "hdrs→ack", "send→ack", "decision→ack", "capture→ack"] {
-        assert!(edges.get(edge).map(|s| s.count > 0).unwrap_or(false), "edge {edge} empty");
+    for edge in [
+        "exec→send",
+        "send→hdrs",
+        "hdrs→ack",
+        "send→ack",
+        "decision→ack",
+        "capture→ack",
+    ] {
+        assert!(
+            edges.get(edge).map(|s| s.count > 0).unwrap_or(false),
+            "edge {edge} empty"
+        );
     }
-    assert!(edges.get("presign_age").is_none_or(|s| s.count == 0), "presign_age must not be recorded on FIX");
+    assert!(
+        edges.get("presign_age").is_none_or(|s| s.count == 0),
+        "presign_age must not be recorded on FIX"
+    );
 
     server.abort();
 }
@@ -236,12 +298,23 @@ async fn swallowed_er_falls_back_to_rest_status_query() {
 
     // The REST wire has the answer: the order DID land server-side.
     let rest_mock = MockServer::start().await;
-    let cl = earshot::kalshi::rest::deterministic_client_order_id("EV:0:Confirmed");
+    let cl = earshot::kalshi::executor::deterministic_order_client_id(
+        "EV",
+        TICKER,
+        15,
+        1,
+        0,
+        Tier::Confirmed,
+    );
     Mock::given(method("GET"))
         .and(path("/portfolio/orders"))
         .and(query_param("client_order_id", cl.clone()))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "orders": [{"order_id": "srv-rest-9", "status": "canceled"}]
+            "orders": [{
+                "client_order_id": cl,
+                "order_id": "srv-rest-9",
+                "status": "canceled"
+            }]
         })))
         .expect(1)
         .mount(&rest_mock)
@@ -262,6 +335,17 @@ async fn swallowed_er_falls_back_to_rest_status_query() {
     // retry, order recorded from the query.
     assert_eq!(o.order_id.as_deref(), Some("srv-rest-9"));
     assert_eq!(o.order_status.as_deref(), Some("canceled"));
+    assert!(
+        o.send_ts.is_some(),
+        "FIX timeout happened after the write boundary"
+    );
+    assert_eq!(
+        o.wire_state,
+        earshot::kalshi::executor::OrderWireState::Reconciled
+    );
+    assert_eq!(o.transport_protocol.as_deref(), Some("fix"));
+    assert!(o.transport_error.is_some());
+    assert!(o.reconciliation_response.is_some());
     assert!(o.refusal.is_none());
     // The debit stands even though the FIX ack never arrived (worst case).
     assert_eq!(rig.ctx.gate.ledger_spent_cents(), 15);
@@ -300,8 +384,15 @@ async fn gates_hold_upstream_of_the_fix_wire() {
 
     assert_eq!(report.lost_races, 1);
     assert!(report.orders[0].send_ts.is_none());
-    assert_eq!(rig.ctx.gate.ledger_spent_cents(), 0, "no debit without a send");
-    assert!(order_seen_rx.try_recv().is_err(), "no 35=D may reach the wire on a lost race");
+    assert_eq!(
+        rig.ctx.gate.ledger_spent_cents(),
+        0,
+        "no debit without a send"
+    );
+    assert!(
+        order_seen_rx.try_recv().is_err(),
+        "no 35=D may reach the wire on a lost race"
+    );
 
     server.abort();
 }

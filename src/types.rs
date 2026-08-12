@@ -15,9 +15,9 @@ pub struct KeywordId(pub u16);
 
 #[derive(Debug, Clone)]
 pub struct AudioFrame {
-    pub pcm: Arc<[i16]>,          // mono, native sample rate
-    pub sample_rate_hz: u32,      // 8000 for PSTN, 16000/44100 elsewhere
-    pub capture_ts: MonotonicNs,  // stamped the instant bytes arrive
+    pub pcm: Arc<[i16]>,         // mono, native sample rate
+    pub sample_rate_hz: u32,     // 8000 for PSTN, 16000/44100 elsewhere
+    pub capture_ts: MonotonicNs, // stamped the instant bytes arrive
     pub source: SourceId,
     pub seq: u64,
     /// Stamped by the preproc stage; MonotonicNs(0) until then.
@@ -32,7 +32,7 @@ pub struct AudioChunk {
     pub first_capture_ts: MonotonicNs,
     pub last_capture_ts: MonotonicNs,
     pub first_preproc_ts: MonotonicNs,
-    pub chunk_ts: MonotonicNs,    // stamped when the chunk is sealed
+    pub chunk_ts: MonotonicNs, // stamped when the chunk is sealed
     pub source: SourceId,
     pub seq: u64,
 }
@@ -48,7 +48,7 @@ pub struct Detection {
     pub keyword: KeywordId,
     pub confidence: f32,
     pub tier: Tier,
-    pub audio_ts: MonotonicNs,    // capture_ts of triggering audio
+    pub audio_ts: MonotonicNs, // capture_ts of triggering audio
     pub emit_ts: MonotonicNs,
     /// Which audio leg heard this. Detectors are leg-ignorant and emit
     /// `SourceId(0)`; the detect stage overwrites it from the chunk before

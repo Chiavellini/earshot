@@ -152,7 +152,9 @@ mod tests {
     #[test]
     fn unrelated_streams_have_low_peak() {
         let a = ramp(4000);
-        let b: Vec<i16> = (0..4000).map(|i| (((i * 911) % 6000) as i16) - 3000).collect();
+        let b: Vec<i16> = (0..4000)
+            .map(|i| (((i * 911) % 6000) as i16) - 3000)
+            .collect();
         let (_lag, peak) = best_lag(&a, &b, 500);
         assert!(peak < 0.5, "unrelated peak too high: {peak}");
     }

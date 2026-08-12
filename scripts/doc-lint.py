@@ -989,6 +989,31 @@ def validate_dial_in_digits(root: Path, problems: Problems) -> int:
     return len(found)
 
 
+def validate_operations_surface(root: Path, problems: Problems) -> None:
+    """Keep event operations small enough to remain a procedure, not folklore."""
+    checker = root / "scripts" / "ops-surface-check.py"
+    manifest = root / "architecture" / "operations.toml"
+    if not checker.is_file() or not manifest.is_file():
+        # validate_paths already reports the exact missing governed path.
+        return
+    try:
+        result = subprocess.run(
+            [sys.executable, str(checker), "--repo", str(root)],
+            cwd=root,
+            text=True,
+            capture_output=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        problems.add(f"operations surface check could not run: {exc}")
+        return
+    if result.returncode == 0:
+        return
+    lines = (result.stderr or result.stdout).splitlines()
+    detail = next((line for line in lines if "ERROR:" in line), "checker failed")
+    problems.add(f"operations surface is invalid: {detail}")
+
+
 def parse_args() -> argparse.Namespace:
     default_root = Path(__file__).resolve().parent.parent
     parser = argparse.ArgumentParser(description=__doc__)
@@ -1199,6 +1224,7 @@ def main() -> int:
     validate_headings(root, data, nodes, problems)
     citation_count = validate_spec_citations(root, data, problems)
     validate_dial_in_digits(root, problems)
+    validate_operations_surface(root, problems)
     markdown_count, link_count = validate_canonical_docs(root, problems)
     result = problems.emit()
     if result == 0:

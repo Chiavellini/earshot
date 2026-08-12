@@ -55,7 +55,8 @@ verdict is never a no-go.
   (dial-in, `starts_at`, and any best-effort variants) before arming.
 - **Phone-lane derivation:** `scripts/phone-lane-derive.py` turns a staged
   webcast arm into a phone-only one — exactly one `twilio_stream` source with
-  the Q-REDIAL parameters, no `[arbiter]` (fanout requires >= 2 sources), a
+  the Q-REDIAL parameters (`idle_timeout_secs = 8`, event-wide
+  `max_reconnects = 20`), no `[arbiter]` (fanout requires >= 2 sources), a
   bind port `deploy/caddy/Caddyfile` actually routes, and the matching
   `configs/<ev>-phone-autorun.env`. It rewrites only `max_price_cents`,
   `budget_contracts`, and `min_confidence_confirmed`, leaving ticker/phrase/
@@ -66,6 +67,38 @@ verdict is never a no-go.
   `[risk].max_order_notional_cents`, never from memory: exceeding the first
   makes `mention_fill_gate` refuse the run, and exceeding the second returns
   `Refusal::OrderNotional` on every order.
+  The reconnect budget is deliberately emitted by the generic derivation,
+  never patched into an event config at fire time. It replaces only Twilio
+  call legs behind one listener; `control.supervise` owns the invariant that
+  the Rust arm, decision state, report and evidence writers are not restarted.
+  Its autorun env also carries a literal portable
+  `EARSHOT_ACCOUNT_PROFILE="$HOME/.earshot/<account-basename>"`. The runtime
+  `ACCOUNT_ENV` may still use a host-search loop, but `control.operate` never
+  sources generated event envs merely to discover identity; this explicit
+  locator is the immutable-plan input. It contains no credential material.
+- **Authoritative time input:** `scripts/slate-time-merge.py` may add a same-day
+  verified time using the established `call_time_utc`/`source` fields. A time
+  on a different date does **not** silently supersede discovery. The keyed
+  entry must also carry an exact schema-1 `date_correction` object with kind
+  `call-date-correction`, distinct `from`/`to` dates, a non-estimate source,
+  and `recorded_utc`. The `from` date must match the slate row and the UTC time
+  must land on `to`. The merged row preserves that typed correction and marks
+  `call_date_source = "authoritative_correction"`; malformed, stale, or
+  unsourced corrections are refusals and leave the row unchanged.
+- **Idempotent staging repair:** a lane config containing exactly one explicit
+  `starts_at ... # TODO` is incomplete, never `ALREADY-STAGED`. When a verified
+  merged time later arrives, `scripts/stage-reconcile.py` may replace only that
+  TODO line and `slate-stage.sh` creates the missing generic autorun env
+  atomically. A complete matching config/env is read-only and reports
+  `ALREADY-STAGED`; a conflicting non-TODO time or existing incomplete env
+  fails loudly instead of being guessed or overwritten.
+- **RunPlan freeze boundary:** before repairing or creating a staged config/env,
+  `stage-reconcile.py` scans published `var/runs/*/*/control/run-plan.json`
+  records. A referenced config and its event-env association are immutable.
+  Their current bytes must still match the pinned hashes, and an incomplete
+  pinned input is `IMMUTABLE-INCOMPLETE`; staging never rewrites the config,
+  env association, or RunPlan. Recovery is a deliberate new attempt with a
+  new config path, not an in-place premarket patch.
 
 ## Obligations
 - Parse each market's rules into `{phrase, variants, said_n_times,
@@ -125,6 +158,11 @@ verdict is never a no-go.
 - While the legacy direct lookup remains, a Kalshi fetch error propagates
   (`KalshiError`); nothing is emitted partially. At the stable boundary, an
   incomplete `control.event.qualified` input is refused before emission.
+- A cross-date call time without the exact typed/source-bearing correction is
+  refused. An already-staged TODO without a verified time remains
+  `NEEDS-TIME`; it is not counted as ready. Missing generic env creation is
+  atomic and failure is nonzero. Existing RunPlan pins and non-TODO time/env
+  conflicts are never repaired in place.
 
 ## How to replace or edit this layer
 - All logic in `src/prepare.rs`; the REST wrapper in `src/kalshi/rest.rs`
@@ -153,6 +191,11 @@ recall ceiling, not part of a trading run.
   model-gated: `EARSHOT_REQUIRE_MODELS=1 cargo test prepare::` additionally
   proves sanitized forms encode on the real vocab and raw punctuation forms
   do not.
+- Offline control-plane fixtures: `python3 scripts/slate-time-merge.py
+  --self-test` and `python3 tests/stage_reconcile.py`. The latter uses generic
+  ALFA/BETA events to prove typed date correction, TODO-not-ready behavior,
+  missing-env creation/failure, idempotence, and byte-stable RunPlan/config
+  refusal without touching issuer files or external services.
 - End-to-end: `earshot prepare --event-ticker <live event> --fillable` then
   `earshot compile-keywords --config <out>` (every keyword must tokenize) and
   a dry-run `earshot arm --config <out> --allow-mention` (markets validate,
