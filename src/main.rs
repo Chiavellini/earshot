@@ -1203,7 +1203,7 @@ fn build_leg(
         }
         // Webcast lane (adapter #4, source::pipe): ffmpeg/subprocess decodes
         // to raw PCM. Tens of seconds behind the bridge — capture/observe
-        // posture; see docs/RUNBOOK.md webcast-lane notes.
+        // posture; see docs/history/RUNBOOK.md webcast-lane notes.
         SourceConfig::Hls { url } => Ok(Box::new(PipeSource::hls(url, source_id)?)),
         SourceConfig::Pipe {
             cmd,

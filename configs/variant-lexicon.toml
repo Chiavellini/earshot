@@ -100,7 +100,7 @@ evidence = "8/9 (just under the fill floor) -> 54/27. CELH 26AUG06. The reverse 
 
 [phrases."nvidia"]
 variants = ["nvidia", "nvidias", "invidia", "in vidia", "en vidia"]
-evidence = "0/18 -> 122/45, the largest measured swing in the repo. LYFT 26AUG06 (configs/webcast-lyft-26aug06-arm-wc.toml:232) and UBER 26AUG05, where NVID fired and PLACED LIVE (docs/runbooks/RUNBOOK-2026-08-05.md:106). SPCX 26AUG04 scored 58/45 on a near-identical set that used 'in video' instead of 'in vidia' — prefer this one. Dead at 0/18 on NBIS 26AUG05 and LLY 26AUG06 for want of propagation."
+evidence = "0/18 -> 122/45, the largest measured swing in the repo. LYFT 26AUG06 (configs/webcast-lyft-26aug06-arm-wc.toml:232) and UBER 26AUG05, where NVID fired and PLACED LIVE (docs/history/RUNBOOK-2026-08-05.md:106). SPCX 26AUG04 scored 58/45 on a near-identical set that used 'in video' instead of 'in vidia' — prefer this one. Dead at 0/18 on NBIS 26AUG05 and LLY 26AUG06 for want of propagation."
 
 # ── Acronyms: spaced letters AND letter names ──────────────────────────────
 # Two systematically different transcriptions of the same spoken letters. The

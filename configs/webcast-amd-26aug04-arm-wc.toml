@@ -20,7 +20,7 @@
 #
 # LAUNCH WITH scripts/launch-event.sh (it dials), NOT launch-webcast.sh.
 # Requires [AMD] admission = "held" in configs/dial-ins.toml first — a number is
-# not admission (THE MSFT RULE). See docs/POSTMORTEM-26AUG04.md for what skipping
+# not admission (THE MSFT RULE). See docs/history/POSTMORTEM-26AUG04.md for what skipping
 # that costs.
 #
 # Posture: 1c mention-probe observe (non-crossing). Fill posture stays gated on

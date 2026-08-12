@@ -4,7 +4,7 @@
 #   scripts/preflight-nightly.sh [--date YYYY-MM-DD] [--no-mail]
 #
 # WHY THIS EXISTS: scripts/preflight-event.sh is REQUIRED the night before
-# every scheduled event (docs/RUNBOOK.md; born from the 2026-07-15 audit) —
+# every scheduled event (docs/history/RUNBOOK.md; born from the 2026-07-15 audit) —
 # but today it runs only if a human remembers to run it. On 2026-07-28 the
 # PYPL and BA events were missed SILENTLY with no human at the keyboard: the
 # gap was not one broken check, it was that nothing was scheduled to check.

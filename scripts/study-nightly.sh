@@ -106,7 +106,7 @@ run_bounded() {  # run_bounded <seconds> <command> [args...]
 # launchd `&&` short-circuited, and scripts/arm-on-url.sh was never exec'd.
 # Twelve markets forfeited to protect three words that could not have fired.
 #
-# docs/runbooks/RUNBOOK-2026-08-05.md:86 already states the rule — "fix, ack
+# docs/history/RUNBOOK-2026-08-05.md:86 already states the rule — "fix, ack
 # deliberately, or descope. NO THIRD STATE." Paging and continuing is exactly a
 # third state, entered silently because nobody was awake. Everything below
 # exists to make this script always land in one of the three.

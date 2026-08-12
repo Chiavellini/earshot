@@ -3,7 +3,7 @@
 # recorded.
 #
 # Both calls were captured to WAV by a record-only path (no detector, no orders
-# — docs/POSTMORTEM-26AUG04.md). The tape is real, so the detections are
+# — docs/history/POSTMORTEM-26AUG04.md). The tape is real, so the detections are
 # recoverable after the fact: concatenate the legs in wall-clock order, point a
 # single pipe leg at the result, and replay it through the SAME engine and
 # keyword set the arm config would have used.

@@ -22,7 +22,7 @@
 #
 # Safety:
 #   - REFUSES while any armed event is live (unless --yes): a probe must never
-#     dial a bridge we are also trading (docs/RUNBOOK.md).
+#     dial a bridge we are also trading (docs/history/RUNBOOK.md).
 #   - Listen-only: the call goes through scripts/twilio-dial.sh — same TwiML,
 #     same DTMF charset guard, shortened <Pause>.
 #   - Cost per probe ≈ $0.02 and ~1 min of an operator's time on screened

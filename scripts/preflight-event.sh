@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Night-before preflight for an unattended event run (docs/RUNBOOK.md —
+# Night-before preflight for an unattended event run (docs/history/RUNBOOK.md —
 # REQUIRED before every scheduled event; born from the 2026-07-15 audit).
 #
 #   scripts/preflight-event.sh --config configs/<event>.toml --account ~/.earshot/<acct>.env \
@@ -881,7 +881,7 @@ if [[ -n "$EVENT_ENV" ]]; then
       # posture for a webcast-only event — nothing dials, so TBD digits are
       # correct there, not a NO-GO. FAILing them trains override behavior.
       if grep -qE '^[[:space:]]*kind[[:space:]]*=[[:space:]]*"twilio' "$CONFIG" 2>/dev/null; then
-        check FAIL "dial-in still TBD in $EVENT_ENV (${DIAL_STATUS#TBD:}) — NO-GO. The number hunt has not completed; event-autorun would abort at fire time. See docs/RUNBOOK.md Track A."
+        check FAIL "dial-in still TBD in $EVENT_ENV (${DIAL_STATUS#TBD:}) — NO-GO. The number hunt has not completed; event-autorun would abort at fire time. See docs/history/RUNBOOK.md Track A."
       else
         check PASS "dial-in TBD in $EVENT_ENV is the deliberate webcast-only posture (no twilio source in $CONFIG — nothing dials)"
       fi

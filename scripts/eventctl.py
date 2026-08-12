@@ -8,7 +8,7 @@ per event attempt, under var/runs/<EVENT_ID>/<RUN_ID>/:
   control/receipts.jsonl   door control.run.receipts — hash-chained appends
   control/status.json      derived snapshot; NEVER authoritative
 
-Born from casino143.md (2026-08-11 CAVA/CRWV): $48.50 of fills with no banked
+Born from docs/history/casino143.md (2026-08-11 CAVA/CRWV): $48.50 of fills with no banked
 audio, report.json overwritten per arm restart, order accounting that
 disagreed with itself, and a host-absolute ACCOUNT_ENV that killed both
 events' dials. This tool records what the existing entry points did; it is

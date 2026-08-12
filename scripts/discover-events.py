@@ -35,7 +35,7 @@ Progressive was never on the slate at all. See `stale_open_event()` below: this
 is the one contradiction the sweep can detect for free, because BOTH sweeps
 query `status=open` — so a past call_date on a returned event is self-refuting.
 
-RATE LIMITS ARE REAL. docs/RUNBOOK.md:465 — the events endpoint 429s under rapid
+RATE LIMITS ARE REAL. docs/history/RUNBOOK.md:465 — the events endpoint 429s under rapid
 repeat queries. There are ~135 KXEARNINGSMENTION* series, so the per-series
 sweep is ~135 requests: it is paced, it backs off on 429, and that is precisely
 why this belongs in a daily job rather than an on-demand call.

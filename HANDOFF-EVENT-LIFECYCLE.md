@@ -3,7 +3,7 @@
 ## Objective and scope
 
 This is the continuation registry for the reliability program requested after
-`casino143.md`. The goal is one repeatable event procedure that does not depend
+`docs/history/casino143.md`. The goal is one repeatable event procedure that does not depend
 on issuer/date shell patches or operator memory, and a durable evidence record
 from which latency and accuracy can later be improved.
 
@@ -20,7 +20,7 @@ governed dirty path is now protected by an exact node claim.
 4. `docs/STATUS.md` — current project state.
 5. `docs/runbooks/EVENT-LIFECYCLE.md` — the procedure every event follows.
 6. Node/layer contracts — implementation behavior at each door.
-7. `casino143.md` — frozen 2026-08-11 diagnosis, not current status.
+7. `docs/history/casino143.md` — frozen 2026-08-11 diagnosis, not current status.
 
 ## Implemented reliability baseline
 

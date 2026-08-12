@@ -4,7 +4,7 @@ Written 2026-08-04 ~19:40Z. Everything below is copy-pasteable. Local = CST = UT
 
 **Read this first if you are picking up cold:** this morning SPOT and PGR were
 *recorded* instead of *armed* — 335,900 contracts traded, zero orders
-(`docs/POSTMORTEM-26AUG04.md`). The whole point of this afternoon is that a
+(`docs/history/POSTMORTEM-26AUG04.md`). The whole point of this afternoon is that a
 recorder is never pointed at a tradeable call again. `bridge-probe` and
 `chain-capture` bank corpus and cannot trade. **Only `launch-event.sh` (phone)
 and `arm-on-url.sh` / `launch-webcast.sh` (webcast) place orders.**

@@ -5,7 +5,7 @@
 # Lane pairing: PHONE twin configs/twilio-yum-26jul30-arm.toml runs
 # CONCURRENTLY on bind-port 8080 (this file's [event].id carries the
 # -WEBCAST suffix so run-arm guard 8 sees two different events —
-# PHONE-LANE-HANDOFF.md §7.3). Bind-port plan (MULTI-EVENT §8): YUM phone
+# docs/history/PHONE-LANE-HANDOFF.md §7.3). Bind-port plan (MULTI-EVENT §8): YUM phone
 # 8080, AAPL phone 8081.
 #
 # WEBCAST FANOUT ARM — SPECULATIVE POSTURE + streaming_ctc DETECTOR.

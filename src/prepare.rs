@@ -6,7 +6,7 @@
 //! and flags "said N times" strikes that the one-shot decision table cannot
 //! trade, then emits a config TOML the operator reviews and runs via
 //! `scripts/launch-event.sh`. This is the "prior step" that replaces the
-//! hand-typing of markets/tickers/variants (docs/RUNBOOK.md drill 4).
+//! hand-typing of markets/tickers/variants (docs/history/RUNBOOK.md drill 4).
 //!
 //! It does NOT trade and does NOT source dial-in numbers (those are not in the
 //! repo) — it prints the dial-in as a TODO for the operator.

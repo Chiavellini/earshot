@@ -10,8 +10,9 @@ with provenance.
 Public-event enumeration, pagination/backoff, family coverage, call-date
 resolution, sweep-delta reporting, and the `slate/latest.json` schema in
 `scripts/discover-events.py`. `scripts/slate-daily.sh` is its current scheduled
-legacy orchestrator; dated discovery deltas under `slate/changes/` belong to
-the same node.
+legacy orchestrator; it writes dated discovery deltas to `slate/changes/`,
+whose accumulated history is archived at `docs/history/slate-changes/`
+(evidence.measure) since 2026-08-12.
 
 ## Does not own
 

@@ -59,7 +59,7 @@ cat <<EOF
 
 ── prerequisites this script cannot do ─────────────────────────────────────
 1. DNS: A record  media.${DOMAIN} → 3.212.174.94  (the box's Elastic IP —
-   docs/RUNBOOK.md; re-check after any instance move)
+   docs/history/RUNBOOK.md; re-check after any instance move)
 2. Security group: inbound 80/tcp + 443/tcp from 0.0.0.0/0 (80 is needed for
    the Let's Encrypt HTTP challenge; Twilio media arrives on 443)
 3. Q-TLS pin: one live TTS-number call through

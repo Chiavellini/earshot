@@ -163,7 +163,7 @@ carries unrelated resting orders from other systems. Never widen that scope.
 
 This is the procedure the operator wants formalised. Today it exists as a chain
 of scripts that a human (or an agent) invokes, with the ordering held in
-`docs/RUNBOOK.md` and in people's heads.
+`docs/history/RUNBOOK.md` and in people's heads.
 
 ### II.1 The chain
 
@@ -349,7 +349,7 @@ Quantified, today:
 | `docs/` markdown | 28 top-level + 36 node contracts + 13 layer contracts |
 | Rust | 17,331 LOC across 48 files |
 
-`docs/RUNBOOK.md` is **2,328 lines** and opens with
+`docs/history/RUNBOOK.md` is **2,328 lines** and opens with
 `# NEXT EVENT — Monday 2026-07-20, Domino's (DPZ) Q2 call` — three weeks stale.
 It is a chronological diary of every event ever run, with per-event runsheets
 interleaved with hardening notes and post-mortems. **There is no single
@@ -581,7 +581,7 @@ docs/ARCHITECTURE.md    the design; still accurate
 docs/NODES.md           human index of nodes
 docs/nodes/*.md         36 per-node contracts
 docs/layers/*.md        13 runtime leaf contracts
-docs/RUNBOOK.md         ~2,240-line event diary  ← the thing to replace
+docs/history/RUNBOOK.md         ~2,240-line event diary  ← the thing to replace
 VERIFICATIONS.md        dated, evidence-backed wire facts (Q-ADMIT, Q-Q4PHONE, …)
 configs/                165 toml — templates, per-event arms, raw prepare output
   .readiness/           study artifacts (keywords_sha256)

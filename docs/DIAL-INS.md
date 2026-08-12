@@ -31,7 +31,7 @@ join it.** The real variable is whether the number is *published*:
 | **No phone leg** | TSLA, NFLX |
 
 Ten of eighteen sit in the middle tier — a real PSTN bridge that no press release
-names. That is where the number hunt (`docs/RUNBOOK.md` Track A) earns its keep, and
+names. That is where the number hunt (`docs/history/RUNBOOK.md` Track A) earns its keep, and
 it is the modal case, not the exception.
 
 ## The Apple rule
@@ -70,7 +70,7 @@ page yields no numbers *at all*, you are reading the shell, not the page.
 ⇒ **`listen_access` may NEVER be established by `curl`/regex on an IR page.**
 Open it in Chrome and read it, or fetch the underlying press release / 8-K
 (which *are* static documents and *are* curl-safe). Prior instances of the same
-failure mode, all already in-repo: the Q4 attendee SPA (`docs/RUNBOOK.md`
+failure mode, all already in-repo: the Q4 attendee SPA (`docs/history/RUNBOOK.md`
 §webcast URL — 3.7 KB shell, m3u8 nowhere in the HTML), Say Technologies
 (`docs/SAY-QA-PRIOR.md:18-21` — empty `__N_SSG` pageProps), and LMT
 (`configs/dial-ins.toml` LMT notes — Akamai hangs bare curl, loads in Chrome).
@@ -80,7 +80,7 @@ UAL's Q2 8-K says "A live, **listen-only webcast** … will be available at ir.u
 Tesla's says essentially the same thing. They mean opposite things: UAL's operator runs a
 live phone Q&A ("press star, then the number one on your telephone keypad"); Tesla has no
 phone leg whatsoever. Same phrasing, opposite fact. Grouping them — as
-`docs/RUNBOOK.md` once did — forfeits a tradeable event.
+`docs/history/RUNBOOK.md` once did — forfeits a tradeable event.
 
 The tell that actually separates them is not the 8-K wording. It is that **Tesla's call
 has no operator at all**: IR moderates directly, analysts "raise hand" and "unmute".

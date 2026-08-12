@@ -39,7 +39,7 @@ after the first live fill day. Read this before touching anything; then read
 > **6. `webcast-lane` is 125 commits ahead of `main` and unmerged.**
 >
 > Authoritative today: `docs/LATENCY-PROOF.md` (the only current race source),
-> then `docs/RUNBOOK.md` and `docs/BAKEOFF.md`.
+> then `docs/history/RUNBOOK.md` and `docs/BAKEOFF.md`.
 
 ---
 

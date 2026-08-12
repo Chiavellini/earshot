@@ -181,7 +181,7 @@ logs `decision intent`; the executor logs `LOST_RACE cap=1`). After a live call,
 TIME mode with a `.words.json` + stream-start anchor). A word that fires cleanly
 (high precision, ~0 false alarms) is PROMOTED: add it to `prepare::tuned_library`
 with a threshold, and the next `prepare --fillable` auto-fills it. No audio is
-recorded (respects `docs/RUNBOOK.md` "do not record"). The FULL rigorous path —
+recorded (respects `docs/history/RUNBOOK.md` "do not record"). The FULL rigorous path —
 `capture-bakeoff --record-dir` (separate process) → hand-labelled
 `corpus/manifests/*.toml` → `bench-detector` — is the durable follow-on for the
 recall ceiling, not part of a trading run.

@@ -19,7 +19,7 @@ layer, `docs/ARCHITECTURE.md` maps the exact typed doors and
   arm path has no duration cap and holds one call 90 min, where a probe stops
   at its `--secs` and never reconnects. On 2026-08-04 SPOT and PGR were both
   recorded instead of armed while ~335,000 contracts traded
-  (`docs/POSTMORTEM-26AUG04.md`). Run `missed-arm-check.py` after every event.
+  (`docs/history/POSTMORTEM-26AUG04.md`). Run `missed-arm-check.py` after every event.
 - Current runtime wiring exists in `pipeline::run_pipeline` (audio chain) and
   `main.rs::arm` (execution side). Do not add a third composer; the roadmap
   migrates both behind an explicit run supervisor.
@@ -33,7 +33,7 @@ layer, `docs/ARCHITECTURE.md` maps the exact typed doors and
   production mechanism**: launchd-fired (not a manual run), killed with the
   real signal (SIGTERM — what `kill`/launchd/traps send — not the STOP file),
   under launchd's minimal env. Equivalent-looking manual drills validated the
-  wrong paths before the 2026-07-15 MS run (see `docs/RUNBOOK.md` hardening
+  wrong paths before the 2026-07-15 MS run (see `docs/history/RUNBOOK.md` hardening
   notes + the SIGTERM test `tests/kill_sigterm.rs`). Event runs REQUIRE
   `scripts/preflight-event.sh` the night before (pins the binary; live-probes
   creds, mailer, disk, scheduled wake).

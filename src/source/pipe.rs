@@ -9,7 +9,7 @@
 //! failure on a dead stream, and never leaving an orphan child behind.
 //!
 //! Latency class is `Webcast`: this lane runs tens of seconds behind the phone
-//! bridge (unmeasured — see docs/RUNBOOK.md) and exists for coverage (no-phone
+//! bridge (unmeasured — see docs/history/RUNBOOK.md) and exists for coverage (no-phone
 //! issuers, failed number hunts), corpus, and slow markets — not for racing.
 
 use std::process::Stdio;

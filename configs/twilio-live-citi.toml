@@ -1,5 +1,5 @@
 # Live verification run — Citigroup Q2 2026 earnings call, 2026-07-14 11:00 AM ET
-# (dial-in 805-309-2350, passcode 7142026#, per docs/RUNBOOK.md).
+# (dial-in 805-309-2350, passcode 7142026#, per docs/history/RUNBOOK.md).
 #
 # Cloned from configs/twilio-live.toml (JPM). Same posture: mention-probe
 # (arm --i-am-live --allow-mention). 1¢ × 1 contract per tranche, non-crossing

@@ -1,7 +1,7 @@
 # ── TUESDAY 2026-07-28 · PayPal Q2 · 8:00 AM ET (12:00 UTC) ────────────────
 # Built from configs/webcast-fanout-arm-ctc.toml + `earshot prepare` output.
 #
-# VENUE (closed, multi-sourced — docs/RUNBOOK.md): WEBCAST ONLY, no dial-in.
+# VENUE (closed, multi-sourced — docs/history/RUNBOOK.md): WEBCAST ONLY, no dial-in.
 # Confirmed via the IR event page, EDGAR (no 8-K since 2026-05-21), and the
 # Q1 2026 SEC-filed earnings release, whose "Conference Call & Webcast"
 # section offers a webcast and nothing else. Platform is Q4 Inc — the SAME
@@ -34,7 +34,7 @@
 #
 # ⚠ ALL OF IT WAS MEASURED ON THE AWS IVS **DEMO** CHANNEL, NOT Q4 INC'S.
 # This event is the first real-venue test. Leg 1's flags are chosen DAY-OF from
-# the probe — see the decision table in docs/RUNBOOK.md step 4b.
+# the probe — see the decision table in docs/history/RUNBOOK.md step 4b.
 #
 # ── `--arrival-log` — ADDED 2026-07-27, and it must be here BEFORE the event ──
 # LATENCY-PROOF §R1 wants the strongest test available on a race: *could ANY

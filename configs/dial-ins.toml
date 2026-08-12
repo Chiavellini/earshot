@@ -126,7 +126,7 @@ evidence_src  = "https://www.jpmorganchase.com/ir/news/2026/jpmc-to-host-second-
 number_src    = "https://www.jpmorganchase.com/ir/news"
 confidence    = "high"
 last_verified = "2026-07-16"
-notes         = "Supersedes the syndicated-reprint sourcing flagged at docs/RUNBOOK.md:286 — now primary-verified from jpmorganchase.com. Number itself never dialed."
+notes         = "Supersedes the syndicated-reprint sourcing flagged at docs/history/RUNBOOK.md:286 — now primary-verified from jpmorganchase.com. Number itself never dialed."
 
 [GS]
 tier          = "published"
@@ -147,7 +147,7 @@ evidence_src  = "https://www.morganstanley.com/press-releases/morgan-stanley-rep
 number_src    = "https://www.morganstanley.com/about-us-ir"
 confidence    = "high"
 last_verified = "2026-07-16"
-notes         = "STRONGEST evidence in the project: the bridge is wire-verified, not just paper. Live Twilio capture 2026-07-14 (CallSid CA5831c4…, 3585 frames, 0 drops) — see VERIFICATIONS.md:533. Bridge IVR disconnects silent callers after ~60s pre-conference (measured). Passcode acceptance still unproven (RUNBOOK.md:207) — provable only once the conference is open."
+notes         = "STRONGEST evidence in the project: the bridge is wire-verified, not just paper. Live Twilio capture 2026-07-14 (CallSid CA5831c4…, 3585 frames, 0 drops) — see VERIFICATIONS.md:533. Bridge IVR disconnects silent callers after ~60s pre-conference (measured). Passcode acceptance still unproven (docs/history/RUNBOOK.md:207) — provable only once the conference is open."
 
 [C]
 tier          = "published"
@@ -232,7 +232,7 @@ evidence_src  = "https://s206.q4cdn.com/479360582/files/doc_events/2026/Apr/29/A
 number_src    = "https://abc.xyz/investor/"
 confidence    = "high"
 last_verified = "2026-07-16"
-notes         = "OPEN EVENT KXEARNINGSMENTIONGOOGL-26JUL22 — largest near-term name, NOT tracked in docs/RUNBOOK.md. Bridge existence is high-confidence (issuer's own transcript); the access path is undetermined. GO only if a number lands before 07-22."
+notes         = "OPEN EVENT KXEARNINGSMENTIONGOOGL-26JUL22 — largest near-term name, NOT tracked in docs/history/RUNBOOK.md. Bridge existence is high-confidence (issuer's own transcript); the access path is undetermined. GO only if a number lands before 07-22."
 
 [AMZN]
 tier          = "bridge_unpublished"
@@ -298,7 +298,7 @@ evidence_src  = "https://www.insidermonkey.com/blog/dominos-pizza-inc-nasdaqdpz-
 number_src    = "https://ir.dominos.com/news-releases"
 confidence    = "high"
 last_verified = "2026-07-16"
-notes         = "CONFIRMS the star-11 claim at docs/RUNBOOK.md:7-8. OPEN EVENT KXEARNINGSMENTIONDPZ-26JUL20 — the runbook's next event, GO only if a number lands by 07-19. ⚠ ir.dominos.com geo-blocks from Mexico (Akamai) — needs a US VPN or manual check."
+notes         = "CONFIRMS the star-11 claim at docs/history/RUNBOOK.md:7-8. OPEN EVENT KXEARNINGSMENTIONDPZ-26JUL20 — the runbook's next event, GO only if a number lands by 07-19. ⚠ ir.dominos.com geo-blocks from Mexico (Akamai) — needs a US VPN or manual check."
 
 [LMT]
 tier          = "bridge_unpublished"
@@ -321,7 +321,7 @@ number_src    = "https://investors.boeing.com/investors/events-presentations/def
 confidence    = "high"
 last_verified = "2026-07-28"
 reconfirmed   = "2026-07-28, INDEPENDENTLY and by a different route (search → the Jul 1 advisory's own text, not the IR page): 'Boeing to Release Second Quarter Results on July 28' names the 10:30 a.m. ET call and states ONLY 'The event webcast, news release and presentation materials … can be accessed on the Events and Presentations section of www.boeing.com/investors.' No participant number anywhere in the release; contacts are IR/media email. ⛔ RAISED BECAUSE A PARALLEL PHONE-LANE EFFORT WAS REPORTED TO BE BUILDING ON 'Boeing offers a dial-in' — it does not, and has not for ≥2 quarters. Anyone working BA by phone must use the number-hunt protocol (IR ask / legacy 8-K numbers / prior-quarter transcript operator preamble), NOT a published number."
-notes         = "OPEN EVENT KXEARNINGSMENTIONBA-26JUL21 (⚠ ticker says JUL21; the CALL is Tue 2026-07-28 10:30 AM ET — ticker date ≠ call date. ⚠ CORRECTED 07-28: an earlier revision of this line said BA is 'MISSING from a full paginated /events?status=open sweep while a per-series query returns it open'. That was observed once on 07-27 and DID NOT REPRODUCE on 07-28 — both sweeps returned all 57 mention events including BA, delta 0 (scripts/discover-events.py). Do not treat the paginated endpoint as broken; the PERMANENT defect is the misdated ticker, which is why discovery keys the call date off `sub_title` and never the suffix). ⛔ SUPERSEDES the unsourced docs/RUNBOOK.md claim that 'BA publishes toll-free numbers + passcode openly with no gate' — that was written as an aside inside a Ford commit (e312e19, 07-25) with no artifact and never entered here; it is FALSE for Q1'26 and Q2'26. listen_access='no' is set on the ISSUER-PUBLISHED path only, per the UAL trap: it means 'nothing is published to dial', NOT 'no phone leg exists'; tier stays bridge_unpublished. ⚠ METHOD: this row is browser-verified. investors.boeing.com is Q4 Inc and CLIENT-RENDERED — 77 KB of HTML carrying 3,227 visible chars, all nav chrome — so a curl/regex check reads nothing and its 'zero phone strings' finding is vacuous. Webcast venue = events.q4inc.com/attendee/304389448 (Q4 Inc → Amazon IVS, same platform as PYPL/AXP) and it gates behind a registration form ('Continue without a Q4 account')."
+notes         = "OPEN EVENT KXEARNINGSMENTIONBA-26JUL21 (⚠ ticker says JUL21; the CALL is Tue 2026-07-28 10:30 AM ET — ticker date ≠ call date. ⚠ CORRECTED 07-28: an earlier revision of this line said BA is 'MISSING from a full paginated /events?status=open sweep while a per-series query returns it open'. That was observed once on 07-27 and DID NOT REPRODUCE on 07-28 — both sweeps returned all 57 mention events including BA, delta 0 (scripts/discover-events.py). Do not treat the paginated endpoint as broken; the PERMANENT defect is the misdated ticker, which is why discovery keys the call date off `sub_title` and never the suffix). ⛔ SUPERSEDES the unsourced docs/history/RUNBOOK.md claim that 'BA publishes toll-free numbers + passcode openly with no gate' — that was written as an aside inside a Ford commit (e312e19, 07-25) with no artifact and never entered here; it is FALSE for Q1'26 and Q2'26. listen_access='no' is set on the ISSUER-PUBLISHED path only, per the UAL trap: it means 'nothing is published to dial', NOT 'no phone leg exists'; tier stays bridge_unpublished. ⚠ METHOD: this row is browser-verified. investors.boeing.com is Q4 Inc and CLIENT-RENDERED — 77 KB of HTML carrying 3,227 visible chars, all nav chrome — so a curl/regex check reads nothing and its 'zero phone strings' finding is vacuous. Webcast venue = events.q4inc.com/attendee/304389448 (Q4 Inc → Amazon IVS, same platform as PYPL/AXP) and it gates behind a registration form ('Continue without a Q4 account')."
 
 [PYPL]
 tier          = "bridge_unpublished"
@@ -421,7 +421,7 @@ evidence_src  = "https://www.insidermonkey.com/blog/intel-corporation-nasdaqintc
 number_src    = "https://www.intc.com/news-events/ir-calendar/detail/20260723-q2-2026-intel-corporation-earnings-conference-call"
 confidence    = "high"
 last_verified = "2026-07-23"
-notes         = "CONFIRMS the star-11 claim at docs/RUNBOOK.md:7-8. OPEN EVENT KXEARNINGSMENTIONINTC-26JUL23. Webcast runs on edge.media-server.com (Notified) — a platform that generically issues dial-in+PIN on registration, but NO Intel-specific registration link was found. Platform-pattern inference is NOT evidence; do not record a registration tier without an Intel-specific link. 07-23 Track A full sweep: NO published dial-in in ANY earnings release since ≥2011 (Q1'26 8-K + Q3'11 + Q1'13 SEC exhibits all webcast-only template); no phone replay in any quarter; only Intel PSTN number ever SEC-published is the one-off 2009 AMD-settlement call (dead). Analyst *11 bridge is distributed privately by IR (Pitzer's team). VERDICT: webcast-only. Q2'26 player = edge.media-server.com/mmc/p/rdz8ppwz/ start 2026-07-23T21:00Z (confirmed via player API). ⚠ PLAYER AUTH GATE: init-data endpoint returns authentication_required=true, playlists=[] pre-auth, in-player email guestbook ('Not registered? Click here'; may be email-allowlisted) — same flag on the Q1'26 event, so standing config. The m3u8 likely only appears AFTER completing the guestbook; dry-run the gate well before 5 PM ET."
+notes         = "CONFIRMS the star-11 claim at docs/history/RUNBOOK.md:7-8. OPEN EVENT KXEARNINGSMENTIONINTC-26JUL23. Webcast runs on edge.media-server.com (Notified) — a platform that generically issues dial-in+PIN on registration, but NO Intel-specific registration link was found. Platform-pattern inference is NOT evidence; do not record a registration tier without an Intel-specific link. 07-23 Track A full sweep: NO published dial-in in ANY earnings release since ≥2011 (Q1'26 8-K + Q3'11 + Q1'13 SEC exhibits all webcast-only template); no phone replay in any quarter; only Intel PSTN number ever SEC-published is the one-off 2009 AMD-settlement call (dead). Analyst *11 bridge is distributed privately by IR (Pitzer's team). VERDICT: webcast-only. Q2'26 player = edge.media-server.com/mmc/p/rdz8ppwz/ start 2026-07-23T21:00Z (confirmed via player API). ⚠ PLAYER AUTH GATE: init-data endpoint returns authentication_required=true, playlists=[] pre-auth, in-player email guestbook ('Not registered? Click here'; may be email-allowlisted) — same flag on the Q1'26 event, so standing config. The m3u8 likely only appears AFTER completing the guestbook; dry-run the gate well before 5 PM ET."
 
 [GEV]
 tier          = "bridge_unpublished"
@@ -432,7 +432,7 @@ evidence_src  = "https://www.insidermonkey.com/blog/ge-vernova-inc-nysegev-q1-20
 number_src    = "https://www.gevernova.com/news/press-releases"
 confidence    = "medium-high"
 last_verified = "2026-07-16"
-notes         = "⚠ REFUTES docs/RUNBOOK.md:8-9 ('GEV is a moderated bridge, analysts pre-cleared'). GEV runs the SAME self-service star-11 queue as DPZ/INTC. There is an operator-moderated coordinator, but zero evidence of analyst pre-clearance. Any model treating GEV as structurally different from DPZ/INTC is wrong. OPEN EVENT KXEARNINGSMENTIONGEV-26JUL22."
+notes         = "⚠ REFUTES docs/history/RUNBOOK.md:8-9 ('GEV is a moderated bridge, analysts pre-cleared'). GEV runs the SAME self-service star-11 queue as DPZ/INTC. There is an operator-moderated coordinator, but zero evidence of analyst pre-clearance. Any model treating GEV as structurally different from DPZ/INTC is wrong. OPEN EVENT KXEARNINGSMENTIONGEV-26JUL22."
 
 [UAL]
 tier          = "bridge_unpublished"
@@ -443,7 +443,7 @@ evidence_src  = "https://www.investing.com/news/transcripts/earnings-call-transc
 number_src    = "https://ir.united.com/"
 confidence    = "high"
 last_verified = "2026-07-16"
-notes         = "⚠⚠ THE UAL TRAP — the highest-risk misread in the project. UAL's 8-K language ('live, listen-only webcast') is IDENTICAL IN KIND to Tesla's, but means the opposite: UAL runs a real phone Q&A, Tesla has no phone at all. docs/RUNBOOK.md:5-6 groups 'UAL and TSLA confirmed webcast-only in their own 8-K exhibits' — literally true, and acting on it would forfeit a tradeable event. 8-K silence is NOT evidence of absence. ⚠ ir.united.com geo-blocks from Mexico (Akamai)."
+notes         = "⚠⚠ THE UAL TRAP — the highest-risk misread in the project. UAL's 8-K language ('live, listen-only webcast') is IDENTICAL IN KIND to Tesla's, but means the opposite: UAL runs a real phone Q&A, Tesla has no phone at all. docs/history/RUNBOOK.md:5-6 groups 'UAL and TSLA confirmed webcast-only in their own 8-K exhibits' — literally true, and acting on it would forfeit a tradeable event. 8-K silence is NOT evidence of absence. ⚠ ir.united.com geo-blocks from Mexico (Akamai)."
 
 [CAVA]
 tier          = "published"
@@ -516,7 +516,7 @@ evidence_src  = "https://www.sec.gov/Archives/edgar/data/0001318605/000162828026
 number_src    = ""
 confidence    = "high"
 last_verified = "2026-07-16"
-notes         = "CONFIRMS docs/RUNBOOK.md:9-10, including the 'TSLA alone' part — it is the only no-phone name among the 16 non-NFLX issuers checked. Distinctive tell: NO OPERATOR AT ALL. That absence, not the 8-K wording, is what separates TSLA from UAL. OPEN EVENT KXEARNINGSMENTIONTSLA-26JUL22 — untradeable on the phone path."
+notes         = "CONFIRMS docs/history/RUNBOOK.md:9-10, including the 'TSLA alone' part — it is the only no-phone name among the 16 non-NFLX issuers checked. Distinctive tell: NO OPERATOR AT ALL. That absence, not the 8-K wording, is what separates TSLA from UAL. OPEN EVENT KXEARNINGSMENTIONTSLA-26JUL22 — untradeable on the phone path."
 
 [NFLX]
 tier          = "none"

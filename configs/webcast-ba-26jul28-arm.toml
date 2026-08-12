@@ -2,7 +2,7 @@
 # Built from configs/webcast-pypl-26jul28-arm.toml + `earshot prepare` output
 # (raw generator output kept at configs/ba-26jul28-arm.toml for diffing).
 #
-# ⚠ THIS EVENT WAS NEARLY MISSED, AND THE RUNBOOK IS WHY. `docs/RUNBOOK.md:754`
+# ⚠ THIS EVENT WAS NEARLY MISSED, AND THE RUNBOOK IS WHY. `docs/history/RUNBOOK.md:754`
 # recorded "BA IS NOT THE TUESDAY EVENT — Kalshi lists KXEARNINGSMENTIONBA-26JUL21
 # (already past) and no future BA event." That is WRONG and was wrong when
 # written. The TICKER is misdated; the EVENT is not. Verified 2026-07-27 against
@@ -18,7 +18,7 @@
 # therefore could not have found this.
 #
 # ── VENUE: WEBCAST ONLY (closed 2026-07-27, three ways) ────────────────────
-# ⚠ `docs/RUNBOOK.md:801-802` says "BA publishes toll-free numbers + passcode
+# ⚠ `docs/history/RUNBOOK.md:801-802` says "BA publishes toll-free numbers + passcode
 # openly on investors.boeing.com with no gate". **NOT TRUE FOR THIS CALL.**
 #   1. IR event-detail page (Q2-2026-The-Boeing-Company-Earnings-Conference-Call)
 #      — a "View Live Webcast" link and nothing else. Zero phone-number strings
@@ -145,7 +145,7 @@
 #          --model-dir models/sherpa-onnx-streaming-zipformer-ctc-small-2024-03-18
 #      The sherpa block below is kept for a one-line engine revert, and
 #      compile-keywords resolves THAT model_dir by default — silently checking
-#      the gigaspeech BPE while the config runs CTC (`docs/RUNBOOK.md:840-850`).
+#      the gigaspeech BPE while the config runs CTC (`docs/history/RUNBOOK.md:840-850`).
 #   4. Own bind-port + state dir via scripts/launch-event.sh (docs/MULTI-EVENT.md
 #      §8). Three events Tuesday; none overlap (PayPal 08:00, Boeing 10:30,
 #      Ford 17:00 ET) but each gets its own process.

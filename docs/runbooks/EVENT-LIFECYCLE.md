@@ -1,7 +1,7 @@
 # EVENT-LIFECYCLE — the one procedure every event follows
 
 This is the current, generic operating procedure. Dated runbooks are historical
-examples; `docs/RUNBOOK.md` is a diary. Neither may override this file,
+examples; `docs/history/RUNBOOK.md` is a diary. Neither may override this file,
 `architecture/operations.toml`, an immutable RunPlan, or a node contract.
 
 The short answer is:

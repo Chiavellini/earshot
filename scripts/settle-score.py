@@ -4,7 +4,7 @@ whether a detection was RIGHT.
 
 WHY THIS EXISTS (2026-08-07). Every accuracy number the project has ever quoted
 for a live event was hand-graded into a postmortem: "42 words said, 35 detected,
-43 fired — recall 83%, precision 81%" (docs/POSTMORTEM-26AUG05.md). Nothing in
+43 fired — recall 83%, precision 81%" (docs/history/POSTMORTEM-26AUG05.md). Nothing in
 `scripts/` computes it. That matters more than bookkeeping, because the money
 path has no term for being wrong: `ev_gate` asks "if this settles YES do I clear
 2¢?" and never asks how often it does. At a 1¢ observe cap that is harmless. At

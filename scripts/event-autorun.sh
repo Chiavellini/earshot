@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# UNATTENDED per-event supervisor (docs/RUNBOOK.md). Generalized from the
+# UNATTENDED per-event supervisor (docs/history/RUNBOOK.md). Generalized from the
 # MS-26JUL15 ms-autorun.sh (RUNBOOK follow-up 3): every event-specific value
 # now comes from a per-event env file named by EARSHOT_EVENT_ENV (set in the
 # event's launchd plist; see configs/*-autorun.env). Fired by launchd at

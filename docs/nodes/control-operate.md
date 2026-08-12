@@ -12,15 +12,16 @@ into loaded launchd agents. Since 2026-08-11 it also owns the typed run
 control plane: one immutable run identity per event attempt and one
 replayable, append-only lifecycle ledger under
 `var/runs/<EVENT_ID>/<RUN_ID>/` (`scripts/eventctl.py`), born from the
-2026-08-11 CAVA/CRWV reconstruction (`casino143.md`) where $48.50 of fills
+2026-08-11 CAVA/CRWV reconstruction (`docs/history/casino143.md`) where $48.50 of fills
 could not be audited and restarts kept overwriting fixed report paths.
 
 ## Owns
 
 - `docs/runbooks/**` — the generic per-event procedure
-  (`EVENT-LIFECYCLE.md`, the one document every event follows) plus the
-  day-keyed historical examples (RUNBOOK-YYYY-MM-DD.md); the historical
-  accumulator `docs/RUNBOOK.md` stays with control.supervise.
+  (`EVENT-LIFECYCLE.md`, the one document every event follows). The day-keyed
+  historical examples (RUNBOOK-YYYY-MM-DD.md) and the historical accumulator
+  `docs/history/RUNBOOK.md` are archived under `docs/history/`
+  (evidence.measure) since 2026-08-12.
 - `scripts/eventctl.py` — the run control plane: compiles the immutable
   `control/run-plan.json` (door `control.run.plan`) and appends the
   hash-chained `control/receipts.jsonl` (door `control.run.receipts`) under

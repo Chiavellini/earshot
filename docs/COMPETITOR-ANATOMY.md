@@ -29,7 +29,7 @@ wall-time − per-detection `capture→decision` − sherpa's pinned post-word-e
 > **Of 14 MS markets, exactly two settled YES: INVE and TAIL.**
 >
 > This matters more than a row in a table, because **RECE is the program's canonical
-> reference race** — cited in `VERIFICATIONS.md` Q-MSPM, `docs/RUNBOOK.md` and
+> reference race** — cited in `VERIFICATIONS.md` Q-MSPM, `docs/history/RUNBOOK.md` and
 > `docs/RACE-STRATEGY.md` as the proof that audio-arrival latency is the binding term.
 >
 > **What changes:**

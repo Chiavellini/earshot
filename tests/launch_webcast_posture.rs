@@ -2,7 +2,7 @@
 //! to dry run, and a LIVE arm must be bound to one immutable schema-3 RunPlan.
 //!
 //! WHY THIS TEST EXISTS. Until 2026-07-27 the launcher hard-refused
-//! `--i-am-live`, so `docs/RUNBOOK.md` step 5 — the command the operator is told
+//! `--i-am-live`, so `docs/history/RUNBOOK.md` step 5 — the command the operator is told
 //! to run on the day — produced a **dry run**. The consequence was not "fewer
 //! orders": dry runs never reach the risk gate, so the 07-26 fix that makes `arm`
 //! refuse a partial allowlist (`config::allowlist_covers_keywords`) could not fire

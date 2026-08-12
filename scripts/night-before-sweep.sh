@@ -90,7 +90,7 @@ echo "── host"
 # the whole pipeline nonzero — so a HELD assertion reads as absent. This check
 # reported a false FAIL on a demonstrably caffeinated laptop before it was
 # rewritten to capture first and match second. Same trap family as the pipefail
-# notes in docs/RUNBOOK.md.
+# notes in docs/history/RUNBOOK.md.
 ASSERTIONS=$(pmset -g assertions 2>/dev/null || true)
 USER_WAKE=$(pmset -g sched 2>/dev/null | grep -i "wake at" | grep -v "by 'com.apple" | head -1 || true)
 if [[ "$ASSERTIONS" == *PreventSystemSleep*caffeinate* ]]; then

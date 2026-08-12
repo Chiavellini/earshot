@@ -748,7 +748,7 @@ It says the streamed tier does not lose audio over 90 minutes. What it is worth
 is §V3/§V5 (arrival) as corrected by **§V7** — p50 *fire-time* gain ≈ 0.6 s, not
 the 1.121 s arrival figure. And it is still **one venue, one channel, the AWS
 demo** — Tuesday is the first real-venue test. The day-of decision table in
-`docs/RUNBOOK.md` step 4b remains the final authority and can still downgrade
+`docs/history/RUNBOOK.md` step 4b remains the final authority and can still downgrade
 the tier if the probe shows PayPal's channel behaves differently.
 
 ### V8 follow-on — the armed streamed tier smoke-tested END TO END through `arm`
@@ -1499,7 +1499,7 @@ again, so both legs polled a dead URL at 4 requests/second for 45 minutes.
 the flood reads `segs=1554 dropped=0 short=0 seg_err=0`, there is no `seg LOST`,
 and — the sharpest part — **the SUMMARY line was emitted only after a successful
 poll, so once the leg went deaf it stopped reporting entirely.** The final state
-of the log is a perfect health line followed by silence. `docs/RUNBOOK.md`'s own
+of the log is a perfect health line followed by silence. `docs/history/RUNBOOK.md`'s own
 post-run check ("`seg LOST` must be 0") **passes** on that log.
 
 ### ⚠ Severity is NOT the same under the arm — checked rather than assumed
@@ -1923,7 +1923,7 @@ separately — declared here BEFORE the treatment run finishes, not after.
 
 ## Session 2026-07-27 (V1) — IVS hands us the future. Our speculative fetcher buys ZERO there, and `#EXT-X-PREFETCH` buys ~2.3 s.
 
-**The premise under Tuesday's whole plan was wrong.** `docs/RUNBOOK.md` said PayPal
+**The premise under Tuesday's whole plan was wrong.** `docs/history/RUNBOOK.md` said PayPal
 is "the venue class where `L` was measured three times (1.40/1.50/1.51 s)". It is
 not. Those three readings were all taken on **Unified Streaming's demo server**
 (`demo.unified-streaming.com`, 1.92 s segments, standard HLS — see the S3/S6

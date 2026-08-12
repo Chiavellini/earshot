@@ -9,7 +9,7 @@ EARSHOT's Rust runtime remains the sound part of the system: typed sources,
 preprocessing, detectors, persistent one-shot decisions, wait-free local books,
 bounded risk, REST/FIX execution, and coordinated cancellation. The active
 reliability program is replacing the improvised operational harness described
-in `casino143.md`; it does not change price caps, sizing, detector thresholds,
+in `docs/history/casino143.md`; it does not change price caps, sizing, detector thresholds,
 or listen-only safety posture.
 
 ## Reliability baseline now implemented
@@ -69,8 +69,8 @@ trade/schedule-capable top-level script fails. The old `run-arm.sh`,
 `arm-when-url.sh`, `ms-morning.sh`, and `wing-autorun.sh` paths now refuse with
 exit 64 and name their generic replacement.
 
-The dated files beside `docs/runbooks/EVENT-LIFECYCLE.md` and the long
-`docs/RUNBOOK.md` are historical evidence, not procedures. The lifecycle
+The dated day runbooks (now archived in `docs/history/`) and the long
+`docs/history/RUNBOOK.md` are historical evidence, not procedures. The lifecycle
 runbook plus `opsctl.sh surface` are the current operational authority.
 
 ## Integration state

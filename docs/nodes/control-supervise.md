@@ -12,8 +12,10 @@ Unattended lifecycle/retry logic in `scripts/event-autorun.sh` and
 recovery in `scripts/redial-supervisor.sh` and event-timer installation in
 `scripts/install-event-timer.sh`, wrapped for the remote host by
 `scripts/box-event-install.sh`. It also owns the autorun environment
-templates under `configs/*-autorun.env`, `docs/RUNBOOK.md`, and the current
-phone-lane operational handoff in `PHONE-LANE-HANDOFF.md`.
+templates under `configs/*-autorun.env`. The historical run accumulator
+(`docs/history/RUNBOOK.md`) and the phone-lane handoff
+(`docs/history/PHONE-LANE-HANDOFF.md`) are frozen evidence owned by
+evidence.measure since the 2026-08-12 docs/history/ move.
 
 The owned `scripts/wing-autorun.sh` and `scripts/arm-when-url.sh` paths are
 retired inert facades that exit 64. They remain only to make stale invocations

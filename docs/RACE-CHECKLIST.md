@@ -39,7 +39,7 @@ one falsifiable outcome with one evidence destination.
       in COMPETITOR-ANATOMY §Per-tape results with an H1/H2/H3/uncontested
       verdict. If the capture never ran: record that plainly in RUNBOOK and
       W1 becomes the first sample.
-      Evidence →: RUNBOOK.md (lag numbers) + COMPETITOR-ANATOMY.md §Per-tape
+      Evidence →: docs/history/RUNBOOK.md (lag numbers) + COMPETITOR-ANATOMY.md §Per-tape
       results (race verdict). No double-homing.
 
 ## Phone lane
@@ -236,7 +236,7 @@ one falsifiable outcome with one evidence destination.
       Gate: box (segment URLs can be requester-IP-locked); recurring per
       event.
       Done when: the table exists and each new event adds a row pre-call.
-      Evidence →: RUNBOOK.md (venue table).
+      Evidence →: docs/history/RUNBOOK.md (venue table).
 
 - [ ] **W3.** LL-HLS native sub-second fetcher (partial-segment /
       blocking-playlist-reload client).
@@ -272,7 +272,7 @@ one falsifiable outcome with one evidence destination.
       Gate: user (AWS account; cookies are an operator ToS-gray call).
       Done when: an event-class stream fetched live-edge from us-east with
       measured stall profile; YouTube path decision recorded.
-      Evidence →: RUNBOOK.md §Same-floor.
+      Evidence →: docs/history/RUNBOOK.md §Same-floor.
 
 - [~] **W7.** Fillable webcast posture unlock (lift `launch-webcast.sh`
       observe-only enforcement) for same-floor event classes.
@@ -280,7 +280,7 @@ one falsifiable outcome with one evidence destination.
       discriminator verdict of H1/H3/uncontested for the class.
       Done when: posture change + its evidence trail recorded; risk caps
       unchanged (config only tightens).
-      Evidence →: RUNBOOK.md + docs/layers/source.md posture note.
+      Evidence →: docs/history/RUNBOOK.md + docs/layers/source.md posture note.
 
       **PARTIAL 2026-07-27 (operator ruling, for PayPal 07-28).** Only the
       **live mention-PROBE** half is lifted: `launch-webcast.sh` now accepts

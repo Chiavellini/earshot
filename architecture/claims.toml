@@ -262,7 +262,12 @@ paths = [
   # ACCOUNT_ENV search loops cannot be trusted as immutable identity input.
   "scripts/phone-lane-derive.py",
   "docs/layers/prepare.md",
-  "docs/work/PLAN-26JUL30.md",
+  # 2026-08-12: docs/work/PLAN-26JUL30.md moved to docs/history/PLAN-26JUL30.md
+  # (evidence.measure's claim). These three configs cite the RUNBOOK by path
+  # and are touched by the same move.
+  "configs/twilio-live-citi.toml",
+  "configs/webcast-ba-26jul28-arm.toml",
+  "configs/webcast-pypl-26jul28-arm.toml",
   "src/prepare.rs",
   # read-quantum-lane 2026-07-30: pre-registered two-leg A/B (q32k vs q40ms)
   # asking whether earlier bytes become earlier PCM. Bar is written; NEVER RUN.
@@ -424,11 +429,11 @@ branch = "webcast-lane"
 state = "active"
 contract_change = true
 paths = [
-  "PHONE-LANE-HANDOFF.md",
+  # 2026-08-12: PHONE-LANE-HANDOFF.md and docs/RUNBOOK.md moved to
+  # docs/history/ and now sit under evidence.measure's claim.
   "configs/grab-26aug03-autorun.env",
   "configs/pltr-26aug03-autorun.env",
   "configs/snap-26aug03-autorun.env",
-  "docs/RUNBOOK.md",
   # 2026-08-05: schedule a phone event on the box and verify the LOADED unit;
   # event-autorun.sh now honors the BIND_PORT its own env files declare.
   "scripts/box-event-install.sh",
@@ -478,7 +483,7 @@ verification = [
   "tests/operator_escalation.sh",
   "tests/typed_scheduler_boundary.sh",
 ]
-evidence = ["PHONE-LANE-HANDOFF.md"]
+evidence = ["docs/history/PHONE-LANE-HANDOFF.md"]
 
 [[claim]]
 id = "phone_tls.launch"
@@ -501,7 +506,7 @@ paths = [
   # 2026-08-03 (webcast-lane, PLTR/SNAP): extended rather than opened as a second
   # claim, since doc-lint permits only one open claim per node. Fixes the
   # ORT_DYLIB_PATH dSYM resolution that HUNG detector-smoke >90 s on the arm path
-  # (docs/POSTMORTEM-26AUG03.md §Bugs), plus the two new launch-path gates.
+  # (docs/history/POSTMORTEM-26AUG03.md §Bugs), plus the two new launch-path gates.
   "scripts/launch-webcast.sh",
   "scripts/run-arm.sh",
   "scripts/ms-morning.sh",
@@ -539,6 +544,9 @@ paths = [
   # binding on the whole phone lane. recon-worklist.py gains the STALE-DATE
   # rescue so an open board with a passed date cannot fall off the worklist.
   "configs/dial-ins.toml",
+  # 2026-08-12: registry notes and DIAL-INS.md cite the RUNBOOK by path; both
+  # follow the docs/history/ move.
+  "docs/DIAL-INS.md",
   "docs/nodes/control-qualify.md",
   "scripts/board-open.py",
   "scripts/recon-worklist.py",
@@ -752,7 +760,9 @@ contract_change = true
 paths = [
   # The system diagnosis and worked event reconstruction are measurement
   # evidence; executable architecture policy remains machine-readable.
-  "casino143.md",
+  # 2026-08-12: the historical-evidence set moved to docs/history/ (owned by
+  # this node via the docs/history/** glob); paths updated in place.
+  "docs/history/casino143.md",
   "VERIFICATIONS.md",
   "docs/COMPETITOR-ANATOMY.md",
   "docs/INGRESS-BAKEOFF.md",
@@ -763,19 +773,38 @@ paths = [
   # 2026-08-06 session handoff (TLN phone-race decomposition + P1 verdict).
   # Registered to evidence.measure in nodes.toml alongside the other two
   # race handoffs.
-  "chiavellini.md",
+  "docs/history/chiavellini.md",
   # 2026-08-03 (webcast-lane): PLTR/SNAP measurements — Δrace on the three
   # genuine races, recall decomposed by coverage window, and the Kalshi-vs-PM
   # venue-scale result. Added to this claim because doc-lint permits one open
   # claim per node and admission-evidence-lane already holds evidence.measure.
-  "docs/POSTMORTEM-26AUG03.md",
-  "docs/POSTMORTEM-26AUG04.md",
+  "docs/history/POSTMORTEM-26AUG03.md",
+  "docs/history/POSTMORTEM-26AUG04.md",
   # 2026-08-05 day reconcile: 10 events, 8 COVERED / 2 DESCOPED / 0 MISSED, and
   # the first real fills. Filed alongside the other two rather than under a new
   # docs/postmortems/ directory — evidence.measure already owns this series by
   # explicit path, so the convention costs no new ownership glob.
-  "docs/POSTMORTEM-26AUG05.md",
-  "HANDOFF-26AUG04-MISSED-ARM.md",
+  "docs/history/POSTMORTEM-26AUG05.md",
+  "docs/history/HANDOFF-26AUG04-MISSED-ARM.md",
+  # 2026-08-12 docs/history/ archive move: the remaining frozen files this
+  # node now owns via docs/history/** — relocated here from the claims of
+  # their former owners (control.supervise, control.prepare, control.operate)
+  # because a claim path must be owned by the claim's node.
+  "docs/history/README.md",
+  "docs/history/HANDOFF-RACE-PROGRAM.md",
+  "docs/history/PHONE-LANE-HANDOFF.md",
+  "docs/history/RUNBOOK.md",
+  "docs/history/PLAN-26JUL30.md",
+  "docs/history/RUNBOOK-2026-08-05.md",
+  "docs/history/RUNBOOK-26AUG04-AFTERNOON.md",
+  "docs/history/slate-changes/2026-07-28.md",
+  "docs/history/slate-changes/2026-07-29.md",
+  "docs/history/slate-changes/2026-08-01.md",
+  "docs/history/slate-changes/2026-08-03.md",
+  "docs/history/slate-changes/2026-08-04.md",
+  "docs/history/slate-changes/2026-08-05.md",
+  "docs/history/slate-changes/2026-08-06.md",
+  "docs/history/slate-changes/2026-08-10.md",
   "docs/nodes/evidence-measure.md",
   # 2026-08-11: system-wide performance framework. It consumes banked
   # runtime/benchmark/measurement artifacts only; live event posture and the
@@ -854,6 +883,8 @@ paths = [
   "scripts/choruscall-resolve.py",
   "scripts/q4-register-resolve.py",
   "scripts/chorus-register-resolve.py",
+  # 2026-08-12: cites the RUNBOOK by path; follows the docs/history/ move.
+  "scripts/manifest-probe.sh",
 ]
 verification = [
   "bash -n scripts/manifest-probe.sh scripts/venue-probe.sh",
@@ -918,7 +949,7 @@ worker = "book-evidence-lane + coherent-live-empty-book-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
-# The blocker named by docs/POSTMORTEM-26AUG03.md follow-up #2: the book cache
+# The blocker named by docs/history/POSTMORTEM-26AUG03.md follow-up #2: the book cache
 # mirrored and never persisted, so no Kalshi millisecond series existed and
 # every cross-venue Δt sat under the joint second-granularity floor. The tap is
 # additive — run_ws/run_ws_url still pass None, so the arm path is unchanged.
@@ -946,7 +977,7 @@ verification = [
   "cargo test --test ws_book",
   "scripts/doc-lint.sh",
 ]
-evidence = ["docs/POSTMORTEM-26AUG03.md"]
+evidence = ["docs/history/POSTMORTEM-26AUG03.md"]
 
 [[claim]]
 id = "reliability.decision_journal"
@@ -1039,7 +1070,7 @@ paths = [
   "configs/pm-map-26jul30.json",
   # 2026-08-03: the map generator the Q-PM pin described as a recipe but never
   # shipped, and the cross-venue join. First run: PLTR 26AUG03 word-overlap +
-  # GRAB release-clock (docs/POSTMORTEM-26AUG03.md §Polymarket).
+  # GRAB release-clock (docs/history/POSTMORTEM-26AUG03.md §Polymarket).
   "configs/pm-map-26aug03.json",
   "scripts/pm-map-build.py",
   "scripts/pm-edge-report.py",
@@ -1307,7 +1338,8 @@ paths = [
   "HANDOFF-EVENT-LIFECYCLE.md",
   "docs/nodes/control-operate.md",
   "docs/runbooks/EVENT-LIFECYCLE.md",
-  "docs/runbooks/RUNBOOK-26AUG04-AFTERNOON.md",
+  # 2026-08-12: the two dated day runbooks moved to docs/history/ and now sit
+  # under evidence.measure's claim.
   "scripts/eventctl.py",
   "scripts/run-host-boundary.py",
   "scripts/schedule-nightly.sh",
@@ -1321,7 +1353,6 @@ paths = [
   "scripts/study-nightly.sh",
   "scripts/stage-nightly.sh",
   "scripts/event-status.sh",
-  "docs/runbooks/RUNBOOK-2026-08-05.md",
   # 2026-08-07: both landed untracked on 08-05/06 with no owning node, so
   # doc-lint was red and every runtime path was ungoverned — the 08-04 finding
   # verbatim. Registered on control.operate, where the rest of the green-gate
@@ -1373,7 +1404,7 @@ verification = [
 ]
 evidence = [
   "docs/nodes/platform-notify.md",
-  "docs/runbooks/RUNBOOK-26AUG04-AFTERNOON.md",
+  "docs/history/RUNBOOK-26AUG04-AFTERNOON.md",
 ]
 
 [[claim]]

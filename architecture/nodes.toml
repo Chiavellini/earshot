@@ -588,7 +588,6 @@ status = "active"
 doc = "docs/nodes/control-discover.md"
 doc_style = "node"
 owns = [
-  "slate/changes/**",
   "slate/latest.json",
   "slate/census.json",
   "scripts/discover-events.py",
@@ -642,7 +641,6 @@ owns = [
   # excluding dial-ins.toml (d-i-a-l fails di[!a]).
   "configs/d[!i]*.toml",
   "configs/di[!a]*.toml",
-  "docs/work/PLAN-26JUL30.md",
   "src/prepare.rs",
   "scripts/stage-afternoon-26aug04.py",
   "scripts/stage-webcast-arm.sh",
@@ -899,9 +897,7 @@ doc_style = "node"
 owns = [
   # schedules ONE phone event on the box and verifies the LOADED unit
   "scripts/box-event-install.sh",
-  "PHONE-LANE-HANDOFF.md",
   "configs/*-autorun.env",
-  "docs/RUNBOOK.md",
   "scripts/arm-when-url.sh",
   "scripts/event-autorun.sh",
   "scripts/install-event-timer.sh",
@@ -1132,19 +1128,15 @@ status = "active"
 doc = "docs/nodes/evidence-measure.md"
 doc_style = "node"
 owns = [
-  "casino143.md",
-  "HANDOFF-26AUG04-MISSED-ARM.md",
-  "HANDOFF-RACE-PROGRAM.md",
+  # 2026-08-12: frozen historical evidence — postmortems, session handoffs,
+  # diagnoses (casino143), superseded runbooks, and archived slate deltas.
+  # Historical evidence is this node's material; one glob replaces the
+  # per-file entries the docs/history/ move retired.
+  "docs/history/**",
   "VERIFICATIONS.md",
-  # 2026-08-06 session handoff: the TLN 26AUG05 phone-race latency decomposition
-  # and the P1 chunk-8 verdict. Same class as the two handoffs above.
-  "chiavellini.md",
   "docs/COMPETITOR-ANATOMY.md",
   "docs/INGRESS-BAKEOFF.md",
   "docs/LATENCY-PROOF.md",
-  "docs/POSTMORTEM-26AUG03.md",
-  "docs/POSTMORTEM-26AUG04.md",
-  "docs/POSTMORTEM-26AUG05.md",
   "docs/RACE-STRATEGY.md",
   # Versioned, offline system-performance analysis: normalizes runtime,
   # benchmark, and measurement evidence; refuses invalid comparisons; and

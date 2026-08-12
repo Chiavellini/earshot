@@ -649,7 +649,7 @@ time-since-refresh on a 10 s cycle, zero latency cost; `send→hdrs` 102 ms
 matches a warm-socket CDMX RTT — vs the 128–134 ms COLD numbers in item 6
 below, confirming the warmer worked). The lever is upstream: audio transport
 (bridge→Twilio→ngrok) and detector chunking (~60 ms of the 91 ms internal
-edge). Full decomposition: `docs/RUNBOOK.md` follow-up 2.
+edge). Full decomposition: `docs/history/RUNBOOK.md` follow-up 2.
 **Confidence:** high — public tape cross-referenced against our own
 monotonic-to-wall mapping (±ms via the decision log line).
 
@@ -1744,7 +1744,7 @@ exactly (224,142.32 contracts), which is what validates the chain.
 **Implication:** a PM price move is not a usable Kalshi signal on this class at
 these print rates. The Δt axis should be prioritized on `KXFEDMENTION`, where
 PM has the depth the original claim was sampled from.
-**Source:** `docs/POSTMORTEM-26AUG03.md` §Polymarket (first, by hand);
+**Source:** `docs/history/POSTMORTEM-26AUG03.md` §Polymarket (first, by hand);
 reproduced from tape 2026-08-04. **Confidence:** high (n=2 events).
 
 ---

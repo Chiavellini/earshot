@@ -174,7 +174,7 @@ conference) held for 55 minutes while quieter bridges dropped in 23–72 s.
 
 ### 4.2 Bridge admission + persistence
 
-- **Auto-redial supervisor.** Today a drop ended the run — `docs/RUNBOOK.md:1910-1913`
+- **Auto-redial supervisor.** Today a drop ended the run — `docs/history/RUNBOOK.md:1910-1913`
   already flags this ("a 30 s audio stall or socket close ends the whole run; recovery is a
   full shell redial"). The source returns `EndOfStream`/idle error and the arm exits. Build
   a supervisor that re-dials and re-attaches WITHOUT tearing down the armed pipeline,

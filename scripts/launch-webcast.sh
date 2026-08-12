@@ -34,7 +34,7 @@
 #   - --allow-mention alone is the mention-PROBE posture: cap must be ≤ 1¢ and
 #     orders are non-crossing, so a live arm here still CANNOT fill.
 #
-# LIVE GATE (07-22 ops post-mortems #1/#2, docs/RUNBOOK.md): the wait for the
+# LIVE GATE (07-22 ops post-mortems #1/#2, docs/history/RUNBOOK.md): the wait for the
 # stream to go live happens HERE, before arm ever starts:
 #   #1 `yt-dlp --wait-for-video` stalls at the pre-live→live flip — so no
 #      armed-leg cmd may carry it; this script polls `is_live` and launches
@@ -132,7 +132,7 @@ if grep -qE '^[[:space:]]*engine[[:space:]]*=[[:space:]]*"streaming_ctc"' "$CONF
     # NOT `[[ -n "$_ort" ]] && export ...` — under `set -e` that compound
     # returns 1 when the find comes up empty and kills the script SILENTLY,
     # before the REFUSING message below can explain why. Same family as the
-    # pipefail traps in docs/RUNBOOK.md. Use an if.
+    # pipefail traps in docs/history/RUNBOOK.md. Use an if.
     # Two bugs fixed 2026-08-03, both of which made this resolver a no-op on a
     # Mac: it searched ONLY '*.so*' (there is no .so on Darwin, so the find
     # always came up empty and the REFUSE below fired on a healthy tree), and it

@@ -19,12 +19,14 @@ Network probes in `src/latprobe/`; absolute/relative media timing tools in
 `scripts/wnt-score.py`, the competitor-offset measurement
 `scripts/wnt-pack-lag.py`, and experimental measurement code under
 `scripts/experimental/`, together with the race/latency evidence documents
-`HANDOFF-RACE-PROGRAM.md`, `VERIFICATIONS.md`,
+`docs/history/HANDOFF-RACE-PROGRAM.md`, `VERIFICATIONS.md`,
 `docs/COMPETITOR-ANATOMY.md`, `docs/INGRESS-BAKEOFF.md`,
 `docs/LATENCY-PROOF.md`, and `docs/RACE-STRATEGY.md`.
 The versioned offline system-performance framework is
 `scripts/system-analysis.py`; its spec, evidence-grade, pairing, uncertainty,
-and gate contract is `docs/SYSTEM-ANALYSIS.md`.
+and gate contract is `docs/SYSTEM-ANALYSIS.md`. It also owns the frozen
+historical-evidence archive under `docs/history/**` — postmortems, diagnoses,
+session handoffs, superseded runbooks, and archived slate deltas.
 
 ## Does not own
 

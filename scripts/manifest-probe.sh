@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Probe an HLS manifest for liveness facts (docs/RUNBOOK.md webcast lane):
+# Probe an HLS manifest for liveness facts (docs/history/RUNBOOK.md webcast lane):
 #   - segment cadence (EXT-X-TARGETDURATION / EXTINF) — sets the standard-HLS
 #     latency floor (~1-1.5 segment durations even with a tuned client)
 #   - LL-HLS capability tags — decides whether a partial-segment client

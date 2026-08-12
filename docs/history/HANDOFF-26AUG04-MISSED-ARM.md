@@ -8,7 +8,7 @@ connection."*
 **Outcome:** that diagnosis was wrong, the real cause was three separate node
 faults, all four approved fixes are landed and verified.
 
-Read `docs/POSTMORTEM-26AUG04.md` first for the full evidence. This file is the
+Read `docs/history/POSTMORTEM-26AUG04.md` first for the full evidence. This file is the
 operational handoff: what changed, what did not, and what to do next.
 
 ---
@@ -152,7 +152,7 @@ session's work). I added to them; I did not author their earlier hunks.
 | `scripts/registry-admit.py` | 376 | Writes a probe's own admission verdict into `configs/dial-ins.toml`. **Comment-preserving by construction** — surgical line edits, never `tomllib` parse-and-dump, because that file's rules and per-venue history are load-bearing docs a round-trip would delete. Section splitting is `"""`-aware (`[HOOD]`'s notes contain bracketed prose). Also upserts proven digits. `--check` self-test covers comment preservation, idempotence, section creation, quote escaping, `last_verified` refresh. |
 | `scripts/board-open.py` | 192 | "Does this issuer have an open Kalshi mention board?" — one public unauthenticated GET. **Two consumers share one implementation**: the refuse-to-record guard and missed-arm reconciliation. Exit 0/1/2 where **2 = UNDETERMINED** so callers can fail closed. `--any-status` answers the retrospective form (a board settles). |
 | `scripts/missed-arm-check.py` | 246 | The standing detector for this failure class: *captured audio + traded board + zero orders = `MISSED-ARM`*. Deliberately **independent of which upstream node broke**. Two load-bearing guards: legs < 60 s are not coverage, and `state/` run dirs are date-filtered by event-ticker suffix. |
-| `docs/POSTMORTEM-26AUG04.md` | 131 | Full evidence-backed account. |
+| `docs/history/POSTMORTEM-26AUG04.md` | 131 | Full evidence-backed account. |
 | `state/hunt/numbers-probed.env` | — | **Gitignored, 0600.** Probe-proven digits for SPOT and PGR, distinct from the hunt-regenerated `numbers.env` (whose header says "regenerate, never hand-edit"). Without this, `admission = "held"` names a bridge nobody can dial. |
 
 ---
@@ -192,7 +192,7 @@ Treated as authoritative, in this order:
    arguments *measured* rather than asserted.
 4. **`docs/STATUS.md`** — named the binding constraint ("exactly one is
    `held`"), which is what made the SPOT registry gap the highest-value fix.
-5. **`docs/POSTMORTEM-26AUG03.md`** — the immediately preceding session; its
+5. **`docs/history/POSTMORTEM-26AUG03.md`** — the immediately preceding session; its
    shape (measure, then state what is NOT resolvable) is the model
    `POSTMORTEM-26AUG04.md` follows.
 6. **`PHONE-LANE-HANDOFF.md`** — read with care: it self-declares **HISTORICAL

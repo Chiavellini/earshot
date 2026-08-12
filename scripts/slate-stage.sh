@@ -438,7 +438,7 @@ PY
     # the template's __EVENT_TICKER__-CAPT placeholder (the manual "paste
     # prepare output over the placeholders" step, automated), retag the event
     # id so the phone lane and webcast lane get distinct state dirs
-    # (PHONE-LANE-HANDOFF §7.3), and pin the production engine.
+    # (docs/history/PHONE-LANE-HANDOFF.md §7.3), and pin the production engine.
     if ! python3 - "$WCTMP" "$RAW" "$EV" "$HAVE_TIME" <<'PY'
 import re, sys
 wc, raw, ev, have_time = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4] == "1"
@@ -579,7 +579,7 @@ idle_timeout_secs = 8
 hdr = f'''# TWILIO PHONE-LANE ARM — {iss} {start}. Derived by scripts/slate-stage.sh from
 # {raw}: keywords/allowlist/risk IDENTICAL; [[sources]] is twilio_stream :{port}
 # (unique per MULTI-EVENT §8). Runs CONCURRENTLY with the -WEBCAST lane
-# (distinct [event].id ⇒ distinct state dir — PHONE-LANE-HANDOFF §7.3).
+# (distinct [event].id ⇒ distinct state dir — docs/history/PHONE-LANE-HANDOFF.md §7.3).
 # ⚠ streaming_ctc dlopens onnxruntime: the launcher MUST export ORT_DYLIB_PATH
 # or the detector build hangs AFTER the WS bind (07-29 phone-lane failure;
 # launch-event.sh exports it).

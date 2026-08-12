@@ -113,7 +113,7 @@ def main():
                 # Recorded so the GRAB class is machine-detectable: a PM market
                 # that closes BEFORE the Kalshi call means the two venues never
                 # price the same instant, and any lag or depth number joining
-                # them is meaningless (docs/POSTMORTEM-26AUG03.md).
+                # them is meaningless (docs/history/POSTMORTEM-26AUG03.md).
                 "end_date": m.get("endDate") or m.get("end_date"),
             })
 
