@@ -337,10 +337,12 @@ evidence = ["docs/nodes/control-operator.md"]
 [[claim]]
 id = "phone.supervise"
 node = "control.supervise"
-worker = "phone-lane + typed-scheduler-lane + cerebras-live-lane + coherent-live-lane"
+worker = "phone-lane + typed-scheduler-lane + cerebras-live-lane + coherent-live-lane + observability-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
+# 2026-08-12 M2/M1: observability-lane owns proof-bearing supervisor alerts
+# and the restartable read-only monitor; it does not edit launchers or sources.
 paths = [
   # 2026-08-12: PHONE-LANE-HANDOFF.md and docs/RUNBOOK.md moved to
   # docs/history/ and now sit under evidence.measure's claim. The dated
@@ -380,6 +382,12 @@ verification = [
   "cargo test --test redial_supervisor",
   "tests/operator_escalation.sh",
   "tests/typed_scheduler_boundary.sh",
+  "./scripts/doc-lint.sh",
+  "python3 tests/ops_surface.py",
+  "python3 tests/alertctl.py",
+  "python3 tests/audit_day.py",
+  "python3 tests/score_precision.py",
+  "python3 scripts/missed-arm-check.py --check",
 ]
 evidence = ["docs/history/PHONE-LANE-HANDOFF.md"]
 
@@ -1110,7 +1118,7 @@ evidence = [
 [[claim]]
 id = "missed_arm.reconcile"
 node = "control.grade"
-worker = "admission-evidence-lane + event-lifecycle-lane + run-audit-lane + typed-scheduler-lane + coherent-live-grade-lane"
+worker = "admission-evidence-lane + event-lifecycle-lane + run-audit-lane + typed-scheduler-lane + coherent-live-grade-lane + observability-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
@@ -1119,6 +1127,9 @@ contract_change = true
 # human hours later. This claim adds the standing answer: after any capture, if
 # the issuer's board traded and we placed nothing, say MISSED-ARM. It is
 # independent of which upstream node broke, which is the point.
+# 2026-08-12 M2/M5/M3/M6: observability-lane owns proof-bearing missed-arm
+# paging, strict armed-evidence/activity regressions, precision join tooling,
+# and the date index. RunGrade schema fields remain EVIDENCE-lane-owned.
 paths = [
   "docs/nodes/control-grade.md",
   "scripts/missed-arm-check.py",
@@ -1170,6 +1181,9 @@ verification = [
   "python3 tests/score_precision.py",
   "python3 scripts/missed-arm-check.py --date 2026-08-04",
   "python3 scripts/missed-arm-check.py --date 2026-08-03",
+  "./scripts/doc-lint.sh",
+  "python3 tests/ops_surface.py",
+  "python3 tests/alertctl.py",
 ]
 evidence = [
   "corpus/bridge-probes/spot_2026_08_04.json",
