@@ -1168,6 +1168,12 @@ paths = [
   # 2026-08-07: landed untracked on 08-06 with no owning node. It is a grader,
   # so it belongs beside run-verdict.sh and missed-arm-check.py.
   "scripts/post-event-report.sh",
+  # 2026-08-12 M3 observability→EVIDENCE handoff: typed scoring publishes the
+  # immutable schema-1 grade/precision-score.json before audit. run-audit must
+  # verify RunPlan/config/report/transcript fingerprints, score_sha256, timed
+  # alignment support, offset, residual spread, and per-intent rows before it
+  # may replace audio_evidence.precision=not_resolvable. Presence-only scores
+  # remain settlement evidence and must not become numeric precision.
   "scripts/score-precision.py",
   # 2026-08-12 COHR live validation: capture began ~37 minutes before the
   # detector. The old scorer discarded every true alignment hypothesis beyond
