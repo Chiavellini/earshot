@@ -21,6 +21,9 @@ cd "$(dirname "$0")/.."
 
 ALERTCTL="${EARSHOT_ALERTCTL:-scripts/alertctl.py}"
 ALERT_DIR="${EARSHOT_ALERT_DIR:-state/alerts}"
+PYTHON="${EARSHOT_PYTHON:-python3}"
+CHECKER="${EARSHOT_MISSED_ARM_CHECK:-scripts/missed-arm-check.py}"
+AUDIT_DAY="${EARSHOT_AUDIT_DAY:-scripts/audit-day.py}"
 DELIVERY_ARGS=(--phone-attempts 3)
 [[ -n "${EARSHOT_NOTIFY:-}" ]] && DELIVERY_ARGS+=(--notify-adapter "$EARSHOT_NOTIFY")
 [[ -n "${EARSHOT_ALERT_PHONE:-}" ]] && DELIVERY_ARGS+=(--phone-adapter "$EARSHOT_ALERT_PHONE")
@@ -36,8 +39,8 @@ critical_alert() { # critical_alert <code> <subject> <body>
     --subject "$subject" --body "$body" "${DELIVERY_ARGS[@]}"
 }
 
-DATE_UTC="$(date -u +%F)"
-OUT="$(python3 scripts/missed-arm-check.py --date "$DATE_UTC" 2>&1)"
+DATE_UTC="${EARSHOT_DATE_UTC:-$(date -u +%F)}"
+OUT="$("$PYTHON" "$CHECKER" --date "$DATE_UTC" 2>&1)"
 CODE=$?
 echo "missed-arm-daily: $DATE_UTC exit=$CODE"
 echo "$OUT"
@@ -50,4 +53,21 @@ case "$CODE" in
        "missed-arm UNDETERMINED on $DATE_UTC (exit $CODE)" "$OUT" \
        || echo "warn: proof-bearing UNDETERMINED page failed" >&2 ;;
 esac
-exit "$CODE"
+
+# M6: the same launchd firing always advances from legacy missed-arm
+# reconciliation to the typed date index. A failed first check does not hide
+# the second result; each gets its own deterministic alert identity.
+AUDIT_OUT="$("$PYTHON" "$AUDIT_DAY" --date "$DATE_UTC" 2>&1)"
+AUDIT_CODE=$?
+echo "audit-day-daily: $DATE_UTC exit=$AUDIT_CODE"
+echo "$AUDIT_OUT"
+if [[ "$AUDIT_CODE" -ne 0 ]]; then
+  critical_alert audit_day_failed \
+    "audit-day FAILED on $DATE_UTC (exit $AUDIT_CODE)" "$AUDIT_OUT" \
+    || echo "warn: proof-bearing audit-day page failed" >&2
+fi
+
+if [[ "$CODE" -ne 0 ]]; then
+  exit "$CODE"
+fi
+exit "$AUDIT_CODE"

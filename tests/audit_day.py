@@ -17,6 +17,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 SCRIPT = REPO / "scripts" / "audit-day.py"
+DAILY = REPO / "scripts" / "missed-arm-daily.sh"
 DATE = "2026-08-12"
 FINGERPRINT = "sha256:" + "a" * 64
 
@@ -198,6 +199,26 @@ class AuditDayTest(unittest.TestCase):
             (run / "control" / "verify-fail").touch()
         return run
 
+    def write_slate(self, *events: str, date: str = DATE) -> Path:
+        path = self.root / "slate" / "latest.json"
+        write_json(
+            path,
+            {
+                "generated_utc": f"{date}T00:00:00Z",
+                "events": [
+                    {
+                        "event_ticker": event,
+                        "issuer": event,
+                        "call_date": date,
+                        "call_time_utc": f"{date}T12:00:00Z",
+                        "call_date_evidence": "fixture",
+                    }
+                    for event in events
+                ],
+            },
+        )
+        return path
+
     def run_day(self, date: str = DATE) -> subprocess.CompletedProcess[str]:
         env = dict(os.environ)
         env["EARSHOT_REPO"] = str(self.root)
@@ -252,6 +273,71 @@ class AuditDayTest(unittest.TestCase):
         self.assertEqual(payload["summary"]["accounting"]["filled"], 1)
         self.assertEqual(payload["summary"]["detection_count"], 2)
         self.assertEqual(payload["summary"]["audio_frame_count"], 25)
+        classifications = {
+            event["event_ticker"]: event["classification"]
+            for event in payload["events"]
+        }
+        self.assertEqual(classifications, {"A": "COVERED", "B": "DESCOPED"})
+        covered = next(event for event in payload["events"] if event["event_ticker"] == "A")
+        self.assertIn("grade/verdict.json", "\n".join(covered["evidence_links"]))
+
+    def test_slate_event_without_any_attempt_is_explicit_missed(self) -> None:
+        self.write_slate("A", "MISSING")
+        self.add_run("A-WEBCAST", "aaaaaaaaaaaa", ["completed"])
+        result = self.run_day()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        payload = self.index()
+        events = {event["event_ticker"]: event for event in payload["events"]}
+        self.assertEqual(events["A"]["classification"], "COVERED")
+        self.assertEqual(events["MISSING"]["classification"], "MISSED")
+        self.assertEqual(events["MISSING"]["attempts"], [])
+        self.assertIn("slate/latest.json", events["MISSING"]["evidence_links"])
+        self.assertEqual(payload["summary"]["classifications"], {
+            "COVERED": 1,
+            "MISSED": 1,
+        })
+
+    def test_daily_wrapper_runs_audit_after_missed_arm_and_pages_failure(self) -> None:
+        wrapper = self.root / "scripts" / "missed-arm-daily.sh"
+        shutil.copy2(DAILY, wrapper)
+        order_log = self.root / "order.log"
+        alert_log = self.root / "alerts.log"
+        checker = self.root / "scripts" / "checker.py"
+        day = self.root / "scripts" / "day.py"
+        pager = self.root / "scripts" / "pager.py"
+        checker.write_text(
+            "import os,sys\nopen(os.environ['ORDER_LOG'],'a').write('missed\\n')\n"
+            "raise SystemExit(int(os.environ.get('CHECK_CODE','0')))\n"
+        )
+        day.write_text(
+            "import os,sys\nopen(os.environ['ORDER_LOG'],'a').write('audit\\n')\n"
+            "raise SystemExit(int(os.environ.get('AUDIT_CODE','0')))\n"
+        )
+        pager.write_text(
+            "#!/usr/bin/env python3\nimport os,sys\n"
+            "open(os.environ['ALERT_LOG'],'a').write(' '.join(sys.argv[1:])+'\\n')\n"
+        )
+        pager.chmod(0o755)
+        env = {
+            **os.environ,
+            "EARSHOT_REPO": str(self.root),
+            "EARSHOT_PYTHON": sys.executable,
+            "EARSHOT_MISSED_ARM_CHECK": str(checker),
+            "EARSHOT_AUDIT_DAY": str(day),
+            "EARSHOT_ALERTCTL": str(pager),
+            "EARSHOT_ALERT_DIR": str(self.root / "alerts"),
+            "EARSHOT_DATE_UTC": DATE,
+            "ORDER_LOG": str(order_log),
+            "ALERT_LOG": str(alert_log),
+            "AUDIT_CODE": "1",
+        }
+        result = subprocess.run(
+            ["bash", str(wrapper)], cwd=self.root, env=env,
+            text=True, capture_output=True,
+        )
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(order_log.read_text().splitlines(), ["missed", "audit"])
+        self.assertIn("audit_day_failed", alert_log.read_text())
 
     def test_operational_failure_is_a_failed_day_with_valid_evidence(self) -> None:
         self.add_run("A", "aaaaaaaaaaaa", ["completed"], outcome="fail")

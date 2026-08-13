@@ -154,6 +154,10 @@ wrapper raises a standalone proof-bearing critical alert on any non-zero exit
 — MISSED-ARM (1) and UNDETERMINED (≥2) both require the phone channel with a
 deterministic date/code identity; a clean 0 only logs. Because a genuine miss
 may have no RunPlan, this ledger lives under `state/alerts`, never `var/runs/`.
+After that checker returns, the same scheduled wrapper always runs
+`audit-day.py` for the identical UTC date. Its failure raises the separate
+deterministic `audit_day_failed` critical alert; a missed-arm failure cannot
+skip or mask the typed index result.
 
 **Box pull gate.** Events launched on the us-east-1 box are not gradeable from
 the laptop until `pull-box-state.sh --date <D>` succeeds. Do not replace it with
@@ -271,7 +275,8 @@ the in-place order, book, audio, and report artifacts. It then asks
 `eventctl.py record` for `graded`; neither path invents a host transfer.
 
 `scripts/audit-day.py --date YYYY-MM-DD` is the derived date reconciliation.
-It enumerates the date from every immutable RunPlan's UTC start, verifies each
+Its event denominator is the union of dated `slate/latest.json` entries and
+every immutable RunPlan whose UTC start falls on the date. It verifies each
 lifecycle through `eventctl`, and invokes the single-run auditor for every
 completed, aborted, or failed attempt while continuing siblings. Descopes stay
 in the denominator as recorded non-runs. Active, blocked, corrupt,
@@ -285,6 +290,15 @@ each run's proof-bearing alert status. Any unacknowledged alert keeps the date
 red even when the evidence grade itself is valid, and the index records only
 the alert identity, class, delivery ambiguity, and acknowledgement state (not
 the potentially sensitive message body).
+
+Above the attempt rows, the index collapses lane suffixes into one market
+event and emits exactly one `COVERED`, `DESCOPED`, or `MISSED` classification.
+Any valid grade with positive audio frames makes the event `COVERED`; a typed
+descope makes it `DESCOPED` when no lane covered; otherwise the event is
+`MISSED`, including a slate event with no RunPlan at all. Each event retains
+its compact attempt statuses and repository-relative links to its slate,
+RunPlans, receipt ledgers, and grades. A missing event, a problematic covered
+attempt, or a problematic descope keeps the date red.
 
 ## Side effects and exclusive resources
 
@@ -378,7 +392,10 @@ a different canonical JSON encoding.
 denominator, date filtering, corrupt-plan retention for deterministic RunIds,
 active and unauditable failures, operational-fail propagation, aggregate
 performance counts/timings, unacknowledged-alert propagation, and byte-stable
-re-publication.
+re-publication. It also proves lane collapse, all three event classifications,
+a slate event with no attempt becoming explicit `MISSED` with an evidence
+link, and the scheduled wrapper running audit-day after missed-arm and paging
+an injected audit failure.
 
 The scheduled leg counts as validated only per the CLAUDE.md unattended rule:
 launchd-fired (`launchctl kickstart gui/$(id -u)/com.earshot.missed-arm`, not
@@ -394,6 +411,8 @@ intact, schema-3 runs have a deterministic structured `RunGrade`, and the
 canonical `audit-day` operation produces a stable date-level performance
 index. Legacy missed-arm grading remains for pre-RunPlan historical events;
 keyword validation intentionally exits zero as a report.
+M6's event classifications and scheduled post-missed-arm invocation are
+implemented; `opsctl audit-day --date` already exposes this same index.
 The M3 scorer producer and claim-comment consumer contract are implemented.
 The EVIDENCE-owned `run-audit.py` still emits `precision=not_resolvable` and
 must verify/join `grade/precision-score.json` before M3 is production-complete.

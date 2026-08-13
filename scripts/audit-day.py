@@ -18,6 +18,7 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 import stat
 import subprocess
 import sys
@@ -36,6 +37,7 @@ PROBLEM_STATUSES = {
     "invalid",
     "operational_fail",
 }
+LANE_SUFFIX = re.compile(r"-(WEBCAST|PHONE|ACOUSTIC)$")
 
 
 class DayAuditError(Exception):
@@ -132,6 +134,100 @@ def candidate_runs(root: Path, date: str) -> list[tuple[Path, dict[str, Any] | N
             if date_from_plan == date:
                 selected.append((run_dir, plan, None))
     return selected
+
+
+def expected_events(slate_path: Path, date: str) -> tuple[dict[str, dict[str, Any]], dict[str, Any] | None]:
+    if not slate_path.exists():
+        return {}, None
+    if slate_path.is_symlink() or not slate_path.is_file():
+        raise DayAuditError(f"slate path is unsafe: {slate_path}")
+    slate = strict_json(slate_path, "slate")
+    events = slate.get("events")
+    if not isinstance(events, list):
+        raise DayAuditError("slate events is not a list")
+    selected: dict[str, dict[str, Any]] = {}
+    for item in events:
+        if not isinstance(item, dict) or item.get("call_date") != date:
+            continue
+        ticker = item.get("event_ticker")
+        if not isinstance(ticker, str) or not ticker:
+            raise DayAuditError("dated slate event has no event_ticker")
+        selected[ticker] = {
+            "issuer": item.get("issuer"),
+            "call_date": date,
+            "call_time_utc": item.get("call_time_utc"),
+            "call_date_evidence": item.get("call_date_evidence"),
+        }
+    return selected, fingerprint(slate_path)
+
+
+def market_event(event_id: str) -> str:
+    return LANE_SUFFIX.sub("", event_id)
+
+
+def relative_link(repo: Path, path: Path) -> str:
+    resolved = path.resolve()
+    try:
+        return resolved.relative_to(repo).as_posix()
+    except ValueError:
+        return str(resolved)
+
+
+def classify_events(
+    rows: list[dict[str, Any]],
+    expected: dict[str, dict[str, Any]],
+    *,
+    repo: Path,
+    slate_path: Path,
+) -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        event_id = row.get("event_id")
+        if not isinstance(event_id, str) or not event_id:
+            raise DayAuditError("run row lacks event_id")
+        grouped.setdefault(market_event(event_id), []).append(row)
+    events: list[dict[str, Any]] = []
+    for ticker in sorted(set(expected) | set(grouped)):
+        attempts = grouped.get(ticker, [])
+        covered = any(
+            row.get("status") in ("audited", "operational_fail")
+            and isinstance(row.get("performance"), dict)
+            and row["performance"].get("audio_frame_count", 0) > 0
+            for row in attempts
+        )
+        descoped = any(row.get("status") == "descoped" for row in attempts)
+        classification = "COVERED" if covered else "DESCOPED" if descoped else "MISSED"
+        links: set[str] = set()
+        if ticker in expected:
+            links.add(relative_link(repo, slate_path))
+        attempt_rows = []
+        for row in attempts:
+            run_dir = Path(row["run_dir"])
+            for path in (
+                run_dir / "control" / "run-plan.json",
+                run_dir / "control" / "receipts.jsonl",
+            ):
+                if path.is_file():
+                    links.add(relative_link(repo, path))
+            grade = row.get("grade")
+            if isinstance(grade, str) and Path(grade).is_file():
+                links.add(relative_link(repo, Path(grade)))
+            attempt_rows.append({
+                "event_id": row["event_id"],
+                "run_id": row.get("run_id"),
+                "status": row.get("status"),
+                "problem": bool(row.get("problem")),
+            })
+        events.append({
+            "event_ticker": ticker,
+            "classification": classification,
+            "problem": classification == "MISSED" or any(
+                item["problem"] for item in attempt_rows),
+            "slate": expected.get(ticker),
+            "attempts": attempt_rows,
+            "evidence_links": sorted(links),
+        })
+    return events
 
 
 def run_command(argv: list[str], *, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
@@ -477,6 +573,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--date", required=True)
     parser.add_argument("--run-root", default=None)
     parser.add_argument("--output-root", default=None)
+    parser.add_argument("--slate", default=None)
     parser.add_argument("--auditor", default=None, help=argparse.SUPPRESS)
     parser.add_argument("--eventctl", default=None, help=argparse.SUPPRESS)
     parser.add_argument("--alertctl", default=None, help=argparse.SUPPRESS)
@@ -486,6 +583,7 @@ def main(argv: list[str] | None = None) -> int:
         repo = Path(os.environ.get("EARSHOT_REPO", Path(__file__).resolve().parent.parent)).resolve()
         run_root = Path(args.run_root).resolve() if args.run_root else repo / "var" / "runs"
         output_root = Path(args.output_root).resolve() if args.output_root else repo / "var" / "audits"
+        slate_path = Path(args.slate).resolve() if args.slate else repo / "slate" / "latest.json"
         auditor = Path(args.auditor).resolve() if args.auditor else Path(__file__).with_name("run-audit.py")
         eventctl = Path(args.eventctl).resolve() if args.eventctl else Path(__file__).with_name("eventctl.py")
         alertctl = Path(args.alertctl).resolve() if args.alertctl else Path(__file__).with_name("alertctl.py")
@@ -530,22 +628,42 @@ def main(argv: list[str] | None = None) -> int:
                 )
         rows.sort(key=lambda row: (str(row.get("event_id")), str(row.get("run_id"))))
         summary = aggregate(rows)
+        expected, slate_fingerprint = expected_events(slate_path, date)
+        events = classify_events(rows, expected, repo=repo, slate_path=slate_path)
+        classifications: dict[str, int] = {}
+        for event in events:
+            classification = event["classification"]
+            classifications[classification] = classifications.get(classification, 0) + 1
+        event_problems = sum(bool(event["problem"]) for event in events)
+        summary["events"] = len(events)
+        summary["event_problems"] = event_problems
+        summary["classifications"] = dict(sorted(classifications.items()))
         no_runs = not rows
+        no_events = not events
         payload = {
             "schema": SCHEMA,
             "kind": "run-day-index",
             "date_utc": date,
             "derived": True,
-            "authority": "immutable RunPlans, lifecycle receipt tails, and schema-1 RunGrades",
-            "overall": "fail" if no_runs or summary["problems"] else "pass",
-            "summary": {**summary, "no_runs": no_runs},
+            "authority": (
+                "dated slate events plus immutable RunPlans, lifecycle receipt tails, "
+                "and schema-1 RunGrades"
+            ),
+            "slate": {
+                "path": relative_link(repo, slate_path),
+                "fingerprint": slate_fingerprint,
+            },
+            "overall": "fail" if no_events or event_problems or summary["problems"] else "pass",
+            "events": events,
+            "summary": {**summary, "no_runs": no_runs, "no_events": no_events},
             "runs": rows,
         }
         destination = output_root / f"{date}.json"
         publish(destination, canonical_bytes(payload))
         print(
             f"AUDIT-DAY {payload['overall'].upper()}: {date} — "
-            f"{summary['attempts']} attempt(s), {summary['problems']} problem(s); {destination}"
+            f"{summary['events']} event(s), {summary['event_problems']} missed/problem event(s), "
+            f"{summary['attempts']} attempt(s), {summary['problems']} attempt problem(s); {destination}"
         )
         return 1 if payload["overall"] == "fail" else 0
     except (OSError, subprocess.SubprocessError, DayAuditError) as exc:
