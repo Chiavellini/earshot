@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # capture-sidecar.sh — bank the AUDIO of a live webcast call, alongside the arm.
 #
-#   scripts/capture-sidecar.sh --slug hims \
-#       --config configs/hims-capture-sidecar.toml \
-#       --record-dir state/KXEARNINGSMENTIONHIMS-26AUG10-WEBCAST/capture \
-#       --event KXEARNINGSMENTIONHIMS-26AUG10-WEBCAST [--secs 5400]
+#   scripts/capture-sidecar.sh --slug <t> \
+#       --config configs/<t>-capture-sidecar.toml \
+#       --record-dir state/<EVENT>/capture \
+#       --event <EVENT> [--secs 5400]
 #
 # WHY: a normal `arm` run banks no audio and no transcript, so PRECISION — the
 # false-positive rate, the thing gating larger position size — cannot be

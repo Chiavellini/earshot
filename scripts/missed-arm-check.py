@@ -223,7 +223,7 @@ def staged_for(date, config_dir="configs"):
         return {}
     out = {}
     # `*-{dp}-phone-arm.toml` is the name scripts/phone-lane-derive.py actually
-    # writes (`configs/hims-26aug10-phone-arm.toml`). The old
+    # writes (e.g. `hims-26aug10-phone-arm.toml`, 26AUG10). The old
     # `phone-*-{dp}-arm.toml` matched NOTHING, so the phone lane was never in
     # the denominator at all — HIMS 26AUG10 was graded entirely on its webcast
     # twin while the phone lane was the one that traded.

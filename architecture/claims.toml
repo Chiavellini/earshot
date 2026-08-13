@@ -221,60 +221,35 @@ branch = "webcast-lane"
 state = "active"
 contract_change = true
 paths = [
-  "configs/grab-26aug03-raw.toml",
-  "configs/pltr-26aug03-raw.toml",
-  "configs/snap-26aug03-raw.toml",
+  # 2026-08-12 per-event config cleanup: dated raw/arm/autorun artifacts for
+  # PAST events left the repo (the generic stage path is the only source of
+  # new ones). The dated configs still listed below survive because a live
+  # script, doc, or test reads them by exact path.
   "configs/twilio-aapl-26jul30-arm.toml",
-  "configs/twilio-cmg-26jul29-arm.toml",
-  "configs/twilio-cvna-26jul29-arm.toml",
-  "configs/twilio-msft-26jul29-arm.toml",
-  "configs/twilio-yum-26jul30-arm.toml",
-  "configs/webcast-aapl-26jul30-arm-wc.toml",
-  "configs/webcast-amzn-26jul30-arm-wc.toml",
-  "configs/webcast-cmg-26jul29-arm-wc.toml",
   "scripts/slate-stage.sh",
   "scripts/stage-reconcile.py",
   "tests/stage_reconcile.py",
-  "configs/webcast-cvna-26jul29-arm-wc.toml",
-  "configs/webcast-grab-26aug03-arm-wc.toml",
-  # GRAB 26AUG03: the webcast file above is a deliberate fail-closed stub (both
-  # legs exit 64). These two carry the same VALIDATED keyword set — identical
-  # keywords-extract sha256 — and differ from it only in [[sources]].
-  "configs/acoustic-grab-26aug03-arm.toml",
-  "configs/phone-grab-26aug03-arm.toml",
   # AMD 26AUG04. `prepare` output, then hand-corrected: it had stripped the digits
   # from "MI450 / MI455X" down to the word "mix", and emitted sherpa_kws while
-  # every armed config runs streaming_ctc.
+  # every armed config runs streaming_ctc. Kept past the cleanup:
+  # scripts/stage-afternoon-26aug04.py reads it by exact path.
   "configs/amd-26aug04-raw.toml",
-  "configs/webcast-msft-26jul29-arm-wc.toml",
-  "configs/webcast-pltr-26aug03-arm-wc.toml",
-  "configs/webcast-race-26jul30-arm-wc.toml",
-  "configs/webcast-rddt-26jul30-arm-wc.toml",
-  "configs/webcast-snap-26aug03-arm-wc.toml",
-  "configs/webcast-yum-26jul30-arm-wc.toml",
-  # 2026-08-05 TLN: the hand-made phone-only arm, and the script that now
-  # derives it (verified semantically identical, same keywords_sha256).
-  "configs/tln-26aug05-phone-arm.toml",
   # 2026-08-11: also emits a literal, portable EARSHOT_ACCOUNT_PROFILE
   # locator.  eventctl never sources generated event envs, so computed
   # ACCOUNT_ENV search loops cannot be trusted as immutable identity input.
   "scripts/phone-lane-derive.py",
   "docs/layers/prepare.md",
   # 2026-08-12: docs/work/PLAN-26JUL30.md moved to docs/history/PLAN-26JUL30.md
-  # (evidence.measure's claim). These three configs cite the RUNBOOK by path
-  # and are touched by the same move.
-  "configs/twilio-live-citi.toml",
-  "configs/webcast-ba-26jul28-arm.toml",
+  # (evidence.measure's claim). This config cites the RUNBOOK by path and was
+  # touched by the same move.
   "configs/webcast-pypl-26jul28-arm.toml",
   "src/prepare.rs",
-  # read-quantum-lane 2026-07-30: pre-registered two-leg A/B (q32k vs q40ms)
-  # asking whether earlier bytes become earlier PCM. Bar is written; NEVER RUN.
-  "configs/pcm-lead-chunkms.toml",
-  # 26AUG04 afternoon slate (AMD/SPCX/TOST/ZETA) + the two morning raws that
-  # were never promoted to phone arms. spot-26aug04-raw.toml is the artifact
-  # the SPOT miss stopped at: prepare output, no [twilio] binding, no reconnect
-  # budget, because admission was never `held` so slate-stage never derived it.
-  "configs/mcd-26aug04-raw.toml",
+  # 26AUG04 afternoon slate (AMD/SPCX/TOST/ZETA): the twilio-live trios below
+  # are read by exact path from scripts/stage-afternoon-26aug04.py.
+  # spot-26aug04-raw.toml is the artifact the SPOT miss stopped at: prepare
+  # output, no [twilio] binding, no reconnect budget, because admission was
+  # never `held` so slate-stage never derived it (kept:
+  # scripts/counterfactual-26aug04.sh replays it).
   "configs/spot-26aug04-raw.toml",
   "configs/twilio-live-spcx.toml",
   "configs/twilio-live-tost.toml",
@@ -283,83 +258,25 @@ paths = [
   # actually traded on Aug 4). Replay input for counterfactual-26aug04.sh
   # ONLY; never arm it.
   "configs/twilio-live-pgr.toml",
-  "configs/webcast-amd-26aug04-arm-wc.toml",
-  "configs/webcast-spcx-26aug04-arm-wc.toml",
-  "configs/webcast-tost-26aug04-arm-wc.toml",
-  "configs/webcast-zeta-26aug04-arm-wc.toml",
   "scripts/stage-afternoon-26aug04.py",
-  "configs/aaoi-26aug06-raw.toml",
-  "configs/abnb-26aug06-raw.toml",
-  "configs/celh-26aug06-raw.toml",
-  "configs/dash-26aug05-raw.toml",
-  "configs/dis-26aug05-raw.toml",
-  "configs/dkng-26aug07-raw.toml",
-  "configs/duol-26aug05-raw.toml",
-  "configs/ebay-26aug05-raw.toml",
-  "configs/fig-26aug05-raw.toml",
-  "configs/lly-26aug07-raw.toml",
-  "configs/lyft-26aug06-raw.toml",
-  "configs/meli-26aug05-raw.toml",
-  "configs/nbis-26aug06-raw.toml",
-  "configs/shop-26aug05-raw.toml",
-  "configs/tln-26aug05-raw.toml",
-  "configs/ttwo-26aug07-raw.toml",
-  "configs/uber-26aug05-raw.toml",
-  "configs/vst-26aug07-raw.toml",
-  "configs/webcast-aaoi-26aug06-arm-wc.toml",
-  "configs/webcast-abnb-26aug06-arm-wc.toml",
-  "configs/webcast-celh-26aug06-arm-wc.toml",
-  "configs/webcast-dash-26aug05-arm-wc.toml",
-  "configs/webcast-dis-26aug05-arm-wc.toml",
-  "configs/webcast-dkng-26aug07-arm-wc.toml",
-  "configs/webcast-duol-26aug05-arm-wc.toml",
-  "configs/webcast-ebay-26aug05-arm-wc.toml",
-  "configs/webcast-fig-26aug05-arm-wc.toml",
-  "configs/webcast-lly-26aug07-arm-wc.toml",
-  "configs/webcast-lyft-26aug06-arm-wc.toml",
-  "configs/webcast-meli-26aug05-arm-wc.toml",
-  "configs/webcast-nbis-26aug06-arm-wc.toml",
-  "configs/webcast-shop-26aug05-arm-wc.toml",
-  "configs/webcast-tln-26aug05-arm-wc.toml",
-  "configs/webcast-ttwo-26aug07-arm-wc.toml",
-  "configs/webcast-uber-26aug05-arm-wc.toml",
-  "configs/webcast-vst-26aug07-arm-wc.toml",
-  "configs/webcast-wen-26aug07-arm-wc.toml",
-  "configs/webcast-you-26aug05-arm-wc.toml",
-  "configs/wen-26aug07-raw.toml",
-  "configs/you-26aug05-raw.toml",
   "scripts/slate-time-merge.py",
   "slate/call-times.json",
-  # 2026-08-07: HIMS 08-10 staged untimed (midnight-UTC + TODO). Real call time
-  # 21:00Z (15:00 CDMX) supplied by the operator and written in; the scheduler
-  # half of that class is guarded in control.operate/ops.traceability.
-  "configs/hims-26aug10-raw.toml",
-  "configs/webcast-hims-26aug10-arm-wc.toml",
-  # 2026-08-11 staged event artifacts. These stay exact-file claims so the
-  # reusable lifecycle never turns a dated config into a public interface.
+  # 2026-08-11 staged event artifacts (upcoming events only). These stay
+  # exact-file claims so the reusable lifecycle never turns a dated config
+  # into a public interface.
   "configs/ac-26aug12-raw.toml",
   "configs/amat-26aug13-raw.toml",
-  "configs/cava-26aug11-phone-arm.toml",
-  "configs/cava-26aug11-raw.toml",
   "configs/cbrs-26aug12-raw.toml",
   "configs/cohr-26aug12-raw.toml",
-  "configs/crwv-26aug11-phone-arm.toml",
-  "configs/crwv-26aug11-raw.toml",
-  "configs/etor-26aug11-raw.toml",
-  "configs/hims-26aug10-phone-arm.toml",
-  "configs/hims-capture-sidecar.toml",
   "configs/lunr-26aug13-raw.toml",
   "configs/webcast-ac-26aug12-arm-wc.toml",
   "configs/webcast-amat-26aug13-arm-wc.toml",
-  "configs/webcast-cava-26aug11-arm-wc.toml",
   "configs/webcast-cbrs-26aug12-arm-wc.toml",
   # 2026-08-12 T0 collision recovery: a separately named 1c non-crossing
   # attempt, because the prior untracked path changed to unauthorized 97c
   # fill posture after a RunPlan pinned its safe bytes. Never arm the 97c path.
   "configs/webcast-cbrs-26aug12-safe-observe-wc.toml",
   "configs/webcast-cohr-26aug12-arm-wc.toml",
-  "configs/webcast-crwv-26aug11-arm-wc.toml",
-  "configs/webcast-etor-26aug11-arm-wc.toml",
   "configs/webcast-lunr-26aug13-arm-wc.toml",
   # 2026-08-07: the widener's lexicon. It lives under configs/ (so this node's
   # glob owns it) but its content is study evidence — live-validated variant
@@ -428,10 +345,9 @@ state = "active"
 contract_change = true
 paths = [
   # 2026-08-12: PHONE-LANE-HANDOFF.md and docs/RUNBOOK.md moved to
-  # docs/history/ and now sit under evidence.measure's claim.
-  "configs/grab-26aug03-autorun.env",
-  "configs/pltr-26aug03-autorun.env",
-  "configs/snap-26aug03-autorun.env",
+  # docs/history/ and now sit under evidence.measure's claim. The dated
+  # autorun envs for PAST events left in the 2026-08-12 per-event config
+  # cleanup; only upcoming events keep envs below.
   # 2026-08-05: schedule a phone event on the box and verify the LOADED unit;
   # event-autorun.sh now honors the BIND_PORT its own env files declare.
   "scripts/box-event-install.sh",
@@ -447,17 +363,6 @@ paths = [
   # prescribed since 2026-07-29 and that never existed until now.
   "tests/redial_supervisor.rs",
   "scripts/event-autorun.sh",
-  "configs/dash-26aug05-autorun.env",
-  "configs/dis-26aug05-autorun.env",
-  "configs/duol-26aug05-autorun.env",
-  "configs/ebay-26aug05-autorun.env",
-  "configs/fig-26aug05-autorun.env",
-  "configs/meli-26aug05-autorun.env",
-  "configs/shop-26aug05-autorun.env",
-  "configs/tln-26aug05-autorun.env",
-  "configs/ttwo-26aug07-autorun.env",
-  "configs/uber-26aug05-autorun.env",
-  "configs/you-26aug05-autorun.env",
   # 2026-08-10: the loop now reads the venue's admission verdict itself and
   # escalates to the operator handler BEFORE the first dial. HIMS 26AUG10 spent
   # 31m47s / 17 legs cycling DTMF variants of a credential that was never a
@@ -466,13 +371,10 @@ paths = [
   "tests/operator_escalation.sh",
   "tests/schedule_proof.py",
   "tests/typed_scheduler_boundary.sh",
-  "configs/hims-26aug10-phone-autorun.env",
   "configs/amat-26aug13-autorun.env",
-  "configs/cava-26aug11-phone-autorun.env",
   "configs/cbrs-26aug12-autorun.env",
   "configs/cbrs-26aug12-safe-observe-autorun.env",
   "configs/cohr-26aug12-autorun.env",
-  "configs/crwv-26aug11-phone-autorun.env",
 ]
 verification = [
   "bash -n scripts/redial-supervisor.sh",
@@ -626,7 +528,7 @@ verification = [
   "bash -n scripts/bridge-probe.sh",
   "bash -n scripts/bridge-probe-batch.sh",
   "bash -n scripts/admission-window-probe.sh",
-  "scripts/admission-window-probe.sh --config configs/twilio-yum-26jul30-arm.toml",
+  "scripts/admission-window-probe.sh --config configs/twilio-aapl-26jul30-arm.toml",
   "python3 tests/held_admission_receipt.py",
 ]
 evidence = ["docs/nodes/control-admission.md"]
@@ -850,8 +752,9 @@ evidence = ["VERIFICATIONS.md"]
 #   4. the ~71 kbps rolling fixture the new comment depends on was built ad hoc
 #      and never committed; no generator script exists in the repo.
 # Until the gate runs and passes, `--chunk-ms` correctly still defaults to 0.
-# `configs/pcm-lead-chunkms.toml` (claimed under control.prepare) is the
-# pre-registered A/B for the same question and has never been run.
+# The pre-registered A/B for the same question, configs/pcm-lead-chunkms.toml,
+# was never run and left in the 2026-08-12 per-event config cleanup; recover
+# it from git history if this gate is ever revived.
 
 [[claim]]
 id = "tls.acquire"
@@ -1223,6 +1126,10 @@ paths = [
   # graded as 23 orders when 0 had reached Kalshi. Both now count `sent`
   # (send_ts != null), which is the only field a wire send sets.
   "scripts/run-verdict.sh",
+  # 2026-08-12 per-event config cleanup: its usage example cited the deleted
+  # configs/twilio-live-ms.toml; comment-only reword to the kept generic
+  # twilio-live.toml.
+  "scripts/validate-from-log.py",
   # 2026-08-07: landed untracked on 08-06 with no owning node. It is a grader,
   # so it belongs beside run-verdict.sh and missed-arm-check.py.
   "scripts/post-event-report.sh",

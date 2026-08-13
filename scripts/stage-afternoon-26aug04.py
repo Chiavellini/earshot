@@ -10,7 +10,7 @@ armed set.
 Two legs, not three: spec_edge's speculative prefetch is tuned for Q4/IVS
 venues that publish #EXT-X-PREFETCH. None of these four venues is confirmed to,
 and probing one that does not risks rate-limiting the vantage IP -- which takes
-down every leg, not one (see configs/webcast-snap-26aug03-arm-wc.toml).
+down every leg, not one (see the 26AUG03 SNAP arm config, now in git history).
 """
 import pathlib
 import re

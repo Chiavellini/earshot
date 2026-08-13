@@ -2,8 +2,8 @@
 # green-guardian.sh — guarantee an event is CLEARED-TO-ARM at fire time, or say
 # loudly that it is not. Runs shortly BEFORE the watcher, unattended.
 #
-#   scripts/green-guardian.sh --event KXEARNINGSMENTIONCELH-26AUG06-WEBCAST \
-#                             --config configs/webcast-celh-26aug06-arm-wc.toml
+#   scripts/green-guardian.sh --event KXEARNINGSMENTION<T>-<DATE>-WEBCAST \
+#                             --config configs/webcast-<t>-<date>-arm-wc.toml
 #
 # WHY (2026-08-06, during the CELH prep itself): improving a config the night
 # before is normal and valuable -- widening weak keyword variants, retuning

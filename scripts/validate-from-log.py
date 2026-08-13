@@ -9,7 +9,7 @@ transcript you obtain separately (scripts/transcript-fetch.py on the public
 webcast, or a pasted transcript).
 
 Usage:
-  scripts/validate-from-log.py --log arm.log --config configs/twilio-live-ms.toml \
+  scripts/validate-from-log.py --log arm.log --config configs/twilio-live.toml \
       --transcript corpus/transcripts/ms-q2-2026.txt [--words ms.words.json] \
       [--offset-ms 0] [--window-ms 3000]
 

@@ -5,7 +5,7 @@ Why this exists (2026-08-05, TLN). Talen published a participant dial-in, and
 where one exists the webcast leg only adds load and false comfort: on 26JUL29
 CMG the phone was 4.1-8.2 s AHEAD of the webcast on the SAME call, with one
 extra recall win. The phone config that ran that night was produced by hand
-from `configs/webcast-tln-26aug05-arm-wc.toml` at T-60 on the day of the event.
+from the TLN 26AUG05 webcast twin at T-60 on the day of the event.
 This script is that derivation, done at prep time and checked.
 
 WHAT IT PRESERVES, AND WHY IT MATTERS. The `[[keywords]]` section is copied
@@ -329,7 +329,7 @@ def build_config(args, src_text, cap, budget, min_conf, port, stream_host, out_p
     # webcast twin, so the derived phone config used to inherit the twin's
     # `id` — and the state dir, OrderRegistry and probe ledger are all parsed
     # from it. TLN 26AUG05 shipped exactly that: both
-    # `configs/tln-26aug05-phone-arm.toml` and `webcast-tln-26aug05-arm-wc.toml`
+    # `tln-26aug05-phone-arm.toml` and `webcast-tln-26aug05-arm-wc.toml`
     # declare `KXEARNINGSMENTIONTLN-26AUG05-WEBCAST`, and there is exactly ONE
     # `state/KXEARNINGSMENTIONTLN-26AUG05-WEBCAST/` — two arms, one ledger, two
     # writers. HIMS 26AUG10 only escaped because the id was hand-edited.

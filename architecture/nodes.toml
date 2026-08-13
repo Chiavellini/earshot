@@ -590,6 +590,7 @@ doc_style = "node"
 owns = [
   "slate/latest.json",
   "slate/census.json",
+  "slate/changes/**",
   "scripts/discover-events.py",
   "scripts/mentions-census.py",
   "scripts/slate-daily.sh",
@@ -636,11 +637,12 @@ owns = [
   "scripts/phone-lane-derive.py",
   "configs/[!d]*.toml",
   # the [!d] above exists ONLY to exclude dial-ins.toml (control.qualify's
-  # registry) — but it also orphaned every d-issuer event config (dash, dis,
-  # dkng, duol, 2026-08-04). These two globs re-admit d* while still
-  # excluding dial-ins.toml (d-i-a-l fails di[!a]).
-  "configs/d[!i]*.toml",
-  "configs/di[!a]*.toml",
+  # registry). It also excludes any d-named config: while d-issuer event
+  # configs existed (dash, dis, dkng, duol, 2026-08-04) two re-admit globs
+  # (`configs/d[!i]*.toml` + `configs/di[!a]*.toml`) covered them; the
+  # 2026-08-12 per-event cleanup removed the last d-configs and doc-lint
+  # fails a glob matching zero files, so re-add those globs with the next
+  # d-issuer event.
   "src/prepare.rs",
   "scripts/stage-afternoon-26aug04.py",
   "scripts/stage-webcast-arm.sh",
