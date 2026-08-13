@@ -279,6 +279,51 @@ class AlertCtlTest(unittest.TestCase):
         )
         self.alert("status", "--alert-dir", str(alert_dir))
 
+    def test_host_contention_is_first_class_and_restart_safe(self) -> None:
+        alert_dir = self.repo / "state" / "alerts"
+        args = [
+            "host-contention",
+            "--alert-dir",
+            str(alert_dir),
+            "--host-id",
+            "capture-box-1",
+            "--guard-id",
+            "fixture-event.capture-ready",
+            "--subject",
+            "Capture host contention",
+            "--body",
+            "load15=7.2 budget=4.0",
+            "--notify-adapter",
+            str(self.notify),
+            "--phone-adapter",
+            str(self.phone),
+            "--phone-attempts",
+            "2",
+            "--retry-delay",
+            "0",
+        ]
+        first = self.alert(*args)
+        alert_id = first.stdout.split()[1].rstrip(":")
+        self.alert(*args)
+        self.assertEqual(len(self.phone_log.read_text().splitlines()), 1)
+        rows = [json.loads(line) for line in (alert_dir / "ledger.jsonl").read_text().splitlines()]
+        required = json.loads(rows[0]["detail"])
+        self.assertEqual(required["scope"], "host-contention:capture-box-1")
+        self.assertEqual(required["severity"], "critical")
+        self.assertEqual(required["code"], "host_contention")
+        self.assertEqual(required["dedupe_key"], "fixture-event.capture-ready")
+        self.alert(
+            "ack",
+            "--alert-dir",
+            str(alert_dir),
+            "--alert-id",
+            alert_id,
+            "--by",
+            "operator@example",
+        )
+        self.alert(*args)
+        self.assertEqual(len(self.phone_log.read_text().splitlines()), 1)
+
     def test_acknowledgement_is_explicit_idempotent_and_suppresses_redelivery(self) -> None:
         result = self.alert(*self.raise_args())
         alert_id = result.stdout.split()[1].rstrip(":")

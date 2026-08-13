@@ -46,6 +46,15 @@ timestamp are verified before every read or append. `--run-dir` and
 `--alert-dir` are mutually exclusive; the established RunPlan request-ID
 formula is unchanged for compatibility.
 
+`alertctl.py host-contention --alert-dir <DIR> --host-id <HOST>
+--guard-id <ID> --subject <TEXT> --body <TEXT>` is the C5 door exposed to the
+CAPTURE lane's host guard. It fixes severity to `critical`, code to
+`host_contention`, and scope to `host-contention:<HOST>`. The producer owns
+detection and supplies a stable guard ID for the same host/event/check
+observation; therefore a retry or process restart resolves to the same alert
+ID and cannot re-page an acknowledged refusal. This door never mutates a run
+tree and does not decide whether the host is safe.
+
 ## Output contracts
 
 Every adapter invocation is preceded by an atomic, durable
@@ -103,7 +112,8 @@ adapters and proves terminal-run append, request dedupe, bounded critical
 retry, lifetime retry caps, required-channel semantics, warning posture, total
 failure, provider ambiguity, crash-ambiguous reservation, bounded due re-page,
 standalone hash-chain integrity/read-only run behavior, explicit idempotent
-acknowledgement, and post-ack delivery suppression. Production phone
+acknowledgement, post-ack delivery suppression, and the canonical C5
+host-contention critical phone request. Production phone
 verification requires a separately authorized test call to the configured
 operator number.
 
@@ -115,4 +125,5 @@ implemented. RunPlan-bound schedule, study, preflight, launcher terminal, and
 evidence-health failures already use this door. Remaining direct `notify.sh`
 critical callers are the watcher-liveness, redial/no-media, missed-arm, and
 compatibility terminal/report wrappers; informational summaries may remain
-local mail.
+local mail. The C5 host-contention delivery door is implemented; CAPTURE owns
+the guard and its invocation.

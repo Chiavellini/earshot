@@ -43,6 +43,7 @@ ACTION_RE = re.compile(
     r"^alert\.(required|delivery_started|delivery|acknowledged):([0-9a-f]{64})(?::([a-z0-9._-]+):([1-9][0-9]*))?$"
 )
 SCOPE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$")
+HOST_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 ZERO_HASH = "0" * 64
 
 
@@ -745,6 +746,18 @@ def cmd_raise(args: argparse.Namespace) -> int:
     return 0 if delivered else 1
 
 
+def cmd_host_contention(args: argparse.Namespace) -> int:
+    """Raise the CAPTURE lane's canonical host-capacity alert."""
+    if not HOST_ID_RE.fullmatch(args.host_id):
+        raise AlertError(f"host id must match {HOST_ID_RE.pattern}")
+    args.run_dir = None
+    args.scope = f"host-contention:{args.host_id}"
+    args.severity = "critical"
+    args.code = "host_contention"
+    args.dedupe_key = args.guard_id
+    return cmd_raise(args)
+
+
 def cmd_ack(args: argparse.Namespace) -> int:
     target = alert_target(args, require_identity=False)
     alert_id = args.alert_id
@@ -865,6 +878,22 @@ def parser() -> argparse.ArgumentParser:
     delivery_args(sp)
     sp.add_argument("--no-deliver", action="store_true")
     sp.set_defaults(fn=cmd_raise)
+    sp = sub.add_parser(
+        "host-contention",
+        help="deliver a canonical critical alert for a CAPTURE host-guard refusal",
+    )
+    sp.add_argument("--alert-dir", required=True)
+    sp.add_argument("--host-id", required=True)
+    sp.add_argument(
+        "--guard-id",
+        required=True,
+        help="stable deterministic ID for this host-guard observation",
+    )
+    sp.add_argument("--subject", required=True)
+    sp.add_argument("--body", required=True)
+    delivery_args(sp)
+    sp.add_argument("--no-deliver", action="store_true")
+    sp.set_defaults(fn=cmd_host_contention)
     sp = sub.add_parser("ack")
     target_args(sp)
     sp.add_argument("--alert-id", required=True)
