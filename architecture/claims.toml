@@ -229,11 +229,6 @@ paths = [
   "scripts/slate-stage.sh",
   "scripts/stage-reconcile.py",
   "tests/stage_reconcile.py",
-  # AMD 26AUG04. `prepare` output, then hand-corrected: it had stripped the digits
-  # from "MI450 / MI455X" down to the word "mix", and emitted sherpa_kws while
-  # every armed config runs streaming_ctc. Kept past the cleanup:
-  # scripts/stage-afternoon-26aug04.py reads it by exact path.
-  "configs/amd-26aug04-raw.toml",
   # 2026-08-11: also emits a literal, portable EARSHOT_ACCOUNT_PROFILE
   # locator.  eventctl never sources generated event envs, so computed
   # ACCOUNT_ENV search loops cannot be trusted as immutable identity input.
@@ -244,21 +239,6 @@ paths = [
   # touched by the same move.
   "configs/webcast-pypl-26jul28-arm.toml",
   "src/prepare.rs",
-  # 26AUG04 afternoon slate (AMD/SPCX/TOST/ZETA): the twilio-live trios below
-  # are read by exact path from scripts/stage-afternoon-26aug04.py.
-  # spot-26aug04-raw.toml is the artifact the SPOT miss stopped at: prepare
-  # output, no [twilio] binding, no reconnect budget, because admission was
-  # never `held` so slate-stage never derived it (kept:
-  # scripts/counterfactual-26aug04.sh replays it).
-  "configs/spot-26aug04-raw.toml",
-  "configs/twilio-live-spcx.toml",
-  "configs/twilio-live-tost.toml",
-  "configs/twilio-live-zeta.toml",
-  # 26AUG04: STALE-TICKERED ON PURPOSE (26JUL15 — the ticker whose board
-  # actually traded on Aug 4). Replay input for counterfactual-26aug04.sh
-  # ONLY; never arm it.
-  "configs/twilio-live-pgr.toml",
-  "scripts/stage-afternoon-26aug04.py",
   "scripts/slate-time-merge.py",
   "slate/call-times.json",
   # 2026-08-11 staged event artifacts (upcoming events only). These stay
@@ -710,10 +690,6 @@ paths = [
   "scripts/race-postmortem.py",
   "src/latprobe/mod.rs",
   "scripts/abs-lag.py",
-  # 26AUG04: replay the SPOT/PGR captures through the real keyword sets to
-  # quantify what WOULD have fired had the events been armed instead of
-  # recorded. Post-mortem quantification tooling, same lane as the postmortem.
-  "scripts/counterfactual-26aug04.sh",
   "scripts/drace-wallclock.py",
   # 2026-08-07: the settlement join. First tool that can say whether a
   # detection was RIGHT; every accuracy figure before it was hand-graded into
@@ -773,7 +749,6 @@ paths = [
   "tests/access_plan.py",
   "scripts/browser-resolve.py",
   "scripts/q4-resolve.sh",
-  "scripts/shop-resolve-stream.sh",
   "scripts/choruscall-resolve.py",
   "scripts/q4-register-resolve.py",
   "scripts/chorus-register-resolve.py",
@@ -1008,8 +983,8 @@ evidence = [
 ]
 
 # `readiness.variant_study_log_count` was retired 2026-08-05: all three of its
-# paths (variant-study.sh, study-afternoon-26aug04.sh, restudy-26aug04.sh) are
-# committed and clean, which is the terminal transition for
+# paths (variant-study.sh plus two one-day 26AUG04 studies, deleted in the
+# 2026-08-12 cleanup) were committed and clean, which is the terminal transition for
 # `complete_pending_commit`. Its node is reclaimed below — doc-lint permits one
 # open claim per node, so the retirement had to precede the new claim.
 

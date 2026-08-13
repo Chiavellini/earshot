@@ -644,7 +644,6 @@ owns = [
   # fails a glob matching zero files, so re-add those globs with the next
   # d-issuer event.
   "src/prepare.rs",
-  "scripts/stage-afternoon-26aug04.py",
   "scripts/stage-webcast-arm.sh",
   "scripts/stage-webcast-capture.sh",
   "scripts/slate-stage.sh",
@@ -804,7 +803,6 @@ owns = [
   "scripts/youtube-resolve.sh",
   "scripts/browser-resolve.py",
   "scripts/q4-resolve.sh",
-  "scripts/shop-resolve-stream.sh",
   "scripts/q4-register-resolve.py",
   "scripts/chorus-register-resolve.py",
   "tests/access_plan.py",
@@ -1104,8 +1102,6 @@ owns = [
   "scripts/keywords-extract.py",
   "scripts/miss-autopsy.py",
   "scripts/prefix-gate-score.py",
-  "scripts/restudy-26aug04.sh",
-  "scripts/study-afternoon-26aug04.sh",
   "scripts/variant-audit.py",
   "scripts/variant-study.sh",
   "scripts/variant-widen.py",
@@ -1150,7 +1146,6 @@ owns = [
   # writes the clock_anchor.json that drace-wallclock.py has always read and
   # that had no writer until 2026-07-30
   "scripts/clock-anchor.py",
-  "scripts/counterfactual-26aug04.sh",
   "scripts/drace-wallclock.py",
   "scripts/experimental/**",
   "scripts/f2-probe.py",

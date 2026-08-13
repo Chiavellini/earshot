@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Nightly keyword-readiness studies for a slate date — the scheduled
-# generalization of the ad-hoc study-afternoon-26aug04.sh (which was re-written
-# by hand per event day; this one takes the date).
+# generalization of the hand-rewritten one-day study scripts it replaced
+# (this one takes the date).
 #
 #   scripts/study-nightly.sh --date 2026-08-05
 #

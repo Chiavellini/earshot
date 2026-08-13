@@ -1,5 +1,9 @@
 schema_version = 2
 authority = "canonical-event-operations"
+# Declared empty: the manifest key set is exact, and the last historical
+# scripts (the 26AUG04 one-day set + the SHOP resolver) were deleted in the
+# 2026-08-12 cleanup. Classify any future dated one-off here.
+historical_script = []
 
 # This is the small, public operations surface. Every public invocation starts
 # at one facade; backing scripts below remain node-owned internal adapters.
@@ -244,25 +248,3 @@ path = "scripts/wing-autorun.sh"
 replacement = "scripts/opsctl.sh prepare-day --date YYYY-MM-DD"
 reason = "Issuer-specific resolver and arm were replaced by typed generic acquisition and supervision."
 
-# Historical analysis/preparation is retained for provenance but is never a
-# production entrypoint. New dated top-level scripts are rejected by the
-# operations-surface checker unless explicitly classified here.
-[[historical_script]]
-path = "scripts/counterfactual-26aug04.sh"
-reason = "Offline reconstruction for the 2026-08-04 postmortem."
-
-[[historical_script]]
-path = "scripts/restudy-26aug04.sh"
-reason = "One-day keyword study superseded by study-nightly.sh."
-
-[[historical_script]]
-path = "scripts/stage-afternoon-26aug04.py"
-reason = "One-day config generator superseded by stage-nightly.sh."
-
-[[historical_script]]
-path = "scripts/study-afternoon-26aug04.sh"
-reason = "One-day keyword study superseded by study-nightly.sh."
-
-[[historical_script]]
-path = "scripts/shop-resolve-stream.sh"
-reason = "Issuer-specific resolver retained as historical venue evidence; generic acquisition owns future events."
