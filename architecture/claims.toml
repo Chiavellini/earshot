@@ -337,12 +337,10 @@ evidence = ["docs/nodes/control-operator.md"]
 [[claim]]
 id = "phone.supervise"
 node = "control.supervise"
-worker = "phone-lane + typed-scheduler-lane + cerebras-live-lane + coherent-live-lane + observability-lane"
+worker = "phone-lane + typed-scheduler-lane + cerebras-live-lane + coherent-live-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
-# 2026-08-12 M2/M1: observability-lane owns proof-bearing supervisor alerts
-# and the restartable read-only monitor; it does not edit launchers or sources.
 paths = [
   # 2026-08-12: PHONE-LANE-HANDOFF.md and docs/RUNBOOK.md moved to
   # docs/history/ and now sit under evidence.measure's claim. The dated
@@ -382,12 +380,6 @@ verification = [
   "cargo test --test redial_supervisor",
   "tests/operator_escalation.sh",
   "tests/typed_scheduler_boundary.sh",
-  "./scripts/doc-lint.sh",
-  "python3 tests/ops_surface.py",
-  "python3 tests/alertctl.py",
-  "python3 tests/audit_day.py",
-  "python3 tests/score_precision.py",
-  "python3 scripts/missed-arm-check.py --check",
 ]
 evidence = ["docs/history/PHONE-LANE-HANDOFF.md"]
 
@@ -663,13 +655,13 @@ evidence = ["corpus/bridge-probes/tts_rehearsal_2026_07_29.json"]
 [[claim]]
 id = "admission.measure"
 node = "evidence.measure"
-worker = "admission-evidence-lane + observability-lane"
+worker = "admission-evidence-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
 paths = [
-  # 2026-08-12 M5: observability-lane pins the public event-candlestick window
-  # contract consumed by missed-arm reconciliation; historical docs stay frozen.
+  # 2026-08-12 M5 pins the public event-candlestick window contract consumed by
+  # missed-arm reconciliation; historical docs stay frozen.
   # The system diagnosis and worked event reconstruction are measurement
   # evidence; executable architecture policy remains machine-readable.
   # 2026-08-12: the historical-evidence set moved to docs/history/ (owned by
@@ -1120,7 +1112,7 @@ evidence = [
 [[claim]]
 id = "missed_arm.reconcile"
 node = "control.grade"
-worker = "admission-evidence-lane + event-lifecycle-lane + run-audit-lane + typed-scheduler-lane + coherent-live-grade-lane + observability-lane"
+worker = "admission-evidence-lane + event-lifecycle-lane + run-audit-lane + typed-scheduler-lane + coherent-live-grade-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
@@ -1129,9 +1121,6 @@ contract_change = true
 # human hours later. This claim adds the standing answer: after any capture, if
 # the issuer's board traded and we placed nothing, say MISSED-ARM. It is
 # independent of which upstream node broke, which is the point.
-# 2026-08-12 M2/M5/M3/M6: observability-lane owns proof-bearing missed-arm
-# paging, strict armed-evidence/activity regressions, precision join tooling,
-# and the date index. RunGrade schema fields remain EVIDENCE-lane-owned.
 paths = [
   "docs/nodes/control-grade.md",
   "scripts/missed-arm-check.py",
@@ -1189,9 +1178,6 @@ verification = [
   "python3 tests/score_precision.py",
   "python3 scripts/missed-arm-check.py --date 2026-08-04",
   "python3 scripts/missed-arm-check.py --date 2026-08-03",
-  "./scripts/doc-lint.sh",
-  "python3 tests/ops_surface.py",
-  "python3 tests/alertctl.py",
 ]
 evidence = [
   "corpus/bridge-probes/spot_2026_08_04.json",
@@ -1289,14 +1275,12 @@ evidence = [
 [[claim]]
 id = "notify.delivery_log"
 node = "platform.notify"
-worker = "prep-night-26aug05 + event-lifecycle-lane + observability-lane"
+worker = "prep-night-26aug05 + event-lifecycle-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
 # 2026-08-04: three URL-MISSED pages fired and nobody can say whether they
 # arrived. notify.sh now appends per-channel outcomes to ~/.kalshi/notify.log.
-# 2026-08-12 M2: observability-lane owns proof-bearing phone delivery,
-# deterministic repaging until explicit acknowledgement, and the node contract.
 paths = [
   "docs/nodes/platform-notify.md",
   "scripts/notify.sh",
@@ -1307,11 +1291,6 @@ paths = [
 verification = [
   "bash -n scripts/notify.sh scripts/alert-phone.sh",
   "python3 tests/alertctl.py",
-  "python3 tests/ops_surface.py",
-  "python3 tests/audit_day.py",
-  "python3 tests/score_precision.py",
-  "python3 scripts/missed-arm-check.py --check",
-  "./scripts/doc-lint.sh",
 ]
 evidence = [
   "docs/nodes/platform-notify.md",
