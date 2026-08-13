@@ -184,8 +184,11 @@ the operator rules:
 
 ## 5. Target operating model — the three skills
 
-Everything above converges on a three-skill operator workflow (skills not yet
-built; the work orders build the floor they stand on):
+Everything above converges on a three-skill operator workflow. **Built
+2026-08-12** as agent skills: `.claude/skills/event-prep/`,
+`.claude/skills/detector-improve/`, `.claude/skills/trade-gap/` — pure
+procedure over the existing surfaces (they orchestrate; the work-order lanes
+still own the reliability floor they depend on):
 
 1. **Event-prep skill** — input: dial-ins/webcast URLs for upcoming events.
    Scopes the markets, hunts/qualifies admission, stages configs via the

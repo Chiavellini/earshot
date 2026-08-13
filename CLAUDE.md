@@ -72,5 +72,16 @@ scripts/box-event-install.sh --event-env <env>            # schedule one phone e
 source ~/.kalshi/earshot_env                 # credentials (never in repo)
 ```
 
+## Operator skills
+
+The three-skill operating model (`docs/SYSTEM-STATE.md` §5) is built as agent
+skills under `.claude/skills/`: **/event-prep** (date or pasted dial-in/webcast
+details → staged, studied, postured, preflighted, scheduled with loaded-job
+proof), **/detector-improve** (post-event: score the tape, autopsy misses,
+widen/retune, re-bench A/B, propagate the study interlock), **/trade-gap**
+(post-event: truthful funnel, settlement, Δrace, latency decomposition →
+targeted patch list). Skills orchestrate the surfaces above; they never edit
+`scripts/`/`src/` or money policy.
+
 Milestone definitions live in `docs/SPEC.md`; current completion and next
 outcomes live only in `docs/STATUS.md` / `docs/ROADMAP.md`.
