@@ -143,9 +143,11 @@ layer), or the wire itself (transport seam — see
   remains visible through `active_attempts`, and must be reconciled/cancelled;
   no new permit can start after kill closes the registry.
 - Any attempted outcome without a conclusive rejection or order id →
-  `order_by_client_id` status query; NEVER blind retry. `client_order_id` is a deterministic UUID from
-  `rest::deterministic_client_order_id("{event}:{kw}:{tier}")` so a retry
-  would be server-deduped anyway.
+  `order_by_client_id` status query; NEVER blind retry. `client_order_id` is a
+  deterministic UUID from `deterministic_order_client_id(run_identity,
+  ticker, price_cents, count, keyword_index, tier)`, whose stable seed contains
+  that full logical request. A retry is therefore server-deduped without
+  letting another immutable run or differently shaped tranche adopt the id.
 - Pre-staged bodies (`prestage_orders`) MUST mirror the decision layer's
   tranche arithmetic per policy. A missing arm-time artifact is a terminal
   `not_attempted` refusal. Live inline construction is forbidden: it would

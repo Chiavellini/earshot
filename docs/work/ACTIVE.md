@@ -60,6 +60,29 @@ deliberate formatting-only cleanup.
 No lane may stage, commit, deploy, dial, page, or trade merely to make a claim
 look complete. External operations require their own explicit authorization.
 
+## Evidence reliability lane — 2026-08-12
+
+- E6 is repaired as test-intent drift: checkpoint `bccee1b` strengthened the
+  deterministic client-id seed to immutable run identity plus the complete
+  logical request, while `prestage_enumerates_all_tranches` still expected the
+  earlier event/index/tier seed. The focused regression is green and the
+  executor contract now matches the implementation.
+- The complete verification matrix is green with required models and the
+  sourced ORT dylib: 518 Rust tests passed, 8 ignored performance tests, 0
+  failed; all 17 `tests/*.py` / `tests/*.sh` contract suites passed; format,
+  doc lint, and diff checks passed.
+- A later mandated pre-commit rerun observed one timing-only red outside this
+  lane: `runtime.foundation`'s ring unpark test took 18.84 ms under load. The
+  same test then passed 10/10 isolated reruns; `src/ring.rs` remains untouched
+  under its existing foreign claim.
+- A second loaded rerun timed out CAPTURE's new graceful-TERM launcher test;
+  its other 24 tests passed and the exact test passed 3/3 isolated reruns. The
+  launch implementation and test remain untouched under CAPTURE's claim.
+- Next boundary: commit an immutable candidate, then exercise that exact
+  artifact through launchd-fired SIGTERM rehearsal before any loaded scheduler
+  or capture-only production proof. No deployment, dial, page, or trade has
+  been performed by this lane.
+
 ## Capture reliability lane — 2026-08-13
 
 Work order `docs/work/SOLUTION-CAPTURE.md`. Nodes claimed by extending the one

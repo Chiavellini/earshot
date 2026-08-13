@@ -148,12 +148,14 @@ the same contract.
 
 The 2026-08-12 complete matrix is green: `cargo test --all-targets
 --no-fail-fast` with `EARSHOT_REQUIRE_MODELS=1` and the sourced
-`ORT_DYLIB_PATH` passed 513 tests with 8 ignored performance tests and zero
+`ORT_DYLIB_PATH` passed 518 tests with 8 ignored performance tests and zero
 failures; all 17 Python/shell contract suites passed; `cargo fmt --check`,
 `scripts/doc-lint.sh`, and `git diff --check` passed. This is offline
 validation only. A subsequent pre-commit matrix rerun had one classified
 `runtime.foundation` timing flake (`unpark_wakes_parked_consumer_quickly`,
 18.84 ms); the earlier full run was green and 10/10 isolated reruns passed.
+A second loaded rerun timed out CAPTURE's new graceful-TERM launcher test; its
+other 24 tests passed and the exact test passed 3/3 isolated reruns.
 The ordered production acceptance chain remains immutable
 artifact, launchd-fired SIGTERM rehearsal, operator-approved deployment,
 future loaded-scheduler proof, and capture-only canonical fire with green

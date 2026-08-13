@@ -1650,7 +1650,7 @@ mod tests {
         let staged = &map[&(0, Tier::Fast, 60)];
         assert_eq!(
             staged.client_order_id,
-            super::super::rest::deterministic_client_order_id("EV:0:Fast")
+            super::super::rest::deterministic_client_order_id("EV:KX-T:97:60:0:Fast")
         );
         // UUID-shaped and stable (idempotency).
         assert_eq!(staged.client_order_id.len(), 36);
