@@ -187,8 +187,10 @@ which counter looks more plausible. Every detection and every order transition
 is retained in the grade. The FIX tape fingerprint, replay summary, and
 per-session commit fingerprints are retained in the same immutable grade;
 REST grades retain an explicit `not_applicable` FIX summary. Audio WAV paths
-are emitted for later transcript scoring, but detection precision is
-`not_resolvable` until that separate score exists.
+are emitted for later transcript scoring. Before audit,
+`score-precision.py --run-dir` can publish the separate immutable
+`grade/precision-score.json`; detection precision remains `not_resolvable`
+until the EVIDENCE-owned auditor verifies and joins that score.
 
 Book analysis uses integer cents and centi-contract quantities and has exactly
 four classifications: `no_snapshot`, `empty_at_detection`,
@@ -217,6 +219,11 @@ equally supported disjoint offsets are refused as ambiguous. The box
 pull consumes the remote legacy event tree plus each immutable
 `control.run.plan` / append-only `control.run.receipts` tree selected by date or
 exact event identity.
+Typed precision first verifies the public `eventctl` door, schema-3 RunPlan,
+exact canonical run identity, pinned config bytes/hash, and runtime report
+identity/hash. Truth input is bound by SHA-256; audio-derived truth also binds
+the generated transcript and model. Only timestamped truth can produce a
+numeric precision score.
 Missed-arm activity consumes public event candlesticks at a one-hour interval
 over `[event-day 00:00Z, next-day 00:00Z)`. Staged configs remain the
 commitment denominator; exact RunPlan config binding or an unambiguous
@@ -231,6 +238,18 @@ standalone proof-bearing critical alert keyed by event/run location and report
 fingerprint. A surviving-leg warning retains informational local notification.
 Validation emits per-keyword counts/timing evidence. The target is one
 versioned `RunGrade` JSON retaining both provenance and uncertainty.
+
+The typed scorer publishes schema-1 `precision-score` at the fixed
+`grade/precision-score.json` path with RunPlan/event/run identity, config and
+runtime-report fingerprints, truth fingerprint, deterministic per-intent
+verdicts, and `score_sha256`. Timed scores retain numerator/denominator/ratio
+plus alignment window, support, usable intents, offset, support residuals, and
+residual spread. Presence-only scores retain settlement presence but set
+precision to `not_resolvable`. Publication is exclusive and byte-idempotent; a
+different existing score is an integrity failure. The same module exports
+`verify_precision_artifact(context, value)` as the consumer-side schema,
+identity, input-fingerprint, score-hash, count/ratio, and alignment validator
+for the EVIDENCE join.
 
 `missed-arm-check.py` emits `MISSED-ARM` per issuer, ranked by contracts
 missed, and exits 1 when any survive. A board lookup that fails is reported
@@ -274,6 +293,9 @@ through `platform.notify`. The puller is read-only on the box and never mutates
 reports, configs, corpus, or trading state. Its one typed mutation is the local
 append-only `evidence_pulled` receipt, gated by a terminal run and successful
 RunPlan/ledger verification.
+The typed precision scorer's only mutation is exclusive publication of
+`grade/precision-score.json`; it never edits the RunPlan, report, grade, tapes,
+or lifecycle ledger.
 
 ## Failure contract
 
@@ -281,6 +303,8 @@ Missing/unreadable/internally inconsistent report fails loud. Missing alignment
 degrades keyword validation to count mode and is labelled; it never fabricates
 precision/recall. Diagnostic tool failure does not rewrite the operational
 verdict.
+Typed scoring is stricter: missing or mutated identity-bound inputs fail before
+publication, and timed alignment ambiguity exits 3 without an artifact.
 
 For the schema-3 audit, a validation failure creates neither a grade nor a
 lifecycle receipt. Missing, partial, dropped, corrupt, identity-divergent, or
@@ -315,6 +339,12 @@ an ETOR-shaped candlestick series whose early interval traded 26,496 contracts
 while its final interval is zero remains traded for the window.
 Venue/tool rehearsal probes (`TTSREHEARSAL`, `Q4CHIME`) are also excluded from
 the issuer denominator, and an injected board transport failure must exit 2.
+
+`python3 tests/score_precision.py` proves global long-offset alignment,
+ambiguous-cluster refusal, timestamped precision with retained residual-spread
+diagnostics, presence-only non-precision, typed config/report fingerprint
+binding, deterministic score hashing, exclusive publication, byte-identical
+idempotency, and divergent-score refusal.
 
 `scripts/pull-box-state.sh --check` is a network-free temp-repository fixture.
 It exercises both `--date` and `--event`, a complete terminal box extension of
@@ -364,3 +394,6 @@ intact, schema-3 runs have a deterministic structured `RunGrade`, and the
 canonical `audit-day` operation produces a stable date-level performance
 index. Legacy missed-arm grading remains for pre-RunPlan historical events;
 keyword validation intentionally exits zero as a report.
+The M3 scorer producer and claim-comment consumer contract are implemented.
+The EVIDENCE-owned `run-audit.py` still emits `precision=not_resolvable` and
+must verify/join `grade/precision-score.json` before M3 is production-complete.
