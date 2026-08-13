@@ -2458,3 +2458,37 @@ proof-bearing preflight; loaded scheduler readback; fire-time PCM and capture
 proof; mandatory audio/book/order/FIX evidence; terminal audit; and explicit
 alert acknowledgement. Missing any join keeps the date red while siblings
 continue.
+
+## Q-KALSHI-EVENT-CANDLES — public bounded activity history (2026-08-12)
+
+**Verified contract.** Kalshi's public event-candlestick endpoint is
+`GET /trade-api/v2/series/{series_ticker}/events/{ticker}/candlesticks`. It
+requires integer Unix `start_ts` and `end_ts` bounds plus a
+`period_interval` of 1, 60, or 1440 minutes. The response aligns
+`market_tickers` with one candlestick array per market; each interval carries
+fixed-point `volume_fp`. This is sufficient for the missed-arm grader's
+bounded question: whether any market recorded positive volume at any point in
+the UTC event-day window. A one-hour interval keeps a normal earnings event
+comfortably below the endpoint's 5,000-candidate adjustment boundary.
+
+**Live endpoint check, 2026-08-12.** Querying
+`KXEARNINGSMENTIONETOR-26AUG11` over
+`[2026-08-11T00:00:00Z, 2026-08-12T00:00:00Z)` returned all 15 markets active
+and 26,419.37 contracts inside that bounded day. The postmortem's 26,496 is
+the event's lifetime volume; the M5 grading predicate is deliberately the
+weaker and correctly bounded fact `window volume > 0`, not equality with the
+lifetime counter.
+
+- Event candlesticks:
+  <https://docs.kalshi.com/api-reference/events/get-event-candlesticks>
+- Market candlestick field/interval semantics:
+  <https://docs.kalshi.com/api-reference/market/get-market-candlesticks>
+- Historical cutoff rules:
+  <https://docs.kalshi.com/getting_started/historical_data>
+
+**Boundary.** Markets settled before Kalshi's moving historical cutoff no
+longer appear through live market/candlestick endpoints and require historical
+market endpoints. `missed-arm-check.py` therefore treats any missing,
+malformed, truncated, or transport-failed event history as `UNDETERMINED`; it
+must never infer zero activity. Re-verify if Kalshi changes the event endpoint,
+candlestick volume field, valid intervals, aggregation limit, or cutoff split.

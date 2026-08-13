@@ -30,12 +30,14 @@ Usage:
 Exit: 0 clean, 1 at least one MISSED-ARM, 2 could not determine.
 """
 import argparse
+import datetime as dt
 import glob
 import json
 import os
 import re
 import sys
 import tomllib
+import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from importlib.machinery import SourceFileLoader  # noqa: E402
@@ -76,6 +78,12 @@ LANE_SUFFIX = re.compile(r"-(WEBCAST|PHONE|ACOUSTIC)$")
 # reports carry `event_id: null` and a KXTRUMPMENTION series so nothing leaks —
 # this makes the boundary explicit rather than incidental.
 NON_MENTION_SUFFIX = re.compile(r"-SWEEP$")
+
+# Venue/tool rehearsals live beside issuer captures but are not issuer boards.
+# Keeping them in the denominator turns infrastructure QA into a fictitious
+# KXEARNINGSMENTION issuer and, on network failure, an irrelevant undetermined.
+NON_EVENT_PROBE_ISSUERS = {"TTSREHEARSAL", "Q4CHIME"}
+BAD_VERDICTS = {"MISSED-ARM", "ARMED-DIED", "ARMED-NO-FILL", "ARMED-NO-RECORD"}
 
 
 def _event_dirs(state_dir="state", stem=None):
@@ -118,6 +126,90 @@ def _artifacts(d, name):
             if os.path.isfile(p)]
 
 
+def _lane_arm_evidence(event_id, config_path, state_dir="state", runs_dir="var/runs"):
+    """Return exact artifacts proving this config became an arm candidate.
+
+    A filename or event-id match is intent, not an armed lane. Typed attempts
+    bind the config path in RunPlan. Legacy attempts have no such binding, so
+    only an exact event state report/journal can carry them.
+    """
+    typed = []
+    legacy = []
+    config_abs = os.path.abspath(config_path)
+    config_rel = os.path.relpath(config_abs)
+    for plan_path in sorted(glob.glob(os.path.join(
+            runs_dir, event_id, "*", "control", "run-plan.json"))):
+        try:
+            plan = json.load(open(plan_path))
+        except (OSError, ValueError):
+            continue
+        bound = plan.get("config_path")
+        if not isinstance(bound, str):
+            continue
+        bound_abs = os.path.abspath(bound)
+        if bound in (config_path, config_rel) or bound_abs == config_abs:
+            typed.append(os.path.relpath(plan_path))
+    event_dir = os.path.join(state_dir, event_id)
+    for name in ("report.json", "journal.jsonl"):
+        artifact = _artifact(event_dir, name)
+        if artifact:
+            legacy.append(os.path.relpath(artifact))
+    return {"typed": typed, "legacy": legacy}
+
+
+def event_board_activity(event_id, start_ts, end_ts, fetch=None):
+    """Board volume at any point in one bounded UTC window.
+
+    Hour candlesticks preserve activity that a later point-in-time open check
+    cannot see. The event endpoint returns one candlestick array per market.
+    """
+    fetch = fetch or _bo.fetch
+    event_ticker = LANE_SUFFIX.sub("", event_id)
+    series_ticker = event_ticker.split("-", 1)[0]
+    if not isinstance(start_ts, int) or not isinstance(end_ts, int) or start_ts >= end_ts:
+        raise ValueError("invalid board-activity window")
+    query = urllib.parse.urlencode({
+        "start_ts": start_ts,
+        "end_ts": end_ts,
+        "period_interval": 60,
+    })
+    url = (
+        f"{_bo.BASE}/series/{urllib.parse.quote(series_ticker, safe='')}"
+        f"/events/{urllib.parse.quote(event_ticker, safe='')}/candlesticks?{query}"
+    )
+    payload = fetch(url)
+    tickers = payload.get("market_tickers")
+    series = payload.get("market_candlesticks")
+    if not isinstance(tickers, list) or not isinstance(series, list):
+        raise ValueError("event candlesticks missing market arrays")
+    if len(tickers) != len(series) or any(not isinstance(rows, list) for rows in series):
+        raise ValueError("event candlestick market arrays are misaligned")
+    volume = 0.0
+    active_markets = 0
+    for rows in series:
+        market_volume = 0.0
+        for candle in rows:
+            if not isinstance(candle, dict):
+                raise ValueError("event candlestick row is not an object")
+            value = candle.get("volume_fp", candle.get("volume")) or 0
+            try:
+                market_volume += float(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"event candlestick volume is invalid: {value!r}") from exc
+        if market_volume > 0:
+            active_markets += 1
+        volume += market_volume
+    return {
+        "traded": volume > 0,
+        "series": event_ticker,
+        "markets": len(tickers),
+        "active_markets": active_markets,
+        "volume": volume,
+        "window_start_ts": start_ts,
+        "window_end_ts": end_ts,
+    }
+
+
 def captures_for(date, probe_dir="corpus/bridge-probes", state_dir="state"):
     """issuer -> {'held_s': float, 'sources': [...]} for that date."""
     out = {}
@@ -127,13 +219,16 @@ def captures_for(date, probe_dir="corpus/bridge-probes", state_dir="state"):
         m = re.match(r"([A-Za-z0-9]+)_", base)
         if not m:
             continue
+        issuer = m.group(1).upper()
+        if issuer in NON_EVENT_PROBE_ISSUERS:
+            continue
         try:
             held = json.load(open(p)).get("held_ms", 0) / 1000.0
         except Exception:
             continue
         if held < MIN_CAPTURE_S:
             continue
-        e = out.setdefault(m.group(1).upper(), {"held_s": 0.0, "sources": []})
+        e = out.setdefault(issuer, {"held_s": 0.0, "sources": []})
         e["held_s"] += held
         e["sources"].append(base)
     # An armed run banks its own evidence; count it as capture too, so a run
@@ -204,7 +299,7 @@ def captures_for(date, probe_dir="corpus/bridge-probes", state_dir="state"):
     return out
 
 
-def staged_for(date, config_dir="configs"):
+def staged_for(date, config_dir="configs", state_dir="state", runs_dir="var/runs"):
     """issuer -> {'config','event_id','fill_posture','run_dir'} for the day's arm configs.
 
     THE DENOMINATOR (2026-08-07). Before this, `reconcile` iterated over
@@ -252,22 +347,53 @@ def staged_for(date, config_dir="configs"):
             # config did not have. A single fillable keyword means silence on a
             # traded board is a real miss, not a designed decline.
             fill = any((k.get("max_price_cents") or 0) > 1 for k in kws)
+            arm_evidence = _lane_arm_evidence(
+                ev, p, state_dir=state_dir, runs_dir=runs_dir)
             lane = {"config": os.path.relpath(p), "event_id": ev,
-                    "fill_posture": fill, "keywords": len(kws)}
+                    "fill_posture": fill, "keywords": len(kws),
+                    "armed": False,
+                    "armed_evidence": arm_evidence["typed"] + arm_evidence["legacy"],
+                    "typed_arm_evidence": arm_evidence["typed"],
+                    "legacy_event_evidence": arm_evidence["legacy"]}
             # ONE ROW PER ISSUER, but every LANE kept. This used to be a plain
             # assignment, so a two-lane issuer silently discarded whichever
             # pattern matched first and graded the day on the survivor.
             e = out.setdefault(m.group(1), {"lanes": []})
             e["lanes"].append(lane)
-            # Roll-up used by reconcile. `fill_posture` is ANY lane's: one
-            # fillable lane makes silence on a traded board a real miss.
-            # `event_id` is representative only — descoped()/wire_evidence()
-            # strip the lane suffix and scan every lane, and both lanes of an
-            # issuer share one Kalshi board.
-            e["event_id"] = e["lanes"][0]["event_id"]
+            # Only a lane with exact run/report/journal evidence may influence
+            # the armed posture. A never-armed raw/prepare config remains a
+            # visible commitment, but it cannot turn a fillable miss into a
+            # benign 1c observation (casino143 IV.5).
+            event_counts = {}
+            for item in e["lanes"]:
+                event_counts[item["event_id"]] = event_counts.get(item["event_id"], 0) + 1
+            for item in e["lanes"]:
+                item["armed"] = bool(item["typed_arm_evidence"]) or (
+                    event_counts[item["event_id"]] == 1
+                    and bool(item["legacy_event_evidence"])
+                )
+                item["ambiguous_legacy_binding"] = bool(
+                    item["legacy_event_evidence"]
+                    and event_counts[item["event_id"]] > 1
+                    and not item["typed_arm_evidence"]
+                )
+            armed_lanes = [item for item in e["lanes"] if item["armed"]]
+            e["armed_lanes"] = armed_lanes
+            representative = (armed_lanes or e["lanes"])[0]
+            e["event_id"] = representative["event_id"]
             e["config"] = ", ".join(l["config"] for l in e["lanes"])
-            e["fill_posture"] = any(l["fill_posture"] for l in e["lanes"])
+            e["armed_config"] = ", ".join(l["config"] for l in armed_lanes) or None
+            e["fill_posture"] = (
+                any(l["fill_posture"] for l in armed_lanes)
+                if armed_lanes else None
+            )
+            e["declared_fill_posture"] = any(
+                l["fill_posture"] for l in e["lanes"])
             e["keywords"] = max(l["keywords"] for l in e["lanes"])
+            day = dt.datetime.fromisoformat(date).replace(tzinfo=dt.timezone.utc)
+            e["activity_window_start_ts"] = int(day.timestamp())
+            e["activity_window_end_ts"] = int(
+                (day + dt.timedelta(days=1)).timestamp())
     return out
 
 
@@ -450,8 +576,11 @@ def reconcile(captures, orders, board=None, staged=None, health=None):
             # Prefer the EVENT board when the staged config names one. Grading
             # against the series sums every mention event that issuer has ever
             # had — DKNG-26AUG07 traded 0 while its series carried 135,341.
-            b = (_bo.event_board(st["event_id"]) if st and board is _bo.any_board
-                 else board(issuer))
+            b = (event_board_activity(
+                    st["event_id"],
+                    st["activity_window_start_ts"],
+                    st["activity_window_end_ts"],
+                ) if st and board is _bo.any_board else board(issuer))
         except Exception as exc:
             findings.append({"issuer": issuer, "verdict": "UNDETERMINED",
                              "reason": str(exc), **cap})
@@ -477,7 +606,7 @@ def reconcile(captures, orders, board=None, staged=None, health=None):
             # THREE ways to place nothing, and only one of them is benign.
             if st:
                 state, detail = best_health(
-                    st.get("lanes") or [{"event_id": st["event_id"]}], health)
+                    st.get("armed_lanes") or [], health)
             else:
                 state, detail = ("unknown", "not staged")
             if not armed_run and state in ("never-armed", "unknown") and not cap.get("sources"):
@@ -512,9 +641,13 @@ def reconcile(captures, orders, board=None, staged=None, health=None):
                 "markets": b.get("markets", 0), "volume": b.get("volume", 0.0),
                 "orders": 0, "intents": intents,
                 "run_state": state, "run_detail": detail,
-                "config": (st or {}).get("config"),
+                "config": (st or {}).get("armed_config") or (st or {}).get("config"),
                 "fill_posture": (st or {}).get("fill_posture"),
-                "lanes": [l["event_id"] for l in (st or {}).get("lanes") or []],
+                "lanes": [l["event_id"] for l in (st or {}).get("armed_lanes") or []],
+                "unarmed_lanes": [
+                    l["event_id"] for l in (st or {}).get("lanes") or []
+                    if not l.get("armed")
+                ],
                 **cap})
     # Worst first: total misses, then runs that died, then armed-but-silent at
     # a fillable cap, then designed observes.
@@ -523,6 +656,14 @@ def reconcile(captures, orders, board=None, staged=None, health=None):
             "UNDETERMINED": 6}
     findings.sort(key=lambda f: (rank.get(f["verdict"], 9), -f.get("volume", 0)))
     return findings
+
+
+def findings_exit(findings):
+    if any(f.get("verdict") in BAD_VERDICTS for f in findings):
+        return 1
+    if any(f.get("verdict") == "UNDETERMINED" for f in findings):
+        return 2
+    return 0
 
 
 def check():
@@ -554,14 +695,16 @@ def check():
         raise RuntimeError("no route to host")
     f2 = reconcile({"X": {"held_s": 600, "sources": []}}, {}, board=boom)
     assert f2 and f2[0]["verdict"] == "UNDETERMINED", f2
+    assert findings_exit(f2) == 2, "UNDETERMINED must remain scheduler-visible"
 
     # short legs must not count as coverage (PGR legs 07..23 were ~12.3 s)
     import tempfile
     with tempfile.TemporaryDirectory() as d:
         json.dump({"held_ms": 12300}, open(os.path.join(d, "pgr_2026_08_04_leg07.json"), "w"))
         json.dump({"held_ms": 598400}, open(os.path.join(d, "spot_2026_08_04.json"), "w"))
+        json.dump({"held_ms": 600000}, open(os.path.join(d, "ttsrehearsal_2026_08_04.json"), "w"))
         c = captures_for("2026-08-04", probe_dir=d, state_dir=os.path.join(d, "none"))
-        assert set(c) == {"SPOT"}, f"short leg counted as capture: {c}"
+        assert set(c) == {"SPOT"}, f"short/rehearsal probe counted as capture: {c}"
 
     # state/ run dirs MUST be date-filtered. Unfiltered, GEV's 2026-07-22 event
     # reported as a miss on 2026-08-04 — stale evidence crying wolf.
@@ -593,12 +736,15 @@ def check():
         for iss, fill in (("ABNB", True), ("AAOI", True), ("NBIS", True),
                           ("OBSV", False)):
             mkcfg(iss, fill)
-        st = staged_for("2026-08-06", config_dir=cdir)
+        st = staged_for("2026-08-06", config_dir=cdir, state_dir=sdir,
+                        runs_dir=os.path.join(d, "runs"))
         assert set(st) == {"ABNB", "AAOI", "NBIS", "OBSV"}, st
         # Posture is READ, never assumed: the old code cited a "1¢ observe"
         # posture for events armed at a 97¢ fill cap.
-        assert st["ABNB"]["fill_posture"] is True
-        assert st["OBSV"]["fill_posture"] is False
+        assert st["ABNB"]["declared_fill_posture"] is True
+        assert st["OBSV"]["declared_fill_posture"] is False
+        assert st["ABNB"]["fill_posture"] is None, \
+            "a never-armed config must not supply armed posture"
 
         # AAOI: armed, then all legs died. Not "observing".
         os.makedirs(os.path.join(sdir, st["AAOI"]["event_id"]))
@@ -610,6 +756,11 @@ def check():
         open(os.path.join(sdir, st["NBIS"]["event_id"], "journal.jsonl"), "w").write(
             json.dumps({"action": "descope", "outcome": "ok",
                         "detail": "call is 2026-08-13"}) + "\n")
+
+        st = staged_for("2026-08-06", config_dir=cdir, state_dir=sdir,
+                        runs_dir=os.path.join(d, "runs"))
+        assert not st["ABNB"]["armed_lanes"], st["ABNB"]
+        assert st["AAOI"]["armed_lanes"], st["AAOI"]
 
         health = lambda ev: run_health(ev, state_dir=sdir)
         desc_ok = descoped(st["NBIS"]["event_id"], state_dir=sdir)
@@ -646,7 +797,8 @@ def check():
             f'[event]\nid = "{WC}"\n[[keywords]]\nphrase = "x"\nmax_price_cents = 97\n')
         open(os.path.join(cdir, "hims-26aug10-phone-arm.toml"), "w").write(
             f'[event]\nid = "{PH}"\n[[keywords]]\nphrase = "x"\nmax_price_cents = 97\n')
-        st = staged_for("2026-08-10", config_dir=cdir)
+        st = staged_for("2026-08-10", config_dir=cdir, state_dir=sdir,
+                        runs_dir=os.path.join(d, "runs"))
         assert set(st) == {"HIMS"}, st
         # D2: both lanes kept, not one silently overwritten by the other.
         assert [l["event_id"] for l in st["HIMS"]["lanes"]] == [WC, PH], st["HIMS"]
@@ -665,6 +817,10 @@ def check():
                   open(os.path.join(sdir, PH, "box", "report.json"), "w"))
         open(os.path.join(sdir, PH, "box", "journal.jsonl"), "w").write(
             json.dumps({"action": "arm-start", "outcome": "info"}) + "\n")
+
+        st = staged_for("2026-08-10", config_dir=cdir, state_dir=sdir,
+                        runs_dir=os.path.join(d, "runs"))
+        assert all(lane["armed"] for lane in st["HIMS"]["lanes"]), st["HIMS"]
 
         assert orders_by_issuer(state_dir=sdir) == {"HIMS": 2}, \
             orders_by_issuer(state_dir=sdir)
@@ -696,11 +852,67 @@ def check():
         assert orders_by_issuer(state_dir=sdir) == {"HIMS": 2}, \
             "sweep run leaked into mention-lane orders"
 
+    # ── 2026-08-12 M5: only artifact-bound lanes supply armed posture ───────
+    with tempfile.TemporaryDirectory() as d:
+        cdir, sdir = os.path.join(d, "configs"), os.path.join(d, "state")
+        os.makedirs(cdir)
+        actual = "KXEARNINGSMENTIONRAWX-26AUG11-WEBCAST"
+        # Deliberately the SAME event id: legacy state proves the event ran,
+        # while only RunPlan can say which of two configs supplied it.
+        prepared_only = actual
+        actual_config = os.path.join(cdir, "webcast-rawx-26aug11-arm-wc.toml")
+        raw_config = os.path.join(cdir, "twilio-rawx-26aug11-arm.toml")
+        open(actual_config, "w").write(
+            f'[event]\nid = "{actual}"\n[[keywords]]\nphrase = "x"\nmax_price_cents = 97\n')
+        # This deliberately matches an arm-config filename pattern. Its 1c
+        # posture must still be inert because it never produced run evidence.
+        open(raw_config, "w").write(
+            f'[event]\nid = "{prepared_only}"\n[[keywords]]\nphrase = "x"\nmax_price_cents = 1\n')
+        os.makedirs(os.path.join(sdir, actual))
+        open(os.path.join(sdir, actual, "journal.jsonl"), "w").write(
+            json.dumps({"action": "arm-start", "outcome": "info"}) + "\n")
+        plan_dir = os.path.join(d, "runs", actual, "fixture", "control")
+        os.makedirs(plan_dir)
+        json.dump({"config_path": actual_config},
+                  open(os.path.join(plan_dir, "run-plan.json"), "w"))
+        st = staged_for("2026-08-11", config_dir=cdir, state_dir=sdir,
+                        runs_dir=os.path.join(d, "runs"))["RAWX"]
+        assert [lane["config"] for lane in st["armed_lanes"]] == [
+            os.path.relpath(actual_config)], st
+        assert st["fill_posture"] is True, \
+            "never-armed 1c prepare output changed the armed posture"
+        assert next(l for l in st["lanes"] if l["config"] == os.path.relpath(raw_config))["armed"] is False
+        loud = reconcile(
+            {"RAWX": {"held_s": 0.0, "frames_in": 1,
+                       "sources": [os.path.join(sdir, actual, "journal.jsonl")]}},
+            {}, board=traded, staged={"RAWX": st},
+            health=lambda _ev: ("healthy", "fixture"))
+        assert loud[0]["verdict"] != "ARMED-OBSERVING", loud
+
+    # ETOR shape: activity earlier in the audit window remains activity even
+    # when the final hourly sample is zero and a point-in-time open check is no.
+    requested = []
+    def etor_history(url):
+        requested.append(url)
+        return {
+            "market_tickers": ["ETOR-A", "ETOR-B"],
+            "market_candlesticks": [
+                [{"volume_fp": "26496"}, {"volume_fp": "0"}],
+                [{"volume_fp": "0"}],
+            ],
+        }
+    etor = event_board_activity(
+        "KXEARNINGSMENTIONETOR-26AUG11-WEBCAST",
+        1786406400, 1786492800, fetch=etor_history)
+    assert etor["traded"] and etor["volume"] == 26496.0, etor
+    assert etor["active_markets"] == 1 and "period_interval=60" in requested[0]
+
     print("missed-arm-check --check: OK (SPOT/PGR flagged, armed run silent, "
           "untraded board ignored, volume ranking, fail-loud, short-leg floor, "
           "staged denominator, posture from config, died≠observing, descope "
           "honoured, phone-lane config named, both lanes kept, box-hosted run "
-          "visible + counted once, sweep excluded)")
+          "visible + counted once, sweep excluded, never-armed config inert, "
+          "traded-earlier-in-window retained)")
 
 
 def main():
@@ -726,10 +938,9 @@ def main():
         return 0
     placed = orders_by_issuer()
     findings = reconcile(caps, placed, staged=staged)
-    bad = {"MISSED-ARM", "ARMED-DIED", "ARMED-NO-FILL", "ARMED-NO-RECORD"}
     if a.json:
         print(json.dumps(findings, indent=1))
-        return 1 if any(f["verdict"] in bad for f in findings) else 0
+        return findings_exit(findings)
 
     missed = [f for f in findings if f["verdict"] == "MISSED-ARM"]
     died = [f for f in findings if f["verdict"] == "ARMED-DIED"]
@@ -741,8 +952,9 @@ def main():
     # Lanes, not just issuers: one issuer covered on both webcast and phone is
     # TWO commitments, and reporting "1 staged" understated exactly the day
     # whose second lane was the one that traded.
-    n_lanes = sum(len(v.get("lanes") or [1]) for v in staged.values())
-    lane_note = f" ({n_lanes} lanes)" if n_lanes != len(staged) else ""
+    n_lanes = sum(len(v.get("armed_lanes") or []) for v in staged.values())
+    committed_lanes = sum(len(v.get("lanes") or [1]) for v in staged.values())
+    lane_note = f" ({n_lanes}/{committed_lanes} lanes armed)"
     print(f"missed-arm-check {a.date}: {len(staged)} staged{lane_note}, "
           f"{len(caps)} captured, "
           f"{len(missed)} MISSED-ARM, {len(died)} ARMED-DIED, "
@@ -818,7 +1030,7 @@ def main():
     if died:
         print("\n⇒ An arm that dies mid-call reports the same silence as one that")
         print("  works. Check the stream URL and the leg exit in launch.log.")
-    return 1 if (missed or died or nofill or norec) else 0
+    return findings_exit(findings)
 
 
 if __name__ == "__main__":

@@ -66,9 +66,13 @@ webcast twin. The three:
 3. Every artifact glob was one level deep (`state/*/report.json`), so a pulled
    box run under `state/<E>/box/` was invisible.
 
-Now: lanes are kept as a list; `fill_posture` is **any** lane's (one fillable
-lane makes silence on a traded board a real miss); health is the **best** lane
-and names it; `_artifact()` prefers `box/` and returns at most one path per
+Now: lanes are kept as a list, but only a lane bound to an exact typed RunPlan
+config or carrying an unambiguous exact-event report/journal may supply armed
+posture. If multiple configs share one legacy event ID, the event artifact
+selects none of them; an exact RunPlan `config_path` is required.
+Never-armed configs remain visible commitments and cannot turn a fillable miss
+into a 1¢ observe. `fill_posture` is **any artifact-bound armed lane's**; health
+is the **best armed lane** and names it; `_artifact()` prefers `box/` and returns at most one path per
 event dir so nothing double-counts; and `-SWEEP` dirs are excluded outright —
 `sweep-hft` is a separate project sharing only the Kalshi account, and its fills
 must never inflate this system's numerator.
@@ -84,7 +88,9 @@ armed had no row to be missing from — it was invisible, not flagged. On
 2026-08-06 ABNB and LYFT both died on a venue registration wall and the tool
 reported **0 MISSED-ARM** for a day that missed two outright and armed a third
 into a dead stream. A grader whose denominator is its own successes cannot
-report a total failure. Staging is the commitment, so it is the population.
+report a total failure. Staging is the commitment, so it is the population. It
+is not proof that the lane armed: summaries report armed/committed lane counts
+separately.
 
 Silence now resolves to one of six verdicts rather than two, because "placed
 nothing" has several causes and only some are benign:
@@ -124,10 +130,13 @@ bridge, or the wrong tool was pointed at the call, because it reads only the
 evidence on disk. An execution verdict on a run that was never launched is
 still an execution verdict, which is why it lives in this node.
 
-It keys on a **traded** board (any status), not an open one: by the time it
-runs the board has usually settled — SPOT was open and repricing at 12:02Z and
-closed by 15:00Z — so keying on "open now" would clear the very miss it exists
-to catch. Two cry-wolf guards are load-bearing: legs under 60 s are not
+It keys on a **traded** board at any point in the event's bounded UTC day, not
+an `open now` sample. The checker reads public one-hour event candlesticks and
+sums every market's interval volume; a positive earlier interval remains
+activity even when the last interval is zero. A lookup failure or malformed
+history is `UNDETERMINED`, never clean. This matters because SPOT was open and
+repricing at 12:02Z and closed by 15:00Z, while ETOR's staging-time no-open
+sample preceded 26,496 contracts of later activity. Two cry-wolf guards are load-bearing: legs under 60 s are not
 coverage (PGR's legs 07–23 held ~12.3 s each after the call ended), and
 `state/` run dirs are date-filtered by event-ticker suffix (an unfiltered scan
 reported GEV's 2026-07-22 event as a miss on 2026-08-04).
@@ -208,6 +217,10 @@ equally supported disjoint offsets are refused as ambiguous. The box
 pull consumes the remote legacy event tree plus each immutable
 `control.run.plan` / append-only `control.run.receipts` tree selected by date or
 exact event identity.
+Missed-arm activity consumes public event candlesticks at a one-hour interval
+over `[event-day 00:00Z, next-day 00:00Z)`. Staged configs remain the
+commitment denominator; exact RunPlan config binding or an unambiguous
+exact-event report/journal is the separate armed-lane fact.
 
 ## Output contracts
 
@@ -221,7 +234,8 @@ versioned `RunGrade` JSON retaining both provenance and uncertainty.
 
 `missed-arm-check.py` emits `MISSED-ARM` per issuer, ranked by contracts
 missed, and exits 1 when any survive. A board lookup that fails is reported
-`UNDETERMINED`, never silently clean.
+`UNDETERMINED` and exits 2, never silently clean. Each finding names artifact-bound armed
+lanes separately from unarmed commitments.
 
 The puller publishes a byte-preserving local evidence copy. It asks
 `control.operate`'s host-boundary door to import an exact verified extension,
@@ -295,6 +309,12 @@ sits at the canonical path and a phone lane whose report exists ONLY under
 both lanes' frames summed, health resolved to the best lane by name, a stale
 canonical copy alongside a `box/` copy counted **once**, and a `-SWEEP` run
 excluded from the numerator.
+The same self-test includes the M5 regressions: a 1¢ config whose filename
+matches an arm pattern but has no run/report/journal cannot supply posture, and
+an ETOR-shaped candlestick series whose early interval traded 26,496 contracts
+while its final interval is zero remains traded for the window.
+Venue/tool rehearsal probes (`TTSREHEARSAL`, `Q4CHIME`) are also excluded from
+the issuer denominator, and an injected board transport failure must exit 2.
 
 `scripts/pull-box-state.sh --check` is a network-free temp-repository fixture.
 It exercises both `--date` and `--event`, a complete terminal box extension of
