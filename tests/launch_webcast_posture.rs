@@ -882,6 +882,197 @@ fn unknown_flags_are_still_rejected() {
     assert!(out.contains("unknown arg"), "{out}");
 }
 
+// ── C1: the live gate ───────────────────────────────────────────────────────
+//
+// WHY THESE EXIST. `--wait-live hls` decided liveness by grepping the manifest
+// for EXTINF, and had no test of any kind — which is how it survived until
+// 2026-08-12. A FINISHED VOD carries #EXTINF on every one of its segments, and
+// the CBRS venue serves exactly such a 15-minute VOD from a sibling host, so
+// the gate would report "stream is LIVE" and arm a detector — with a FILL
+// posture available — against pre-recorded audio.
+//
+// Method: `curl`, `pcm-gate` and `ffmpeg` are stubbed through the env seams the
+// script now reads, so a verdict is decided by the fixture and never by the
+// network. The VOD fixture is the one that used to pass.
+
+/// A `--wait-live` fixture: stub tools in a scratch cwd, one launcher run.
+struct WaitLiveRig {
+    cwd: PathBuf,
+}
+
+impl Drop for WaitLiveRig {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.cwd);
+    }
+}
+
+impl WaitLiveRig {
+    fn new(tag: &str) -> Self {
+        // Alphanumeric only. `run_launcher` names its scratch dir with a raw
+        // `{:?}` ThreadId, which renders as `ThreadId(2)` — harmless there, but
+        // these fixtures interpolate the path INTO a shell script, and an
+        // unquoted `(` is a syntax error that presents as "manifest
+        // unreachable", i.e. as a plausible test failure.
+        let thread: String = format!("{:?}", std::thread::current().id())
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric())
+            .collect();
+        let cwd = std::env::temp_dir().join(format!(
+            "earshot-waitlive-{tag}-{}-{thread}",
+            std::process::id(),
+        ));
+        let _ = std::fs::remove_dir_all(&cwd);
+        std::fs::create_dir_all(&cwd).unwrap();
+        WaitLiveRig { cwd }
+    }
+
+    /// A stub `curl` that ignores its argv and prints `body`, with `{N}`
+    /// replaced by a per-invocation counter. `seg{N}.ts` therefore ADVANCES on
+    /// every poll; a literal `seg1.ts` stays frozen.
+    fn curl(&self, body: &str) -> PathBuf {
+        let counter = self.cwd.join("curl.count");
+        let path = self.cwd.join("curl-stub");
+        write_exec(
+            &path,
+            &format!(
+                "n=$(cat '{c}' 2>/dev/null || echo 0)\n\
+                 n=$((n+1)); echo \"$n\" > '{c}'\n\
+                 printf '%s\\n' \"$(printf '{body}' | sed \"s/{{N}}/$n/g\")\"\n",
+                c = counter.display(),
+            ),
+        );
+        // A stub that cannot run reads downstream as "the venue is dead", so
+        // prove it works before trusting any verdict built on it.
+        let probe = Command::new(&path).output().unwrap();
+        assert!(
+            probe.status.success() && !probe.stdout.is_empty(),
+            "curl stub is broken: rc={:?} stderr={}",
+            probe.status.code(),
+            String::from_utf8_lossy(&probe.stderr)
+        );
+        let _ = std::fs::remove_file(&counter);
+        path
+    }
+
+    fn stub(&self, name: &str, body: &str) -> PathBuf {
+        let path = self.cwd.join(name);
+        write_exec(&path, body);
+        path
+    }
+
+    /// Runs the real launcher in dry posture with `arm` stubbed by `/bin/echo`.
+    fn run(&self, curl: &Path, pcm_gate_rc: i32) -> (String, bool) {
+        let account = self.cwd.join("acct.env");
+        std::fs::write(&account, "# empty test account env\n").unwrap();
+        let pcm = self.stub("pcm-gate-stub", &format!("exit {pcm_gate_rc}\n"));
+        // Part 3's fallback: a fetcher that yields nothing, so a failed
+        // pcm-gate cannot be rescued into a false LIVE by real tools.
+        let fetch = self.stub("cachebust-stub", "exit 0\n");
+        let ffmpeg = self.stub("ffmpeg-stub", "exit 0\n");
+
+        let out = Command::new("bash")
+            .args([
+                repo().join("scripts/launch-webcast.sh").to_str().unwrap(),
+                "--config",
+                repo()
+                    .join("configs/webcast-pypl-26jul28-arm.toml")
+                    .to_str()
+                    .unwrap(),
+                "--account",
+                account.to_str().unwrap(),
+                "--bin",
+                "/bin/echo",
+                "--wait-live",
+                "https://fixture.invalid/master.m3u8",
+                "--wait-kind",
+                "hls",
+            ])
+            .current_dir(&self.cwd)
+            .env("ORT_DYLIB_PATH", "/bin/echo")
+            .env("EARSHOT_TEST_DISABLE_TEE", "1")
+            .env("EARSHOT_CURL", curl)
+            .env("EARSHOT_PCM_GATE", &pcm)
+            .env("EARSHOT_CACHEBUST_FETCH", &fetch)
+            .env("EARSHOT_FFMPEG", &ffmpeg)
+            // Keep the wait bounded so a never-live fixture fails the test
+            // instead of hanging it.
+            .env("EARSHOT_WAIT_LIVE_POLL_SECS", "1")
+            .env("EARSHOT_WAIT_LIVE_TIMEOUT_SECS", "6")
+            .env("EARSHOT_WAIT_LIVE_PCM_SECS", "1")
+            .output()
+            .expect("failed to run launch-webcast.sh");
+
+        let mut s = String::from_utf8_lossy(&out.stdout).to_string();
+        s.push_str(&String::from_utf8_lossy(&out.stderr));
+        (s, out.status.success())
+    }
+}
+
+const LIVE_BODY: &str =
+    "#EXTM3U\\n#EXT-X-VERSION:3\\n#EXT-X-TARGETDURATION:4\\n#EXT-X-MEDIA-SEQUENCE:807\\n#EXTINF:4.017,\\nseg{N}.ts";
+const FROZEN_BODY: &str =
+    "#EXTM3U\\n#EXT-X-VERSION:3\\n#EXT-X-TARGETDURATION:4\\n#EXT-X-MEDIA-SEQUENCE:807\\n#EXTINF:4.017,\\nseg1.ts";
+// Byte-for-byte the live body plus the one tag that decides it. Every segment
+// still has #EXTINF — which is precisely why the old grep proved nothing.
+const VOD_BODY: &str =
+    "#EXTM3U\\n#EXT-X-VERSION:3\\n#EXT-X-TARGETDURATION:4\\n#EXT-X-MEDIA-SEQUENCE:807\\n#EXTINF:4.017,\\nseg1.ts\\n#EXT-X-ENDLIST";
+
+#[test]
+fn finished_vod_manifest_never_arms() {
+    let rig = WaitLiveRig::new("vod");
+    let curl = rig.curl(VOD_BODY);
+    let (out, ok) = rig.run(&curl, 0);
+    assert!(
+        !ok,
+        "a manifest with #EXT-X-ENDLIST must never reach the arm:\n{out}"
+    );
+    assert!(
+        out.contains("ENDLIST") && out.contains("NOT live"),
+        "the refusal must name the tag that decided it:\n{out}"
+    );
+    assert!(
+        !out.contains("stream is LIVE"),
+        "the gate declared a finished VOD live:\n{out}"
+    );
+}
+
+#[test]
+fn advancing_live_manifest_arms() {
+    let rig = WaitLiveRig::new("live");
+    let curl = rig.curl(LIVE_BODY);
+    let (out, ok) = rig.run(&curl, 0);
+    assert!(ok, "an advancing live manifest must arm:\n{out}");
+    assert!(out.contains("stream is LIVE"), "{out}");
+    // /bin/echo stands in for `arm`, so its argv proves the gate handed off.
+    assert!(out.contains("arm --config"), "{out}");
+}
+
+#[test]
+fn live_shaped_but_frozen_manifest_times_out_instead_of_arming() {
+    let rig = WaitLiveRig::new("frozen");
+    let curl = rig.curl(FROZEN_BODY);
+    let (out, ok) = rig.run(&curl, 0);
+    assert!(
+        !ok,
+        "a playlist that never advances is not live, EXTINF notwithstanding:\n{out}"
+    );
+    assert!(
+        out.contains("tail frozen") && out.contains("never passed"),
+        "the timeout must say which part never passed:\n{out}"
+    );
+}
+
+#[test]
+fn no_decodable_audio_never_arms() {
+    let rig = WaitLiveRig::new("deaf");
+    let curl = rig.curl(LIVE_BODY);
+    // Parts 1 and 2 pass; only the bytes are missing. This is the HOOD
+    // 2026-07-29 shape — a manifest that 200s over media that is refused.
+    let (out, ok) = rig.run(&curl, 1);
+    assert!(!ok, "no decodable audio must not arm:\n{out}");
+    assert!(out.contains("no decodable audio"), "{out}");
+}
+
 /// The launcher builds arm's argv with a bash array. Under `set -u`, expanding an
 /// empty array as `"${A[@]}"` is an *unbound variable* error on bash < 4.4 — which
 /// is what macOS ships (3.2). That would break the DEFAULT (dry-run) path only,

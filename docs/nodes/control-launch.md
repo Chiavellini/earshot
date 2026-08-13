@@ -95,6 +95,33 @@ tearing down would forfeit it. The redial supervisor is started BEFORE the
 first dial (it is marker-driven and baselines existing content at startup),
 so the post-dial window has a redial consumer from second zero.
 
+Webcast launch owns the **live gate** (`--wait-live <url-or-url-file>
+--wait-kind youtube|hls`), which runs OUTSIDE the arm and decides when to hand
+off. For `hls`, LIVE means all three of: the media playlist carries no
+`#EXT-X-ENDLIST`; its last segment entry ADVANCES between two consecutive
+cache-busted polls; and the source yields decodable audio. Any one alone is
+insufficient — a finished VOD carries `#EXTINF` on every segment, which is why
+the pre-2026-08-12 `EXTINF` grep declared the CBRS venue's 15-minute VOD live
+and would have armed a FILL posture against pre-recorded audio.
+
+Each poll is cache-busted (unique query parameter plus `Cache-Control:
+no-cache`) and advancement is measured on the last segment ENTRY, never on
+`#EXT-X-MEDIA-SEQUENCE`: a CDN froze that header on a stream that was still
+running, so a sequence-based test reports a live venue dead. Decodability is
+delegated to `scripts/pcm-gate.sh`; if that fails, the gate retries once
+through `scripts/cdn-cachebust-fetch.sh` and, on success, names `cachebust` as
+the leg the operator must arm. An `#EXT-X-ENDLIST` verdict never breaks the
+loop — a pinned URL can still flip to the live stream — but it pages once, so
+watching the wrong URL surfaces as a page rather than a silent wait. The loop
+is bounded by `--wait-live-timeout-secs` (default 3600) and refuses with
+`exit 7` naming the last verdict; every verdict CHANGE is journalled. Liveness
+must never be gated inside a source `cmd`: a gate that emits no bytes trips the
+runtime's 30 s idle guard.
+
+`scripts/pcm-gate.sh` enforces the same `#EXT-X-ENDLIST` refusal before it
+decodes anything, because `scripts/arm-on-url.sh` — the unattended path — gates
+on pcm-gate and never passes `--wait-live` at all.
+
 Launch also owns the **no-stream watchdog** (Gap Q): a placed call is not a
 stream — on 2026-07-29 calls ran to completion while nothing ever accept()ed.
 The Twilio source writes `<state-dir>/stream.connected` on every accepted
@@ -210,7 +237,12 @@ suite covers
 automatic and exact `--run-dir` selection, host/account/path binding, marker
 ownership, the final-report predicate, pre-attachment failure ordering, removal
 of the sidecar escape hatch, terminal-failure proof-alert invocation, and
-STOP-before-signal drain. Verify no orphan
+STOP-before-signal drain. It also covers the live gate's four verdicts —
+finished VOD refused, advancing live manifest armed, live-shaped but frozen
+tail timed out, and no-decodable-audio refused — against stubbed
+`EARSHOT_CURL`/`EARSHOT_PCM_GATE`/`EARSHOT_CACHEBUST_FETCH`/`EARSHOT_FFMPEG`,
+so a verdict is never decided by the network. `python3 tests/capture_ready.py`
+covers pcm-gate's matching ENDLIST refusal. Verify no orphan
 tunnel/decoder/arm remains. The classified retry and watchdog await a live
 re-verify — the SCHEDULED Q-CALLPATH rehearsal (VERIFICATIONS.md); until it
 runs, this path is stub-tested, not production-mechanism-validated.

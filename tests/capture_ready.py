@@ -251,6 +251,31 @@ class CaptureReadyTest(unittest.TestCase):
         path.write_text("https://media.example.test/live/master.m3u8\n")
         return portable, path
 
+    def curl_stub(self, name: str, body: str) -> Path:
+        """A stub `curl` that prints one fixed manifest and ignores its argv.
+
+        pcm-gate now fetches the playlist itself to refuse a finished VOD, so
+        these tests would otherwise reach the network for their verdict.
+        """
+        stub = Path(self.temp.name) / name
+        stub.write_text("#!/bin/sh\ncat <<'M3U8'\n" + body + "\nM3U8\n")
+        stub.chmod(0o755)
+        return stub
+
+    LIVE_MANIFEST = "\n".join(
+        [
+            "#EXTM3U",
+            "#EXT-X-VERSION:3",
+            "#EXT-X-TARGETDURATION:4",
+            "#EXT-X-MEDIA-SEQUENCE:807",
+            "#EXTINF:4.017,",
+            "seg807.ts",
+        ]
+    )
+    # Identical but finished. Note every segment still carries #EXTINF — which
+    # is exactly why grepping for EXTINF never proved anything.
+    VOD_MANIFEST = LIVE_MANIFEST + "\n#EXT-X-ENDLIST"
+
     def test_pcm_gate_publishes_fresh_webcast_proof(self):
         run, plan, _event_env, _port = self.make_run("webcast")
         _portable, url_file = self.webcast_url(plan)
@@ -277,6 +302,7 @@ class CaptureReadyTest(unittest.TestCase):
                 **self.env,
                 "EARSHOT_FFMPEG": str(ffmpeg),
                 "EARSHOT_PDT_LOG": str(pdt),
+                "EARSHOT_CURL": str(self.curl_stub("curl-live", self.LIVE_MANIFEST)),
                 "PCM_GATE_SEQ_SECS": "1",
             },
         )
@@ -320,10 +346,53 @@ class CaptureReadyTest(unittest.TestCase):
                 **self.env,
                 "EARSHOT_FFMPEG": str(ffmpeg),
                 "EARSHOT_PDT_LOG": str(pdt),
+                "EARSHOT_CURL": str(self.curl_stub("curl-live2", self.LIVE_MANIFEST)),
                 "PCM_GATE_SEQ_SECS": "1",
             },
         )
         self.assertEqual(gate.returncode, 1)
+        self.assertFalse(proof.exists())
+        self.assertNotIn("capture_ready", self.transitions(run))
+
+    def test_finished_vod_is_refused_before_any_decode(self):
+        """C1: #EXT-X-ENDLIST means pre-recorded, and pre-recorded can trade.
+
+        The stubs here are deliberately GENEROUS — ffmpeg hands over a full
+        192000 bytes and pdt-log reports an advancing sequence — so the only
+        thing that can refuse this run is the ENDLIST check itself. Before
+        2026-08-12 this exact fixture produced capture_ready.
+        """
+        run, plan, _event_env, _port = self.make_run("webcast")
+        _portable, url_file = self.webcast_url(plan)
+        ffmpeg = Path(self.temp.name) / "ffmpeg-generous"
+        ffmpeg.write_text("#!/bin/sh\nhead -c 192000 /dev/zero\n")
+        ffmpeg.chmod(0o755)
+        pdt = Path(self.temp.name) / "pdt-advancing.py"
+        pdt.write_text(
+            'print(\'{"media_sequence": 101}\')\n'
+            'print(\'{"media_sequence": 102}\')\n'
+        )
+        proof = run / "control" / "pcm-proof.json"
+        gate = self.cli(
+            self.repo / "scripts" / "pcm-gate.sh",
+            "--kind",
+            "hls",
+            "--url-file",
+            url_file,
+            "--run-dir",
+            run,
+            "--proof-json",
+            proof,
+            env={
+                **self.env,
+                "EARSHOT_FFMPEG": str(ffmpeg),
+                "EARSHOT_PDT_LOG": str(pdt),
+                "EARSHOT_CURL": str(self.curl_stub("curl-vod", self.VOD_MANIFEST)),
+                "PCM_GATE_SEQ_SECS": "1",
+            },
+        )
+        self.assertEqual(gate.returncode, 1, gate.stdout + gate.stderr)
+        self.assertIn("FINISHED VOD", gate.stderr)
         self.assertFalse(proof.exists())
         self.assertNotIn("capture_ready", self.transitions(run))
 

@@ -49,6 +49,7 @@ PYTHON="${EARSHOT_PYTHON:-python3}"
 FFMPEG="${EARSHOT_FFMPEG:-ffmpeg}"
 YTDLP="${EARSHOT_YTDLP:-yt-dlp}"
 PDT_LOG="${EARSHOT_PDT_LOG:-$REPO/scripts/pdt-log.py}"
+CURL="${EARSHOT_CURL:-curl}"
 
 if [[ -n "$URLFILE" ]]; then
   [[ -s "$URLFILE" ]] || { echo "PCM-GATE FAIL: url-file missing or empty: $URLFILE" >&2; exit 3; }
@@ -202,6 +203,34 @@ try: os.fsync(dfd)
 finally: os.close(dfd)
 PY
 }
+
+# ── liveness, part 1: not a finished VOD ────────────────────────────────────
+# C1 (2026-08-12). The continuity check below demands MEDIA-SEQUENCE advance,
+# which a VOD fails — but only after ~12 s and only as "not advancing", which
+# reads like a slow venue rather than the wrong URL. Say it plainly and early:
+# a manifest carrying #EXT-X-ENDLIST is finished, and arming a detector on
+# pre-recorded audio is the one failure this whole gate exists to prevent.
+# This is the same trap launch-webcast.sh's --wait-live closes; both paths need
+# it, because arm-on-url.sh — the unattended one — gates HERE and never passes
+# --wait-live at all.
+if [[ "$KIND" == "hls" ]]; then
+  PL_BODY=$("$CURL" -fsSL --max-time 10 -H 'Cache-Control: no-cache' "$URL" 2>/dev/null || true)
+  if grep -q 'EXT-X-STREAM-INF' <<<"$PL_BODY"; then
+    PL_VARIANT=$(grep -v '^#' <<<"$PL_BODY" | grep -v '^[[:space:]]*$' | head -1 | tr -d '\r')
+    if [[ -n "$PL_VARIANT" ]]; then
+      [[ "$PL_VARIANT" != http* ]] && PL_VARIANT="${URL%/*}/$PL_VARIANT"
+      PL_BODY=$("$CURL" -fsSL --max-time 10 -H 'Cache-Control: no-cache' "$PL_VARIANT" 2>/dev/null || true)
+    fi
+  fi
+  if grep -q 'EXT-X-ENDLIST' <<<"$PL_BODY"; then
+    echo "endlist: PRESENT" >&2
+    echo "PCM-GATE FAIL: $LABEL is a FINISHED VOD (#EXT-X-ENDLIST), not a live stream" >&2
+    echo ">>> Every segment of a VOD has #EXTINF, so 'the manifest looks fine' means nothing here." >&2
+    echo ">>> Re-pin the live URL. Do NOT arm — a detector on pre-recorded audio can still trade." >&2
+    exit 1
+  fi
+  echo "endlist: absent"
+fi
 
 # yt-dlp owns YouTube's segment addressing; ffmpeg alone cannot fetch those
 # segments even when handed a valid manifest (youtube-resolve.sh:32-34).

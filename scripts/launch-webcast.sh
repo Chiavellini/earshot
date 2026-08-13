@@ -5,7 +5,8 @@
 #
 #   scripts/launch-webcast.sh --config configs/<event>.toml --account <env> \
 #       [--bin <pinned>] [--run-dir <immutable-run>] \
-#       [--wait-live <url-or-url-file> --wait-kind youtube|hls]
+#       [--wait-live <url-or-url-file> --wait-kind youtube|hls] \
+#       [--wait-live-timeout-secs N]
 #
 # POSTURE. Default is DRY RUN (no orders reach Kalshi). `--i-am-live` opts into a
 # real arm; `--fillable` is ACCEPTED (see the W7 FILL-HALF note at the flag
@@ -41,7 +42,15 @@
 #      on the flip instead.
 #   #2 a liveness gate INSIDE a pipe-source cmd emits no bytes and trips the
 #      pipeline's 30 s idle guard — so the gate must run OUTSIDE the arm.
-# Post-mortem #3 (sandboxed arm hard-killed, no signal handler ran): run this
+#   #3 (C1, 2026-08-12) "the manifest has EXTINF" is NOT liveness. A FINISHED
+#      VOD has EXTINF on every one of its segments, and the CBRS venue serves
+#      exactly such a 15-minute VOD from a sibling host — so the old gate would
+#      declare it LIVE and arm a FILL posture against pre-recorded audio.
+#      Liveness now means all three of: no #EXT-X-ENDLIST, a manifest tail that
+#      ADVANCES between two cache-busted polls, and bytes that actually decode.
+#      See scripts/cdn-cachebust-fetch.sh:23-27, which has specified this test
+#      since the day the trap was found.
+# Post-mortem #4 (sandboxed arm hard-killed, no signal handler ran): run this
 # script from a PLAIN shell / nohup — never inside a sandboxed supervisor.
 # arm's own SIGTERM path is the validated kill mechanism.
 #
@@ -55,6 +64,17 @@ SCRIPT_REPO=$(cd "${SCRIPT_DIR}/.." && pwd -P)
 
 CONFIG="" ACCOUNT="" BIN="${EARSHOT_BIN:-}" WAIT_LIVE="" WAIT_KIND="" LIVE=0 FILLABLE=""
 RUN_DIR_OVERRIDE=""
+# The live gate used to be `while :;` with no way out: a stream that never went
+# live left the launcher spinning silently until a human noticed. It now has a
+# deadline and a refusal (exit 7), so an event that cannot be armed SAYS so.
+WAIT_LIVE_TIMEOUT_SECS="${EARSHOT_WAIT_LIVE_TIMEOUT_SECS:-3600}"
+WAIT_LIVE_POLL_SECS="${EARSHOT_WAIT_LIVE_POLL_SECS:-15}"
+WAIT_LIVE_PCM_SECS="${EARSHOT_WAIT_LIVE_PCM_SECS:-6}"
+# Tool seams, in the pcm-gate.sh:48-51 idiom — the live gate has never had a
+# test, and an un-stubbable `curl` is why.
+CURL="${EARSHOT_CURL:-curl}"
+PCM_GATE="${EARSHOT_PCM_GATE:-$SCRIPT_REPO/scripts/pcm-gate.sh}"
+CACHEBUST_FETCH="${EARSHOT_CACHEBUST_FETCH:-$SCRIPT_REPO/scripts/cdn-cachebust-fetch.sh}"
 # Audio, book, FIX, cancellation, and report finalizers can legitimately use
 # most of a minute after STOP.  The launcher owns a larger outer budget; a
 # smaller value would turn a healthy coordinated drain into evidence loss.
@@ -71,6 +91,7 @@ while [[ $# -gt 0 ]]; do
     --shutdown-grace-secs) SHUTDOWN_GRACE_SECS="$2"; shift 2 ;;
     --wait-live) WAIT_LIVE="$2"; shift 2 ;;
     --wait-kind) WAIT_KIND="$2"; shift 2 ;;
+    --wait-live-timeout-secs) WAIT_LIVE_TIMEOUT_SECS="$2"; shift 2 ;;
     --i-am-live) LIVE=1; shift ;;
     # W7 FILL-HALF LIFTED 2026-08-05 (operator ruling, for the 26AUG05 afternoon
     # slate). This arm previously refused --fillable outright, which — combined
@@ -105,7 +126,7 @@ if [[ -n "$FILLABLE" && $LIVE -eq 0 ]]; then
   exit 2
 fi
 [[ -n "$CONFIG" && -n "$ACCOUNT" ]] || {
-  echo "usage: $0 --config <cfg.toml> --account <env-file> [--bin <pinned>] [--run-dir <immutable-run>] [--shutdown-grace-secs N] [--i-am-live] [--wait-live <url-or-url-file> --wait-kind youtube|hls]" >&2; exit 2
+  echo "usage: $0 --config <cfg.toml> --account <env-file> [--bin <pinned>] [--run-dir <immutable-run>] [--shutdown-grace-secs N] [--i-am-live] [--wait-live <url-or-url-file> --wait-kind youtube|hls] [--wait-live-timeout-secs N]" >&2; exit 2
 }
 [[ -f "$CONFIG" ]] || { echo "config not found: $CONFIG" >&2; exit 2; }
 [[ -f "$ACCOUNT" ]] || { echo "account env not found: $ACCOUNT" >&2; exit 2; }
@@ -113,10 +134,20 @@ fi
   echo "--shutdown-grace-secs must be an integer >= 75 (got ${SHUTDOWN_GRACE_SECS})" >&2
   exit 2
 }
+[[ "$WAIT_LIVE_TIMEOUT_SECS" =~ ^[1-9][0-9]*$ ]] || {
+  echo "--wait-live-timeout-secs must be a positive integer (got ${WAIT_LIVE_TIMEOUT_SECS})" >&2
+  exit 2
+}
 
 for tool in ffmpeg; do
   command -v "$tool" >/dev/null 2>&1 || { echo "missing tool: $tool" >&2; exit 1; }
 done
+# curl carries the whole hls live gate and was never checked here: a box without
+# it made every poll return an empty body, which the old gate read as "not live
+# yet" and spun on forever.
+if [[ -n "$WAIT_LIVE" ]]; then
+  command -v "$CURL" >/dev/null 2>&1 || { echo "missing tool: $CURL (--wait-live needs it)" >&2; exit 1; }
+fi
 # yt-dlp/streamlink only matter for configs that use them; warn, don't fail.
 command -v yt-dlp >/dev/null 2>&1 || echo "note: yt-dlp not found — YouTube pipe configs will fail" >&2
 command -v streamlink >/dev/null 2>&1 || echo "note: streamlink not found — streamlink legs will fail" >&2
@@ -530,52 +561,150 @@ trap - TERM
 trap 'handle_shutdown_signal TERM' TERM
 trap 'handle_shutdown_signal INT' INT
 
+# ── the live gate ───────────────────────────────────────────────────────────
+# Cache-busted fetch. One unique query param plus Cache-Control: no-cache is
+# the whole difference between seeing the encoder and seeing a CDN's frozen
+# copy of it (scripts/cdn-cachebust-fetch.sh:14-21, CBRS 2026-08-12).
+# NOTE the divergence from cdn-cachebust-fetch.sh:40, which busts with
+# `date +%s%N`: BSD date has no %N and prints a literal "N", so on this laptop
+# that token is CONSTANT and busts nothing. $RANDOM is unique on both.
+live_bust() { printf '%s%s_cb=%s%s' "$1" "$([[ "$1" == *\?* ]] && echo '&' || echo '?')" "$(date +%s)" "$RANDOM"; }
+live_fetch() { "$CURL" -fsSL --max-time 10 -H 'Cache-Control: no-cache' "$(live_bust "$1")" 2>/dev/null || true; }
+# Last non-comment, non-blank entry = the newest segment. Deliberately NOT
+# #EXT-X-MEDIA-SEQUENCE: the CBRS CDN froze that header while the encoder kept
+# appending, so a sequence-based test calls a live stream dead.
+live_tail() { grep -v '^#' <<<"$1" | grep -v '^[[:space:]]*$' | tail -1 | tr -d '\r'; }
+# Follow a MASTER playlist down to its first variant; a media playlist is
+# returned unchanged. The variant's own query is PRESERVED (unlike
+# cdn-cachebust-fetch.sh:48, which strips it) — a signed token there is the
+# difference between 200 and 403, and live_bust() already appends with `&`.
+live_media_url() { # $1 = url, $2 = body
+  local url="$1" body="$2" variant
+  grep -q 'EXT-X-STREAM-INF' <<<"$body" || { printf '%s' "$url"; return 0; }
+  variant=$(grep -v '^#' <<<"$body" | grep -v '^[[:space:]]*$' | head -1 | tr -d '\r')
+  [[ -n "$variant" ]] || { printf '%s' "$url"; return 0; }
+  [[ "$variant" != http* ]] && variant="${url%/*}/$variant"
+  printf '%s' "$variant"
+}
+# Part 3: bytes that actually decode. pcm-gate.sh is the repo's authority here
+# (it is what caught YouTube's segment-layer bot-wall on HOOD 07-29). If it
+# fails we try ONCE more through the cache-busting fetcher, because on the CBRS
+# venue class every ordinary HLS consumer — pcm-gate's plain ffmpeg included —
+# goes deaf on a stream that is still running. Refusing to arm there would just
+# trade C1's false LIVE for a false DEAD, so the fallback is part of the gate,
+# and it names the leg the operator must arm (C2b).
+live_decodes() { # $1 = media url; echoes the winning path, returns 0/1
+  if "$PCM_GATE" --kind hls --url "$1" --secs "$WAIT_LIVE_PCM_SECS" >/dev/null 2>&1; then
+    printf 'direct'; return 0
+  fi
+  [[ -x "$CACHEBUST_FETCH" ]] || return 1
+  local urlfile="${STATE_DIR}/.live-gate-url" floor=$(( WAIT_LIVE_PCM_SECS * 32000 * 80 / 100 )) got
+  printf '%s\n' "$1" > "$urlfile"
+  # `|| true` is load-bearing: the fetcher loops forever by design and takes
+  # SIGPIPE when ffmpeg exits at -t, so under `set -o pipefail` this assignment
+  # would otherwise kill the launcher outright.
+  got=$({ "$CACHEBUST_FETCH" "$urlfile" 1 2>/dev/null \
+          | "${EARSHOT_FFMPEG:-ffmpeg}" -loglevel error -nostdin -i - -vn -f s16le -ac 1 -ar 16000 \
+              -t "$WAIT_LIVE_PCM_SECS" - 2>/dev/null | wc -c | tr -d ' '; } || true)
+  rm -f "$urlfile"
+  [[ "${got:-0}" -ge "$floor" ]] || return 1
+  printf 'cachebust'
+}
+
 # --wait-live: poll until the stream is actually live, THEN arm (launch on
 # the flip; arm bring-up is ~8 s, cheap next to a pre-live stall).
 if [[ -n "$WAIT_LIVE" ]]; then
   [[ "$WAIT_KIND" == "youtube" || "$WAIT_KIND" == "hls" ]] || {
     echo "--wait-live requires --wait-kind youtube|hls" >&2; exit 2
   }
-  # Accept a URL file (the run-<ev> pattern) or a literal URL.
+  # Accept a URL file (the run-<ev> pattern) or a literal URL. tr, not cat:
+  # the file is written by hand and a trailing newline makes curl reject the
+  # URL as malformed.
   URL="$WAIT_LIVE"
-  [[ -f "$WAIT_LIVE" ]] && URL="$(cat "$WAIT_LIVE")"
+  [[ -f "$WAIT_LIVE" ]] && URL="$(tr -d '[:space:]' < "$WAIT_LIVE")"
   [[ -n "$URL" ]] || { echo "REFUSING: --wait-live target is empty" >&2; exit 2; }
-  echo "live gate: polling ($WAIT_KIND) every 15 s — arm launches on the flip"
+  echo "live gate: polling ($WAIT_KIND) every ${WAIT_LIVE_POLL_SECS} s, deadline ${WAIT_LIVE_TIMEOUT_SECS} s — arm launches on the flip"
+  [[ "$WAIT_KIND" == hls ]] && echo "live gate: LIVE means no #EXT-X-ENDLIST + an advancing tail + decodable bytes (C1)"
+  LIVE_DEADLINE=$(( $(date +%s) + WAIT_LIVE_TIMEOUT_SECS ))
+  LIVE_PREV_TAIL="" LIVE_VERDICT="no poll yet" LIVE_SAID="" LIVE_VOD_PAGED=0 LIVE_VIA=""
   while :; do
+    if (( $(date +%s) >= LIVE_DEADLINE )); then
+      echo "REFUSING: live gate never passed in ${WAIT_LIVE_TIMEOUT_SECS} s — last verdict: ${LIVE_VERDICT}" >&2
+      jnl live-gate refused "timeout after ${WAIT_LIVE_TIMEOUT_SECS}s: ${LIVE_VERDICT}"
+      critical_alert live_gate_timeout "live-gate-${EVENT_ID}" \
+        "EARSHOT ${EVENT_ID}: live gate never passed" \
+        "Waited ${WAIT_LIVE_TIMEOUT_SECS}s on ${URL}. Last verdict: ${LIVE_VERDICT}. Nothing was armed."
+      exit 7
+    fi
     case "$WAIT_KIND" in
       youtube)
         # RUNBOOK 07-22 fix #1: poll is_live; --wait-for-video is unvalidated
         # at the pre-live→live transition.
         IS_LIVE=$(yt-dlp --js-runtimes node --print "%(is_live)s" "$URL" 2>/dev/null || true)
         [[ "$IS_LIVE" == "True" ]] && break
+        LIVE_VERDICT="yt-dlp is_live=${IS_LIVE:-<none>}"
         ;;
       hls)
-        # Live = manifest resolves and lists at least one media segment.
-        BODY=$(curl -fsS --max-time 10 "$URL" 2>/dev/null || true)
-        if [[ -n "$BODY" ]]; then
-          if grep -q "EXTINF" <<<"$BODY"; then
-            break
-          fi
-          # Master playlist: follow the first variant. tr strips CRLF —
-          # real-world manifests (DW/Akamai) end lines with \r\n and a
-          # trailing \r makes curl reject the URL as malformed.
-          VARIANT=$(grep -v '^#' <<<"$BODY" | head -1 | tr -d '\r')
-          if [[ -n "$VARIANT" ]]; then
-            [[ "$VARIANT" != http* ]] && VARIANT="${URL%/*}/$VARIANT"
-            # Capture, then grep: `curl | grep -q` SIGPIPEs curl on first
-            # match, and under pipefail the pipeline rc goes nonzero — the
-            # break silently never fires (found in the 07-23 dress rehearsal).
-            VBODY=$(curl -fsS --max-time 10 "$VARIANT" 2>/dev/null || true)
-            if grep -q "EXTINF" <<<"$VBODY"; then
+        BODY=$(live_fetch "$URL")
+        if [[ -z "$BODY" ]]; then
+          LIVE_VERDICT="manifest unreachable"
+          LIVE_PREV_TAIL=""
+        else
+          MEDIA=$(live_media_url "$URL" "$BODY")
+          MBODY="$BODY"
+          [[ "$MEDIA" != "$URL" ]] && MBODY=$(live_fetch "$MEDIA")
+          if [[ -z "$MBODY" ]]; then
+            LIVE_VERDICT="media playlist unreachable: ${MEDIA}"
+            LIVE_PREV_TAIL=""
+          elif grep -q 'EXT-X-ENDLIST' <<<"$MBODY"; then
+            # PART 1. A finished VOD has EXTINF on every segment, which is
+            # exactly why the old gate armed on one. Never break here — but do
+            # not silently spin either: the operator is watching the wrong URL
+            # and only a page will tell them in time.
+            LIVE_VERDICT="#EXT-X-ENDLIST present — finished VOD, NOT live"
+            LIVE_PREV_TAIL=""
+            if (( ! LIVE_VOD_PAGED )); then
+              LIVE_VOD_PAGED=1
+              page "EARSHOT ${EVENT_ID}: --wait-live is looking at a VOD" \
+                   "${MEDIA} carries #EXT-X-ENDLIST. Refusing to arm on pre-recorded audio; re-pin the live URL."
+            fi
+          else
+            TAIL=$(live_tail "$MBODY")
+            if [[ -z "$TAIL" ]]; then
+              LIVE_VERDICT="no media segment listed yet"
+              LIVE_PREV_TAIL=""
+            elif [[ -z "$LIVE_PREV_TAIL" ]]; then
+              # PART 2 needs two polls; this is the first.
+              LIVE_VERDICT="first tail seen (${TAIL}) — need one advance"
+              LIVE_PREV_TAIL="$TAIL"
+            elif [[ "$TAIL" == "$LIVE_PREV_TAIL" ]]; then
+              LIVE_VERDICT="tail frozen at ${TAIL} — not advancing"
+            elif LIVE_VIA=$(live_decodes "$MEDIA"); then
+              # PART 3 passed on top of 1 and 2: this is liveness.
               break
+            else
+              LIVE_VERDICT="advancing, but no decodable audio from ${MEDIA}"
+              LIVE_PREV_TAIL="$TAIL"
             fi
           fi
         fi
         ;;
     esac
-    sleep 15
+    # Journal on CHANGE only: a 60-minute wait at 15 s would otherwise write
+    # 240 identical rows and bury the one that matters.
+    if [[ "$LIVE_VERDICT" != "$LIVE_SAID" ]]; then
+      echo "live gate: ${LIVE_VERDICT}"
+      jnl live-gate waiting "$LIVE_VERDICT"
+      LIVE_SAID="$LIVE_VERDICT"
+    fi
+    sleep "$WAIT_LIVE_POLL_SECS"
   done
-  echo "live gate: stream is LIVE ($(date -u +%FT%TZ)) — arming now"
+  echo "live gate: stream is LIVE ($(date -u +%FT%TZ))${LIVE_VIA:+ — decodable via ${LIVE_VIA}}${LIVE_VIA:+ leg} — arming now"
+  jnl live-gate passed "live${LIVE_VIA:+ via ${LIVE_VIA}}: no ENDLIST, tail advanced, bytes decode"
+  if [[ "$LIVE_VIA" == cachebust ]]; then
+    echo "live gate: NOTE — only the cache-busting fetcher could decode this venue." >&2
+    echo "  Arm a leg built on scripts/cdn-cachebust-fetch.sh; plain ffmpeg/streamlink will go deaf." >&2
+  fi
 fi
 
 if (( ! ACCOUNT_SOURCED )); then
