@@ -139,6 +139,8 @@ contract_change = true
 # for `prestage_enumerates_all_tranches`: reconcile the deterministic client
 # id expected by the test with the prestaged order identity, then classify the
 # complete repository matrix. This changes neither tranche policy nor caps.
+# Ownership receipt: the shared-tree claim reservation landed in concurrent
+# commit 17efad0; evidence-reliability-lane retains the E6 work and evidence.
 paths = [
   "docs/layers/executor.md",
   "src/kalshi/executor.rs",
