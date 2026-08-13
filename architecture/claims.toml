@@ -663,11 +663,13 @@ evidence = ["corpus/bridge-probes/tts_rehearsal_2026_07_29.json"]
 [[claim]]
 id = "admission.measure"
 node = "evidence.measure"
-worker = "admission-evidence-lane"
+worker = "admission-evidence-lane + observability-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
 paths = [
+  # 2026-08-12 M5: observability-lane pins the public event-candlestick window
+  # contract consumed by missed-arm reconciliation; historical docs stay frozen.
   # The system diagnosis and worked event reconstruction are measurement
   # evidence; executable architecture policy remains machine-readable.
   # 2026-08-12: the historical-evidence set moved to docs/history/ (owned by
