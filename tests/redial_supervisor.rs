@@ -264,6 +264,8 @@ conference_prefix = "earshot"
         .arg(state_dir.join("hangup-stub.sh"))
         .args(extra)
         .env("EARSHOT_NOTIFY", state_dir.join("notify-stub.sh"))
+        .env("EARSHOT_ALERT_PHONE", state_dir.join("notify-stub.sh"))
+        .env("EARSHOT_ALERT_DIR", state_dir.join("alerts"))
         .env("EARSHOT_REPO", tmp.path())
         .env_remove("TWILIO_ACCOUNT_SID")
         .env_remove("TWILIO_AUTH_TOKEN")
@@ -519,6 +521,13 @@ fn redial_no_media_flagged_and_paged() {
         "no-media redial must PAGE (pages: {:?}):\n{}",
         rig.pages(),
         rig.log()
+    );
+    let ledger = std::fs::read_to_string(rig.state_dir.join("alerts/ledger.jsonl"))
+        .expect("proof-bearing standalone alert ledger");
+    assert!(
+        ledger.contains("\\\"channel\\\":\\\"phone\\\"")
+            && ledger.contains("\\\"code\\\":\\\"redial_no_media\\\""),
+        "no-media failure must record the required phone delivery: {ledger}"
     );
 }
 

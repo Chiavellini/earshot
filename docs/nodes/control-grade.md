@@ -141,8 +141,10 @@ asked by a human hours later.
 fires the wrapper daily at 17:30 local (23:30Z) — after the last US afternoon
 calls end, before the UTC date rolls, so `date -u +%F` still names the event
 day being reconciled. The checker writes and alerts nothing by design; the
-wrapper owns alerting via `scripts/notify.sh` (`--quiet`) on any non-zero
-exit — MISSED-ARM (1) and UNDETERMINED (≥2) both page; a clean 0 only logs.
+wrapper raises a standalone proof-bearing critical alert on any non-zero exit
+— MISSED-ARM (1) and UNDETERMINED (≥2) both require the phone channel with a
+deterministic date/code identity; a clean 0 only logs. Because a genuine miss
+may have no RunPlan, this ledger lives under `state/alerts`, never `var/runs/`.
 
 **Box pull gate.** Events launched on the us-east-1 box are not gradeable from
 the laptop until `pull-box-state.sh --date <D>` succeeds. Do not replace it with
@@ -211,6 +213,9 @@ exact event identity.
 
 `run-verdict.sh` emits PASS, WARN, or FAIL with stable exit semantics: absent
 report or zero audio is failure; surviving audio with lost legs is warning.
+Terminal no-report, zero-audio, and unparseable verdict failures raise a
+standalone proof-bearing critical alert keyed by event/run location and report
+fingerprint. A surviving-leg warning retains informational local notification.
 Validation emits per-keyword counts/timing evidence. The target is one
 versioned `RunGrade` JSON retaining both provenance and uncertainty.
 

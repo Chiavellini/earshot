@@ -19,6 +19,23 @@
 set -u
 cd "$(dirname "$0")/.."
 
+ALERTCTL="${EARSHOT_ALERTCTL:-scripts/alertctl.py}"
+ALERT_DIR="${EARSHOT_ALERT_DIR:-state/alerts}"
+DELIVERY_ARGS=(--phone-attempts 3)
+[[ -n "${EARSHOT_NOTIFY:-}" ]] && DELIVERY_ARGS+=(--notify-adapter "$EARSHOT_NOTIFY")
+[[ -n "${EARSHOT_ALERT_PHONE:-}" ]] && DELIVERY_ARGS+=(--phone-adapter "$EARSHOT_ALERT_PHONE")
+
+critical_alert() { # critical_alert <code> <subject> <body>
+  local code="$1" subject="$2" body="$3"
+  if [[ ! -x "$ALERTCTL" ]]; then
+    echo "ALERT REFUSED: alertctl unavailable at $ALERTCTL" >&2
+    return 1
+  fi
+  "$ALERTCTL" raise --alert-dir "$ALERT_DIR" --scope "missed-arm:$DATE_UTC" \
+    --severity critical --code "$code" --dedupe-key daily \
+    --subject "$subject" --body "$body" "${DELIVERY_ARGS[@]}"
+}
+
 DATE_UTC="$(date -u +%F)"
 OUT="$(python3 scripts/missed-arm-check.py --date "$DATE_UTC" 2>&1)"
 CODE=$?
@@ -27,9 +44,10 @@ echo "$OUT"
 
 case "$CODE" in
   0) ;; # clean — log only
-  1) scripts/notify.sh "MISSED-ARM on $DATE_UTC" "$OUT" --quiet \
-       || echo "warn: notify.sh failed" >&2 ;;
-  *) scripts/notify.sh "missed-arm UNDETERMINED on $DATE_UTC (exit $CODE)" "$OUT" --quiet \
-       || echo "warn: notify.sh failed" >&2 ;;
+  1) critical_alert missed_arm "MISSED-ARM on $DATE_UTC" "$OUT" \
+       || echo "warn: proof-bearing MISSED-ARM page failed" >&2 ;;
+  *) critical_alert missed_arm_undetermined \
+       "missed-arm UNDETERMINED on $DATE_UTC (exit $CODE)" "$OUT" \
+       || echo "warn: proof-bearing UNDETERMINED page failed" >&2 ;;
 esac
 exit "$CODE"

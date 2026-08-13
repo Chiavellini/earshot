@@ -42,6 +42,8 @@ set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 EVENT=""; STATE_DIR=""; NOTIFY=1; QUIET=""
 CHECK=0
+ALERTCTL="${EARSHOT_ALERTCTL:-$REPO/scripts/alertctl.py}"
+ALERT_DIR="${EARSHOT_ALERT_DIR:-$REPO/state/alerts}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -65,6 +67,22 @@ page() {  # page <subject> <body>
   else
     bash "$REPO/scripts/notify.sh" "$1" "$2" $QUIET >/dev/null 2>&1 || true
   fi
+}
+
+critical_page() { # critical_page <code> <dedupe-key> <subject> <body>
+  [[ "$NOTIFY" == 1 ]] || return 0
+  local code="$1" dedupe="$2" subject="$3" body="$4"
+  local delivery_args=(--phone-attempts 3)
+  [[ -n "${EARSHOT_NOTIFY:-}" ]] && delivery_args+=(--notify-adapter "$EARSHOT_NOTIFY")
+  [[ -n "${EARSHOT_ALERT_PHONE:-}" ]] && delivery_args+=(--phone-adapter "$EARSHOT_ALERT_PHONE")
+  if [[ ! -x "$ALERTCTL" ]]; then
+    echo "ALERT REFUSED: alertctl unavailable at $ALERTCTL" >&2
+    return 1
+  fi
+  "$ALERTCTL" raise --alert-dir "$ALERT_DIR" \
+    --scope "run-verdict:$EVENT:$(basename "$DIR")" \
+    --severity critical --code "$code" --dedupe-key "$dedupe" \
+    --subject "$subject" --body "$body" "${delivery_args[@]}"
 }
 
 # The whole verdict, as one python filter: stdin=report.json, stdout=one line
@@ -218,6 +236,24 @@ J
   case "$H" in *DEAF*) echo "  PASS  HOOD headline names DEAF"; PASSN=$((PASSN+1));;
                *) echo "  FAIL  HOOD headline was: $H"; FAILN=$((FAILN+1));; esac
 
+  # The terminal FAIL path must cross the proof-bearing critical door, not
+  # silently regress to the legacy local notifier.
+  cat > "$TMP/alertctl-stub" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$ALERTCTL_STUB_LOG"
+exit 0
+SH
+  chmod +x "$TMP/alertctl-stub"
+  ALERTCTL="$TMP/alertctl-stub" ALERT_DIR="$TMP/alerts"
+  ALERTCTL_STUB_LOG="$TMP/alertctl.log"; export ALERTCTL_STUB_LOG
+  EVENT="KXEARNINGSMENTIONTEST-26AUG12-WEBCAST" DIR="$TMP"
+  critical_page captured_nothing fixture "fixture subject" "fixture body"
+  if grep -q -- '--severity critical --code captured_nothing --dedupe-key fixture' "$TMP/alertctl.log"; then
+    echo "  PASS  terminal failure uses proof-bearing critical alert"; PASSN=$((PASSN+1))
+  else
+    echo "  FAIL  terminal failure bypassed proof-bearing alert"; FAILN=$((FAILN+1))
+  fi
+
   echo
   if (( FAILN )); then echo "SELFTEST FAIL ($FAILN failed, $PASSN passed)"; exit 1; fi
   echo "SELFTEST PASS ($PASSN checks)"; exit 0
@@ -232,7 +268,9 @@ REPORT="$DIR/report.json"
 if [[ ! -f "$REPORT" ]]; then
   echo "⛔ FAIL — no report at $REPORT" >&2
   echo "   The arm exited without writing a report — it died before or during startup." >&2
-  page "$EVENT: NO REPORT" "run-verdict: $REPORT absent after the arm exited. The arm died before writing a report; read the arm log."
+  critical_page no_report no_report "$EVENT: NO REPORT" \
+    "run-verdict: $REPORT absent after the arm exited. The arm died before writing a report; read the arm log." \
+    || echo "warn: proof-bearing NO REPORT page failed" >&2
   exit 4
 fi
 
@@ -250,11 +288,15 @@ $D"
     exit 0 ;;
   FAIL)
     echo "⛔ FAIL — $H" >&2; echo "   $D" >&2
-    page "$EVENT CAPTURED NOTHING" "$H
+    REPORT_FP=$(shasum -a 256 "$REPORT" | awk '{print substr($1,1,32)}')
+    critical_page captured_nothing "$REPORT_FP" "$EVENT CAPTURED NOTHING" "$H
 $D
-report: $REPO/$REPORT"
+report: $REPO/$REPORT" || echo "warn: proof-bearing CAPTURED NOTHING page failed" >&2
     exit 3 ;;
   *)
     echo "⛔ FAIL — verdict unparseable: $LINE" >&2
+    critical_page verdict_unparseable verdict_unparseable \
+      "$EVENT: RUN VERDICT UNPARSEABLE" "$LINE" \
+      || echo "warn: proof-bearing unparseable-verdict page failed" >&2
     exit 5 ;;
 esac

@@ -94,6 +94,22 @@ READY="${STATE_DIR}/listener.ready"
 LOG="${STATE_DIR}/redial.log"
 log() { echo "$(date -u +%FT%TZ) $*" >> "$LOG"; echo "redial-supervisor: $*" >&2; }
 jnl() { "$(dirname "${BASH_SOURCE[0]}")/journal.sh" --event "$(basename "$STATE_DIR")" --actor redial-supervisor.sh --action "$1" --outcome "$2" --detail "${3:-}" --log "$LOG" || true; }
+ALERTCTL="${EARSHOT_ALERTCTL:-scripts/alertctl.py}"
+ALERT_DIR="${EARSHOT_ALERT_DIR:-state/alerts}"
+critical_alert() { # critical_alert <code> <dedupe-key> <subject> <body>
+  local code="$1" dedupe="$2" subject="$3" body="$4"
+  local delivery_args=(--phone-attempts 3)
+  [[ -n "${EARSHOT_NOTIFY:-}" ]] && delivery_args+=(--notify-adapter "$EARSHOT_NOTIFY")
+  [[ -n "${EARSHOT_ALERT_PHONE:-}" ]] && delivery_args+=(--phone-adapter "$EARSHOT_ALERT_PHONE")
+  if [[ ! -x "$ALERTCTL" ]]; then
+    log "ALERT REFUSED: alertctl unavailable at $ALERTCTL"
+    return 1
+  fi
+  "$ALERTCTL" raise --alert-dir "$ALERT_DIR" \
+    --scope "redial-supervisor:$(basename "$STATE_DIR")" \
+    --severity critical --code "$code" --dedupe-key "$dedupe" \
+    --subject "$subject" --body "$body" "${delivery_args[@]}" >>"$LOG" 2>&1
+}
 
 # Validate the capability before any drop, but do not page yet: a configured
 # fallback is intentionally dormant while the first plain leg is healthy.
@@ -133,9 +149,10 @@ page_fallback_refusal() { # $1 = detail
   local detail="$1"
   jnl operator-fallback refused "$detail"
   log "OPERATOR-ESCALATION-REFUSED: $detail — NOT dialing the replacement leg through the plain screener path"
-  "${EARSHOT_NOTIFY:-scripts/notify.sh}" "OPERATOR ESCALATION REFUSED: $(basename "$STATE_DIR")" \
+  critical_alert operator_fallback_refused capability \
+    "OPERATOR ESCALATION REFUSED: $(basename "$STATE_DIR")" \
     "$detail. The first-drop replacement was NOT dialed; repair the configured handler capability and reconcile this live run." \
-    --quiet >>"$LOG" 2>&1 || log "warn: notify failed for OPERATOR-ESCALATION-REFUSED"
+    || log "warn: proof-bearing page failed for OPERATOR-ESCALATION-REFUSED"
 }
 
 # Parse one string field out of the marker JSON; empty on any parse failure.
@@ -178,6 +195,7 @@ LAST_CONTENT=$(cat "$REQ" 2>/dev/null || true)
 LAST_NOT_READY_CONTENT=""
 BACKOFF=0
 REDIALS=0
+BUDGET_ALERTED=0
 FALLBACK_DESC="off"
 if [[ "$FALLBACK_REQUESTED" == 1 ]]; then
   if [[ "$FALLBACK_READY" == 1 ]]; then
@@ -230,6 +248,13 @@ while :; do
 
   if (( REDIALS >= MAX_REDIALS )); then
     log "request seen but redial budget exhausted ($REDIALS/$MAX_REDIALS) — ignoring"
+    if [[ "$BUDGET_ALERTED" == 0 ]]; then
+      BUDGET_ALERTED=1
+      critical_alert redial_budget_exhausted budget \
+        "REDIAL BUDGET EXHAUSTED: $(basename "$STATE_DIR")" \
+        "The live source requested another leg after all ${MAX_REDIALS} redials were consumed. The run remains armed but capture recovery is exhausted." \
+        || log "warn: proof-bearing page failed for REDIAL-BUDGET-EXHAUSTED"
+    fi
     LAST_CONTENT="$CONTENT"
     continue
   fi
@@ -278,9 +303,10 @@ while :; do
     # Page it: the budget is small and this class eats it silently otherwise
     # (2026-08-01 f67ac27 made it visible in the log; a log nobody reads
     # during a live call is the PYPL/BA lesson again).
-    "${EARSHOT_NOTIFY:-scripts/notify.sh}" "REDIAL-NO-MEDIA: $(basename "$STATE_DIR")" \
+    critical_alert redial_no_media "redial-${REDIALS}" \
+      "REDIAL-NO-MEDIA: $(basename "$STATE_DIR")" \
       "redial #${REDIALS} connected but produced no audio within ${MEDIA_CONFIRM_SECS}s; budget $((MAX_REDIALS - REDIALS)) left" \
-      --quiet >>"$LOG" 2>&1 || log "warn: notify failed for REDIAL-NO-MEDIA"
+      || log "warn: proof-bearing page failed for REDIAL-NO-MEDIA"
   fi
 
   REDIALS=$((REDIALS + 1))
@@ -325,10 +351,14 @@ while :; do
     jnl redial fail "#${REDIALS} dial failed — backoff ${BACKOFF}s"
     log "REDIAL #${REDIALS} FAILED — backing off ${BACKOFF}s before honoring the next request"
     if [[ "$FALLBACK_ACTIVE" == 1 ]]; then
-      "${EARSHOT_NOTIFY:-scripts/notify.sh}" "OPERATOR ESCALATION FAILED: $(basename "$STATE_DIR")" \
-        "The bounded page/operator replacement failed (redial #${REDIALS}, exit ${DIAL_RC}). No plain screener leg was substituted. Inspect ${LOG}; admission remains closed." \
-        --quiet >>"$LOG" 2>&1 || log "warn: notify failed for OPERATOR ESCALATION FAILED"
+      ALERT_SUBJECT="OPERATOR ESCALATION FAILED: $(basename "$STATE_DIR")"
+      ALERT_BODY="The bounded page/operator replacement failed (redial #${REDIALS}, exit ${DIAL_RC}). No plain screener leg was substituted. Inspect ${LOG}; admission remains closed."
+    else
+      ALERT_SUBJECT="REDIAL FAILED: $(basename "$STATE_DIR")"
+      ALERT_BODY="Redial #${REDIALS} failed with exit ${DIAL_RC}; the source remains without a replacement leg. Inspect ${LOG}."
     fi
+    critical_alert redial_failed "redial-${REDIALS}" "$ALERT_SUBJECT" "$ALERT_BODY" \
+      || log "warn: proof-bearing page failed for REDIAL-FAILED"
     sleep "$BACKOFF"
   fi
 done
