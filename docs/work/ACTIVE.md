@@ -1,5 +1,5 @@
 ---
-as_of: 2026-08-12
+as_of: 2026-08-13
 authority: architecture/claims.toml
 ---
 
@@ -28,6 +28,7 @@ protection by itself.
 | `book-evidence-lane` | `runtime.kalshi.book` | Exact raw WebSocket tape and finalization |
 | `fix-wire-truth-lane` | `runtime.kalshi.fix` | Independent raw FIX observation tape |
 | `admission-evidence-lane` | admission, capture, measure, preflight, grade | Probe/current-stream admission, in-process audio evidence, historical measurement |
+| `capture-reliability-lane` | `control.launch`, `runtime.source.pipe`, `runtime.source.port` | C1/C2 closed: real `--wait-live` liveness (no ENDLIST + advancing tail + decodable bytes) and a bounded pipe-leg respawn budget. C2b's template edit and C3–C6 sit outside these nodes — see the requests below |
 
 Older phone, TLS, readiness, settlement, expansion, hunt, notification, build,
 risk, detector, and source-pipe work remains represented by its existing claim.
@@ -58,3 +59,55 @@ deliberate formatting-only cleanup.
 
 No lane may stage, commit, deploy, dial, page, or trade merely to make a claim
 look complete. External operations require their own explicit authorization.
+
+## Capture reliability lane — 2026-08-13
+
+Work order `docs/work/SOLUTION-CAPTURE.md`. Nodes claimed by extending the one
+existing open claim per node (doc-lint permits no second): `control.launch`
+(`phone_tls.launch`), `runtime.source.pipe` (`root.source_pipe_contract`, which
+also gains `scripts/test-deaf-leg.py`), `runtime.source.port`
+(`phone.source_port`, doc-only).
+
+- **C1 CLOSED.** `--wait-live hls` now requires no `#EXT-X-ENDLIST`, an
+  advancing segment tail across two cache-busted polls, and decodable bytes,
+  bounded by `--wait-live-timeout-secs` with an `exit 7` refusal. `pcm-gate.sh`
+  takes the ENDLIST half too, because `arm-on-url.sh` — the unattended path —
+  gates there and never passes `--wait-live`. Evidence: the same
+  `#EXT-X-ENDLIST` playlist served over real HTTP made the old gate print
+  "stream is LIVE" and arm (exit 0); the new gate refuses (exit 7). Five new
+  tests; the gate previously had none.
+- **C2 CLOSED.** `PipeSource` carries a respawn budget symmetrical to
+  `twilio_ws::max_reconnects` — default 0 (byte-for-byte the old behavior),
+  cap 20, launchers export 20/2000 ms for an armed event. Covers the EOF branch
+  as well as idle, because a decoder that merely exits returned
+  `Ok(EndOfStream)`, which fanout never counted as a died leg. Five new tests
+  including a real `kill -9` mid-stream at `run_pipeline` altitude.
+- **C2b PARTIAL, by the operator's scope ruling.** The two survivor legs are
+  documented as first-class recipes with their MEASURED complementary blind
+  spots in `docs/nodes/source-pipe.md`. The template edit is not this lane's.
+- **C3–C6 NOT WORKED.** See the boundary requests below.
+
+### Boundary requests from this lane
+
+1. **To EVIDENCE (`runtime.assembly`) + `runtime.config`** — give the respawn
+   budget a config-native home: `SourceConfig::Pipe { max_respawns,
+   respawn_backoff_ms }` in `src/config.rs` (bounded in the pipe arm of
+   `validate`, as Twilio's is) plus two assignment lines in
+   `main.rs::build_leg`, exactly the treatment `TwilioStream::max_reconnects`
+   already gets. Until then the budget is env-only
+   (`EARSHOT_PIPE_MAX_RESPAWNS`, `EARSHOT_PIPE_RESPAWN_BACKOFF_MS`) and an arm
+   started outside `launch-webcast.sh` gets the old terminal behavior.
+2. **To `control.prepare`** — add the two survivor legs as third and fourth
+   `[[sources]]` blocks in `configs/webcast-fanout-arm.toml` and the generic
+   stage path. Recipes are pinned verbatim in `docs/nodes/source-pipe.md`
+   §"The two survivor legs". This is the remainder of C2b.
+3. **C3/C4/C6 cross this lane's node boundary and were left unworked.** The
+   work order's file list names paths owned by other nodes:
+   `scripts/redial-supervisor.sh` and `tests/operator_escalation.sh`
+   (`control.supervise`), `configs/dial-ins.toml` (`control.qualify`),
+   `scripts/bridge-probe.sh` (`control.admission`), `scripts/chain-capture.sh`
+   (`evidence.capture`). doc-lint refuses a claim naming another node's path,
+   so these need a claim on the owning node or a reassignment.
+
+No deployment, dial, page, schedule, or trade has been performed by this lane,
+and no money policy was touched.

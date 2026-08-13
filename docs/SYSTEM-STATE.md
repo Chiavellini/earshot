@@ -72,17 +72,26 @@ the work orders reference them.
 
 ### Capture (stream stays up) — `SOLUTION-CAPTURE.md`
 
-- **C1** `--wait-live hls` accepts a finished VOD: the gate greps EXTINF only
-  (`scripts/launch-webcast.sh:556,569`); the trap is documented in
-  `scripts/cdn-cachebust-fetch.sh:22-26` (no-ENDLIST + advancing tail +
-  decodable bytes is the real liveness test). Unfixed; would arm a FILL
-  posture against pre-recorded audio.
-- **C2** No webcast leg respawn: a leg that hits an HLS sequence gap dies for
-  good (`src/source/pipe.rs:196-206`); when all legs die the arm exits
-  (`src/pipeline/mod.rs:1303`). Live proof: COHR 2026-08-12 arm exited at
-  21:35:44Z mid-call, both legs dead on sequence gaps; coverage saved only by
-  an out-of-band `hls-edge-fetch.py`. The phone lane has a redial supervisor;
-  the webcast lane has no supervisor.
+- **C1 CLOSED 2026-08-13** `--wait-live hls` accepted a finished VOD: the gate
+  grepped EXTINF only; the trap was documented in
+  `scripts/cdn-cachebust-fetch.sh:23-27` (no-ENDLIST + advancing tail +
+  decodable bytes is the real liveness test). All three parts now enforced in
+  `scripts/launch-webcast.sh`, inside a bounded wait that refuses with exit 7;
+  `scripts/pcm-gate.sh` carries the ENDLIST half for the unattended
+  `arm-on-url.sh` path. Proof: the same ENDLIST playlist over real HTTP armed
+  the old gate (exit 0) and is refused by the new one (exit 7). Five tests
+  where there were none.
+- **C2 CLOSED 2026-08-13** No webcast leg respawn: a leg that hit an HLS
+  sequence gap died for good; when all legs died the arm exited. Live proof:
+  COHR 2026-08-12 arm exited at 21:35:44Z mid-call, both legs dead on sequence
+  gaps; coverage saved only by an out-of-band `hls-edge-fetch.py`.
+  `PipeSource` now has a respawn budget symmetrical to twilio_ws's
+  `max_reconnects` (default 0 = the old behavior; launchers enable it), and it
+  covers the EOF branch too — a decoder that merely exited returned
+  `Ok(EndOfStream)`, which fanout never counted as a died leg. Residual: the
+  budget is env-configured until `SourceConfig::Pipe` gains the field
+  (request filed, `docs/work/ACTIVE.md`), so an arm started outside the
+  launchers keeps the old terminal behavior.
 - **C3** Redial policy is not venue-derived (casino143 Tier-1 #6), and
   operator-queue escalation requires registry knowledge only the failure
   itself produces (casino143 §III.3); one unanswered operator page still

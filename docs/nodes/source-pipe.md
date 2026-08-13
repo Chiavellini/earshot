@@ -14,6 +14,60 @@ Decoder command spawning, stdout framing, stderr draining, idle detection,
 `scripts/cdn-cachebust-fetch.sh`, and their deaf-leg diagnostic in
 `scripts/test-deaf-leg.py`.
 
+### The two survivor legs (C2b)
+
+Both adapters above are production leg commands, not emergency tools. Each held
+up a real event that the standard `streamlink`/tuned-`ffmpeg` pair could not —
+`hls-edge-fetch.py` on COHR 2026-08-12, `cdn-cachebust-fetch.sh` on CBRS the
+same day — and each has a MEASURED blind spot that the other covers, so a
+fanout should carry both rather than choosing:
+
+| Leg | Survives | Goes deaf on |
+|---|---|---|
+| `hls-edge-fetch.py` | variant rotation (re-resolves master→media after 12 failed polls) | a CDN-frozen playlist — it uses plain `urlopen`, no cache-busting |
+| `cdn-cachebust-fetch.sh` | a CDN-frozen playlist (unique query param + `Cache-Control: no-cache` per reload) | variant rotation — it resolves master→variant ONCE at startup and never again |
+
+Measured against `scripts/test-deaf-leg.py`'s rotating-variant fixture (the
+origin swaps `mediaA`→`mediaB` at T+10 s): the edge fetcher emitted 18 segments
+before the rotation and 24 after, logging `RE-RESOLVED` / `RECOVERED`; the
+cache-buster emitted 8 before and **0** after, permanently.
+
+That second failure is now contained rather than fatal. `cdn-cachebust-fetch.sh`
+is deliberately crash-proof — a curl failure sleeps and retries forever — so a
+deaf fetcher emits no bytes, the 30 s idle guard fires, and the respawn re-runs
+the argv from the top, which re-resolves the master. Respawn is what gives that
+leg its missing re-resolve, at a bounded ~30 s cost.
+
+Leg recipes, for a config whose URL file holds the MASTER m3u8:
+
+```toml
+[[sources]]
+kind = "pipe"
+label = "edge_fetch"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "python3 scripts/hls-edge-fetch.py \"$(cat $HOME/<lc>-stream.url)\" 250 2 | ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -i - -vn -f s16le -ac 1 -ar 16000 -",
+]
+
+[[sources]]
+kind = "pipe"
+label = "cachebust"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "scripts/cdn-cachebust-fetch.sh $HOME/<lc>-stream.url 1 | ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -i - -vn -f s16le -ac 1 -ar 16000 -",
+]
+```
+
+Note the argv difference: the edge fetcher takes a URL, the cache-buster takes a
+URL FILE. Both must receive the master, not a variant — handed a variant,
+neither has a recovery path.
+
+Adding these to the staged template is `control.prepare`'s call, not this
+node's: `configs/webcast-fanout-arm.toml` and the stage path belong to that
+node. The request is filed in `docs/work/ACTIVE.md`.
+
 ## Does not own
 
 It does not resolve venue URLs, decide which fetcher is fastest, supervise an
@@ -103,6 +157,11 @@ pipeline altitude — `run_pipeline` continuing to capture after a real `kill -9
 of the decoder mid-stream. Note that the pipeline returns `Ok` in that case
 even WITHOUT respawn, so the assertions are the respawn count and the frames
 that arrive after the kill, never the exit status.
+
+`python3 scripts/test-deaf-leg.py` exercises the edge fetcher against a
+rotating-variant origin and must report OVERALL PASS. Running the same fixture
+against `scripts/cdn-cachebust-fetch.sh` is expected to go deaf after the
+rotation; that is the documented blind spot above, not a regression.
 
 ## Migration status
 
