@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""Proof-bearing operational alert requests for one immutable run.
+"""Proof-bearing operational alert requests for a run or standalone scope.
 
 Alert facts are compatibility observations in the RunPlan's append-only,
 hash-chained lifecycle ledger. They never advance or rewrite typed run state.
+Read-only monitors and never-armed reconciliation use a separate append-only,
+hash-chained alert ledger and therefore never mutate a live run tree.
 The event control plane supplies the exclusive append lock and action-level
 deduplication; this client owns the AlertRequest/DeliveryReceipt/Ack record
 shapes and bounded delivery policy.
 
 Delivery is not acknowledgement. Critical alerts attempt the ordinary local
-notifier and then a bounded phone fallback unless already acknowledged. A
+notifier and then a bounded phone fallback unless already acknowledged. Due
+unacknowledged alerts may re-page at a bounded interval and lifetime count. A
 human must explicitly run ``ack`` with the displayed alert id. Offline tests
 inject adapters; this tool never auto-acknowledges a successful send.
 """
@@ -17,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import fcntl
 import hashlib
 import json
 import os
@@ -25,6 +29,7 @@ import stat
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -37,10 +42,19 @@ ACTOR_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@+-]{0,127}$")
 ACTION_RE = re.compile(
     r"^alert\.(required|delivery_started|delivery|acknowledged):([0-9a-f]{64})(?::([a-z0-9._-]+):([1-9][0-9]*))?$"
 )
+SCOPE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$")
+ZERO_HASH = "0" * 64
 
 
 class AlertError(Exception):
     pass
+
+
+@dataclass(frozen=True)
+class AlertTarget:
+    kind: str
+    path: Path
+    identity: dict[str, str] | None = None
 
 
 def canonical(value: Any) -> str:
@@ -106,6 +120,28 @@ def run_identity(run_dir: Path) -> dict[str, str]:
     return {field: plan[field] for field in ("event_id", "run_id", "plan_sha256", "execution_host_id")}
 
 
+def standalone_identity(scope: str) -> dict[str, str]:
+    if not SCOPE_RE.fullmatch(scope):
+        raise AlertError(f"scope must match {SCOPE_RE.pattern}")
+    return {"scope": scope}
+
+
+def alert_target(args: argparse.Namespace, *, require_identity: bool) -> AlertTarget:
+    run_raw = getattr(args, "run_dir", None)
+    alert_raw = getattr(args, "alert_dir", None)
+    if bool(run_raw) == bool(alert_raw):
+        raise AlertError("name exactly one of --run-dir or --alert-dir")
+    if run_raw:
+        path = Path(run_raw).resolve()
+        return AlertTarget("run", path, run_identity(path))
+    path = Path(alert_raw).resolve()
+    scope = getattr(args, "scope", None)
+    identity = standalone_identity(scope) if scope else None
+    if require_identity and identity is None:
+        raise AlertError("--scope is required with --alert-dir")
+    return AlertTarget("standalone", path, identity)
+
+
 def eventctl_path() -> Path:
     raw = os.environ.get("EARSHOT_EVENTCTL")
     path = Path(raw).resolve() if raw else Path(__file__).with_name("eventctl.py")
@@ -152,6 +188,122 @@ def lifecycle_rows(run_dir: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def global_ledger_path(alert_dir: Path, *, create: bool) -> Path:
+    if create:
+        alert_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    try:
+        mode = alert_dir.lstat().st_mode
+    except FileNotFoundError as exc:
+        raise AlertError(f"alert directory is missing: {alert_dir}") from exc
+    if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
+        raise AlertError(f"alert directory must be a non-symlink directory: {alert_dir}")
+    path = alert_dir / "ledger.jsonl"
+    if path.exists():
+        regular_file(path, "standalone alert ledger")
+    return path
+
+
+def verify_global_rows(raw: bytes) -> list[dict[str, Any]]:
+    if raw and not raw.endswith(b"\n"):
+        raise AlertError("standalone alert ledger has a torn tail")
+    rows: list[dict[str, Any]] = []
+    for sequence, line in enumerate(raw.splitlines(), 1):
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise AlertError(f"standalone alert line {sequence} is invalid JSON: {exc}") from exc
+        if not isinstance(row, dict):
+            raise AlertError(f"standalone alert line {sequence} is not an object")
+        expected = {
+            "schema",
+            "kind",
+            "sequence",
+            "previous_sha256",
+            "ts",
+            "action",
+            "outcome",
+            "detail",
+            "receipt_sha256",
+        }
+        if set(row) != expected or row.get("schema") != SCHEMA or row.get("kind") != "compat":
+            raise AlertError(f"standalone alert line {sequence} has an unsupported shape")
+        if row.get("sequence") != sequence:
+            raise AlertError(f"standalone alert line {sequence} has the wrong sequence")
+        previous = rows[-1]["receipt_sha256"] if rows else ZERO_HASH
+        if row.get("previous_sha256") != previous:
+            raise AlertError(f"standalone alert line {sequence} breaks the hash chain")
+        expected_hash = hashlib.sha256(
+            canonical({key: value for key, value in row.items() if key != "receipt_sha256"}).encode("ascii")
+        ).hexdigest()
+        if row.get("receipt_sha256") != expected_hash:
+            raise AlertError(f"standalone alert line {sequence} has a bad self-hash")
+        try:
+            parsed = dt.datetime.fromisoformat(row["ts"].replace("Z", "+00:00"))
+        except (AttributeError, ValueError) as exc:
+            raise AlertError(f"standalone alert line {sequence} timestamp is invalid") from exc
+        if parsed.tzinfo is None or parsed.utcoffset() != dt.timedelta(0):
+            raise AlertError(f"standalone alert line {sequence} timestamp is not UTC")
+        if not isinstance(row.get("action"), str) or not isinstance(row.get("detail"), str):
+            raise AlertError(f"standalone alert line {sequence} action/detail is invalid")
+        rows.append(row)
+    return rows
+
+
+def global_rows(alert_dir: Path) -> list[dict[str, Any]]:
+    path = global_ledger_path(alert_dir, create=False)
+    regular_file(path, "standalone alert ledger")
+    with path.open("rb") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_SH)
+        return verify_global_rows(handle.read())
+
+
+def append_global_fact(
+    alert_dir: Path,
+    *,
+    action: str,
+    outcome: str,
+    detail: dict[str, Any],
+) -> bool:
+    path = global_ledger_path(alert_dir, create=True)
+    flags = os.O_RDWR | os.O_CREAT | os.O_APPEND
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(path, flags, 0o600)
+    try:
+        os.fchmod(fd, 0o600)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        os.lseek(fd, 0, os.SEEK_SET)
+        rows = verify_global_rows(os.read(fd, max(os.fstat(fd).st_size, 1)))
+        encoded_detail = canonical(detail)
+        matches = [row for row in rows if row["action"] == action]
+        if matches:
+            if len(matches) != 1 or matches[0]["detail"] != encoded_detail or matches[0]["outcome"] != outcome:
+                raise AlertError(f"standalone alert action already differs: {action}")
+            return False
+        row: dict[str, Any] = {
+            "schema": SCHEMA,
+            "kind": "compat",
+            "sequence": len(rows) + 1,
+            "previous_sha256": rows[-1]["receipt_sha256"] if rows else ZERO_HASH,
+            "ts": utc_now(),
+            "action": action,
+            "outcome": outcome,
+            "detail": encoded_detail,
+        }
+        row["receipt_sha256"] = hashlib.sha256(canonical(row).encode("ascii")).hexdigest()
+        payload = canonical(row).encode("ascii") + b"\n"
+        if os.write(fd, payload) != len(payload):
+            raise AlertError("short write to standalone alert ledger")
+        os.fsync(fd)
+        return True
+    finally:
+        os.close(fd)
+
+
+def target_rows(target: AlertTarget) -> list[dict[str, Any]]:
+    return lifecycle_rows(target.path) if target.kind == "run" else global_rows(target.path)
+
+
 def alert_records(rows: list[dict[str, Any]], alert_id: str | None = None) -> list[tuple[str, dict[str, Any], dict[str, Any]]]:
     out: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
     for receipt in rows:
@@ -171,13 +323,20 @@ def alert_records(rows: list[dict[str, Any]], alert_id: str | None = None) -> li
 
 
 def append_fact(
-    run_dir: Path,
+    target: AlertTarget,
     *,
     action: str,
     outcome: str,
     detail: dict[str, Any],
     artifact: str | None = None,
 ) -> bool:
+    if target.kind == "standalone":
+        return append_global_fact(
+            target.path,
+            action=action,
+            outcome=outcome,
+            detail=detail,
+        )
     argv = [
         "compat",
         "--actor",
@@ -192,20 +351,18 @@ def append_fact(
     ]
     if artifact:
         argv.extend(["--log", artifact])
-    result = eventctl(run_dir, *argv)
+    result = eventctl(target.path, *argv)
     if result.returncode:
         raise AlertError(f"eventctl refused alert fact: {command_detail(result)}")
     return not result.stdout.startswith("idempotent:")
 
 
 def request_id(identity: dict[str, str], severity: str, code: str, dedupe_key: str) -> str:
-    value = [
-        SCHEMA,
-        identity["plan_sha256"],
-        severity,
-        code,
-        dedupe_key,
-    ]
+    value = (
+        [SCHEMA, identity["plan_sha256"], severity, code, dedupe_key]
+        if "plan_sha256" in identity
+        else [SCHEMA, "standalone", identity["scope"], severity, code, dedupe_key]
+    )
     return hashlib.sha256(canonical(value).encode("ascii")).hexdigest()
 
 
@@ -219,6 +376,18 @@ def required_record(
     subject: str,
     body: str,
 ) -> dict[str, Any]:
+    if "scope" in identity:
+        return {
+            "schema": SCHEMA,
+            "kind": "alert-request",
+            "alert_id": alert_id,
+            "scope": identity["scope"],
+            "severity": severity,
+            "code": code,
+            "dedupe_key": dedupe_key,
+            "subject": subject,
+            "body": body,
+        }
     return {
         "schema": SCHEMA,
         "kind": "alert-request",
@@ -240,7 +409,7 @@ def request_for(records: list[tuple[str, dict[str, Any], dict[str, Any]]]) -> di
     if len(requests) != 1:
         raise AlertError(f"alert must have exactly one request, found {len(requests)}")
     request = requests[0]
-    expected = {
+    run_expected = {
         "schema",
         "kind",
         "alert_id",
@@ -254,7 +423,22 @@ def request_for(records: list[tuple[str, dict[str, Any], dict[str, Any]]]) -> di
         "subject",
         "body",
     }
-    if set(request) != expected or request.get("schema") != SCHEMA or request.get("kind") != "alert-request":
+    standalone_expected = {
+        "schema",
+        "kind",
+        "alert_id",
+        "scope",
+        "severity",
+        "code",
+        "dedupe_key",
+        "subject",
+        "body",
+    }
+    if (
+        set(request) not in (run_expected, standalone_expected)
+        or request.get("schema") != SCHEMA
+        or request.get("kind") != "alert-request"
+    ):
         raise AlertError("alert request has an unsupported shape")
     return request
 
@@ -322,6 +506,26 @@ def attempts_started(
     return len(attempts)
 
 
+def repage_is_due(
+    records: list[tuple[str, dict[str, Any], dict[str, Any]]],
+    channel: str,
+    repage_after: float,
+) -> bool:
+    completed = [
+        receipt.get("ts")
+        for kind, detail, receipt in records
+        if kind == "delivery" and detail.get("channel") == channel
+    ]
+    if not completed:
+        return True
+    try:
+        last = dt.datetime.fromisoformat(completed[-1].replace("Z", "+00:00"))
+    except (AttributeError, ValueError) as exc:
+        raise AlertError("stored delivery timestamp is invalid") from exc
+    now = dt.datetime.now(dt.timezone.utc)
+    return (now - last).total_seconds() >= repage_after
+
+
 def required_delivery_met(
     request: dict[str, Any],
     records: list[tuple[str, dict[str, Any], dict[str, Any]]],
@@ -333,7 +537,7 @@ def required_delivery_met(
 
 
 def reserve_delivery(
-    run_dir: Path,
+    target: AlertTarget,
     request: dict[str, Any],
     records: list[tuple[str, dict[str, Any], dict[str, Any]]],
     channel: str,
@@ -349,7 +553,7 @@ def reserve_delivery(
         "attempt": attempt,
     }
     created = append_fact(
-        run_dir,
+        target,
         action=f"alert.delivery_started:{request['alert_id']}:{channel}:{attempt}",
         outcome="info",
         detail=started,
@@ -378,7 +582,7 @@ def run_adapter(path: Path, argv: list[str]) -> tuple[str, str]:
 
 
 def record_delivery(
-    run_dir: Path,
+    target: AlertTarget,
     request: dict[str, Any],
     *,
     channel: str,
@@ -398,7 +602,7 @@ def record_delivery(
         "detail": detail[:1024],
     }
     append_fact(
-        run_dir,
+        target,
         action=f"alert.delivery:{request['alert_id']}:{channel}:{attempt}",
         outcome={"delivered": "ok", "failed": "fail", "ambiguous": "warn"}[outcome],
         detail=receipt,
@@ -406,7 +610,7 @@ def record_delivery(
 
 
 def deliver(
-    run_dir: Path,
+    target: AlertTarget,
     request: dict[str, Any],
     records: list[tuple[str, dict[str, Any], dict[str, Any]]],
     *,
@@ -414,6 +618,7 @@ def deliver(
     phone: Path,
     phone_attempts: int,
     retry_delay: float,
+    repage_after: float,
 ) -> bool:
     if is_acknowledged(records):
         print(f"alert {request['alert_id']} already acknowledged; no delivery attempted")
@@ -422,7 +627,7 @@ def deliver(
     # Local notification gets one lifetime attempt. A repeated producer call
     # may not turn the same alert into an unbounded mail/speech loop.
     local_attempt = (
-        reserve_delivery(run_dir, request, records, "local")
+        reserve_delivery(target, request, records, "local")
         if attempts_started(records, "local") == 0
         else None
     )
@@ -432,7 +637,7 @@ def deliver(
             [request["subject"], f"{request['body']}\n\nACK ID: {request['alert_id']}", "--quiet"],
         )
         record_delivery(
-            run_dir,
+            target,
             request,
             channel="local",
             attempt=local_attempt,
@@ -441,21 +646,19 @@ def deliver(
         )
     if request["severity"] == "critical":
         for _ in range(phone_attempts):
-            current = alert_records(lifecycle_rows(run_dir), request["alert_id"])
+            current = alert_records(target_rows(target), request["alert_id"])
             if is_acknowledged(current):
                 print(f"alert {request['alert_id']} acknowledged before phone attempt")
                 return True
             prior = delivery_outcomes(current, "phone")
-            # An answered phone page now needs a human acknowledgement, not a
-            # duplicate call. An ambiguous outcome may already be ringing and
-            # must likewise never be blindly repeated.
-            if "delivered" in prior or "ambiguous" in prior:
-                break
+            if prior and prior[-1] in ("delivered", "ambiguous"):
+                if not repage_is_due(current, "phone", repage_after):
+                    break
             # phone_attempts is a lifetime bound for this deterministic alert,
             # not a fresh allowance every time a producer repeats `raise`.
             if attempts_started(current, "phone") >= phone_attempts:
                 break
-            attempt = reserve_delivery(run_dir, request, current, "phone")
+            attempt = reserve_delivery(target, request, current, "phone")
             if attempt is None:
                 # A durable start without a completion is ambiguous: the call
                 # may already be on the wire. Never blind-redial it.
@@ -472,29 +675,29 @@ def deliver(
                 ],
             )
             record_delivery(
-                run_dir,
+                target,
                 request,
                 channel="phone",
                 attempt=attempt,
                 outcome=outcome,
                 detail=detail,
             )
-            # A positive delivery needs acknowledgement, not another nuisance
-            # call. An ambiguous call may already exist and is never blindly
-            # repeated. Only a definite failure is eligible for the bounded
-            # next attempt.
+            # A successful or ambiguous page is repeated only by a later
+            # invocation after the bounded re-page interval. Definite failure
+            # retains the short in-invocation retry cadence.
             if outcome in ("delivered", "ambiguous"):
                 break
-            latest = alert_records(lifecycle_rows(run_dir), request["alert_id"])
+            latest = alert_records(target_rows(target), request["alert_id"])
             if attempts_started(latest, "phone") < phone_attempts and retry_delay:
                 time.sleep(retry_delay)
-    final = alert_records(lifecycle_rows(run_dir), request["alert_id"])
+    final = alert_records(target_rows(target), request["alert_id"])
     return required_delivery_met(request, final)
 
 
 def cmd_raise(args: argparse.Namespace) -> int:
-    run_dir = Path(args.run_dir).resolve()
-    identity = run_identity(run_dir)
+    target = alert_target(args, require_identity=True)
+    assert target.identity is not None
+    identity = target.identity
     severity = args.severity
     code = safe_id(args.code, "code")
     dedupe = safe_id(args.dedupe_key, "dedupe key")
@@ -511,12 +714,12 @@ def cmd_raise(args: argparse.Namespace) -> int:
         body=body,
     )
     append_fact(
-        run_dir,
+        target,
         action=f"alert.required:{alert_id}",
         outcome="info",
         detail=request,
     )
-    rows = alert_records(lifecycle_rows(run_dir), alert_id)
+    rows = alert_records(target_rows(target), alert_id)
     stored = request_for(rows)
     if stored != request:
         raise AlertError("existing alert request differs from deterministic request")
@@ -526,13 +729,14 @@ def cmd_raise(args: argparse.Namespace) -> int:
     notify = Path(args.notify_adapter).resolve()
     phone = Path(args.phone_adapter).resolve()
     delivered = deliver(
-        run_dir,
+        target,
         request,
         rows,
         notify=notify,
         phone=phone,
         phone_attempts=args.phone_attempts,
         retry_delay=args.retry_delay,
+        repage_after=args.repage_after,
     )
     print(
         f"alert {alert_id}: {'required delivery recorded' if delivered else 'required delivery unresolved'}; "
@@ -542,15 +746,16 @@ def cmd_raise(args: argparse.Namespace) -> int:
 
 
 def cmd_ack(args: argparse.Namespace) -> int:
-    run_dir = Path(args.run_dir).resolve()
-    identity = run_identity(run_dir)
+    target = alert_target(args, require_identity=False)
     alert_id = args.alert_id
     if not re.fullmatch(r"[0-9a-f]{64}", alert_id):
         raise AlertError("alert id must be 64 lowercase hexadecimal characters")
-    records = alert_records(lifecycle_rows(run_dir), alert_id)
+    records = alert_records(target_rows(target), alert_id)
     request = request_for(records)
-    if request["plan_sha256"] != identity["plan_sha256"]:
-        raise AlertError("alert request is not bound to this RunPlan")
+    if target.kind == "run":
+        assert target.identity is not None
+        if request.get("plan_sha256") != target.identity["plan_sha256"]:
+            raise AlertError("alert request is not bound to this RunPlan")
     actor = args.by
     if not ACTOR_RE.fullmatch(actor):
         raise AlertError("acknowledger identity is invalid")
@@ -562,7 +767,7 @@ def cmd_ack(args: argparse.Namespace) -> int:
         "note": args.note,
     }
     append_fact(
-        run_dir,
+        target,
         action=f"alert.acknowledged:{alert_id}",
         outcome="ok",
         detail=detail,
@@ -590,9 +795,8 @@ def state_for(records: list[tuple[str, dict[str, Any], dict[str, Any]]]) -> dict
 
 
 def cmd_status(args: argparse.Namespace) -> int:
-    run_dir = Path(args.run_dir).resolve()
-    run_identity(run_dir)
-    records = alert_records(lifecycle_rows(run_dir))
+    target = alert_target(args, require_identity=False)
+    records = alert_records(target_rows(target))
     ids = sorted({detail.get("alert_id") for _, detail, _ in records if isinstance(detail.get("alert_id"), str)})
     states = [state_for([row for row in records if row[1].get("alert_id") == alert_id]) for alert_id in ids]
     unresolved = [state for state in states if not state["acknowledged"]]
@@ -606,32 +810,74 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 1 if unresolved else 0
 
 
+def cmd_repage_due(args: argparse.Namespace) -> int:
+    target = alert_target(args, require_identity=False)
+    records = alert_records(target_rows(target))
+    ids = sorted({detail.get("alert_id") for _, detail, _ in records if isinstance(detail.get("alert_id"), str)})
+    notify = Path(args.notify_adapter).resolve()
+    phone = Path(args.phone_adapter).resolve()
+    delivery_failed = False
+    for alert_id in ids:
+        current = [row for row in records if row[1].get("alert_id") == alert_id]
+        request = request_for(current)
+        if request["severity"] != "critical" or is_acknowledged(current):
+            continue
+        met = deliver(
+            target,
+            request,
+            current,
+            notify=notify,
+            phone=phone,
+            phone_attempts=args.phone_attempts,
+            retry_delay=args.retry_delay,
+            repage_after=args.repage_after,
+        )
+        delivery_failed = delivery_failed or not met
+    return 1 if delivery_failed else 0
+
+
 def parser() -> argparse.ArgumentParser:
     root = Path(__file__).resolve().parent
+
+    def target_args(command: argparse.ArgumentParser, *, scope: bool = False) -> None:
+        group = command.add_mutually_exclusive_group(required=True)
+        group.add_argument("--run-dir")
+        group.add_argument("--alert-dir")
+        if scope:
+            command.add_argument("--scope")
+
+    def delivery_args(command: argparse.ArgumentParser) -> None:
+        command.add_argument("--notify-adapter", default=str(root / "notify.sh"))
+        command.add_argument("--phone-adapter", default=str(root / "alert-phone.sh"))
+        command.add_argument("--phone-attempts", type=int, default=3)
+        command.add_argument("--retry-delay", type=float, default=30.0)
+        command.add_argument("--repage-after", type=float, default=300.0)
+
     ap = argparse.ArgumentParser(description=__doc__)
     sub = ap.add_subparsers(dest="command", required=True)
     sp = sub.add_parser("raise")
-    sp.add_argument("--run-dir", required=True)
+    target_args(sp, scope=True)
     sp.add_argument("--severity", choices=SEVERITIES, required=True)
     sp.add_argument("--code", required=True)
     sp.add_argument("--dedupe-key", required=True)
     sp.add_argument("--subject", required=True)
     sp.add_argument("--body", required=True)
-    sp.add_argument("--notify-adapter", default=str(root / "notify.sh"))
-    sp.add_argument("--phone-adapter", default=str(root / "alert-phone.sh"))
-    sp.add_argument("--phone-attempts", type=int, default=2)
-    sp.add_argument("--retry-delay", type=float, default=30.0)
+    delivery_args(sp)
     sp.add_argument("--no-deliver", action="store_true")
     sp.set_defaults(fn=cmd_raise)
     sp = sub.add_parser("ack")
-    sp.add_argument("--run-dir", required=True)
+    target_args(sp)
     sp.add_argument("--alert-id", required=True)
     sp.add_argument("--by", required=True)
     sp.add_argument("--note", default="")
     sp.set_defaults(fn=cmd_ack)
     sp = sub.add_parser("status")
-    sp.add_argument("--run-dir", required=True)
+    target_args(sp)
     sp.set_defaults(fn=cmd_status)
+    sp = sub.add_parser("repage-due")
+    target_args(sp)
+    delivery_args(sp)
+    sp.set_defaults(fn=cmd_repage_due)
     return ap
 
 
@@ -642,6 +888,8 @@ def main(argv: list[str] | None = None) -> int:
             raise AlertError("phone attempts must be 1, 2, or 3")
         if not 0 <= getattr(args, "retry_delay", 0) <= 300:
             raise AlertError("retry delay must be between 0 and 300 seconds")
+        if not 0 <= getattr(args, "repage_after", 0) <= 86400:
+            raise AlertError("re-page interval must be between 0 and 86400 seconds")
         return args.fn(args)
     except (AlertError, OSError, subprocess.SubprocessError) as exc:
         print(f"REFUSED: {exc}", file=sys.stderr)

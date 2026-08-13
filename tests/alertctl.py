@@ -186,6 +186,99 @@ class AlertCtlTest(unittest.TestCase):
         )
         self.assertEqual(verify.returncode, 0, verify.stdout + verify.stderr)
 
+    def test_unacknowledged_critical_alert_repages_when_due_and_ack_stops_it(self) -> None:
+        result = self.alert(*self.raise_args())
+        alert_id = result.stdout.split()[1].rstrip(":")
+        self.assertEqual(len(self.phone_log.read_text().splitlines()), 1)
+        self.alert(
+            "repage-due",
+            "--run-dir",
+            str(self.run_dir),
+            "--notify-adapter",
+            str(self.notify),
+            "--phone-adapter",
+            str(self.phone),
+            "--phone-attempts",
+            "2",
+            "--retry-delay",
+            "0",
+            "--repage-after",
+            "0",
+        )
+        self.assertEqual(len(self.phone_log.read_text().splitlines()), 2)
+        self.alert(
+            "ack",
+            "--run-dir",
+            str(self.run_dir),
+            "--alert-id",
+            alert_id,
+            "--by",
+            "operator@example",
+        )
+        self.alert(
+            "repage-due",
+            "--run-dir",
+            str(self.run_dir),
+            "--notify-adapter",
+            str(self.notify),
+            "--phone-adapter",
+            str(self.phone),
+            "--phone-attempts",
+            "3",
+            "--retry-delay",
+            "0",
+            "--repage-after",
+            "0",
+        )
+        self.assertEqual(len(self.phone_log.read_text().splitlines()), 2)
+
+    def test_standalone_alert_is_hash_chained_and_does_not_touch_run_state(self) -> None:
+        alert_dir = self.repo / "state" / "alerts"
+        receipts = self.run_dir / "control" / "receipts.jsonl"
+        before = receipts.read_bytes()
+        result = self.alert(
+            "raise",
+            "--alert-dir",
+            str(alert_dir),
+            "--scope",
+            "monitor:ALERT-TEST:fixture",
+            "--severity",
+            "critical",
+            "--code",
+            "tape_stalled",
+            "--dedupe-key",
+            "book-tape",
+            "--subject",
+            "Tape stalled",
+            "--body",
+            "No growth for one cadence",
+            "--notify-adapter",
+            str(self.notify),
+            "--phone-adapter",
+            str(self.phone),
+            "--phone-attempts",
+            "2",
+            "--retry-delay",
+            "0",
+        )
+        alert_id = result.stdout.split()[1].rstrip(":")
+        self.assertEqual(receipts.read_bytes(), before)
+        rows = [json.loads(line) for line in (alert_dir / "ledger.jsonl").read_text().splitlines()]
+        self.assertEqual([row["sequence"] for row in rows], [1, 2, 3, 4, 5])
+        self.assertEqual(rows[0]["previous_sha256"], "0" * 64)
+        self.assertEqual(rows[-1]["previous_sha256"], rows[-2]["receipt_sha256"])
+        self.alert("status", "--alert-dir", str(alert_dir), expected=1)
+        self.alert(
+            "ack",
+            "--alert-dir",
+            str(alert_dir),
+            "--alert-id",
+            alert_id,
+            "--by",
+            "operator@example",
+        )
+        self.alert("status", "--alert-dir", str(alert_dir))
+
     def test_acknowledgement_is_explicit_idempotent_and_suppresses_redelivery(self) -> None:
         result = self.alert(*self.raise_args())
         alert_id = result.stdout.split()[1].rstrip(":")
