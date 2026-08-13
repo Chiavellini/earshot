@@ -8,8 +8,8 @@ Turn a declared decoder subprocess's raw PCM stdout into a live webcast
 ## Owns
 
 Decoder command spawning, stdout framing, stderr draining, idle detection,
-child cleanup, and HLS `ffmpeg` command construction in `src/source/pipe.rs`,
-plus the continuous HLS edge-fetch runtime adapter in
+**leg respawn policy**, child cleanup, and HLS `ffmpeg` command construction in
+`src/source/pipe.rs`, plus the continuous HLS edge-fetch runtime adapter in
 `scripts/hls-edge-fetch.py`, the cache-busting HLS segment adapter in
 `scripts/cdn-cachebust-fetch.sh`, and their deaf-leg diagnostic in
 `scripts/test-deaf-leg.py`.
@@ -28,11 +28,25 @@ stdout. `PipeSource::hls` is explicit 16 kHz `ffmpeg` sugar. When the edge
 fetcher is in the argv chain, it consumes the preflight-approved master URL and
 emits media bytes to the declared decoder; it does not resolve venue policy.
 
+The respawn posture is read from the environment by `respawn_policy_from_env`:
+`EARSHOT_PIPE_MAX_RESPAWNS` (default 0, clamped to `MAX_RESPAWN_BUDGET` = 20)
+and `EARSHOT_PIPE_RESPAWN_BACKOFF_MS` (default 2000). `scripts/launch-webcast.sh`
+exports both for an armed event and echoes them into the launch log;
+`scripts/arm-on-url.sh` inherits them through it. Tests set them directly with
+`with_respawn_budget`. This mirrors `twilio_ws::bind` reading
+`EARSHOT_REDIAL_DIR` rather than taking it as a parameter, and is deliberate
+rather than preferred: the field belongs in `SourceConfig::Pipe` with two lines
+in `main.rs::build_leg` — the treatment `TwilioStream::max_reconnects` gets —
+and both files belong to other nodes. That request is recorded in
+`architecture/claims.toml` under `root.source_pipe_contract`.
+
 ## Output contracts
 
 PCM is emitted in 20 ms frames with dense sequence numbers and arrival-stamped
 timestamps. EOF flushes a final whole-sample partial frame and returns
-`EndOfStream`.
+`EndOfStream`. Sequence numbers are hoisted ACROSS respawns and stay dense for
+the whole run: a leg that restarted its numbering would falsify every
+downstream gap statistic.
 
 ## Side effects and exclusive resources
 
@@ -42,9 +56,31 @@ file effects performed by the argv are declared by the acquisition plan.
 
 ## Failure contract
 
-Empty commands and rates fail before spawn. Spawn/read errors, nonzero or dead
-streams, and idle timeouts return loud source errors with a bounded stderr
-tail. Ring pressure produces throttled, counted ingress-drop warnings.
+Empty commands and rates fail before spawn. A decoder lifetime ends in exactly
+one of three ways — idle past `idle_timeout` while the child is still alive,
+a read error, or the child exiting (EOF) — and each is a LEG DEATH, including
+EOF. Treating a decoder exit as benign was a defect, not a design: it returned
+`Ok(EndOfStream)`, which the fanout composer does not count as a died leg, so a
+run whose legs all exited early finished with a clean record while the venue
+was still live.
+
+While respawn budget remains, any of the three respawns the decoder after
+`respawn_backoff`, logging one WARN with attempt, budget, reason, stderr tail
+and frames delivered so far, so a grader can count the gaps. Each attempt gets
+a fresh child, stderr-drain task and tail buffer. Re-running the argv is also
+how a fresh URL reaches the leg: production commands are
+`/bin/sh -c "… $(cat …-stream.url) …"`, so a respawn re-reads the URL file and
+re-evaluates any cache-buster in it.
+
+Once the budget is spent, each end returns exactly what it returned before the
+budget existed — `SourceError::Protocol` naming the idle timeout with a bounded
+stderr tail, `SourceError::Io`, or `Ok(EndOfStream)`. Budget 0 (the default) is
+therefore the pre-2026-08-12 one-shot, byte-for-byte, which is what keeps
+replay, bake-off and probe callers unchanged. Respawn is a way to survive a
+sequence gap, never a way for a genuinely dead venue to look healthy.
+
+Ring pressure produces throttled, counted ingress-drop warnings; that throttle
+state is also hoisted across respawns.
 
 ## Parallel work boundary
 
@@ -59,7 +95,14 @@ requires the source-port contract.
 
 Run `cargo test --test pipe_source`, focused `cargo test source::pipe` tests,
 and `python3 scripts/hls-edge-fetch.py --selftest`, including idle timeout,
-child teardown, partial frame, and ring pressure.
+child teardown, partial frame, and ring pressure. The respawn contract is
+covered by four suite cases: a dead decoder respawning with dense seq across
+the boundary, an idle (alive-but-silent) leg recovering, budget 0 spawning
+exactly once, an over-large budget clamping to `MAX_RESPAWN_BUDGET`, and — at
+pipeline altitude — `run_pipeline` continuing to capture after a real `kill -9`
+of the decoder mid-stream. Note that the pipeline returns `Ok` in that case
+even WITHOUT respawn, so the assertions are the respawn count and the frames
+that arrive after the kill, never the exit status.
 
 ## Migration status
 

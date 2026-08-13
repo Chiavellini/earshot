@@ -129,28 +129,43 @@ protocol behavior — live-edge join point, probe buffering, reconnect — so
 the acquisition latency is set by the command's own flags in the config,
 not by code here (see the tuned-leg flag rationale in
 `configs/webcast-dpz-capture.toml`).
-⚠ **Because the subprocess owns reconnect, a subprocess that cannot reconnect is
-a leg-level outage this layer can only detect, never repair.** Measured
-2026-07-27 (`docs/LATENCY-PROOF.md` §V6): `scripts/hls-edge-fetch.py` resolved
-master→media once and, when that URL died mid-run while the channel stayed live,
-polled it 10,860 times over 45 min emitting nothing. The **30 s `idle_timeout`
-below is what contains this** — the leg errors and `SourceArbiter` carries on
-with the survivor — but the leg is gone for the rest of the event and is not
-restarted, so the race is forfeit from that point. The repair belongs in the
-subprocess and now lives there (re-resolve after 12 failed polls; `poll_err=` /
-`deaf_s=` / `reresolve=` in its `SUMMARY`; regression test
-`scripts/test-deaf-leg.py`). **Day-of consequence: put the MASTER m3u8 in the
-`.url` file — handed a variant, the fetcher has no recovery path.**
-Obligations kept here: dense `seq`; ring drop policy (send + warn);
-dead-stream guard (`idle_timeout` 30 s, no bytes → `SourceError::Protocol`
-with the decoder's stderr tail — "wall time ≠ audio"); child killed on every
-exit path + `kill_on_drop` backstop (no orphan ffmpeg); trailing partial
-frame flushed at EOF; empty cmd/url refused at construction (fail cheap).
-The subprocess owns protocol/demux/codec; format is DECLARED to it, never
-sniffed. 16 kHz default = wideband, an ASR-quality win over the phone path.
-Launch: `scripts/launch-webcast.sh` (observe posture enforced — accepts no
-fillable/live flags). Tests: `tests/pipe_source.rs`, incl. full-pipeline
-detection parity vs `ReplaySource` on the same fixture.
+⚠ **The subprocess owns reconnect; this layer owns whether the LEG survives the
+subprocess.** Measured 2026-07-27 (`docs/LATENCY-PROOF.md` §V6):
+`scripts/hls-edge-fetch.py` resolved master→media once and, when that URL died
+mid-run while the channel stayed live, polled it 10,860 times over 45 min
+emitting nothing. In-subprocess repair now lives there (re-resolve after 12
+failed polls; `poll_err=` / `deaf_s=` / `reresolve=` in its `SUMMARY`;
+regression test `scripts/test-deaf-leg.py`). **Day-of consequence: put the
+MASTER m3u8 in the `.url` file — handed a variant, the fetcher has no recovery
+path.**
+
+CORRECTED 2026-08-12 (C2): this section used to say a dead leg "is gone for the
+rest of the event and is not restarted, so the race is forfeit from that
+point." That was true and it was the whole failure. COHR 2026-08-12 lost the
+ARM, not just the race: leg `streamlink` died at 21:15:48Z on an HLS `Sequence
+gap`, leg `pipe_tuned` at 21:35:44Z on `expired from playlists`, and with no
+survivor left the run exited mid-call. `PipeSource` now carries a respawn
+budget symmetrical to `TwilioWsSource::max_reconnects` — see
+`docs/nodes/source-pipe.md` for the contract. Default 0 keeps the old terminal
+behavior for replay/bake-off/probe callers; `scripts/launch-webcast.sh` turns
+it on for an armed event, because that is the caller that knows a leg death is
+unacceptable. Note the EOF branch matters as much as the idle one: a decoder
+that merely EXITS returned `Ok(EndOfStream)`, which fanout does not count as a
+died leg at all, so that death was not just unrepaired but invisible.
+
+Obligations kept here: dense `seq`, hoisted across respawns; ring drop policy
+(send + warn); dead-stream guard (`idle_timeout` 30 s, no bytes →
+`SourceError::Protocol` with the decoder's stderr tail — "wall time ≠ audio");
+bounded respawn with backoff, and the pre-budget return reproduced exactly once
+the budget is spent; child killed on every exit path + `kill_on_drop` backstop
+(no orphan ffmpeg); trailing partial frame flushed at EOF; empty cmd/url refused
+at construction (fail cheap). The subprocess owns protocol/demux/codec; format
+is DECLARED to it, never sniffed. 16 kHz default = wideband, an ASR-quality win
+over the phone path. Launch: `scripts/launch-webcast.sh`, which also holds the
+live gate OUTSIDE the arm (`--wait-live`: no `#EXT-X-ENDLIST`, an advancing
+tail, decodable bytes). Tests: `tests/pipe_source.rs`, incl. full-pipeline
+detection parity vs `ReplaySource` on the same fixture and a real `kill -9` of
+the decoder mid-stream.
 
 ### Adapter combiner: `SourceArbiter` (`src/source/arbiter.rs`)
 Dual dial-in (spec §5.2). The arbiter *is itself* an `AudioSource`: it wraps

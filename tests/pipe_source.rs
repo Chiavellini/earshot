@@ -95,6 +95,272 @@ async fn empty_command_refused_at_construction() {
     assert!(PipeSource::hls("", SourceId(0)).is_err());
 }
 
+// ── C2: leg respawn ─────────────────────────────────────────────────────────
+//
+// WHY THESE EXIST. COHR 2026-08-12: the arm exited MID-CALL at 21:35:44Z. Leg
+// `streamlink` died at 21:15:48Z on an HLS `Sequence gap`, leg `pipe_tuned` at
+// 21:35:44Z on `expired from playlists`, and a dead pipe leg never came back —
+// so when the last one went, the run ended while the venue was still talking.
+// Coverage was saved only by an out-of-band fetcher someone remembered to run.
+//
+// The budget mirrors twilio_ws's `max_reconnects`, including the property that
+// makes it safe to ship: budget 0 reproduces the old returns exactly, so every
+// replay/bake-off/probe caller is untouched and `dead_stream_guard_kills_and_
+// fails_loud` above still pins the loud-failure contract, unmodified.
+
+const BACKOFF: Duration = Duration::from_millis(20);
+
+/// Drains a ring in the background so a long-running child cannot wedge on a
+/// full ring, and hands back every frame it saw.
+fn drain(
+    mut rx: earshot::ring::RingReceiver<earshot::types::AudioFrame>,
+) -> std::thread::JoinHandle<Vec<u64>> {
+    std::thread::spawn(move || {
+        let mut seqs = Vec::new();
+        let deadline = std::time::Instant::now() + Duration::from_secs(20);
+        while std::time::Instant::now() < deadline {
+            match rx.try_recv() {
+                Some(f) => seqs.push(f.seq),
+                None => std::thread::sleep(Duration::from_millis(2)),
+            }
+        }
+        seqs
+    })
+}
+
+#[tokio::test]
+async fn decoder_death_respawns_and_frames_resume() {
+    // A child that emits one frame and exits. Under budget 0 this is a single
+    // frame and EndOfStream; under a budget it must run again.
+    let src = PipeSource::new(
+        sh(&format!("head -c {FRAME_BYTES} /dev/zero")),
+        RATE,
+        SourceId(0),
+    )
+    .unwrap()
+    .with_respawn_budget(3, BACKOFF);
+    let (tx, mut rx) = earshot::ring::ring(256);
+
+    let exit = tokio::time::timeout(Duration::from_secs(10), Box::new(src).run(tx))
+        .await
+        .expect("respawn loop must not hang")
+        .expect("a budgeted leg ends cleanly once the budget is spent");
+    assert_eq!(exit, SourceExit::EndOfStream);
+
+    let mut seqs = Vec::new();
+    while let Some(f) = rx.try_recv() {
+        seqs.push(f.seq);
+    }
+    // 1 frame per spawn, 1 + 3 respawns.
+    assert_eq!(seqs.len(), 4, "decoder must be respawned to the budget");
+    assert_eq!(
+        seqs,
+        vec![0, 1, 2, 3],
+        "seq must stay dense ACROSS respawns — a leg that restarted its \
+         numbering would make every downstream gap statistic a lie"
+    );
+}
+
+#[tokio::test]
+async fn idle_timeout_respawns_instead_of_killing_the_leg() {
+    // The COHR shape: the child is ALIVE but permanently silent, which is what
+    // an HLS sequence gap does to ffmpeg/streamlink. First spawn goes quiet;
+    // the marker makes the next one produce audio, proving the leg recovered
+    // rather than merely being retried into the same silence.
+    let dir = tempfile::tempdir().unwrap();
+    let marker = dir.path().join("spawned");
+    let src = PipeSource::new(
+        sh(&format!(
+            "if [ -f {m} ]; then head -c {n} /dev/zero; sleep 5; else touch {m}; sleep 5; fi",
+            m = marker.display(),
+            n = FRAME_BYTES * 10
+        )),
+        RATE,
+        SourceId(0),
+    )
+    .unwrap()
+    .with_idle_timeout(Duration::from_millis(300))
+    .with_respawn_budget(1, BACKOFF);
+
+    let (tx, rx) = earshot::ring::ring(256);
+    let drained = drain(rx);
+    let err = tokio::time::timeout(Duration::from_secs(15), Box::new(src).run(tx))
+        .await
+        .expect("respawn loop must not hang")
+        .expect_err("budget of 1 is spent by the second silence");
+
+    // The leg still fails loud once the budget is gone — respawn must not be a
+    // way for a genuinely dead venue to look healthy.
+    match err {
+        SourceError::Protocol(msg) => assert!(msg.contains("idle"), "got: {msg}"),
+        other => panic!("expected Protocol idle error, got {other:?}"),
+    }
+    let seqs = drained.join().unwrap();
+    assert_eq!(
+        seqs.len(),
+        10,
+        "the respawned decoder must deliver frames the first one never sent"
+    );
+}
+
+#[tokio::test]
+async fn budget_zero_is_the_historical_one_shot() {
+    // The pin that makes this change safe to default-off: with no budget, a
+    // child that exits is still exactly one spawn and one EndOfStream.
+    let dir = tempfile::tempdir().unwrap();
+    let counter = dir.path().join("spawns");
+    let src = PipeSource::new(
+        sh(&format!(
+            "echo x >> {c}; head -c {n} /dev/zero",
+            c = counter.display(),
+            n = FRAME_BYTES
+        )),
+        RATE,
+        SourceId(0),
+    )
+    .unwrap();
+    let (tx, _rx) = earshot::ring::ring(64);
+    let exit = tokio::time::timeout(Duration::from_secs(10), Box::new(src).run(tx))
+        .await
+        .expect("must not hang")
+        .unwrap();
+    assert_eq!(exit, SourceExit::EndOfStream);
+    assert_eq!(
+        std::fs::read_to_string(&counter).unwrap().lines().count(),
+        1,
+        "budget 0 must spawn the decoder exactly once"
+    );
+}
+
+/// Frames one spawn of the killed-decoder fixture emits before the kill lands
+/// (~400 ms at ~50 frames/s). Anything near this means the leg died there.
+const FRAMES_BEFORE_KILL: u64 = 40;
+/// Frames a full spawn emits if nothing kills it.
+const FRAMES_PER_SPAWN: u64 = 250;
+
+/// The work order's acceptance case, at pipeline altitude: kill the decoder
+/// mid-stream with a REAL signal and assert the run keeps capturing.
+///
+/// This is the COHR 2026-08-12 shape end to end — `run_pipeline` drives a real
+/// `PipeSource` and an external `kill -9` takes the decoder out from under it.
+///
+/// NOTE WHAT IS *NOT* THE ASSERTION. A SIGKILLed decoder closes the pipe, which
+/// reaches the source as EOF, which returned `Ok(EndOfStream)` — so even
+/// BEFORE this fix the run ended `Ok` with a clean record, just 20 minutes
+/// early and with the venue still talking. Verified by running this fixture at
+/// budget 0: `run_pipeline` returns Ok, `spawns=1`. That is precisely why
+/// "the run returned Ok" proves nothing here, and why fanout never even
+/// counted these as died legs. The real assertions are that the decoder came
+/// BACK and that frames kept arriving after the kill.
+#[test]
+fn pipeline_survives_a_decoder_killed_mid_stream() {
+    use earshot::decision::DecisionTable;
+    use earshot::detector::stub::EnergyStubDetector;
+    use earshot::pipeline::preproc::PreprocCfg;
+    use earshot::pipeline::run_pipeline;
+
+    let dir = tempfile::tempdir().unwrap();
+    let pidfile = dir.path().join("decoder.pid");
+    let spawns = dir.path().join("spawns");
+    // Publishes its own PID, then paces out FRAMES_PER_SPAWN frames of silence
+    // so the test has a window in which to kill it mid-stream.
+    let src = PipeSource::new(
+        sh(&format!(
+            "echo x >> {s}; echo $$ > {p}; i=0; while [ $i -lt {frames} ]; do \
+               head -c {n} /dev/zero; i=$((i+1)); sleep 0.02; done",
+            s = spawns.display(),
+            p = pidfile.display(),
+            frames = FRAMES_PER_SPAWN,
+            n = FRAME_BYTES
+        )),
+        RATE,
+        SourceId(0),
+    )
+    .unwrap()
+    .with_respawn_budget(1, Duration::from_millis(50));
+
+    let killer = std::thread::spawn({
+        let pidfile = pidfile.clone();
+        move || {
+            let deadline = std::time::Instant::now() + Duration::from_secs(10);
+            while std::time::Instant::now() < deadline {
+                if let Ok(text) = std::fs::read_to_string(&pidfile) {
+                    let pid = text.trim().to_string();
+                    if !pid.is_empty() {
+                        std::thread::sleep(Duration::from_millis(400));
+                        // A real `kill -9`, not a cooperative shutdown: the
+                        // decoder gets no chance to clean up, which is what a
+                        // hard venue/CDN failure looks like from in here.
+                        let _ = std::process::Command::new("kill")
+                            .args(["-9", &pid])
+                            .status();
+                        return true;
+                    }
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            false
+        }
+    });
+
+    let report = run_pipeline(
+        "RESPAWN",
+        160,
+        PreprocCfg::default(),
+        Box::new(src),
+        Box::new(EnergyStubDetector::for_standard_fixture()),
+        DecisionTable::from_keywords(&[]),
+        None,
+        Default::default(),
+    )
+    .expect("the pipeline must not fault out");
+
+    assert!(
+        killer.join().unwrap(),
+        "test bug: never found the decoder pid"
+    );
+    let spawn_count = std::fs::read_to_string(&spawns).unwrap().lines().count();
+    assert!(
+        spawn_count >= 2,
+        "the decoder was killed and never came back (spawns={spawn_count}) — \
+         this is the COHR 21:35:44Z exit"
+    );
+    // The arithmetic that separates "recovered" from "died at the kill":
+    // one killed spawn yields ~FRAMES_BEFORE_KILL; a recovered leg adds a
+    // whole further spawn on top of it.
+    assert!(
+        report.frames_in as u64 > FRAMES_BEFORE_KILL * 2,
+        "capture did not resume after the kill: frames_in={} (a leg that died \
+         at the kill lands near {FRAMES_BEFORE_KILL})",
+        report.frames_in
+    );
+}
+
+#[tokio::test]
+async fn respawn_budget_is_capped() {
+    // A venue that kills a leg more than 20 times needs a different fix, not
+    // more retries — the same ceiling config.rs puts on Twilio reconnects.
+    let dir = tempfile::tempdir().unwrap();
+    let counter = dir.path().join("spawns");
+    let src = PipeSource::new(
+        sh(&format!("echo x >> {c}", c = counter.display())),
+        RATE,
+        SourceId(0),
+    )
+    .unwrap()
+    .with_respawn_budget(9_999, Duration::from_millis(1));
+    let (tx, _rx) = earshot::ring::ring(16);
+    tokio::time::timeout(Duration::from_secs(20), Box::new(src).run(tx))
+        .await
+        .expect("must not hang")
+        .unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&counter).unwrap().lines().count(),
+        (earshot::source::pipe::MAX_RESPAWN_BUDGET + 1) as usize,
+        "an over-large budget must clamp to MAX_RESPAWN_BUDGET"
+    );
+}
+
 /// Detection parity with the replay path: the SAME fixture audio, fed once
 /// via `ReplaySource` and once via `PipeSource` (raw s16le through `cat`),
 /// must produce the same detections through the full pipeline (stub

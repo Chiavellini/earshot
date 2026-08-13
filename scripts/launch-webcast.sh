@@ -713,6 +713,22 @@ if (( ! ACCOUNT_SOURCED )); then
   ACCOUNT_SOURCED=1
 fi
 
+# C2 (2026-08-12): give the webcast legs a respawn budget. The pipe source
+# defaults to 0 — a leg death stays terminal — so that bake-off, replay and
+# probe callers keep the old behavior; an ARMED EVENT is where a dead leg is
+# unacceptable, and this launcher is the thing that knows it is one.
+#
+# COHR 26AUG12 is why: both legs died on HLS sequence gaps and the arm exited
+# at 21:35:44Z while the call was still running. The phone lane has had a
+# reconnect budget since 2026-07-29; this is its webcast twin.
+#
+# These belong in [[sources]] next to the leg they govern; that needs
+# src/config.rs + src/main.rs, which this lane does not own (request filed in
+# architecture/claims.toml under root.source_pipe_contract).
+export EARSHOT_PIPE_MAX_RESPAWNS="${EARSHOT_PIPE_MAX_RESPAWNS:-20}"
+export EARSHOT_PIPE_RESPAWN_BACKOFF_MS="${EARSHOT_PIPE_RESPAWN_BACKOFF_MS:-2000}"
+echo "leg respawn: budget ${EARSHOT_PIPE_MAX_RESPAWNS}, backoff ${EARSHOT_PIPE_RESPAWN_BACKOFF_MS} ms per leg"
+
 # The posture line must state what this run ACTUALLY is. It previously printed
 # "(observe posture)" unconditionally, which was true only because the flag could
 # not be passed — the same class of defect as V6's health line that went silent
