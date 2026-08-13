@@ -134,3 +134,37 @@ also gains `scripts/test-deaf-leg.py`), `runtime.source.port`
 
 No deployment, dial, page, schedule, or trade has been performed by this lane,
 and no money policy was touched.
+
+## Observability reliability lane — 2026-08-12
+
+Work order `docs/work/SOLUTION-OBSERVABILITY.md`; node work stayed within
+`platform.notify`, `control.supervise`, `control.grade`, and
+`evidence.measure`.
+
+- **M2:** the standalone proof ledger, bounded due re-page, and explicit ack
+  are live. Schedule-proof, run-verdict, redial supervision, and daily
+  reconciliation paths owned by these nodes page critical failures. Legacy
+  callers in foreign nodes remain boundary work.
+- **M1 / E2 consumer:** `schedule-proof.py monitor` is supervised,
+  restartable, read-only toward run state, and consumes tape-progress,
+  telemetry, journal, and redial evidence. It detects no frames, one-cadence
+  tape stalls, all legs dead, queue-like drop cadence, and early arm exit.
+  CAPTURE still owns installing it beside each launcher.
+- **M4:** the monitor has a bounded, byte-capped read-only SSH snapshot with
+  explicit staleness. Adding that read-through to `event-status.sh` remains
+  with `control.operate`.
+- **M5:** actual armed evidence—not a matching prepare/config filename—binds
+  posture, and historical event candlesticks determine whether the board
+  traded anywhere in the event window. Both regressions are in `--check`.
+- **M3:** the scorer publishes and verifies a bound immutable
+  `grade/precision-score.json`. The EVIDENCE-owned `run-audit.py` must consume
+  that artifact before typed-grade precision is complete.
+- **M6:** the day index emits one `COVERED`, `DESCOPED`, or `MISSED` row per
+  dated event with evidence links, and the scheduled missed-arm wrapper always
+  runs it for the same UTC date with an independent critical alert.
+- **C5 delivery hook:** `alertctl.py host-contention` is a first-class
+  critical phone request with deterministic host/guard identity. CAPTURE owns
+  the guard and invocation.
+
+All mandated offline gates are green. No deploy, push, schedule, real phone
+page, or money-policy change was performed.

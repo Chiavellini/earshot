@@ -201,3 +201,24 @@ the old behavior.
 
 Offline validation only. No deployment, dial, page, schedule, or trade was
 performed by this lane, and no money policy was touched.
+
+## Observability reliability lane — M1–M6 and C5 delivery
+
+The observability-owned implementation is checkpointed on `webcast-lane`.
+Critical alerts now have a durable standalone hash chain, phone-required
+delivery, deterministic restart-safe identity, bounded re-page, and explicit
+human acknowledgement. A supervised read-only monitor consumes typed tape
+growth and run telemetry without writing to `var/runs/`; its bounded box
+snapshot reports an explicit staleness limit. The missed-arm regressions use
+actual armed evidence and historical event-window trading, precision scoring
+publishes a bound grade input, and the daily audit classifies every dated
+event as `COVERED`, `DESCOPED`, or `MISSED` with evidence links. The C5
+host-contention phone-delivery door is ready for CAPTURE's detector.
+
+Cross-node completion remains explicit: CAPTURE must install the monitor and
+invoke the C5 door; `control.operate` must add the bounded remote view to
+`event-status.sh`; EVIDENCE must join `precision-score.json` into the typed
+RunGrade; and foreign legacy critical `notify.sh` callers still need their
+own-node migrations. No real phone drill was authorized or attempted. No
+deploy, push, scheduler mutation, run-state mutation, or money-policy change
+was performed.
