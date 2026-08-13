@@ -252,12 +252,10 @@ produced nothing. That case logs `REDIAL-NO-MEDIA:` naming the attempt and the
 elapsed time. It matters because the budget is small — production runs
 `max_reconnects = 2` — so a bridge that admits and instantly re-drops would
 otherwise consume every attempt behind two cheerful "redialed OK" lines. A
-genuine second drop minutes later is not flagged. `REDIAL-NO-MEDIA`, redial
-failure/budget exhaustion, and operator-fallback refusal all raise deterministic
-critical alerts through the standalone `platform.notify` ledger. Each requires
-the phone channel, is eligible for bounded due re-page until acknowledgement,
-and never writes into the live RunPlan tree. A log line nobody reads during a
-live call is the PYPL/BA silent-miss lesson again.
+genuine second drop minutes later is not flagged. As of 2026-08-04
+`REDIAL-NO-MEDIA` also PAGES via `${EARSHOT_NOTIFY:-scripts/notify.sh}` — a
+log line nobody reads during a live call is the PYPL/BA silent-miss lesson
+again.
 
 Time budgets are supplied by `control.launch`, which derives them from the
 event's call time; the defaults here are the fallback for a config with no

@@ -142,7 +142,7 @@ Work order `docs/work/SOLUTION-OBSERVABILITY.md`; node work stayed within
 `evidence.measure`.
 
 - **M2:** the standalone proof ledger, bounded due re-page, and explicit ack
-  are live. Schedule-proof, run-verdict, redial supervision, and daily
+  are live. Schedule-proof, run-verdict, and daily
   reconciliation paths owned by these nodes page critical failures. Legacy
   callers in foreign nodes remain boundary work.
 - **M1 / E2 consumer:** `schedule-proof.py monitor` is supervised,
