@@ -960,6 +960,11 @@ impl WaitLiveRig {
         path
     }
 
+    /// Did the launcher reach the operator? Recorded by the notify stub.
+    fn paged(&self) -> bool {
+        self.cwd.join("paged").exists()
+    }
+
     /// Runs the real launcher in dry posture with `arm` stubbed by `/bin/echo`.
     fn run(&self, curl: &Path, pcm_gate_rc: i32) -> (String, bool) {
         let account = self.cwd.join("acct.env");
@@ -969,6 +974,16 @@ impl WaitLiveRig {
         // pcm-gate cannot be rescued into a false LIVE by real tools.
         let fetch = self.stub("cachebust-stub", "exit 0\n");
         let ffmpeg = self.stub("ffmpeg-stub", "exit 0\n");
+        // MUST be stubbed. The VOD and timeout verdicts page on purpose, and
+        // `page`/`critical_alert` fall back to the REAL scripts/notify.sh,
+        // which reaches Gmail SMTP whenever ~/.kalshi/mail_env exists. Without
+        // these two the suite mails the operator on every run — observed
+        // 2026-08-13, four MAIL-OK entries in ~/.kalshi/notify.log.
+        let notify = self.stub(
+            "notify-stub",
+            &format!("echo \"$@\" >> {}\n", self.cwd.join("paged").display()),
+        );
+        let alertctl = self.stub("alertctl-stub", "exit 0\n");
 
         let out = Command::new("bash")
             .args([
@@ -994,6 +1009,8 @@ impl WaitLiveRig {
             .env("EARSHOT_PCM_GATE", &pcm)
             .env("EARSHOT_CACHEBUST_FETCH", &fetch)
             .env("EARSHOT_FFMPEG", &ffmpeg)
+            .env("EARSHOT_NOTIFY", &notify)
+            .env("EARSHOT_ALERTCTL", &alertctl)
             // Keep the wait bounded so a never-live fixture fails the test
             // instead of hanging it.
             .env("EARSHOT_WAIT_LIVE_POLL_SECS", "1")
@@ -1034,6 +1051,9 @@ fn finished_vod_manifest_never_arms() {
         !out.contains("stream is LIVE"),
         "the gate declared a finished VOD live:\n{out}"
     );
+    // Refusing silently is its own failure: an operator watching the wrong URL
+    // has minutes, not hours, and the gate is the only thing that knows.
+    assert!(rig.paged(), "a VOD verdict must page:\n{out}");
 }
 
 #[test]
