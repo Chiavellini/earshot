@@ -156,6 +156,16 @@ because an event can legitimately create no order/FIX append. The EVIDENCE
 lane owns production of these records and their cadence; supervision only
 reads them.
 
+For a box-owned active run, `--remote-host` and an absolute `--remote-repo`
+switch those same inputs to a bounded SSH read-through. Each refresh invokes
+one `BatchMode=yes` command with a connection/process timeout and a total byte
+cap. The remote helper accepts only repository-relative requested paths,
+refuses traversal, symlinks, non-regular files, non-UTF-8 records, and files
+that change during the read, then returns one in-memory schema-1
+`remote-read-snapshot`. Nothing is copied into the laptop run tree. Refreshes
+are cached only in monitor memory for `--remote-refresh-seconds`; the printed
+staleness bound conservatively includes refresh, local poll, and SSH timeout.
+
 Optional typed `telemetry/live.jsonl` rows use `schema=1`,
 `kind=live-telemetry`, the RunPlan identity, and a `legs` list with typed
 `alive`/`died` state. The legacy event journal supplies redial timestamps until
@@ -178,6 +188,13 @@ band, a watched launcher disappearing before a terminal receipt, and
 failed/aborted lifecycle exit before the configured end. Repeated polling and
 monitor restart preserve the same IDs; `alertctl repage-due` handles bounded
 re-page until explicit acknowledgement.
+
+A remote snapshot identifies `authority.mode=bounded-remote-read`, the host,
+local fetch receipt time, current age, and the stated staleness bound. A
+timeout, SSH refusal, path-set mismatch, or malformed snapshot is a loud
+nonzero result in `--once` mode and raises the deterministic critical
+`remote_read_failed` alert. Continuous mode keeps retrying without falling
+back to a potentially stale laptop prefix.
 
 The terminal exit code is part of the scheduler-facing output. After the
 summary is written and notification attempted, `event-autorun.sh` returns the
@@ -293,7 +310,9 @@ pidfile without touching a network.
 `python3 tests/schedule_proof.py` also drives the monitor entirely in temporary
 run trees. It proves mid-run startup, byte-for-byte run-tree non-mutation,
 one-cadence progress stall, typed all-legs-dead, the repeated-drop cadence,
-early terminal exit, and a killed child being replaced with a different PID.
+early terminal exit, a killed child being replaced with a different PID, a
+fake-SSH box tail overriding the stale local prefix within a declared bound,
+and a failed box refresh paging without mutating local run state.
 
 ## Migration status
 
@@ -302,6 +321,10 @@ launcher-PID-only shutdown. The monitor consumer and its restart supervisor
 are implemented and offline-green. The CAPTURE-owned phone/webcast launcher
 and schedule hooks are deliberately untouched; they must install the monitor
 as a sibling before M1 is production-complete.
+The M4 monitor-side box read-through is implemented and offline-green.
+`event-status.sh` is owned and actively claimed by `control.operate`; that
+renderer still needs its owner to consume the same bounded snapshot rather
+than report `STALE_PREFIX_POSSIBLE`.
 Marker/PID typing remains compatibility debt:
 replace file polling and implicit PID records with typed
 `RunHandle`/`SupervisorEvent` records without reintroducing re-arm or group

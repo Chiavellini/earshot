@@ -43,6 +43,20 @@ class ScheduleProofTest(unittest.TestCase):
             "    f.write(json.dumps(sys.argv[1:]) + '\\n')\n"
             "raise SystemExit(0)\n"
         )
+        self.ssh_log = self.repo / "ssh-calls.jsonl"
+        self.remote_bundle = self.repo / "remote-bundle.json"
+        self.fake_ssh = self.repo / "scripts" / "fake-ssh.py"
+        self.fake_ssh.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json, os, pathlib, sys\n"
+            "with open(os.environ['SSH_CALL_LOG'], 'a') as f:\n"
+            "    f.write(json.dumps(sys.argv[1:]) + '\\n')\n"
+            "if os.environ.get('SSH_FAIL'):\n"
+            "    print('injected ssh failure', file=sys.stderr)\n"
+            "    raise SystemExit(23)\n"
+            "print(pathlib.Path(os.environ['REMOTE_BUNDLE']).read_text(), end='')\n"
+        )
+        self.fake_ssh.chmod(0o755)
         self.home = self.repo / "home"
         self.home.mkdir()
         self.account = self.home / ".earshot" / "account.env"
@@ -53,6 +67,8 @@ class ScheduleProofTest(unittest.TestCase):
             "EARSHOT_REPO": str(self.repo),
             "HOME": str(self.home),
             "ALERT_CALL_LOG": str(self.alert_log),
+            "SSH_CALL_LOG": str(self.ssh_log),
+            "REMOTE_BUNDLE": str(self.remote_bundle),
         }
 
     def tearDown(self):
@@ -231,6 +247,21 @@ class ScheduleProofTest(unittest.TestCase):
             return []
         return [json.loads(line) for line in self.alert_log.read_text().splitlines()]
 
+    def write_remote_bundle(self, run: Path, files: dict[str, str | None]) -> None:
+        requested = {
+            str((run / "control" / "receipts.jsonl").relative_to(self.repo)): None,
+            str((run / "telemetry" / "live.jsonl").relative_to(self.repo)): None,
+            str((self.repo / "state" / run.parent.name / "journal.jsonl").relative_to(self.repo)): None,
+        }
+        requested.update(files)
+        self.remote_bundle.write_text(
+            json.dumps(
+                {"schema": 1, "kind": "remote-read-snapshot", "files": requested},
+                sort_keys=True,
+            )
+            + "\n"
+        )
+
     @staticmethod
     def tree_bytes(run: Path) -> dict[str, bytes]:
         return {
@@ -395,6 +426,94 @@ class ScheduleProofTest(unittest.TestCase):
         assert proc.stdout is not None and proc.stderr is not None
         proc.stdout.close()
         proc.stderr.close()
+
+    def test_monitor_bounded_remote_read_uses_box_tail_without_local_mutation(self):
+        run, plan = self.make_run("phone")
+        self.launch_run(run)
+        self.eventctl("record", "--run-dir", str(run), "--transition", "failed")
+        ledger = run / "control" / "receipts.jsonl"
+        remote_ledger = ledger.read_text()
+        local_prefix = "\n".join(remote_ledger.splitlines()[:-1]) + "\n"
+        ledger.write_text(local_prefix)
+        progress_relative = "capture/audio.raw.progress.json"
+        progress = json.dumps(
+            {
+                "schema": 1,
+                "kind": "evidence-progress",
+                "run_id": plan["run_id"],
+                "plan_sha256": plan["plan_sha256"],
+                "bytes": 8192,
+                "last_append_monotonic_ns": time.monotonic_ns(),
+                "cadence_seconds": 30,
+            },
+            sort_keys=True,
+        ) + "\n"
+        self.write_remote_bundle(
+            run,
+            {
+                str(ledger.relative_to(self.repo)): remote_ledger,
+                str((run / progress_relative).relative_to(self.repo)): progress,
+            },
+        )
+        before = self.tree_bytes(run)
+        proc = self.monitor(
+            run,
+            "--once",
+            "--progress",
+            f"audio={progress_relative}:heartbeat",
+            "--remote-host",
+            "earshot@box.test",
+            "--remote-repo",
+            "/srv/ear",
+            "--ssh-command",
+            str(self.fake_ssh),
+            "--remote-timeout-seconds",
+            "2",
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
+        snapshots = [
+            json.loads(line)
+            for line in proc.stdout.splitlines()
+            if line.startswith("{") and "live-monitor-snapshot" in line
+        ]
+        self.assertEqual(snapshots[-1]["terminal"], "failed")
+        self.assertEqual(snapshots[-1]["authority"]["mode"], "bounded-remote-read")
+        self.assertEqual(snapshots[-1]["progress"]["audio"]["bytes"], 8192)
+        self.assertGreater(snapshots[-1]["authority"]["staleness_bound_seconds"], 0)
+        flattened = "\n".join(" ".join(call) for call in self.alert_calls())
+        self.assertIn("arm_exited_early", flattened)
+        self.assertEqual(self.tree_bytes(run), before)
+        ssh_args = json.loads(self.ssh_log.read_text().splitlines()[0])
+        self.assertIn("BatchMode=yes", ssh_args)
+        self.assertIn("control/receipts.jsonl", ssh_args[-1])
+
+    def test_monitor_remote_refresh_failure_is_pageable_and_loud(self):
+        run, _plan = self.make_run("phone")
+        env = dict(self.env)
+        env["SSH_FAIL"] = "1"
+        previous = self.env
+        self.env = env
+        try:
+            proc = self.monitor(
+                run,
+                "--once",
+                "--progress",
+                "audio=capture/audio.raw.progress.json:heartbeat",
+                "--remote-host",
+                "box.test",
+                "--remote-repo",
+                "/srv/ear",
+                "--ssh-command",
+                str(self.fake_ssh),
+                "--remote-timeout-seconds",
+                "2",
+            )
+        finally:
+            self.env = previous
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn('"state": "failed"', proc.stdout)
+        flattened = "\n".join(" ".join(call) for call in self.alert_calls())
+        self.assertIn("remote_read_failed", flattened)
 
     def test_systemd_proof_is_durable_before_single_receipt(self):
         run, plan = self.make_run("phone")

@@ -26,6 +26,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import signal
 import subprocess
 import sys
@@ -41,7 +42,44 @@ SYSTEMD_DRAIN_SECONDS = 150
 SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 HOST_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 PROGRESS_NAME_RE = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
+REMOTE_HOST_RE = re.compile(
+    r"^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,31}@)?[A-Za-z0-9][A-Za-z0-9._-]{0,253}$"
+)
 TERMINALS = {"completed", "failed", "aborted", "descope"}
+
+REMOTE_READ_SCRIPT = r'''import json, os, stat, sys
+root = os.path.realpath(sys.argv[1])
+cap = int(sys.argv[2])
+files = {}
+used = 0
+for relative in sys.argv[3:]:
+    parts = relative.split("/")
+    if not relative or relative.startswith("/") or any(p in ("", ".", "..") for p in parts):
+        raise SystemExit(f"refused relative path: {relative}")
+    path = os.path.join(root, *parts)
+    resolved = os.path.realpath(path)
+    if os.path.commonpath((root, resolved)) != root:
+        raise SystemExit(f"path escapes remote repository: {relative}")
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        files[relative] = None
+        continue
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+        raise SystemExit(f"not a regular non-symlink file: {relative}")
+    used += info.st_size
+    if used > cap:
+        raise SystemExit(f"remote read exceeds {cap} byte cap")
+    with open(path, "rb") as handle:
+        raw = handle.read(info.st_size + 1)
+    if len(raw) != info.st_size:
+        raise SystemExit(f"file changed during bounded read: {relative}")
+    try:
+        files[relative] = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        raise SystemExit(f"file is not UTF-8 text: {relative}")
+print(json.dumps({"schema": 1, "kind": "remote-read-snapshot", "files": files}, sort_keys=True))
+'''
 
 
 class Refusal(Exception):
@@ -126,6 +164,16 @@ def load_regular_json(path: Path, what: str) -> dict:
     return value
 
 
+def load_json_text(raw: str, what: str) -> dict:
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise Refusal(f"{what} does not parse as JSON: {exc}") from exc
+    if not isinstance(value, dict):
+        raise Refusal(f"{what} must be a JSON object")
+    return value
+
+
 def resolve_context(run_raw: str) -> tuple[Path, Path, dict]:
     repo = Path(os.environ.get("EARSHOT_REPO", Path(__file__).parent.parent)).resolve()
     run = Path(run_raw)
@@ -174,6 +222,95 @@ class ProgressState:
     changed_monotonic: float = field(default_factory=time.monotonic)
 
 
+@dataclass(frozen=True)
+class RemoteSnapshot:
+    files: dict[str, str | None]
+    fetched_at_utc: str
+    fetched_monotonic: float
+
+    def content(self, repo: Path, path: Path) -> str | None:
+        try:
+            relative = path.resolve().relative_to(repo).as_posix()
+        except ValueError as exc:
+            raise Refusal(f"remote observation path escapes repository: {path}") from exc
+        if relative not in self.files:
+            raise Refusal(f"remote snapshot omitted requested path: {relative}")
+        return self.files[relative]
+
+
+class RemoteReader:
+    def __init__(
+        self,
+        args: argparse.Namespace,
+        repo: Path,
+        paths: list[Path],
+    ) -> None:
+        self.args = args
+        self.repo = repo
+        self.paths = paths
+        self.cached: RemoteSnapshot | None = None
+
+    def read(self) -> RemoteSnapshot:
+        now_mono = time.monotonic()
+        if (
+            self.cached is not None
+            and now_mono - self.cached.fetched_monotonic < self.args.remote_refresh_seconds
+        ):
+            return self.cached
+        relative: list[str] = []
+        for path in self.paths:
+            try:
+                key = path.resolve().relative_to(self.repo).as_posix()
+            except ValueError as exc:
+                raise Refusal(f"remote read path escapes repository: {path}") from exc
+            if key not in relative:
+                relative.append(key)
+        remote_argv = [
+            "python3",
+            "-c",
+            REMOTE_READ_SCRIPT,
+            self.args.remote_repo,
+            str(self.args.remote_max_bytes),
+            *relative,
+        ]
+        remote_command = " ".join(shlex.quote(value) for value in remote_argv)
+        connect_timeout = max(1, int(self.args.remote_timeout_seconds + 0.999))
+        try:
+            proc = subprocess.run(
+                [
+                    self.args.ssh_command,
+                    "-o",
+                    "BatchMode=yes",
+                    "-o",
+                    f"ConnectTimeout={connect_timeout}",
+                    "--",
+                    self.args.remote_host,
+                    remote_command,
+                ],
+                cwd=self.repo,
+                env={**os.environ, "EARSHOT_REPO": str(self.repo)},
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=self.args.remote_timeout_seconds,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise Refusal(f"bounded remote read failed: {exc}") from exc
+        if proc.returncode != 0:
+            detail = (proc.stderr or proc.stdout).strip()
+            raise Refusal(f"bounded remote read returned {proc.returncode}: {detail}")
+        value = load_json_text(proc.stdout, "bounded remote read response")
+        if value.get("schema") != 1 or value.get("kind") != "remote-read-snapshot":
+            raise Refusal("bounded remote read response has unsupported schema/kind")
+        files = value.get("files")
+        if not isinstance(files, dict) or set(files) != set(relative):
+            raise Refusal("bounded remote read response path set differs from request")
+        if any(item is not None and not isinstance(item, str) for item in files.values()):
+            raise Refusal("bounded remote read response contains a non-text file")
+        self.cached = RemoteSnapshot(files, now_utc(), time.monotonic())
+        return self.cached
+
+
 def resolve_monitor_context(run_raw: str) -> tuple[Path, Path, dict]:
     """Resolve identity without taking eventctl's shared ledger lock."""
     repo = Path(os.environ.get("EARSHOT_REPO", Path(__file__).parent.parent)).resolve()
@@ -203,6 +340,16 @@ def read_jsonl_prefix(path: Path, what: str) -> list[dict]:
     if path.is_symlink() or not path.is_file():
         raise Refusal(f"{what} must be a regular non-symlink file: {path}")
     raw = path.read_bytes()
+    return read_jsonl_bytes(raw, what)
+
+
+def read_jsonl_text(raw: str | None, what: str) -> list[dict]:
+    if raw is None:
+        return []
+    return read_jsonl_bytes(raw.encode("utf-8"), what)
+
+
+def read_jsonl_bytes(raw: bytes, what: str) -> list[dict]:
     if raw and not raw.endswith(b"\n"):
         raw = raw[: raw.rfind(b"\n") + 1] if b"\n" in raw else b""
     rows: list[dict] = []
@@ -217,8 +364,17 @@ def read_jsonl_prefix(path: Path, what: str) -> list[dict]:
     return rows
 
 
-def lifecycle_view(run: Path) -> tuple[list[dict], set[str], dict[str, dt.datetime]]:
-    rows = read_jsonl_prefix(run / "control" / "receipts.jsonl", "lifecycle ledger")
+def lifecycle_view(
+    repo: Path,
+    run: Path,
+    remote: RemoteSnapshot | None = None,
+) -> tuple[list[dict], set[str], dict[str, dt.datetime]]:
+    ledger = run / "control" / "receipts.jsonl"
+    rows = (
+        read_jsonl_text(remote.content(repo, ledger), "remote lifecycle ledger")
+        if remote is not None
+        else read_jsonl_prefix(ledger, "lifecycle ledger")
+    )
     reached: set[str] = set()
     times: dict[str, dt.datetime] = {}
     for row in rows:
@@ -281,8 +437,19 @@ def default_progress_specs(repo: Path, run: Path, plan: dict) -> list[ProgressSp
     return specs
 
 
-def progress_record(spec: ProgressSpec, plan: dict) -> dict:
-    value = load_regular_json(spec.path, f"{spec.name} progress")
+def progress_record(
+    repo: Path,
+    spec: ProgressSpec,
+    plan: dict,
+    remote: RemoteSnapshot | None = None,
+) -> dict:
+    if remote is None:
+        value = load_regular_json(spec.path, f"{spec.name} progress")
+    else:
+        raw = remote.content(repo, spec.path)
+        if raw is None:
+            raise Refusal(f"{spec.name} progress is absent from remote snapshot")
+        value = load_json_text(raw, f"remote {spec.name} progress")
     if value.get("schema") != 1 or value.get("kind") not in (
         "evidence-progress",
         "tape-progress",
@@ -307,10 +474,20 @@ def progress_record(spec: ProgressSpec, plan: dict) -> dict:
     return value
 
 
-def latest_telemetry(path: Path | None, plan: dict) -> dict | None:
-    if path is None or not path.exists():
+def latest_telemetry(
+    repo: Path,
+    path: Path | None,
+    plan: dict,
+    remote: RemoteSnapshot | None = None,
+) -> dict | None:
+    if path is None:
         return None
-    rows = read_jsonl_prefix(path, "live telemetry")
+    if remote is None:
+        if not path.exists():
+            return None
+        rows = read_jsonl_prefix(path, "live telemetry")
+    else:
+        rows = read_jsonl_text(remote.content(repo, path), "remote live telemetry")
     if not rows:
         return None
     value = rows[-1]
@@ -321,10 +498,19 @@ def latest_telemetry(path: Path | None, plan: dict) -> dict | None:
     return value
 
 
-def redial_intervals(journal: Path | None) -> list[float]:
-    if journal is None or not journal.exists():
+def redial_intervals(
+    repo: Path,
+    journal: Path | None,
+    remote: RemoteSnapshot | None = None,
+) -> list[float]:
+    if journal is None:
         return []
-    rows = read_jsonl_prefix(journal, "event journal")
+    if remote is None:
+        if not journal.exists():
+            return []
+        rows = read_jsonl_prefix(journal, "event journal")
+    else:
+        rows = read_jsonl_text(remote.content(repo, journal), "remote event journal")
     stamps: list[dt.datetime] = []
     for row in rows:
         if row.get("actor") == "redial-supervisor.sh" and row.get("action") == "redial":
@@ -743,8 +929,9 @@ def monitor_once(
     specs: list[ProgressSpec],
     states: dict[str, ProgressState],
     emitted: set[str],
+    remote: RemoteSnapshot | None = None,
 ) -> tuple[dict, bool]:
-    rows, reached, times = lifecycle_view(run)
+    rows, reached, times = lifecycle_view(repo, run, remote)
     launched_at = times.get("launched")
     now_wall = dt.datetime.now(dt.timezone.utc)
     now_mono = time.monotonic()
@@ -761,7 +948,12 @@ def monitor_once(
     audio_bytes = 0
     for spec in specs:
         state = states.setdefault(spec.name, ProgressState())
-        if not spec.path.exists():
+        present = (
+            remote.content(repo, spec.path) is not None
+            if remote is not None
+            else spec.path.exists()
+        )
+        if not present:
             progress_summary[spec.name] = {"state": "missing", "path": str(spec.path)}
             if launched_at and (now_wall - launched_at).total_seconds() >= args.confirm_seconds:
                 alerts.append(
@@ -774,7 +966,7 @@ def monitor_once(
                 )
             continue
         try:
-            record = progress_record(spec, plan)
+            record = progress_record(repo, spec, plan, remote)
         except Refusal as exc:
             progress_summary[spec.name] = {"state": "invalid", "detail": str(exc)}
             alerts.append(
@@ -843,7 +1035,7 @@ def monitor_once(
     telemetry_path = Path(args.telemetry).resolve() if args.telemetry else run / "telemetry/live.jsonl"
     telemetry = None
     try:
-        telemetry = latest_telemetry(telemetry_path, plan)
+        telemetry = latest_telemetry(repo, telemetry_path, plan, remote)
     except Refusal as exc:
         alerts.append(
             (
@@ -870,7 +1062,7 @@ def monitor_once(
 
     journal = Path(args.journal).resolve() if args.journal else repo / "state" / plan["event_id"] / "journal.jsonl"
     try:
-        intervals = redial_intervals(journal)
+        intervals = redial_intervals(repo, journal, remote)
     except Refusal as exc:
         intervals = []
         alerts.append(
@@ -936,6 +1128,20 @@ def monitor_once(
         "redial_intervals_seconds": intervals,
         "alerts_seen": sorted(emitted),
     }
+    if remote is not None:
+        snapshot["authority"] = {
+            "mode": "bounded-remote-read",
+            "host": args.remote_host,
+            "fetched_at_utc": remote.fetched_at_utc,
+            "age_seconds": round(max(0.0, time.monotonic() - remote.fetched_monotonic), 3),
+            "staleness_bound_seconds": (
+                args.remote_refresh_seconds
+                + args.poll_seconds
+                + args.remote_timeout_seconds
+            ),
+        }
+    else:
+        snapshot["authority"] = {"mode": "local"}
     return snapshot, terminal is not None
 
 
@@ -953,10 +1159,68 @@ def monitor(args: argparse.Namespace) -> int:
         if args.progress
         else default_progress_specs(repo, run, plan)
     )
+    telemetry_path = Path(args.telemetry).resolve() if args.telemetry else run / "telemetry/live.jsonl"
+    journal_path = Path(args.journal).resolve() if args.journal else repo / "state" / plan["event_id"] / "journal.jsonl"
+    remote_reader = None
+    if args.remote_host:
+        remote_reader = RemoteReader(
+            args,
+            repo,
+            [
+                run / "control" / "receipts.jsonl",
+                *(spec.path for spec in specs),
+                telemetry_path,
+                journal_path,
+            ],
+        )
     states: dict[str, ProgressState] = {}
     emitted: set[str] = set()
     while True:
-        snapshot, terminal = monitor_once(args, repo, run, plan, specs, states, emitted)
+        remote = None
+        if remote_reader is not None:
+            try:
+                remote = remote_reader.read()
+            except Refusal as exc:
+                key = "remote_read_failed:box-read-through"
+                if key not in emitted:
+                    raise_monitor_alert(
+                        args,
+                        repo,
+                        run,
+                        plan,
+                        code="remote_read_failed",
+                        dedupe="box-read-through",
+                        subject=f"{plan['event_id']}: bounded box read-through failed",
+                        body=f"The monitor could not refresh its read-only box snapshot: {exc}",
+                    )
+                    emitted.add(key)
+                snapshot = {
+                    "schema": 1,
+                    "kind": "live-monitor-snapshot",
+                    "event_id": plan["event_id"],
+                    "run_id": plan["run_id"],
+                    "authority": {
+                        "mode": "bounded-remote-read",
+                        "host": args.remote_host,
+                        "state": "failed",
+                        "detail": str(exc),
+                        "staleness_bound_seconds": (
+                            args.remote_refresh_seconds
+                            + args.poll_seconds
+                            + args.remote_timeout_seconds
+                        ),
+                    },
+                    "alerts_seen": sorted(emitted),
+                }
+                print(json.dumps(snapshot, sort_keys=True), flush=True)
+                repage_due(args, repo)
+                if args.once:
+                    return 1
+                time.sleep(args.poll_seconds)
+                continue
+        snapshot, terminal = monitor_once(
+            args, repo, run, plan, specs, states, emitted, remote
+        )
         print(json.dumps(snapshot, sort_keys=True), flush=True)
         repage_due(args, repo)
         if args.once or terminal:
@@ -1013,6 +1277,12 @@ def monitor_parser() -> argparse.ArgumentParser:
     value.add_argument("--progress", action="append", default=[])
     value.add_argument("--telemetry")
     value.add_argument("--journal")
+    value.add_argument("--remote-host")
+    value.add_argument("--remote-repo")
+    value.add_argument("--ssh-command", default="ssh")
+    value.add_argument("--remote-refresh-seconds", type=float, default=15.0)
+    value.add_argument("--remote-timeout-seconds", type=float, default=5.0)
+    value.add_argument("--remote-max-bytes", type=int, default=1024 * 1024)
     value.add_argument("--watched-pid", type=int)
     value.add_argument("--end-at-utc")
     value.add_argument("--default-run-minutes", type=float, default=90.0)
@@ -1053,6 +1323,21 @@ def validate_monitor_args(args: argparse.Namespace) -> None:
         raise Refusal("--once and --supervise are mutually exclusive")
     if args.watched_pid is not None and args.watched_pid <= 0:
         raise Refusal("--watched-pid must be positive")
+    if bool(args.remote_host) != bool(args.remote_repo):
+        raise Refusal("--remote-host and --remote-repo must be supplied together")
+    if args.remote_host and not REMOTE_HOST_RE.fullmatch(args.remote_host):
+        raise Refusal("--remote-host must be a plain host or user@host token")
+    if args.remote_repo:
+        if not args.remote_repo.startswith("/") or any(
+            part in ("", ".", "..") for part in args.remote_repo.split("/")[1:]
+        ):
+            raise Refusal("--remote-repo must be a normalized absolute path")
+    if not 0.1 <= args.remote_refresh_seconds <= 300:
+        raise Refusal("--remote-refresh-seconds must be in [0.1, 300]")
+    if not 0.1 <= args.remote_timeout_seconds <= 30:
+        raise Refusal("--remote-timeout-seconds must be in [0.1, 30]")
+    if not 4096 <= args.remote_max_bytes <= 16 * 1024 * 1024:
+        raise Refusal("--remote-max-bytes must be in [4096, 16777216]")
 
 
 def main() -> int:
