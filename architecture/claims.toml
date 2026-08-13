@@ -121,7 +121,7 @@ evidence = ["docs/layers/auth.md"]
 [[claim]]
 id = "post26aug05.wire_truth"
 node = "runtime.kalshi.executor"
-worker = "order-truth-lane"
+worker = "order-truth-lane + evidence-reliability-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
@@ -135,6 +135,10 @@ contract_change = true
 # from the lossy compatibility send door to `SubmitResult`, preserving every
 # attempted/observed/accepted/fill transition and exact response evidence in
 # the per-intent record. No execution policy or risk cap changes.
+# 2026-08-12 E6: evidence-reliability-lane owns the bounded verification fix
+# for `prestage_enumerates_all_tranches`: reconcile the deterministic client
+# id expected by the test with the prestaged order identity, then classify the
+# complete repository matrix. This changes neither tranche policy nor caps.
 paths = [
   "docs/layers/executor.md",
   "src/kalshi/executor.rs",
@@ -142,6 +146,7 @@ paths = [
   "tests/exec_fix_mock.rs",
 ]
 verification = [
+  "cargo test --lib kalshi::executor::tests::prestage_enumerates_all_tranches",
   "cargo test --lib executor",
   "cargo test --test exec_mock",
   "cargo test --test exec_fix_mock",
@@ -191,10 +196,15 @@ evidence = ["docs/layers/config.md"]
 [[claim]]
 id = "phone.source_port"
 node = "runtime.source.port"
-worker = "phone-lane"
+worker = "phone-lane + capture-reliability-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
+# 2026-08-12 C2 (capture-reliability-lane): the pipe adapter gains a bounded
+# respawn budget, so `docs/layers/source.md` §Adapter #4 must stop describing a
+# leg death as terminal. The port itself (`AudioSource`, `SourceError`,
+# `SourceExit`) is UNCHANGED — respawn lives entirely inside `PipeSource::run`,
+# which is why no new door was needed. Doc-only edit under this claim.
 paths = [
   "docs/layers/source.md",
   "docs/nodes/source-port.md",
@@ -374,7 +384,7 @@ evidence = ["docs/history/PHONE-LANE-HANDOFF.md"]
 [[claim]]
 id = "phone_tls.launch"
 node = "control.launch"
-worker = "phone-lane + tls-box-lane + admission-evidence-lane + typed-scheduler-lane"
+worker = "phone-lane + tls-box-lane + admission-evidence-lane + typed-scheduler-lane + capture-reliability-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
@@ -404,6 +414,14 @@ paths = [
   # gate mattered, since a 1c cap short-circuits before send_order and produced
   # 30 "orders" with zero wire sends.
   "tests/launch_webcast_posture.rs",
+  # 2026-08-12 C1 (capture-reliability-lane, docs/work/SOLUTION-CAPTURE.md):
+  # `--wait-live hls` decided liveness by grepping EXTINF, so the finished
+  # 15-minute VOD the CBRS venue serves from a sibling host passes the gate and
+  # would arm a FILL posture against pre-recorded audio. The gate becomes the
+  # three-part test `scripts/cdn-cachebust-fetch.sh:23-27` has specified since
+  # the day it was found, and gets its first test ever. `pcm-gate.sh` takes the
+  # ENDLIST half too, because `arm-on-url.sh` — the unattended path — gates on
+  # pcm-gate and never passes `--wait-live` at all.
 ]
 verification = [
   "bash -n scripts/launch-event.sh",
@@ -799,10 +817,20 @@ evidence = ["docs/nodes/platform-deploy.md"]
 [[claim]]
 id = "root.source_pipe_contract"
 node = "runtime.source.pipe"
-worker = "/root + cerebras-live-lane"
+worker = "/root + cerebras-live-lane + capture-reliability-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
+# 2026-08-12 C2 (capture-reliability-lane, docs/work/SOLUTION-CAPTURE.md):
+# COHR 26AUG12 exited the arm MID-CALL at 21:35:44Z because both webcast legs
+# died on HLS sequence gaps and a dead pipe leg never came back. This adapter
+# gains a respawn budget symmetrical to twilio_ws's `max_reconnects`: default
+# 0 reproduces today's returns byte-for-byte, and the launchers turn it on.
+# The budget CANNOT be plumbed through TOML from here — `build_leg` lives in
+# `src/main.rs` (EVIDENCE lane) and `SourceConfig` in `src/config.rs`
+# (runtime.config), so enablement is by env. REQUEST filed to the EVIDENCE
+# lane for the native `SourceConfig::Pipe { max_respawns, respawn_backoff_ms }`
+# plumbing, the same treatment `max_reconnects` got at src/main.rs:1166-1167.
 paths = [
   "docs/nodes/source-pipe.md",
   "src/source/pipe.rs",
@@ -815,10 +843,16 @@ paths = [
   # the --chunk-ms flag. Finished and --selftest-clean; the gate that would let
   # its default change is the parked one under `admission.measure`.
   "scripts/hls-edge-fetch.py",
+  # 2026-08-12 C2b: the node's own localhost-HLS fixture server is how the two
+  # survivor legs above get proven without touching a venue. Node-owned since
+  # its creation but never named by a claim; named now because C2's respawn
+  # regression is rehearsed against it.
+  "scripts/test-deaf-leg.py",
 ]
 verification = [
   "scripts/doc-lint.sh",
   "python3 scripts/hls-edge-fetch.py --selftest",
+  "cargo test --test pipe_source",
 ]
 evidence = ["docs/nodes/source-pipe.md"]
 
