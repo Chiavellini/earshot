@@ -1231,12 +1231,14 @@ evidence = [
 [[claim]]
 id = "notify.delivery_log"
 node = "platform.notify"
-worker = "prep-night-26aug05 + event-lifecycle-lane"
+worker = "prep-night-26aug05 + event-lifecycle-lane + observability-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
 # 2026-08-04: three URL-MISSED pages fired and nobody can say whether they
 # arrived. notify.sh now appends per-channel outcomes to ~/.kalshi/notify.log.
+# 2026-08-12 M2: observability-lane owns proof-bearing phone delivery,
+# deterministic repaging until explicit acknowledgement, and the node contract.
 paths = [
   "docs/nodes/platform-notify.md",
   "scripts/notify.sh",
@@ -1247,6 +1249,11 @@ paths = [
 verification = [
   "bash -n scripts/notify.sh scripts/alert-phone.sh",
   "python3 tests/alertctl.py",
+  "python3 tests/ops_surface.py",
+  "python3 tests/audit_day.py",
+  "python3 tests/score_precision.py",
+  "python3 scripts/missed-arm-check.py --check",
+  "./scripts/doc-lint.sh",
 ]
 evidence = [
   "docs/nodes/platform-notify.md",
