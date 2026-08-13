@@ -7,10 +7,12 @@ import datetime as dt
 import hashlib
 import json
 import os
+import signal
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -32,6 +34,15 @@ class ScheduleProofTest(unittest.TestCase):
         shutil.copy2(SCHEDULE_PROOF, self.repo / "scripts" / "schedule-proof.py")
         (self.repo / "scripts" / "event-autorun.sh").write_text("#!/bin/sh\n")
         (self.repo / "scripts" / "arm-on-url.sh").write_text("#!/bin/sh\n")
+        self.alert_log = self.repo / "alert-calls.jsonl"
+        self.fake_alertctl = self.repo / "scripts" / "fake-alertctl.py"
+        self.fake_alertctl.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json, os, sys\n"
+            "with open(os.environ['ALERT_CALL_LOG'], 'a') as f:\n"
+            "    f.write(json.dumps(sys.argv[1:]) + '\\n')\n"
+            "raise SystemExit(0)\n"
+        )
         self.home = self.repo / "home"
         self.home.mkdir()
         self.account = self.home / ".earshot" / "account.env"
@@ -41,6 +52,7 @@ class ScheduleProofTest(unittest.TestCase):
             **os.environ,
             "EARSHOT_REPO": str(self.repo),
             "HOME": str(self.home),
+            "ALERT_CALL_LOG": str(self.alert_log),
         }
 
     def tearDown(self):
@@ -163,6 +175,226 @@ class ScheduleProofTest(unittest.TestCase):
             for line in (run / "control" / "receipts.jsonl").read_text().splitlines()
             if json.loads(line)["kind"] == "transition"
         ]
+
+    def launch_run(self, run: Path) -> None:
+        for transition in ("scheduled", "capture_ready", "launched"):
+            self.eventctl("record", "--run-dir", str(run), "--transition", transition)
+
+    def write_progress(
+        self, run: Path, relative: str, *, byte_count: int, cadence: float,
+        append_age: float = 0.0,
+    ) -> Path:
+        path = run / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        plan = json.loads((run / "control" / "run-plan.json").read_text())
+        path.write_text(
+            json.dumps(
+                {
+                    "schema": 1,
+                    "kind": "evidence-progress",
+                    "run_id": plan["run_id"],
+                    "plan_sha256": plan["plan_sha256"],
+                    "bytes": byte_count,
+                    "last_append_monotonic_ns": time.monotonic_ns()
+                    - int(append_age * 1_000_000_000),
+                    "cadence_seconds": cadence,
+                },
+                sort_keys=True,
+            )
+            + "\n"
+        )
+        return path
+
+    def monitor(self, run: Path, *extra: str, timeout: float = 20) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [
+                sys.executable,
+                str(self.repo / "scripts" / "schedule-proof.py"),
+                "monitor",
+                "--run-dir",
+                str(run),
+                "--alert-dir",
+                str(self.repo / "state" / "alerts"),
+                "--alertctl",
+                str(self.fake_alertctl),
+                *extra,
+            ],
+            cwd=self.repo,
+            env=self.env,
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+        )
+
+    def alert_calls(self) -> list[list[str]]:
+        if not self.alert_log.exists():
+            return []
+        return [json.loads(line) for line in self.alert_log.read_text().splitlines()]
+
+    @staticmethod
+    def tree_bytes(run: Path) -> dict[str, bytes]:
+        return {
+            str(path.relative_to(run)): path.read_bytes()
+            for path in sorted(run.rglob("*"))
+            if path.is_file()
+        }
+
+    def test_monitor_started_midrun_pages_no_frames_without_mutating_run(self):
+        run, _plan = self.make_run("phone")
+        self.launch_run(run)
+        time.sleep(0.15)
+        before = self.tree_bytes(run)
+        proc = self.monitor(
+            run,
+            "--once",
+            "--confirm-seconds",
+            "0.1",
+            "--progress",
+            "audio=capture/audio.raw.progress.json:growth",
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        calls = self.alert_calls()
+        flattened = "\n".join(" ".join(call) for call in calls)
+        self.assertIn("progress_missing", flattened)
+        self.assertIn("no_frames", flattened)
+        self.assertEqual(self.tree_bytes(run), before, "monitor wrote into the live run tree")
+
+    def test_monitor_consumes_growth_sidecar_and_pages_one_cadence_stall(self):
+        run, _plan = self.make_run("phone")
+        self.launch_run(run)
+        self.eventctl("record", "--run-dir", str(run), "--transition", "source_attached")
+        self.write_progress(
+            run,
+            "capture/audio.raw.progress.json",
+            byte_count=4096,
+            cadence=0.1,
+            append_age=1.0,
+        )
+        proc = self.monitor(
+            run,
+            "--once",
+            "--progress",
+            "audio=capture/audio.raw.progress.json:growth",
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        flattened = "\n".join(" ".join(call) for call in self.alert_calls())
+        self.assertIn("tape_stalled", flattened)
+        self.assertNotIn("no_frames", flattened)
+
+    def test_monitor_pages_typed_all_legs_dead_drop_cadence_and_early_exit(self):
+        run, plan = self.make_run("phone")
+        self.launch_run(run)
+        self.eventctl("record", "--run-dir", str(run), "--transition", "failed")
+        progress = self.write_progress(
+            run,
+            "capture/audio.raw.progress.json",
+            byte_count=4096,
+            cadence=30,
+        )
+        telemetry = run / "telemetry" / "live.jsonl"
+        telemetry.parent.mkdir()
+        telemetry.write_text(
+            json.dumps(
+                {
+                    "schema": 1,
+                    "kind": "live-telemetry",
+                    "run_id": plan["run_id"],
+                    "legs": [
+                        {"label": "a", "died": "gap"},
+                        {"label": "b", "alive": False},
+                    ],
+                }
+            )
+            + "\n"
+        )
+        journal = self.repo / "state" / plan["event_id"] / "journal.jsonl"
+        journal.parent.mkdir(parents=True)
+        base = dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=5)
+        journal.write_text(
+            "".join(
+                json.dumps(
+                    {
+                        "ts": (base + dt.timedelta(seconds=offset)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                        "actor": "redial-supervisor.sh",
+                        "action": "redial",
+                        "outcome": "ok",
+                    }
+                )
+                + "\n"
+                for offset in (0, 75, 155)
+            )
+        )
+        proc = self.monitor(
+            run,
+            "--once",
+            "--progress",
+            f"audio={progress.relative_to(run)}:heartbeat",
+            "--telemetry",
+            str(telemetry),
+            "--journal",
+            str(journal),
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        flattened = "\n".join(" ".join(call) for call in self.alert_calls())
+        self.assertIn("all_legs_dead", flattened)
+        self.assertIn("drop_cadence", flattened)
+        self.assertIn("arm_exited_early", flattened)
+
+    def test_monitor_supervisor_restarts_a_killed_child(self):
+        run, _plan = self.make_run("phone")
+        progress = self.write_progress(
+            run,
+            "capture/audio.raw.progress.json",
+            byte_count=0,
+            cadence=30,
+        )
+        proc = subprocess.Popen(
+            [
+                sys.executable,
+                str(self.repo / "scripts" / "schedule-proof.py"),
+                "monitor",
+                "--run-dir",
+                str(run),
+                "--alert-dir",
+                str(self.repo / "state" / "alerts"),
+                "--alertctl",
+                str(self.fake_alertctl),
+                "--progress",
+                f"audio={progress.relative_to(run)}:heartbeat",
+                "--poll-seconds",
+                "0.1",
+                "--restart-seconds",
+                "0.1",
+                "--supervise",
+            ],
+            cwd=self.repo,
+            env=self.env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.addCleanup(lambda: proc.poll() is None and proc.kill())
+
+        def child_pid(after: int | None = None) -> int:
+            deadline = time.time() + 10
+            assert proc.stdout is not None
+            while time.time() < deadline:
+                line = proc.stdout.readline()
+                if line.startswith("MONITOR_CHILD_PID="):
+                    value = int(line.split("=", 1)[1])
+                    if value != after:
+                        return value
+            self.fail("supervisor did not publish a child pid")
+
+        first = child_pid()
+        os.kill(first, signal.SIGKILL)
+        second = child_pid(after=first)
+        self.assertNotEqual(first, second)
+        proc.terminate()
+        self.assertEqual(proc.wait(timeout=10), 0)
+        assert proc.stdout is not None and proc.stderr is not None
+        proc.stdout.close()
+        proc.stderr.close()
 
     def test_systemd_proof_is_durable_before_single_receipt(self):
         run, plan = self.make_run("phone")

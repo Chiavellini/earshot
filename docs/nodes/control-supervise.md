@@ -17,6 +17,14 @@ templates under `configs/*-autorun.env`. The historical run accumulator
 (`docs/history/PHONE-LANE-HANDOFF.md`) are frozen evidence owned by
 evidence.measure since the 2026-08-12 docs/history/ move.
 
+`scripts/schedule-proof.py monitor` is the continuous read-only observer for
+one immutable run. `--supervise` keeps a small parent that restarts a killed
+monitor child. The monitor never locks, repairs, appends, signals, or creates
+anything below the run directory. Its only write-capable subprocess is
+`platform.notify`, pointed at a standalone alert directory outside
+`var/runs/`. Launch/schedule owners must install this command as a sibling;
+this node does not insert it into their forbidden launcher paths.
+
 The owned `scripts/wing-autorun.sh` and `scripts/arm-when-url.sh` paths are
 retired inert facades that exit 64. They remain only to make stale invocations
 fail deterministically and name the `opsctl` replacement.
@@ -135,6 +143,24 @@ than silently disabling escalation. The config's `[event].id` must also equal
 the selected state directory basename, preventing a stale handoff from paging
 another event's configured cell.
 
+The monitor consumes newline-complete lifecycle/journal prefixes without
+locking their writers; an incomplete last line is ignored until the next
+poll. E2 progress inputs are sidecars next to the RunPlan artifact using the
+default `<artifact>.progress.json` name, or explicit
+`--progress NAME=RUN_RELATIVE_PATH:growth|heartbeat`. The minimal consumer
+schema is `schema=1`, `kind=evidence-progress|tape-progress`, nonnegative
+`bytes` and `last_append_monotonic_ns`, and a positive bounded
+`cadence_seconds`; optional run/plan identity, when present, must match. Audio
+and book use `growth`; order evidence and FIX use writer-heartbeat posture
+because an event can legitimately create no order/FIX append. The EVIDENCE
+lane owns production of these records and their cadence; supervision only
+reads them.
+
+Optional typed `telemetry/live.jsonl` rows use `schema=1`,
+`kind=live-telemetry`, the RunPlan identity, and a `legs` list with typed
+`alive`/`died` state. The legacy event journal supplies redial timestamps until
+that telemetry door carries them.
+
 ## Output contracts
 
 The target `SupervisorEvent` stream records start, heartbeat, source drop,
@@ -142,6 +168,16 @@ recovery attempt, budget exhaustion, STOP, child exit, and terminal status.
 Current outputs are per-event logs, marker files, exit codes, notifications,
 and a non-authoritative terminal summary. Deterministic grading is a separate
 `control.grade` operation over immutable evidence.
+
+The monitor prints schema-1 `live-monitor-snapshot` JSON only to stdout. It
+raises deterministic standalone critical alerts for: missing frames/progress
+past the confirmation window, invalid progress/telemetry/journal input, audio
+or book growth stalled for one published cadence, all typed legs dead, two or
+more consecutive redial intervals inside the 60–105 second operator-queue
+band, a watched launcher disappearing before a terminal receipt, and
+failed/aborted lifecycle exit before the configured end. Repeated polling and
+monitor restart preserve the same IDs; `alertctl repage-due` handles bounded
+re-page until explicit acknowledgement.
 
 The terminal exit code is part of the scheduler-facing output. After the
 summary is written and notification attempted, `event-autorun.sh` returns the
@@ -156,6 +192,9 @@ It watches processes/files, may hang up and redial a call, may perform bounded
 pre-run retries, writes supervisor logs, and stops children. Dial/hangup effects
 are delegated to `control.phone_session`; one supervisor exclusively owns
 recovery policy for one `RunHandle`.
+The live monitor has no recovery side effect and holds no run-tree lock. Its
+supervisor may terminate/restart only its own monitor child; it has no code
+path that can signal the launcher or write STOP.
 
 ## Failure contract
 
@@ -166,6 +205,11 @@ restart a traded run merely because grading later reports deafness.
 A launcher/finalizer failure or unauditable audio is terminal failure, not a
 successful summary run. The supervisor still performs its best-effort summary
 and notification cleanup, removes its own pidfile, and then exits nonzero.
+
+Monitor input corruption is a pageable observation failure, never permission
+to repair or terminate the run. A monitor-child crash returns to its supervisor
+and restarts after a bounded delay. An acknowledged deterministic alert remains
+suppressed across that restart.
 
 Redial policy specifics (2026-07-29): a `reason=stop` marker consumed after
 the `--call-end-grace` window is judged a genuine call end — the supervisor
@@ -246,10 +290,19 @@ zero-frame clean child exits with the distinct unauditable-audio status 10;
 both cases launch exactly once, write their summary, and remove the supervisor
 pidfile without touching a network.
 
+`python3 tests/schedule_proof.py` also drives the monitor entirely in temporary
+run trees. It proves mid-run startup, byte-for-byte run-tree non-mutation,
+one-cadence progress stall, typed all-legs-dead, the repeated-drop cadence,
+early terminal exit, and a killed child being replaced with a different PID.
+
 ## Migration status
 
 Supervision is now generic one-RunPlan shell orchestration with one launch and
-launcher-PID-only shutdown. Marker/PID typing remains compatibility debt:
+launcher-PID-only shutdown. The monitor consumer and its restart supervisor
+are implemented and offline-green. The CAPTURE-owned phone/webcast launcher
+and schedule hooks are deliberately untouched; they must install the monitor
+as a sibling before M1 is production-complete.
+Marker/PID typing remains compatibility debt:
 replace file polling and implicit PID records with typed
 `RunHandle`/`SupervisorEvent` records without reintroducing re-arm or group
 signals.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish one durable loaded-scheduler proof, then record ``scheduled``.
+"""Prove a loaded schedule or observe one live run without mutating it.
 
 The OS-specific installers own descriptor generation and readback.  This
 helper owns the shared trust boundary: a scheduler job is not a lifecycle
@@ -11,6 +11,11 @@ retry instead of producing an unexplainable receipt.
 
 No scheduler command is executed here.  ``readback`` is a normalized JSON
 observation produced from launchctl/systemctl by the relevant installer.
+
+The ``monitor`` mode is the read-only live supervision door. It consumes the
+RunPlan/lifecycle prefix, EVIDENCE-owned progress sidecars, typed telemetry,
+and redial journal records. It writes only through platform.notify's
+standalone alert ledger, which must be outside the run directory.
 """
 
 from __future__ import annotations
@@ -21,8 +26,12 @@ import hashlib
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
+import time
+import tomllib
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -31,6 +40,8 @@ READBACK_SCHEMA = 1
 SYSTEMD_DRAIN_SECONDS = 150
 SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 HOST_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+PROGRESS_NAME_RE = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
+TERMINALS = {"completed", "failed", "aborted", "descope"}
 
 
 class Refusal(Exception):
@@ -148,6 +159,177 @@ def resolve_context(run_raw: str) -> tuple[Path, Path, dict]:
     if relative.parts != (plan.get("event_id"), plan.get("run_id")):
         raise Refusal("RunPlan identity does not match the canonical directory")
     return repo, run, plan
+
+
+@dataclass(frozen=True)
+class ProgressSpec:
+    name: str
+    path: Path
+    mode: str
+
+
+@dataclass
+class ProgressState:
+    bytes_seen: int | None = None
+    changed_monotonic: float = field(default_factory=time.monotonic)
+
+
+def resolve_monitor_context(run_raw: str) -> tuple[Path, Path, dict]:
+    """Resolve identity without taking eventctl's shared ledger lock."""
+    repo = Path(os.environ.get("EARSHOT_REPO", Path(__file__).parent.parent)).resolve()
+    run = Path(run_raw)
+    run = (run if run.is_absolute() else repo / run).resolve()
+    canonical_root = (repo / "var" / "runs").resolve()
+    try:
+        relative = run.relative_to(canonical_root)
+    except ValueError as exc:
+        raise Refusal(f"run directory is outside canonical {canonical_root}") from exc
+    if len(relative.parts) != 2 or run.is_symlink() or not run.is_dir():
+        raise Refusal("monitor requires var/runs/<EVENT_ID>/<RUN_ID> as a real directory")
+    plan = load_regular_json(run / "control" / "run-plan.json", "RunPlan")
+    if plan.get("schema") != 3 or plan.get("kind") != "run-plan":
+        raise Refusal("monitor requires a schema-3 RunPlan")
+    if relative.parts != (plan.get("event_id"), plan.get("run_id")):
+        raise Refusal("RunPlan identity does not match the canonical directory")
+    if not SHA_RE.fullmatch(str(plan.get("plan_sha256", ""))):
+        raise Refusal("RunPlan plan_sha256 is invalid")
+    return repo, run, plan
+
+
+def read_jsonl_prefix(path: Path, what: str) -> list[dict]:
+    """Read only newline-complete rows; never lock or repair a live writer."""
+    if not path.exists():
+        return []
+    if path.is_symlink() or not path.is_file():
+        raise Refusal(f"{what} must be a regular non-symlink file: {path}")
+    raw = path.read_bytes()
+    if raw and not raw.endswith(b"\n"):
+        raw = raw[: raw.rfind(b"\n") + 1] if b"\n" in raw else b""
+    rows: list[dict] = []
+    for index, line in enumerate(raw.splitlines(), 1):
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise Refusal(f"{what} line {index} is invalid JSON: {exc}") from exc
+        if not isinstance(value, dict):
+            raise Refusal(f"{what} line {index} is not an object")
+        rows.append(value)
+    return rows
+
+
+def lifecycle_view(run: Path) -> tuple[list[dict], set[str], dict[str, dt.datetime]]:
+    rows = read_jsonl_prefix(run / "control" / "receipts.jsonl", "lifecycle ledger")
+    reached: set[str] = set()
+    times: dict[str, dt.datetime] = {}
+    for row in rows:
+        if row.get("event") not in (None, run.parent.name) or row.get("run") not in (
+            None,
+            run.name,
+        ):
+            raise Refusal("lifecycle receipt identity differs from run directory")
+        transition = row.get("transition") if row.get("kind") == "transition" else None
+        if isinstance(transition, str):
+            reached.add(transition)
+            if transition not in times:
+                times[transition] = parse_utc(row.get("ts"), f"{transition} receipt ts")
+    return rows, reached, times
+
+
+def parse_progress_spec(raw: str, run: Path) -> ProgressSpec:
+    try:
+        name, remainder = raw.split("=", 1)
+        relative, mode = remainder.rsplit(":", 1)
+    except ValueError as exc:
+        raise Refusal("--progress must be NAME=RUN_RELATIVE_PATH:growth|heartbeat") from exc
+    if not PROGRESS_NAME_RE.fullmatch(name) or mode not in ("growth", "heartbeat"):
+        raise Refusal("progress name/mode is invalid")
+    path = (run / relative).resolve()
+    try:
+        path.relative_to(run)
+    except ValueError as exc:
+        raise Refusal(f"progress path escapes run directory: {relative}") from exc
+    return ProgressSpec(name, path, mode)
+
+
+def default_progress_specs(repo: Path, run: Path, plan: dict) -> list[ProgressSpec]:
+    artifacts = plan.get("artifacts") or {}
+    mapping = [
+        ("audio", "audio_raw", "growth"),
+        ("book", "book_tape", "growth"),
+        ("orders", "order_evidence", "heartbeat"),
+    ]
+    config_raw = plan.get("config_path")
+    if isinstance(config_raw, str):
+        config_path = (repo / config_raw).resolve()
+        try:
+            config_path.relative_to(repo)
+            config = tomllib.loads(config_path.read_text(encoding="utf-8"))
+        except (ValueError, OSError, tomllib.TOMLDecodeError) as exc:
+            raise Refusal(f"monitor cannot read pinned config transport: {exc}") from exc
+        if (config.get("kalshi") or {}).get("transport", "rest") == "fix":
+            mapping.append(("fix", "fix_observation_tape", "heartbeat"))
+    specs: list[ProgressSpec] = []
+    for name, key, mode in mapping:
+        relative = artifacts.get(key)
+        if isinstance(relative, str):
+            path = (run / f"{relative}.progress.json").resolve()
+            try:
+                path.relative_to(run)
+            except ValueError as exc:
+                raise Refusal(f"RunPlan progress path for {name} escapes run") from exc
+            specs.append(ProgressSpec(name, path, mode))
+    return specs
+
+
+def progress_record(spec: ProgressSpec, plan: dict) -> dict:
+    value = load_regular_json(spec.path, f"{spec.name} progress")
+    if value.get("schema") != 1 or value.get("kind") not in (
+        "evidence-progress",
+        "tape-progress",
+    ):
+        raise Refusal(f"{spec.name} progress has unsupported schema/kind")
+    byte_count = value.get("bytes")
+    append_ns = value.get("last_append_monotonic_ns")
+    cadence = value.get("cadence_seconds")
+    if type(byte_count) is not int or byte_count < 0:
+        raise Refusal(f"{spec.name} progress bytes is invalid")
+    if type(append_ns) is not int or append_ns < 0:
+        raise Refusal(f"{spec.name} progress last_append_monotonic_ns is invalid")
+    if not isinstance(cadence, (int, float)) or isinstance(cadence, bool) or not 0 < cadence <= 300:
+        raise Refusal(f"{spec.name} progress cadence_seconds is invalid")
+    if value.get("run_id") not in (None, plan["run_id"]):
+        raise Refusal(f"{spec.name} progress run_id differs from RunPlan")
+    if value.get("plan_sha256") not in (None, plan["plan_sha256"]):
+        raise Refusal(f"{spec.name} progress plan_sha256 differs from RunPlan")
+    value["_bytes"] = byte_count
+    value["_append_ns"] = append_ns
+    value["_cadence"] = float(cadence)
+    return value
+
+
+def latest_telemetry(path: Path | None, plan: dict) -> dict | None:
+    if path is None or not path.exists():
+        return None
+    rows = read_jsonl_prefix(path, "live telemetry")
+    if not rows:
+        return None
+    value = rows[-1]
+    if value.get("schema") != 1 or value.get("kind") != "live-telemetry":
+        raise Refusal("live telemetry has unsupported schema/kind")
+    if value.get("run_id") not in (None, plan["run_id"]):
+        raise Refusal("live telemetry run_id differs from RunPlan")
+    return value
+
+
+def redial_intervals(journal: Path | None) -> list[float]:
+    if journal is None or not journal.exists():
+        return []
+    rows = read_jsonl_prefix(journal, "event journal")
+    stamps: list[dt.datetime] = []
+    for row in rows:
+        if row.get("actor") == "redial-supervisor.sh" and row.get("action") == "redial":
+            stamps.append(parse_utc(row.get("ts"), "redial journal ts"))
+    return [(b - a).total_seconds() for a, b in zip(stamps, stamps[1:])]
 
 
 def status(repo: Path, run: Path) -> dict:
@@ -456,6 +638,362 @@ def reconcile(args: argparse.Namespace) -> int:
     return 0
 
 
+def delivery_options(args: argparse.Namespace) -> list[str]:
+    options = ["--phone-attempts", str(args.phone_attempts), "--repage-after", str(args.repage_after)]
+    if args.notify_adapter:
+        options.extend(["--notify-adapter", str(Path(args.notify_adapter).resolve())])
+    if args.phone_adapter:
+        options.extend(["--phone-adapter", str(Path(args.phone_adapter).resolve())])
+    return options
+
+
+def raise_monitor_alert(
+    args: argparse.Namespace,
+    repo: Path,
+    run: Path,
+    plan: dict,
+    *,
+    code: str,
+    dedupe: str,
+    subject: str,
+    body: str,
+) -> None:
+    alertctl = Path(args.alertctl).resolve() if args.alertctl else repo / "scripts" / "alertctl.py"
+    alert_dir = Path(args.alert_dir).resolve()
+    try:
+        alert_dir.relative_to(run)
+    except ValueError:
+        pass
+    else:
+        raise Refusal("monitor alert directory must be outside the live run tree")
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(alertctl),
+            "raise",
+            "--alert-dir",
+            str(alert_dir),
+            "--scope",
+            f"live-monitor:{plan['event_id']}:{plan['run_id']}",
+            "--severity",
+            "critical",
+            "--code",
+            code,
+            "--dedupe-key",
+            dedupe,
+            "--subject",
+            subject,
+            "--body",
+            body,
+            *delivery_options(args),
+        ],
+        cwd=repo,
+        env={**os.environ, "EARSHOT_REPO": str(repo)},
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=120,
+    )
+    detail = (proc.stdout or proc.stderr).strip().splitlines()
+    print(
+        f"monitor alert {code}/{dedupe}: rc={proc.returncode} "
+        f"{detail[-1] if detail else '<no detail>'}",
+        flush=True,
+    )
+
+
+def repage_due(args: argparse.Namespace, repo: Path) -> None:
+    alert_dir = Path(args.alert_dir).resolve()
+    if not (alert_dir / "ledger.jsonl").is_file():
+        return
+    alertctl = Path(args.alertctl).resolve() if args.alertctl else repo / "scripts" / "alertctl.py"
+    try:
+        proc = subprocess.run(
+            [
+                sys.executable,
+                str(alertctl),
+                "repage-due",
+                "--alert-dir",
+                str(alert_dir),
+                *delivery_options(args),
+            ],
+            cwd=repo,
+            env={**os.environ, "EARSHOT_REPO": str(repo)},
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=120,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(f"monitor re-page failed: {exc}", file=sys.stderr, flush=True)
+        return
+    if proc.returncode not in (0, 1):
+        print(
+            f"monitor re-page refused: {(proc.stderr or proc.stdout).strip()}",
+            file=sys.stderr,
+            flush=True,
+        )
+
+
+def monitor_once(
+    args: argparse.Namespace,
+    repo: Path,
+    run: Path,
+    plan: dict,
+    specs: list[ProgressSpec],
+    states: dict[str, ProgressState],
+    emitted: set[str],
+) -> tuple[dict, bool]:
+    rows, reached, times = lifecycle_view(run)
+    launched_at = times.get("launched")
+    now_wall = dt.datetime.now(dt.timezone.utc)
+    now_mono = time.monotonic()
+    terminal = next(
+        (
+            row.get("transition")
+            for row in rows
+            if row.get("kind") == "transition" and row.get("transition") in TERMINALS
+        ),
+        None,
+    )
+    alerts: list[tuple[str, str, str, str]] = []
+    progress_summary: dict[str, dict] = {}
+    audio_bytes = 0
+    for spec in specs:
+        state = states.setdefault(spec.name, ProgressState())
+        if not spec.path.exists():
+            progress_summary[spec.name] = {"state": "missing", "path": str(spec.path)}
+            if launched_at and (now_wall - launched_at).total_seconds() >= args.confirm_seconds:
+                alerts.append(
+                    (
+                        "progress_missing",
+                        f"missing-{spec.name}",
+                        f"{plan['event_id']}: {spec.name} evidence progress missing",
+                        f"The EVIDENCE-owned {spec.name} progress record was still absent after the {args.confirm_seconds:g}s confirmation window.",
+                    )
+                )
+            continue
+        try:
+            record = progress_record(spec, plan)
+        except Refusal as exc:
+            progress_summary[spec.name] = {"state": "invalid", "detail": str(exc)}
+            alerts.append(
+                (
+                    "progress_invalid",
+                    f"invalid-{spec.name}",
+                    f"{plan['event_id']}: {spec.name} evidence progress invalid",
+                    f"The read-only monitor refused the {spec.name} progress record: {exc}",
+                )
+            )
+            continue
+        byte_count = record["_bytes"]
+        cadence = record["_cadence"]
+        if spec.name == "audio":
+            audio_bytes = byte_count
+        if state.bytes_seen is None or state.bytes_seen != byte_count:
+            state.bytes_seen = byte_count
+            state.changed_monotonic = now_mono
+        stalled_for = now_mono - state.changed_monotonic
+        if spec.mode == "growth":
+            append_ns = record["_append_ns"]
+            if 0 <= time.monotonic_ns() - append_ns <= 7 * 24 * 3600 * 1_000_000_000:
+                stalled_for = max(stalled_for, (time.monotonic_ns() - append_ns) / 1_000_000_000)
+            if stalled_for >= cadence * args.stall_cadences:
+                alerts.append(
+                    (
+                        "tape_stalled",
+                        f"stalled-{spec.name}-{byte_count}",
+                        f"{plan['event_id']}: {spec.name} tape growth stalled",
+                        f"The {spec.name} tape remained at {byte_count} bytes for at least {args.stall_cadences:g} published cadence(s). Process existence was not used.",
+                    )
+                )
+        progress_summary[spec.name] = {
+            "state": "observed",
+            "bytes": byte_count,
+            "cadence_seconds": cadence,
+            "mode": spec.mode,
+        }
+
+    if launched_at and "source_attached" not in reached and audio_bytes == 0:
+        if (now_wall - launched_at).total_seconds() >= args.confirm_seconds:
+            alerts.append(
+                (
+                    "no_frames",
+                    "confirm-window",
+                    f"{plan['event_id']}: no frames past confirmation window",
+                    f"The run reached launched but had no source_attached receipt or audio growth within {args.confirm_seconds:g}s.",
+                )
+            )
+
+    if args.watched_pid is not None and terminal is None:
+        try:
+            os.kill(args.watched_pid, 0)
+        except ProcessLookupError:
+            alerts.append(
+                (
+                    "arm_exited_early",
+                    "process-before-terminal",
+                    f"{plan['event_id']}: arm exited before scheduled end",
+                    "The supervised launcher process exited before a terminal lifecycle receipt became readable.",
+                )
+            )
+        except PermissionError:
+            pass
+
+    telemetry_path = Path(args.telemetry).resolve() if args.telemetry else run / "telemetry/live.jsonl"
+    telemetry = None
+    try:
+        telemetry = latest_telemetry(telemetry_path, plan)
+    except Refusal as exc:
+        alerts.append(
+            (
+                "telemetry_invalid",
+                "live-stream",
+                f"{plan['event_id']}: live telemetry invalid",
+                f"The read-only monitor refused the live telemetry stream: {exc}",
+            )
+        )
+    if telemetry:
+        legs = telemetry.get("legs")
+        if isinstance(legs, list) and legs and all(
+            isinstance(leg, dict) and (leg.get("died") or leg.get("alive") is False)
+            for leg in legs
+        ):
+            alerts.append(
+                (
+                    "all_legs_dead",
+                    "all-legs",
+                    f"{plan['event_id']}: all capture legs dead",
+                    "The latest typed live-telemetry record marks every configured capture leg dead.",
+                )
+            )
+
+    journal = Path(args.journal).resolve() if args.journal else repo / "state" / plan["event_id"] / "journal.jsonl"
+    try:
+        intervals = redial_intervals(journal)
+    except Refusal as exc:
+        intervals = []
+        alerts.append(
+            (
+                "journal_invalid",
+                "redial-journal",
+                f"{plan['event_id']}: redial journal invalid",
+                f"The read-only monitor refused the redial journal: {exc}",
+            )
+        )
+    recent = intervals[-args.drop_pattern_count :]
+    if len(recent) >= args.drop_pattern_count and all(
+        args.drop_min_seconds <= value <= args.drop_max_seconds for value in recent
+    ):
+        alerts.append(
+            (
+                "drop_cadence",
+                f"operator-queue-{len(intervals)}",
+                f"{plan['event_id']}: repeated operator-queue drop cadence",
+                f"The last {args.drop_pattern_count} redial intervals all fell inside {args.drop_min_seconds:g}-{args.drop_max_seconds:g}s, the known operator-queue signature.",
+            )
+        )
+
+    end_at = parse_utc(args.end_at_utc, "--end-at-utc") if args.end_at_utc else (
+        parse_utc(plan.get("starts_at_utc"), "RunPlan starts_at_utc")
+        + dt.timedelta(minutes=args.default_run_minutes)
+    )
+    if terminal in ("failed", "aborted") and times.get(terminal, now_wall) < end_at:
+        alerts.append(
+            (
+                "arm_exited_early",
+                terminal,
+                f"{plan['event_id']}: arm exited before scheduled end",
+                f"The lifecycle reached {terminal} before the monitor's scheduled end {end_at:%Y-%m-%dT%H:%M:%SZ}.",
+            )
+        )
+
+    for code, dedupe, subject, body in alerts:
+        key = f"{code}:{dedupe}"
+        if key in emitted:
+            continue
+        raise_monitor_alert(
+            args,
+            repo,
+            run,
+            plan,
+            code=code,
+            dedupe=dedupe,
+            subject=subject,
+            body=body,
+        )
+        emitted.add(key)
+
+    snapshot = {
+        "schema": 1,
+        "kind": "live-monitor-snapshot",
+        "event_id": plan["event_id"],
+        "run_id": plan["run_id"],
+        "reached": sorted(reached),
+        "terminal": terminal,
+        "progress": progress_summary,
+        "telemetry_observed": telemetry is not None,
+        "redial_intervals_seconds": intervals,
+        "alerts_seen": sorted(emitted),
+    }
+    return snapshot, terminal is not None
+
+
+def monitor(args: argparse.Namespace) -> int:
+    repo, run, plan = resolve_monitor_context(args.run_dir)
+    alert_dir = Path(args.alert_dir).resolve()
+    try:
+        alert_dir.relative_to(run)
+    except ValueError:
+        pass
+    else:
+        raise Refusal("monitor alert directory must be outside the live run tree")
+    specs = (
+        [parse_progress_spec(raw, run) for raw in args.progress]
+        if args.progress
+        else default_progress_specs(repo, run, plan)
+    )
+    states: dict[str, ProgressState] = {}
+    emitted: set[str] = set()
+    while True:
+        snapshot, terminal = monitor_once(args, repo, run, plan, specs, states, emitted)
+        print(json.dumps(snapshot, sort_keys=True), flush=True)
+        repage_due(args, repo)
+        if args.once or terminal:
+            return 0
+        time.sleep(args.poll_seconds)
+
+
+def supervise_monitor(args: argparse.Namespace) -> int:
+    child_argv = [value for value in sys.argv[1:] if value != "--supervise"]
+    stopped = False
+    child: subprocess.Popen | None = None
+
+    def stop(_signum: int, _frame: object) -> None:
+        nonlocal stopped
+        stopped = True
+        if child is not None and child.poll() is None:
+            child.terminate()
+
+    old_term = signal.signal(signal.SIGTERM, stop)
+    old_int = signal.signal(signal.SIGINT, stop)
+    try:
+        while not stopped:
+            child = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), *child_argv])
+            print(f"MONITOR_CHILD_PID={child.pid}", flush=True)
+            rc = child.wait()
+            if stopped:
+                return 0
+            if rc == 0:
+                return 0
+            print(f"monitor child exited rc={rc}; restarting in {args.restart_seconds:g}s", flush=True)
+            time.sleep(args.restart_seconds)
+        return 0
+    finally:
+        signal.signal(signal.SIGTERM, old_term)
+        signal.signal(signal.SIGINT, old_int)
+
+
 def parser() -> argparse.ArgumentParser:
     value = argparse.ArgumentParser(description=__doc__)
     value.add_argument("--run-dir", required=True)
@@ -465,8 +1003,64 @@ def parser() -> argparse.ArgumentParser:
     return value
 
 
+def monitor_parser() -> argparse.ArgumentParser:
+    value = argparse.ArgumentParser(description="Supervised read-only live run monitor")
+    value.add_argument("--run-dir", required=True)
+    value.add_argument("--alert-dir", required=True)
+    value.add_argument("--alertctl")
+    value.add_argument("--notify-adapter")
+    value.add_argument("--phone-adapter")
+    value.add_argument("--progress", action="append", default=[])
+    value.add_argument("--telemetry")
+    value.add_argument("--journal")
+    value.add_argument("--watched-pid", type=int)
+    value.add_argument("--end-at-utc")
+    value.add_argument("--default-run-minutes", type=float, default=90.0)
+    value.add_argument("--confirm-seconds", type=float, default=90.0)
+    value.add_argument("--poll-seconds", type=float, default=5.0)
+    value.add_argument("--stall-cadences", type=float, default=1.0)
+    value.add_argument("--drop-min-seconds", type=float, default=60.0)
+    value.add_argument("--drop-max-seconds", type=float, default=105.0)
+    value.add_argument("--drop-pattern-count", type=int, default=2)
+    value.add_argument("--phone-attempts", type=int, default=3)
+    value.add_argument("--repage-after", type=float, default=300.0)
+    value.add_argument("--restart-seconds", type=float, default=2.0)
+    value.add_argument("--once", action="store_true")
+    value.add_argument("--supervise", action="store_true")
+    return value
+
+
+def validate_monitor_args(args: argparse.Namespace) -> None:
+    if not 0 < args.confirm_seconds <= 1800:
+        raise Refusal("--confirm-seconds must be in (0, 1800]")
+    if not 0.1 <= args.poll_seconds <= 60:
+        raise Refusal("--poll-seconds must be in [0.1, 60]")
+    if not 0.5 <= args.stall_cadences <= 10:
+        raise Refusal("--stall-cadences must be in [0.5, 10]")
+    if not 0 < args.drop_min_seconds < args.drop_max_seconds <= 600:
+        raise Refusal("drop cadence bounds are invalid")
+    if not 1 <= args.drop_pattern_count <= 10:
+        raise Refusal("--drop-pattern-count must be in [1, 10]")
+    if args.phone_attempts not in (1, 2, 3):
+        raise Refusal("--phone-attempts must be 1, 2, or 3")
+    if not 0 <= args.repage_after <= 86400:
+        raise Refusal("--repage-after must be in [0, 86400]")
+    if not 0.1 <= args.restart_seconds <= 60:
+        raise Refusal("--restart-seconds must be in [0.1, 60]")
+    if not 1 <= args.default_run_minutes <= 360:
+        raise Refusal("--default-run-minutes must be in [1, 360]")
+    if args.once and args.supervise:
+        raise Refusal("--once and --supervise are mutually exclusive")
+    if args.watched_pid is not None and args.watched_pid <= 0:
+        raise Refusal("--watched-pid must be positive")
+
+
 def main() -> int:
     try:
+        if len(sys.argv) > 1 and sys.argv[1] == "monitor":
+            args = monitor_parser().parse_args(sys.argv[2:])
+            validate_monitor_args(args)
+            return supervise_monitor(args) if args.supervise else monitor(args)
         return reconcile(parser().parse_args())
     except Refusal as exc:
         print(f"REFUSED: {exc}", file=sys.stderr)
