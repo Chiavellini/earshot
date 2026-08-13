@@ -33,6 +33,12 @@ paths = [
   "scripts/ops-surface-check.py",
   "tests/ops_surface.py",
   "docs/work/ACTIVE.md",
+  # 2026-08-12 cleanup deliverables: the state-of-system report and the three
+  # parallel reliability work orders.
+  "docs/SYSTEM-STATE.md",
+  "docs/work/SOLUTION-CAPTURE.md",
+  "docs/work/SOLUTION-EVIDENCE.md",
+  "docs/work/SOLUTION-OBSERVABILITY.md",
 ]
 verification = [
   "python3 scripts/doc-lint.py --self-test",
@@ -667,6 +673,11 @@ paths = [
   # their former owners (control.supervise, control.prepare, control.operate)
   # because a claim path must be owned by the claim's node.
   "docs/history/README.md",
+  # 2026-08-12: the phone-event-prep agent skill predated the opsctl surface;
+  # its procedure is archived here and the live skill removed.
+  "docs/history/phone-event-prep-skill/SKILL.md",
+  "docs/history/phone-event-prep-skill/BOX-CHECKS.md",
+  "docs/history/phone-event-prep-skill/TRAPS.md",
   "docs/history/HANDOFF-RACE-PROGRAM.md",
   "docs/history/PHONE-LANE-HANDOFF.md",
   "docs/history/RUNBOOK.md",
