@@ -51,6 +51,7 @@ layer, `docs/ARCHITECTURE.md` maps the exact typed doors and
 ## Quick commands
 
 ```
+scripts/opsctl.sh surface                    # the supported public operator surface; start here for event ops
 cargo test                                   # unit + mock-integration + e2e
 scripts/doc-lint.sh                          # node ownership + docs contracts
 EARSHOT_REQUIRE_MODELS=1 cargo test          # model tests FAIL instead of skipping (use on boxes with models/)
