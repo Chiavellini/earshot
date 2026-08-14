@@ -1,0 +1,145 @@
+{
+ "config": "webcast-amat-26aug13-arm-wc",
+ "keywords_sha256": "95dc1b38f61d0644de6570ebf4dc310bd4a95489f81fbf4bf350df2ffce55a6f",
+ "date": "2026-08-13",
+ "engine": "streaming_ctc",
+ "voices": [
+  "Samantha",
+  "Daniel",
+  "Paulina"
+ ],
+ "carriers": 2,
+ "keywords": [
+  {
+   "ticker": "KXEARNINGSMENTIONAMAT-26AUG13-AGEN",
+   "phrase": "agent",
+   "variants": [
+    "agent",
+    "agents",
+    "agentic",
+    "agentics"
+   ],
+   "clips": 36,
+   "confirmed": 138
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMAT-26AUG13-BROA",
+   "phrase": "broadcom",
+   "variants": [
+    "broadcom",
+    "broadcoms"
+   ],
+   "clips": 18,
+   "confirmed": 36
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMAT-26AUG13-CHIN",
+   "phrase": "china",
+   "variants": [
+    "china",
+    "chinas",
+    "chinese",
+    "chineses"
+   ],
+   "clips": 36,
+   "confirmed": 76
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMAT-26AUG13-CHIP",
+   "phrase": "chiplet",
+   "variants": [
+    "chiplet",
+    "chiplets"
+   ],
+   "clips": 18,
+   "confirmed": 42
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMAT-26AUG13-EPIC",
+   "phrase": "epic center",
+   "variants": [
+    "epic center"
+   ],
+   "clips": 9,
+   "confirmed": 10
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMAT-26AUG13-EPIT",
+   "phrase": "epitaxy",
+   "variants": [
+    "epitaxy",
+    "epitaxys"
+   ],
+   "clips": 18,
+   "confirmed": 20
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMAT-26AUG13-ESSI",
+   "phrase": "essilorluxottica",
+   "variants": [
+    "essilorluxottica",
+    "essilorluxotticas"
+   ],
+   "clips": 18,
+   "confirmed": 0
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMAT-26AUG13-HYBR",
+   "phrase": "hybrid bonding",
+   "variants": [
+    "hybrid bonding"
+   ],
+   "clips": 9,
+   "confirmed": 14
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMAT-26AUG13-SCRE",
+   "phrase": "screen",
+   "variants": [
+    "screen",
+    "screens"
+   ],
+   "clips": 18,
+   "confirmed": 74
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMAT-26AUG13-SENZ",
+   "phrase": "senz",
+   "variants": [
+    "senz",
+    "senzs",
+    "s e n z"
+   ],
+   "clips": 27,
+   "confirmed": 18
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMAT-26AUG13-SING",
+   "phrase": "singapore",
+   "variants": [
+    "singapore",
+    "singapores"
+   ],
+   "clips": 18,
+   "confirmed": 18
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMAT-26AUG13-SMAR",
+   "phrase": "smart glasses",
+   "variants": [
+    "smart glasses"
+   ],
+   "clips": 9,
+   "confirmed": 22
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAMAT-26AUG13-SUPP",
+   "phrase": "supply chain",
+   "variants": [
+    "supply chain"
+   ],
+   "clips": 9,
+   "confirmed": 24
+  }
+ ]
+}

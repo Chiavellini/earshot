@@ -59,13 +59,18 @@ cmd = [
   "streamlink --stdout --hls-live-edge 1 --hls-segment-stream-data --hls-playlist-reload-time segment \"$(cat $HOME/amat-stream.url)\" best | ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 2000000 -analyzeduration 5000000 -i - -vn -f s16le -ac 1 -ar 16000 -",
 ]
 
+# VENUE OVERRIDE (edge.media-server.com/CloudFront, 2026-08-13): this CDN
+# freezes the cached media playlist mid-call (CBRS 26AUG12 — streamlink/ffmpeg/
+# pcm-gate/hls-edge-fetch all went deaf while the call ran). The plain-ffmpeg
+# pipe_tuned leg is replaced by the cache-busting fetcher; C2b (first-class
+# staged cachebust leg) is filed but unbuilt, so this is the operator edit.
 [[sources]]
 kind = "pipe"
-label = "pipe_tuned"
+label = "cachebust"
 sample_rate_hz = 16000
 cmd = [
   "/bin/sh", "-c",
-  "ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 2000000 -analyzeduration 5000000 -live_start_index -1 -http_persistent 1 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2 -i \"$(cat $HOME/amat-stream.url)\" -vn -f s16le -ac 1 -ar 16000 -",
+  "scripts/cdn-cachebust-fetch.sh $HOME/amat-stream.url | ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 2000000 -analyzeduration 5000000 -i - -vn -f s16le -ac 1 -ar 16000 -",
 ]
 
 # NOTE (SUPERSEDED 2026-07-24 night — kept as the evidence trail): this file
@@ -90,8 +95,12 @@ env = "prod"
 
 # ── Placeholders below: replace with the `earshot prepare` output ──────────
 [risk]
-max_order_notional_cents = 100
-max_event_notional_cents = 100
+# Two-band posture readback (posture-from-study.py 2026-08-13): worst case
+# 10864¢ = 11 FILL words ×10 contracts ×97¢ (10670¢) + 2 LOW ×1 ×97¢ (194¢).
+# Order cap carries one 10-contract high-band order; event cap = the posture's
+# printed floor; both under PROBE_LEDGER_CAP_CENTS 13000 and the code hard cap.
+max_order_notional_cents = 970
+max_event_notional_cents = 10864
 book_stale_ms            = 2000
 audio_stale_ms           = 2000
 allowlist_tickers = [
@@ -115,8 +124,8 @@ allowlist_tickers = [
 market_ticker    = "KXEARNINGSMENTIONAMAT-26AUG13-AGEN"
 phrase           = "agent"
 variants         = ["agent", "agents", "agentic", "agentics"]
-max_price_cents  = 1
-budget_contracts = 1
+max_price_cents  = 97  # posture: HIGH — study 138/36 ratio 3.83 >= floor 1.00
+budget_contracts = 10  # posture: size 10 — ratio 3.83 tier, max 970¢
 policy           = "confirmed_only"
 
 # Broadcom (KXEARNINGSMENTIONAMAT-26AUG13-BROA) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
@@ -124,8 +133,8 @@ policy           = "confirmed_only"
 market_ticker    = "KXEARNINGSMENTIONAMAT-26AUG13-BROA"
 phrase           = "broadcom"
 variants         = ["broadcom", "broadcoms"]
-max_price_cents  = 1
-budget_contracts = 1
+max_price_cents  = 97  # posture: HIGH — study 36/18 ratio 2.00 >= floor 1.00
+budget_contracts = 10  # posture: size 10 — ratio 2.00 tier, max 970¢
 policy           = "confirmed_only"
 
 # China / Chinese (KXEARNINGSMENTIONAMAT-26AUG13-CHIN) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
@@ -133,8 +142,8 @@ policy           = "confirmed_only"
 market_ticker    = "KXEARNINGSMENTIONAMAT-26AUG13-CHIN"
 phrase           = "china"
 variants         = ["china", "chinas", "chinese", "chineses"]
-max_price_cents  = 1
-budget_contracts = 1
+max_price_cents  = 97  # posture: HIGH — study 76/36 ratio 2.11 >= floor 1.00
+budget_contracts = 10  # posture: size 10 — ratio 2.11 tier, max 970¢
 policy           = "confirmed_only"
 
 # Chiplet (KXEARNINGSMENTIONAMAT-26AUG13-CHIP) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
@@ -142,8 +151,8 @@ policy           = "confirmed_only"
 market_ticker    = "KXEARNINGSMENTIONAMAT-26AUG13-CHIP"
 phrase           = "chiplet"
 variants         = ["chiplet", "chiplets"]
-max_price_cents  = 1
-budget_contracts = 1
+max_price_cents  = 97  # posture: HIGH — study 42/18 ratio 2.33 >= floor 1.00
+budget_contracts = 10  # posture: size 10 — ratio 2.33 tier, max 970¢
 policy           = "confirmed_only"
 
 # EPIC Center (KXEARNINGSMENTIONAMAT-26AUG13-EPIC) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
@@ -151,8 +160,8 @@ policy           = "confirmed_only"
 market_ticker    = "KXEARNINGSMENTIONAMAT-26AUG13-EPIC"
 phrase           = "epic center"
 variants         = ["epic center"]
-max_price_cents  = 1
-budget_contracts = 1
+max_price_cents  = 97  # posture: HIGH — study 10/9 ratio 1.11 >= floor 1.00
+budget_contracts = 10  # posture: size 10 — ratio 1.11 tier, max 970¢
 policy           = "confirmed_only"
 
 # Epitaxy (KXEARNINGSMENTIONAMAT-26AUG13-EPIT) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
@@ -160,8 +169,8 @@ policy           = "confirmed_only"
 market_ticker    = "KXEARNINGSMENTIONAMAT-26AUG13-EPIT"
 phrase           = "epitaxy"
 variants         = ["epitaxy", "epitaxys"]
-max_price_cents  = 1
-budget_contracts = 1
+max_price_cents  = 97  # posture: HIGH — study 20/18 ratio 1.11 >= floor 1.00
+budget_contracts = 10  # posture: size 10 — ratio 1.11 tier, max 970¢
 policy           = "confirmed_only"
 
 # EssilorLuxottica (KXEARNINGSMENTIONAMAT-26AUG13-ESSI) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
@@ -169,8 +178,8 @@ policy           = "confirmed_only"
 market_ticker    = "KXEARNINGSMENTIONAMAT-26AUG13-ESSI"
 phrase           = "essilorluxottica"
 variants         = ["essilorluxottica", "essilorluxotticas"]
-max_price_cents  = 1
-budget_contracts = 1
+max_price_cents  = 97  # posture: LOW BAND — study 0/18 ratio 0.00 < floor 1.00
+budget_contracts = 1  # posture: size 1 — LOW BAND, max 97¢ of REAL money (this word CAN fill; it is not the old 1¢ non-crossing observe)
 policy           = "confirmed_only"
 
 # Hybrid Bonding (KXEARNINGSMENTIONAMAT-26AUG13-HYBR) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
@@ -178,8 +187,8 @@ policy           = "confirmed_only"
 market_ticker    = "KXEARNINGSMENTIONAMAT-26AUG13-HYBR"
 phrase           = "hybrid bonding"
 variants         = ["hybrid bonding"]
-max_price_cents  = 1
-budget_contracts = 1
+max_price_cents  = 97  # posture: HIGH — study 14/9 ratio 1.56 >= floor 1.00
+budget_contracts = 10  # posture: size 10 — ratio 1.56 tier, max 970¢
 policy           = "confirmed_only"
 
 # SCREEN (KXEARNINGSMENTIONAMAT-26AUG13-SCRE) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
@@ -187,8 +196,8 @@ policy           = "confirmed_only"
 market_ticker    = "KXEARNINGSMENTIONAMAT-26AUG13-SCRE"
 phrase           = "screen"
 variants         = ["screen", "screens"]
-max_price_cents  = 1
-budget_contracts = 1
+max_price_cents  = 97  # posture: HIGH — study 74/18 ratio 4.11 >= floor 1.00
+budget_contracts = 10  # posture: size 10 — ratio 4.11 tier, max 970¢
 policy           = "confirmed_only"
 
 # SENZ (KXEARNINGSMENTIONAMAT-26AUG13-SENZ) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
@@ -196,8 +205,8 @@ policy           = "confirmed_only"
 market_ticker    = "KXEARNINGSMENTIONAMAT-26AUG13-SENZ"
 phrase           = "senz"
 variants         = ["senz", "senzs", "s e n z"]
-max_price_cents  = 1
-budget_contracts = 1
+max_price_cents  = 97  # posture: LOW BAND — study 18/27 ratio 0.67 < floor 1.00
+budget_contracts = 1  # posture: size 1 — LOW BAND, max 97¢ of REAL money (this word CAN fill; it is not the old 1¢ non-crossing observe)
 policy           = "confirmed_only"
 
 # Singapore (KXEARNINGSMENTIONAMAT-26AUG13-SING) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
@@ -205,8 +214,8 @@ policy           = "confirmed_only"
 market_ticker    = "KXEARNINGSMENTIONAMAT-26AUG13-SING"
 phrase           = "singapore"
 variants         = ["singapore", "singapores"]
-max_price_cents  = 1
-budget_contracts = 1
+max_price_cents  = 97  # posture: HIGH — study 18/18 ratio 1.00 >= floor 1.00
+budget_contracts = 10  # posture: size 10 — ratio 1.00 tier, max 970¢
 policy           = "confirmed_only"
 
 # Smart Glasses (KXEARNINGSMENTIONAMAT-26AUG13-SMAR) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
@@ -214,8 +223,8 @@ policy           = "confirmed_only"
 market_ticker    = "KXEARNINGSMENTIONAMAT-26AUG13-SMAR"
 phrase           = "smart glasses"
 variants         = ["smart glasses"]
-max_price_cents  = 1
-budget_contracts = 1
+max_price_cents  = 97  # posture: HIGH — study 22/9 ratio 2.44 >= floor 1.00
+budget_contracts = 10  # posture: size 10 — ratio 2.44 tier, max 970¢
 policy           = "confirmed_only"
 
 # Supply Chain (KXEARNINGSMENTIONAMAT-26AUG13-SUPP) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
@@ -223,8 +232,8 @@ policy           = "confirmed_only"
 market_ticker    = "KXEARNINGSMENTIONAMAT-26AUG13-SUPP"
 phrase           = "supply chain"
 variants         = ["supply chain"]
-max_price_cents  = 1
-budget_contracts = 1
+max_price_cents  = 97  # posture: HIGH — study 24/9 ratio 2.67 >= floor 1.00
+budget_contracts = 10  # posture: size 10 — ratio 2.67 tier, max 970¢
 policy           = "confirmed_only"
 
 # --- prepare summary: 13 tradeable, 0 skipped (said-N-times), 0 skipped (unencodable), 0 variants dropped of 13 markets ---
