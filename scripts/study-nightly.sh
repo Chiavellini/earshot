@@ -286,6 +286,7 @@ for cfgp in sorted((repo / "configs").glob("*.toml")):
 selected = {}
 legacy = {}
 events = {}
+closed = {}
 for plan_path in sorted((repo / "var" / "runs").glob("*/*/control/run-plan.json")):
     try:
         plan = json.loads(plan_path.read_text())
@@ -308,6 +309,21 @@ for plan_path in sorted((repo / "var" / "runs").glob("*/*/control/run-plan.json"
         legacy.setdefault(config_path, []).append(
             f"schema={plan.get('schema')!r} at {plan_path}"
         )
+        continue
+    # Terminal/archived attempts are CLOSED evidence, not candidates: a
+    # superseded predecessor must not collide with its successor (2026-08-13:
+    # one archived AMAT attempt made the whole date unselectable). The typed
+    # reducer is the only authority on closed-ness; the tolerant reader keeps
+    # a torn tail on a historical attempt from crashing the selector.
+    run_dir = plan_path.parent.parent
+    try:
+        st = ec.status_payload(run_dir)["state"]
+    except (ec.Refusal, ec.IntegrityError, OSError, KeyError,
+            json.JSONDecodeError) as exc:
+        errors.append(f"invalid RunPlan candidate {plan_path}: {exc}")
+        continue
+    if not st["active"]:
+        closed.setdefault(config_path, []).append(str(run_dir))
         continue
     values = {
         "starts": starts.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -345,6 +361,11 @@ for config_path, event_id in sorted(expected.items()):
         continue
     historical = legacy.get(config_path, [])
     suffix = f"; only historical {'; '.join(historical)} exists" if historical else ""
+    if not suffix and config_path in closed:
+        suffix = (
+            "; only terminal/archived attempts exist:"
+            f" {', '.join(closed[config_path])} — re-stage the date"
+        )
     errors.append(
         f"expected staged event {event_id} ({config_path}) has no immutable "
         f"schema-{ec.PLAN_SCHEMA} RunPlan for {wanted}{suffix}"

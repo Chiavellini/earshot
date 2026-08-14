@@ -359,6 +359,68 @@ class TestMutationDetection(Base):
         self.assertIn("drifted", err)
         rc, out, _ = self.cli("verify", "--event", PHONE_EVENT)
         self.assertEqual(rc, 1)
+        # Closing the drifted run must NOT be refused (2026-08-13: the refusal
+        # demanded the very terminal receipt it was refusing), and a closed
+        # run must verify OK with the supersession labeled.
+        rc, _, err = self.cli("record", "--event", PHONE_EVENT,
+                              "--transition", "blocked")
+        self.assertEqual(rc, 0, err)
+        rc, _, err = self.cli("record", "--event", PHONE_EVENT,
+                              "--transition", "archived")
+        self.assertEqual(rc, 0, err)
+        rc, out, _ = self.cli("verify", "--event", PHONE_EVENT)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("superseded", out)
+
+    def test_drift_exemption_does_not_bypass_gate(self):
+        """A terminal receipt on a drifted run is exempt from the pinned-input
+        check, never from transition legality: descope after launched still
+        refuses; aborted is the legal close."""
+        self.init_phone()
+        self.advance_to_launched(PHONE_EVENT)
+        cfg = self.repo / "configs" / "test-phone-arm.toml"
+        cfg.write_text(cfg.read_text() + "\n# drift\n")
+        rc, _, err = self.cli("record", "--event", PHONE_EVENT,
+                              "--transition", "descope")
+        self.assertEqual(rc, 1)
+        rc, _, err = self.cli("record", "--event", PHONE_EVENT,
+                              "--transition", "aborted")
+        self.assertEqual(rc, 0, err)
+
+    def test_post_terminal_tail_survives_drift(self):
+        """A failed run stays auditable after its config is superseded — the
+        evidence tail must never require restoring old bytes."""
+        self.init_phone()
+        self.advance_to_launched(PHONE_EVENT)
+        rc, _, err = self.cli("record", "--event", PHONE_EVENT,
+                              "--transition", "failed")
+        self.assertEqual(rc, 0, err)
+        cfg = self.repo / "configs" / "test-phone-arm.toml"
+        cfg.write_text(cfg.read_text() + "\n# drift\n")
+        for t in ("evidence_pulled", "graded", "archived"):
+            rc, _, err = self.cli("record", "--event", PHONE_EVENT,
+                                  "--transition", t)
+            self.assertEqual(rc, 0, f"{t}: {err}")
+
+    def test_verify_hard_fails_tampered_archived_run(self):
+        """The soft pass covers pinned-input drift ONLY — chain corruption on
+        a closed run is still an integrity failure."""
+        self.init_phone()
+        run_dir = self.run_dir_for(PHONE_EVENT)
+        self.cli("record", "--event", PHONE_EVENT, "--transition", "blocked")
+        self.cli("record", "--event", PHONE_EVENT, "--transition", "archived")
+        cfg = self.repo / "configs" / "test-phone-arm.toml"
+        cfg.write_text(cfg.read_text() + "\n# drift\n")
+        rc, out, _ = self.cli("verify", "--run-dir", str(run_dir))
+        self.assertEqual(rc, 0, out)
+        path = run_dir / "control" / "receipts.jsonl"
+        lines = path.read_text().splitlines()
+        tampered = lines[1].replace('"outcome":"ok"', '"outcome":"OK"')
+        self.assertNotEqual(tampered, lines[1], "tamper fixture missed")
+        lines[1] = tampered
+        path.write_text("\n".join(lines) + "\n")
+        rc, out, _ = self.cli("verify", "--run-dir", str(run_dir))
+        self.assertEqual(rc, 1, out)
 
     def test_env_mutation_blocks_typed_record(self):
         cfg = self.write_phone_config()
@@ -1078,6 +1140,83 @@ class TestInitDate(Base):
         rc, out, _ = self.cli("init-date", "--date", DATE)
         self.assertEqual(rc, 0, out)
         self.assertIn("already-initialized", out)
+
+    def _phone_runs(self):
+        base = self.repo / "var" / "runs" / PHONE_EVENT
+        return sorted(d for d in base.iterdir() if d.is_dir())
+
+    def _state_of(self, run_dir):
+        rc, out, _ = self.cli("status", "--run-dir", str(run_dir), "--json")
+        self.assertEqual(rc, 0)
+        return json.loads(out)["state"]
+
+    def test_init_date_closes_superseded_attempt(self):
+        """Changed config bytes ⇒ a successor attempt; the predecessor is
+        terminal-closed (blocked+archived, actor=stage) in the same pass —
+        never left active to poison the day selectors (2026-08-13)."""
+        cfg = self.write_phone_config()
+        self.write_env("configs/test-phone-arm.toml")
+        rc, out, _ = self.cli("init-date", "--date", DATE)
+        self.assertEqual(rc, 0, out)
+        cfg.write_text(cfg.read_text() + "\n# posture edit\n")
+        rc, out, _ = self.cli("init-date", "--date", DATE)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("superseded", out)
+        runs = self._phone_runs()
+        self.assertEqual(len(runs), 2)
+        states = [self._state_of(r) for r in runs]
+        archived = [s for s in states if s["archived"]]
+        active = [s for s in states if s["active"]]
+        self.assertEqual((len(archived), len(active)), (1, 1))
+        self.assertEqual(archived[0]["terminal"]["transition"], "blocked")
+        # actor is stage, on the record
+        closed_dir = runs[states.index(archived[0])]
+        receipts = (closed_dir / "control" / "receipts.jsonl").read_text()
+        self.assertIn('"actor":"stage"', receipts)
+        # idempotent: a third run appends nothing to the closed attempt
+        before = self.receipts_of(closed_dir)
+        rc, out, _ = self.cli("init-date", "--date", DATE)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(before, self.receipts_of(closed_dir))
+
+    def test_init_date_refuses_launched_predecessor(self):
+        """A LAUNCHED predecessor is never auto-closed — silently aborting a
+        live run is worse than a red date. Explicit refusal, human decides."""
+        cfg = self.write_phone_config()
+        self.write_env("configs/test-phone-arm.toml")
+        rc, out, _ = self.cli("init-date", "--date", DATE)
+        self.assertEqual(rc, 0, out)
+        self.advance_to_launched(PHONE_EVENT)
+        run = self._phone_runs()[0]
+        before = self.receipts_of(run)
+        cfg.write_text(cfg.read_text() + "\n# drift\n")
+        rc, out, _ = self.cli("init-date", "--date", DATE)
+        self.assertEqual(rc, 1, out)
+        self.assertIn("LAUNCHED", out)
+        self.assertIn("by hand", out)
+        self.assertEqual(before, self.receipts_of(run))
+
+    def test_init_date_leaves_failed_predecessor_tail_open(self):
+        """aborted/failed predecessors own a post-mortem tail; supersession
+        must not auto-archive them out from under the grader."""
+        cfg = self.write_phone_config()
+        self.write_env("configs/test-phone-arm.toml")
+        rc, out, _ = self.cli("init-date", "--date", DATE)
+        self.assertEqual(rc, 0, out)
+        self.advance_to_launched(PHONE_EVENT)
+        rc, _, err = self.cli("record", "--event", PHONE_EVENT,
+                              "--transition", "failed")
+        self.assertEqual(rc, 0, err)
+        run = self._phone_runs()[0]
+        before = self.receipts_of(run)
+        cfg.write_text(cfg.read_text() + "\n# drift\n")
+        rc, out, _ = self.cli("init-date", "--date", DATE)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(len(self._phone_runs()), 2)
+        self.assertEqual(before, self.receipts_of(run))
+        state = self._state_of(run)
+        self.assertFalse(state["archived"])
+        self.assertEqual(state["terminal"]["transition"], "failed")
 
     def test_refusals_are_per_event_and_nonzero(self):
         self.write_webcast_config()  # the good event still initializes

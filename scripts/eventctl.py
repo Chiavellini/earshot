@@ -56,6 +56,12 @@ TYPED_OUTCOMES = ("ok", "fail", "skipped")
 COMPAT_OUTCOMES = ("ok", "fail", "warn", "info", "refused", "skipped")
 
 TERMINALS = ("descope", "blocked", "aborted", "failed")
+# Transitions that may be recorded on a run whose pinned config/env has
+# DRIFTED: closing a run must never require restoring superseded bytes. The
+# pinned-input check exists to stop work advancing on stale inputs; nothing
+# here advances work. (2026-08-13: the refusal demanded the very terminal
+# receipt it was refusing — three restore-the-bytes dances in one day.)
+PINNED_EXEMPT_TRANSITIONS = frozenset(TERMINALS) | {"archived"}
 # Post-mortem tail stays legal after aborted/failed — a failed run must still
 # be auditable. descope/blocked never ran, so only archived may follow.
 POST_TERMINAL_ALLOWED = {
@@ -876,10 +882,15 @@ class Ledger:
 
     # -- append -------------------------------------------------------------
 
-    def append(self, plan, repo, gate, build_fields, typed):
+    def append(self, plan, repo, gate, build_fields, typed, pinned_exempt=False):
         """Locked read-validate-append. gate(plan, receipts) returns
         "append" or a no-op message; it raises Refusal for illegal
-        transitions (file untouched)."""
+        transitions (file untouched).
+
+        pinned_exempt: the caller declares this receipt closes the run
+        (terminal/archived) so pinned-input drift must not refuse it. A run
+        that is ALREADY closed is exempted from receipts regardless — the
+        post-terminal audit tail must survive supersession."""
         self.control.mkdir(parents=True, exist_ok=True)
         fd = os.open(
             self.receipts_path, os.O_RDWR | os.O_APPEND | os.O_CREAT, 0o644
@@ -904,8 +915,13 @@ class Ledger:
                     torn["last_valid_sequence"],
                     torn["truncate_to"],
                 )
-            if typed:
-                self._check_pinned_inputs(plan, repo)
+            if typed and not pinned_exempt:
+                reached = {r.get("transition") for r in receipts}
+                closed = "archived" in reached or any(
+                    t in reached for t in TERMINALS
+                )
+                if not closed:
+                    self._check_pinned_inputs(plan, repo)
             verdict = gate(plan, receipts)
             if verdict != "append":
                 return None, verdict, receipts
@@ -1414,6 +1430,7 @@ def cmd_record(args):
             "artifacts": args.artifact or [],
         },
         typed=True,
+        pinned_exempt=args.transition in PINNED_EXEMPT_TRANSITIONS,
     )
     print(noop if noop else
           f"recorded: {args.transition} ({args.outcome}) seq {rec['sequence']}")
@@ -1532,8 +1549,25 @@ def verify_one(run_dir, repo):
     ledger = Ledger(run_dir)
     plan = ledger.load_plan()
     receipts = ledger.read(plan)  # raises RecoverableTail / IntegrityError
-    ledger._check_pinned_inputs(plan, repo)
-    return len(receipts)
+    state = reduce_state(plan, receipts)
+    if state["active"]:
+        ledger._check_pinned_inputs(plan, repo)
+        return len(receipts), None
+    # A closed (terminal or archived) run legitimately outlives its pinned
+    # inputs — the successor attempt owns the current bytes. Chain integrity
+    # above stays HARD; only the pinned-input drift softens, with a label so
+    # day-walkers stop failing dead attempts (2026-08-13: three archived AMAT
+    # attempts turned every day command red).
+    try:
+        ledger._check_pinned_inputs(plan, repo)
+        return len(receipts), None
+    except Refusal:
+        which = (
+            "archived"
+            if state["archived"]
+            else state["terminal"]["transition"]
+        )
+        return len(receipts), f"pinned inputs superseded (run is {which})"
 
 
 def cmd_verify(args):
@@ -1555,8 +1589,11 @@ def cmd_verify(args):
     has_fail = has_recoverable = False
     for rd in targets:
         try:
-            n = verify_one(rd, repo)
-            print(f"OK: {rd} — {n} receipts, chain + pinned inputs verified")
+            n, note = verify_one(rd, repo)
+            if note:
+                print(f"OK: {rd} — {n} receipts, chain verified; {note}")
+            else:
+                print(f"OK: {rd} — {n} receipts, chain + pinned inputs verified")
         except RecoverableTail as e:
             print(f"RECOVERABLE: {rd} — {e}")
             has_recoverable = True
@@ -1564,6 +1601,81 @@ def cmd_verify(args):
             print(f"FAILED: {rd} — {e}")
             has_fail = True
     return 1 if has_fail else (3 if has_recoverable else 0)
+
+
+def _stage_receipt(ledger, plan, repo, transition, detail):
+    """One typed stage-actor receipt, pinned-exempt by construction: it is
+    only ever used to CLOSE a superseded attempt whose config has, by
+    definition, drifted."""
+    ledger.append(
+        plan,
+        repo,
+        gate_typed(transition, "ok", plan),
+        lambda: {
+            "kind": "transition",
+            "ts": now_utc(),
+            "actor": "stage",
+            "host": short_host(),
+            "pid": os.getpid(),
+            "transition": transition,
+            "action": None,
+            "outcome": "ok",
+            "detail": detail,
+            "log": None,
+            "artifacts": [],
+        },
+        typed=True,
+        pinned_exempt=True,
+    )
+
+
+def close_superseded(repo, run_root, event_id, cfg_rel, cfg_sha, date,
+                     lines, refusals):
+    """Terminal-close attempts that pin cfg_rel at a DIFFERENT hash.
+
+    Config bytes changed ⇒ the old attempt can never run (its pinned inputs
+    are gone) and, left active, it poisons every day selector. blocked +
+    archived, actor=stage, idempotent across re-runs. A LAUNCHED predecessor
+    is never auto-closed (that would silently abort a live run) — it becomes
+    an explicit refusal a human resolves. aborted/failed predecessors keep
+    their post-mortem tail open; only descope/blocked proceed to auto-archive."""
+    for rd in find_runs(run_root, event_id):
+        try:
+            ledger = Ledger(rd)
+            plan = ledger.load_plan()
+            if plan.get("config_path") != cfg_rel:
+                continue
+            if plan.get("config_sha256") == cfg_sha:
+                continue
+            receipts = ledger.read(plan)
+            st = reduce_state(plan, receipts)
+            if st["archived"]:
+                continue
+            reached = {r["transition"] for r in st["reached"]}
+            if st["terminal"] is None:
+                if "launched" in reached:
+                    refusals.append(
+                        f"{event_id}/{rd.name}: pins drifted {cfg_rel} but is"
+                        " LAUNCHED — close it by hand (aborted/failed)"
+                    )
+                    continue
+                _stage_receipt(
+                    ledger, plan, repo, "blocked",
+                    f"superseded by init-date {date}: {cfg_rel} is now"
+                    f" {cfg_sha[:12]}, this attempt pinned"
+                    f" {plan['config_sha256'][:12]}",
+                )
+            elif st["terminal"]["transition"] not in ("descope", "blocked"):
+                continue
+            _stage_receipt(
+                ledger, plan, repo, "archived",
+                f"auto-archive of superseded attempt (init-date {date})",
+            )
+            lines.append(
+                f"{event_id}: superseded {rd.name} closed (blocked+archived)"
+            )
+        except (Refusal, IntegrityError, RecoverableTail) as e:
+            refusals.append(f"{event_id}/{rd.name}: supersede-close failed: {e}")
 
 
 def cmd_init_date(args):
@@ -1675,6 +1787,15 @@ def cmd_init_date(args):
         if env_entry:
             env_arg = str(env_entry[0])
         try:
+            # Close-first is crash-safe: a crash between close and init leaves
+            # closed predecessors and no successor, which the next idempotent
+            # run repairs. The successor's own dir is excluded automatically
+            # (its config_sha256 equals the current bytes).
+            cfg_rel = cfgp.resolve().relative_to(repo).as_posix()
+            close_superseded(
+                repo, run_root, ev, cfg_rel, file_sha256(cfgp), args.date,
+                lines, refusals,
+            )
             run_dir, verdict = init_one(
                 repo, str(cfgp), env_arg, None, args.host_id,
                 args.account_fingerprint, None, run_root,
