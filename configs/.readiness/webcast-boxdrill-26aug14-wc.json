@@ -1,6 +1,6 @@
 {
  "config": "webcast-boxdrill-26aug14-wc",
- "keywords_sha256": "b3fc153044a5ee605cd867ecf3ca766a7519662d7876a2c4ce1d9b76c3f853e5",
+ "keywords_sha256": "9b8edc56f38bb3bbb267f10ada008f1679205752d06978c2d1fc5663f0206c15",
  "date": "2026-08-14",
  "engine": "streaming_ctc",
  "voices": [
@@ -11,7 +11,7 @@
  "carriers": 2,
  "keywords": [
   {
-   "ticker": "BOXDRILL-26AUG14-SCRE",
+   "ticker": "KXEARNINGSMENTIONAMAT-26AUG13-SCRE",
    "phrase": "screen",
    "variants": [
     "screen",
@@ -21,7 +21,7 @@
    "confirmed": 74
   },
   {
-   "ticker": "BOXDRILL-26AUG14-CHIN",
+   "ticker": "KXEARNINGSMENTIONAMAT-26AUG13-CHIN",
    "phrase": "china",
    "variants": [
     "china",

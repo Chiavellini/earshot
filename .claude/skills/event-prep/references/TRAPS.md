@@ -203,3 +203,18 @@ genuine box-minted receipts; only their transport is unsupported.
 `preflight_passed` on the laptop would be a fabricated proof of a build that
 happened somewhere else, which is exactly the class the typed ledger exists to
 prevent.
+
+## Superseding an attempt does not propagate to the box (2026-08-14)
+
+The corollary of the trap above, in the other direction. Closing a superseded
+RunPlan attempt with `eventctl record --transition blocked` on the laptop leaves
+the BOX copy still `active`. The next on-box preflight then refuses:
+
+```
+REFUSED: eventctl status refused: REFUSED: ambiguous: 2 active runs for <EVENT>
+```
+
+which is the right refusal for the wrong reason — the attempt IS closed, just
+not where preflight is looking. Push the closed ledger to the box before
+re-preflighting. Both directions of the box/laptop receipt boundary are manual
+today.

@@ -23,7 +23,7 @@
 
 [event]
 id        = "BOXDRILL-26AUG14-WEBCAST"
-starts_at = "2026-08-14T18:19:00Z"
+starts_at = "2026-08-14T18:54:00Z"
 
 [pipeline]
 chunk_ms       = 80
@@ -66,8 +66,17 @@ cmd = [
   "ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 2000000 -analyzeduration 5000000 -live_start_index -1 -http_persistent 1 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2 -i \"$(cat $HOME/boxdrill-stream.url)\" -vn -f s16le -ac 1 -ar 16000 -",
 ]
 
+# ALLOWLIST RETARGETED 2026-08-14T17:1xZ. `arm` validates every allowlist ticker
+# against Kalshi at start-up and refuses on 404, so the original fake BOXDRILL-*
+# tickers could never reach source_attached — the SIGTERM kill drill was
+# unreachable BY CONSTRUCTION. These two are AMAT 26AUG13's markets, measured
+# status=finalized with yes_ask=None: fetchable (200, so validation passes) but
+# SETTLED, so there is still NO OPEN BOARD and a fill is impossible on three
+# independent grounds — market closed, no ask to cross, and a 1¢ non-crossing
+# cap. The [event].id stays BOXDRILL-26AUG14-WEBCAST, so every state and
+# evidence path stays in the drill's own tree and AMAT's real event is untouched.
 [kalshi]
-series = "BOXDRILL"
+series = "KXEARNINGSMENTIONAMAT"
 env    = "prod"
 
 [risk]
@@ -79,15 +88,15 @@ max_event_notional_cents = 100
 book_stale_ms            = 2000
 audio_stale_ms           = 2000
 allowlist_tickers = [
-  "BOXDRILL-26AUG14-SCRE",
-  "BOXDRILL-26AUG14-CHIN",
+  "KXEARNINGSMENTIONAMAT-26AUG13-SCRE",
+  "KXEARNINGSMENTIONAMAT-26AUG13-CHIN",
 ]
 
 # Two words chosen because the AMAT 26AUG13 study already measured them as the
 # strongest on this exact engine: screen 74 confirmed / 18 clips, china 76 / 36.
 # A drill must exercise the detector, not test it.
 [[keywords]]
-market_ticker    = "BOXDRILL-26AUG14-SCRE"
+market_ticker    = "KXEARNINGSMENTIONAMAT-26AUG13-SCRE"
 phrase           = "screen"
 variants         = ["screen", "screens"]
 max_price_cents  = 1  # OBSERVE — non-crossing by construction, no fill possible
@@ -95,7 +104,7 @@ budget_contracts = 1
 policy           = "confirmed_only"
 
 [[keywords]]
-market_ticker    = "BOXDRILL-26AUG14-CHIN"
+market_ticker    = "KXEARNINGSMENTIONAMAT-26AUG13-CHIN"
 phrase           = "china"
 variants         = ["china", "chinas", "chinese", "chineses"]
 max_price_cents  = 1  # OBSERVE — non-crossing by construction, no fill possible
