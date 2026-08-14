@@ -39,6 +39,12 @@ paths = [
   "docs/work/SOLUTION-CAPTURE.md",
   "docs/work/SOLUTION-EVIDENCE.md",
   "docs/work/SOLUTION-OBSERVABILITY.md",
+  # 2026-08-13 box-webcast migration: the workflow master and its three
+  # parallel lane work orders.
+  "docs/work/BOX-WEBCAST.md",
+  "docs/work/BOX-RESOLVE.md",
+  "docs/work/BOX-HOST.md",
+  "docs/work/BOX-SCHEDULE.md",
 ]
 verification = [
   "python3 scripts/doc-lint.py --self-test",

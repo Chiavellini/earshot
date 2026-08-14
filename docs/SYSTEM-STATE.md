@@ -292,3 +292,8 @@ Three agents work the three solution files in parallel under disjoint node
 ownership, claiming via `architecture/claims.toml` per `AGENTS.md`. Shared
 docs (`docs/STATUS.md`, `docs/work/ACTIVE.md`, this file) are append-only
 per-agent sections. Money policy (§4) is untouched by all three.
+
+The box-webcast migration program (2026-08-13) follows the same model:
+master workflow `docs/work/BOX-WEBCAST.md`, consumed by three parallel
+lanes `docs/work/BOX-RESOLVE.md`, `docs/work/BOX-HOST.md`,
+`docs/work/BOX-SCHEDULE.md` under the same disjoint-ownership rules.
