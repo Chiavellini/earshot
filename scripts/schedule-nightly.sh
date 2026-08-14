@@ -17,6 +17,7 @@ REPO="${EARSHOT_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "$REPO" || exit 2
 INSTALL_T0="${_EARSHOT_SCHEDULE_INSTALL_T0:-$REPO/scripts/install-t0-agents.sh}"
 BOX_INSTALL="${_EARSHOT_SCHEDULE_BOX_INSTALL:-$REPO/scripts/box-event-install.sh}"
+BOX_WEBCAST_INSTALL="${_EARSHOT_SCHEDULE_BOX_WEBCAST_INSTALL:-$REPO/scripts/box-webcast-install.sh}"
 NOTIFY="${_EARSHOT_SCHEDULE_NOTIFY:-$REPO/scripts/notify.sh}"
 ALERTCTL="${_EARSHOT_SCHEDULE_ALERTCTL:-$REPO/scripts/alertctl.py}"
 
@@ -62,7 +63,9 @@ critical_alert() {  # <run-dir> <event-id> <code> <dedupe-key> <body>
 }
 
 run_self_check() {
-  local root repo date event_phone event_web run transition
+  set -e
+  local root repo date unknown_date event_phone event_web_local event_web_box
+  local event_web_unknown fixture host run transition
   root=$(mktemp -d /tmp/schedule-nightly-check.XXXXXX)
   trap 'rm -rf -- "$root"' RETURN
   repo="$root/repo"
@@ -70,8 +73,11 @@ run_self_check() {
   cp "$REPO/scripts/eventctl.py" "$repo/scripts/eventctl.py"
   cp "$REPO/scripts/schedule-nightly.sh" "$repo/scripts/schedule-nightly.sh"
   date="2026-08-14"
+  unknown_date="2026-08-15"
   event_phone="KXEARNINGSMENTIONSCHEDPHONE-26AUG14-PHONE"
-  event_web="KXEARNINGSMENTIONSCHEDWEB-26AUG14-WEBCAST"
+  event_web_local="KXEARNINGSMENTIONSCHEDWEBLOCAL-26AUG14-WEBCAST"
+  event_web_box="KXEARNINGSMENTIONSCHEDWEBBOX-26AUG14-WEBCAST"
+  event_web_unknown="KXEARNINGSMENTIONSCHEDWEBUNKNOWN-26AUG15-WEBCAST"
   cat > "$repo/configs/phone.toml" <<EOF
 [event]
 id = "$event_phone"
@@ -83,38 +89,56 @@ bind = "127.0.0.1:8081"
 market_ticker = "KXEARNINGSMENTIONSCHEDPHONE-26AUG14-FOO"
 phrase = "foo"
 EOF
-  cat > "$repo/configs/web.toml" <<EOF
+  cat > "$repo/configs/web-local.toml" <<EOF
 [event]
-id = "$event_web"
+id = "$event_web_local"
 starts_at = "2026-08-14T22:00:00Z"
 [[sources]]
 kind = "pipe"
-cmd = ["ffmpeg", "-i", "\$HOME/web-stream.url"]
+cmd = ["ffmpeg", "-i", "\$HOME/web-local-stream.url"]
 [[keywords]]
 market_ticker = "KXEARNINGSMENTIONSCHEDWEB-26AUG14-FOO"
 phrase = "foo"
 EOF
+  sed "s/$event_web_local/$event_web_box/; s/22:00:00/23:00:00/; s/web-local-stream/web-box-stream/" \
+    "$repo/configs/web-local.toml" > "$repo/configs/web-box.toml"
+  sed "s/$event_web_local/$event_web_unknown/; s/2026-08-14T22:00:00/2026-08-15T22:00:00/; s/web-local-stream/web-unknown-stream/" \
+    "$repo/configs/web-local.toml" > "$repo/configs/web-unknown.toml"
   cat > "$repo/configs/phone.env" <<EOF
 CONFIG_PATH="configs/phone.toml"
 EVENT_DATE="$date"
 EOF
-  cat > "$repo/configs/web.env" <<EOF
-CONFIG_PATH="configs/web.toml"
+  cat > "$repo/configs/web-local.env" <<EOF
+CONFIG_PATH="configs/web-local.toml"
 EVENT_DATE="$date"
 EOF
-  for lane in phone web; do
+  cat > "$repo/configs/web-box.env" <<EOF
+CONFIG_PATH="configs/web-box.toml"
+EVENT_DATE="$date"
+EOF
+  cat > "$repo/configs/web-unknown.env" <<EOF
+CONFIG_PATH="configs/web-unknown.toml"
+EVENT_DATE="$unknown_date"
+EOF
+  for fixture in phone web-local web-box web-unknown; do
+    case "$fixture" in
+      phone) host="earshot-test-box" ;;
+      web-local) host="earshot-test-local" ;;
+      web-box) host="earshot-test-box" ;;
+      web-unknown) host="earshot-unknown-host" ;;
+    esac
     EARSHOT_REPO="$repo" python3 "$repo/scripts/eventctl.py" init \
-      --config "configs/$lane.toml" --event-env "configs/$lane.env" \
-      --host-id "earshot-test-host" \
+      --config "configs/$fixture.toml" --event-env "configs/$fixture.env" \
+      --host-id "$host" \
       --account-fingerprint "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
       >/dev/null
     run=$(find "$repo/var/runs" -path "*/control/run-plan.json" \
       -exec dirname {} \; | sed 's#/control$##' | while read -r candidate; do
         python3 -c 'import json,sys; p=json.load(open(sys.argv[1]+"/control/run-plan.json")); print(sys.argv[1]) if p["config_path"]==sys.argv[2] else None' \
-          "$candidate" "configs/$lane.toml"
+          "$candidate" "configs/$fixture.toml"
       done)
     for transition in prepared \
-      $( [[ "$lane" == phone ]] && echo admission_resolved || echo access_acquired ) \
+      $( [[ "$fixture" == phone ]] && echo admission_resolved || echo access_acquired ) \
       study_completed preflight_passed
     do
       EARSHOT_REPO="$repo" python3 "$repo/scripts/eventctl.py" record \
@@ -123,11 +147,15 @@ EOF
   done
   cat > "$repo/scripts/install-t0-stub.sh" <<'EOF'
 #!/usr/bin/env bash
-printf 'web %s\n' "$*" >> "$EARSHOT_CHECK_CALLS"
+printf 'local-web %s\n' "$*" >> "$EARSHOT_CHECK_CALLS"
 EOF
   cat > "$repo/scripts/box-install-stub.sh" <<'EOF'
 #!/usr/bin/env bash
 printf 'phone %s\n' "$*" >> "$EARSHOT_CHECK_CALLS"
+EOF
+  cat > "$repo/scripts/box-webcast-install-stub.sh" <<'EOF'
+#!/usr/bin/env bash
+printf 'box-web %s\n' "$*" >> "$EARSHOT_CHECK_CALLS"
 EOF
   cat > "$repo/scripts/notify-stub.sh" <<'EOF'
 #!/usr/bin/env bash
@@ -141,20 +169,24 @@ exit 98
 EOF
   : > "$repo/calls/notifications"
   chmod +x "$repo/scripts/"*-stub.sh
+  failure_rc=0
   EARSHOT_REPO="$repo" \
-    EARSHOT_LOCAL_EXECUTION_HOST="earshot-test-host" \
+    EARSHOT_LOCAL_EXECUTION_HOST="earshot-test-local" \
+    EARSHOT_BOX_EXECUTION_HOST="earshot-test-box" \
     EARSHOT_CHECK_CALLS="$repo/calls/invocations" \
     EARSHOT_CHECK_NOTIFICATIONS="$repo/calls/notifications" \
     _EARSHOT_SCHEDULE_INSTALL_T0="$repo/scripts/install-t0-stub.sh" \
     _EARSHOT_SCHEDULE_BOX_INSTALL="$repo/scripts/box-install-stub.sh" \
+    _EARSHOT_SCHEDULE_BOX_WEBCAST_INSTALL="$repo/scripts/box-webcast-install-stub.sh" \
     _EARSHOT_SCHEDULE_NOTIFY="$repo/scripts/notify-stub.sh" \
     _EARSHOT_SCHEDULE_ALERTCTL="$repo/scripts/alert-stub.sh" \
     bash "$repo/scripts/schedule-nightly.sh" --date "$date" >/dev/null
-  grep -q "^web --run-dir .* --expected-host earshot-test-host$" \
+  grep -q "^local-web --run-dir .* --expected-host earshot-test-local$" \
     "$repo/calls/invocations"
+  grep -q "^box-web --run-dir .*$" "$repo/calls/invocations"
   grep -q "^phone --event-env configs/phone.env --run-dir " \
     "$repo/calls/invocations"
-  [[ $(wc -l < "$repo/calls/invocations" | tr -d ' ') == 2 ]]
+  [[ $(wc -l < "$repo/calls/invocations" | tr -d ' ') == 3 ]]
   [[ ! -s "$repo/calls/notifications" ]]
 
   # A definite installer failure raises exactly one RunPlan-bound request,
@@ -169,18 +201,21 @@ EOF
   : > "$repo/calls/invocations"
   : > "$repo/calls/notifications"
   EARSHOT_REPO="$repo" \
-    EARSHOT_LOCAL_EXECUTION_HOST="earshot-test-host" \
+    EARSHOT_LOCAL_EXECUTION_HOST="earshot-test-local" \
+    EARSHOT_BOX_EXECUTION_HOST="earshot-test-box" \
     EARSHOT_CHECK_CALLS="$repo/calls/invocations" \
     EARSHOT_CHECK_NOTIFICATIONS="$repo/calls/notifications" \
     _EARSHOT_SCHEDULE_INSTALL_T0="$repo/scripts/install-t0-stub.sh" \
     _EARSHOT_SCHEDULE_BOX_INSTALL="$repo/scripts/box-install-stub.sh" \
+    _EARSHOT_SCHEDULE_BOX_WEBCAST_INSTALL="$repo/scripts/box-webcast-install-stub.sh" \
     _EARSHOT_SCHEDULE_NOTIFY="$repo/scripts/notify-stub.sh" \
     _EARSHOT_SCHEDULE_ALERTCTL="$repo/scripts/alert-stub.sh" \
-    bash "$repo/scripts/schedule-nightly.sh" --date "$date" >/dev/null 2>&1
-  [[ $? == 1 ]]
+    bash "$repo/scripts/schedule-nightly.sh" --date "$date" >/dev/null 2>&1 || failure_rc=$?
+  [[ "$failure_rc" == 1 ]]
   grep -q '^phone ' "$repo/calls/invocations"
-  grep -q '^web ' "$repo/calls/invocations"
-  [[ $(wc -l < "$repo/calls/invocations" | tr -d ' ') == 2 ]]
+  grep -q '^local-web ' "$repo/calls/invocations"
+  grep -q '^box-web ' "$repo/calls/invocations"
+  [[ $(wc -l < "$repo/calls/invocations" | tr -d ' ') == 3 ]]
   grep -q 'run-alert raise .*--code schedule_dispatch_failed .*--dedupe-key nightly-schedule-dispatch' \
     "$repo/calls/notifications"
   [[ $(grep -c '^run-alert ' "$repo/calls/notifications") == 1 ]]
@@ -189,17 +224,42 @@ EOF
   # Dry-run neither installs nor calls either notification adapter.
   : > "$repo/calls/invocations"
   : > "$repo/calls/notifications"
+  unknown_rc=0
   EARSHOT_REPO="$repo" \
-    EARSHOT_LOCAL_EXECUTION_HOST="earshot-test-host" \
+    EARSHOT_LOCAL_EXECUTION_HOST="earshot-test-local" \
+    EARSHOT_BOX_EXECUTION_HOST="earshot-test-box" \
     EARSHOT_CHECK_CALLS="$repo/calls/invocations" \
     EARSHOT_CHECK_NOTIFICATIONS="$repo/calls/notifications" \
     _EARSHOT_SCHEDULE_INSTALL_T0="$repo/scripts/install-t0-stub.sh" \
     _EARSHOT_SCHEDULE_BOX_INSTALL="$repo/scripts/box-install-stub.sh" \
+    _EARSHOT_SCHEDULE_BOX_WEBCAST_INSTALL="$repo/scripts/box-webcast-install-stub.sh" \
     _EARSHOT_SCHEDULE_NOTIFY="$repo/scripts/notify-stub.sh" \
     _EARSHOT_SCHEDULE_ALERTCTL="$repo/scripts/alert-stub.sh" \
     bash "$repo/scripts/schedule-nightly.sh" --date "$date" --dry-run >/dev/null
   [[ ! -s "$repo/calls/invocations" ]]
   [[ ! -s "$repo/calls/notifications" ]]
+
+  # A webcast plan compiled for neither configured host is refused loudly and
+  # never falls through to either installer.
+  : > "$repo/calls/invocations"
+  : > "$repo/calls/notifications"
+  EARSHOT_REPO="$repo" \
+    EARSHOT_LOCAL_EXECUTION_HOST="earshot-test-local" \
+    EARSHOT_BOX_EXECUTION_HOST="earshot-test-box" \
+    EARSHOT_CHECK_CALLS="$repo/calls/invocations" \
+    EARSHOT_CHECK_NOTIFICATIONS="$repo/calls/notifications" \
+    _EARSHOT_SCHEDULE_INSTALL_T0="$repo/scripts/install-t0-stub.sh" \
+    _EARSHOT_SCHEDULE_BOX_INSTALL="$repo/scripts/box-install-stub.sh" \
+    _EARSHOT_SCHEDULE_BOX_WEBCAST_INSTALL="$repo/scripts/box-webcast-install-stub.sh" \
+    _EARSHOT_SCHEDULE_NOTIFY="$repo/scripts/notify-stub.sh" \
+    _EARSHOT_SCHEDULE_ALERTCTL="$repo/scripts/alert-stub.sh" \
+    bash "$repo/scripts/schedule-nightly.sh" --date "$unknown_date" \
+      > "$repo/calls/unknown-host.log" 2>&1 || unknown_rc=$?
+  [[ "$unknown_rc" == 1 ]]
+  [[ ! -s "$repo/calls/invocations" ]]
+  grep -q "host 'earshot-unknown-host' matches neither" "$repo/calls/unknown-host.log"
+  grep -q 'run-alert raise .*--code schedule_host_unsupported' \
+    "$repo/calls/notifications"
   echo "schedule-nightly --check: PASS"
 }
 
@@ -322,19 +382,38 @@ else: print("ready")
   case "$lane" in
     webcast)
       local_host="${EARSHOT_LOCAL_EXECUTION_HOST:-}"
-      if [[ -z "$local_host" ]]; then
-        echo "REFUSED $event_id/$run_id: EARSHOT_LOCAL_EXECUTION_HOST is not configured" >&2
-        critical_alert "$run_dir" "$event_id" "schedule_host_missing" \
-          "nightly-schedule-host" \
-          "The local execution-host identity is not configured. Webcast scheduling was refused before installation."
+      box_host="${EARSHOT_BOX_EXECUTION_HOST:-earshot-useast1}"
+      if [[ -n "$local_host" && "$local_host" == "$box_host" ]]; then
+        echo "REFUSED $event_id/$run_id: local and box execution-host IDs collide at '$box_host'" >&2
+        critical_alert "$run_dir" "$event_id" "schedule_host_ambiguous" \
+          "nightly-schedule-host-ambiguous" \
+          "The configured local and box execution-host identities are identical. Webcast scheduling was refused before either installer ran."
         PROBLEMS=$((PROBLEMS + 1)); continue
       fi
-      if ! "$INSTALL_T0" --run-dir "$run_dir" --expected-host "$local_host" \
-          ${VERIFY_FLAG[@]+"${VERIFY_FLAG[@]}"}; then
-        echo "REFUSED $event_id/$run_id: launchd install/readback failed" >&2
-        critical_alert "$run_dir" "$event_id" "schedule_install_failed" \
-          "nightly-schedule-install" \
-          "The webcast scheduler install/readback proof failed for this RunPlan. No successful schedule may be inferred from an on-disk job file."
+      if [[ -n "$local_host" && "$host" == "$local_host" ]]; then
+        if ! "$INSTALL_T0" --run-dir "$run_dir" --expected-host "$local_host" \
+            ${VERIFY_FLAG[@]+"${VERIFY_FLAG[@]}"}; then
+          echo "REFUSED $event_id/$run_id: launchd install/readback failed" >&2
+          critical_alert "$run_dir" "$event_id" "schedule_install_failed" \
+            "nightly-schedule-install" \
+            "The local webcast scheduler install/readback proof failed for this RunPlan. No successful schedule may be inferred from an on-disk job file."
+          PROBLEMS=$((PROBLEMS + 1)); continue
+        fi
+      elif [[ "$host" == "$box_host" ]]; then
+        if ! EARSHOT_BOX_EXECUTION_HOST="$box_host" \
+            "$BOX_WEBCAST_INSTALL" --run-dir "$run_dir" \
+            ${VERIFY_FLAG[@]+"${VERIFY_FLAG[@]}"}; then
+          echo "REFUSED $event_id/$run_id: box webcast dispatch/install/readback failed" >&2
+          critical_alert "$run_dir" "$event_id" "schedule_webcast_box_dispatch_failed" \
+            "nightly-schedule-webcast-box-dispatch" \
+            "The box webcast dispatch or loaded systemd readback proof failed. No successful schedule was recorded."
+          PROBLEMS=$((PROBLEMS + 1)); continue
+        fi
+      else
+        echo "REFUSED $event_id/$run_id: webcast host '$host' matches neither local '${local_host:-<unset>}' nor box '$box_host'" >&2
+        critical_alert "$run_dir" "$event_id" "schedule_host_unsupported" \
+          "nightly-schedule-host-unsupported" \
+          "The RunPlan execution host matches neither configured webcast scheduler target. Scheduling was refused before installation."
         PROBLEMS=$((PROBLEMS + 1)); continue
       fi
       ;;

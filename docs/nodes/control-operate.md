@@ -137,14 +137,26 @@ could not be audited and restarts kept overwriting fixed report paths.
   binary, and stale `$HOME/<slug>-stream.url` files.
 - `scripts/schedule-nightly.sh` — the scheduling join behind `opsctl
   prepare-day`. It enumerates immutable RunPlans, refuses a zero-plan date, and
-  delegates only `preflight_passed` attempts to their lane-specific
-  proof-bearing installer. The facade consumes `preflight-nightly.sh` through
-  `control.preflight`'s public script boundary; it does not own that gate. A
-  failure of one verified plan raises one stable run-bound critical alert and
-  does not stop later siblings. A corrupt/no-plan failure has no trustworthy
-  ledger and therefore uses the legacy date-level notifier. Alert delivery
-  failure never changes the original nonzero scheduling result, and dry-run
-  invokes neither installers nor notification adapters.
+  delegates only `preflight_passed` attempts to their host-appropriate
+  proof-bearing installer. Phone retains `box-event-install.sh`. Webcast
+  dispatch compares the plan's `execution_host_id` to
+  `EARSHOT_LOCAL_EXECUTION_HOST` and `EARSHOT_BOX_EXECUTION_HOST` (default
+  `earshot-useast1`): local goes to the byte-identical `install-t0-agents.sh`
+  argv, box goes to `box-webcast-install.sh`, and any unknown or ambiguous host
+  refuses before either installer. The facade consumes `preflight-nightly.sh`
+  through `control.preflight`'s public script boundary; it does not own that
+  gate. A failure of one verified plan raises one stable run-bound critical
+  alert and does not stop later siblings. A corrupt/no-plan failure has no
+  trustworthy ledger and therefore uses the legacy date-level notifier. Alert
+  delivery failure never changes the original nonzero scheduling result, and
+  dry-run invokes neither installers nor notification adapters.
+
+  A `preresolved` box webcast still needs the laptop-produced URL file pushed
+  into the box attempt's freshness window. Until the S5 resolve-push launchd
+  mode exists, this is an explicit operator step through lane R's
+  `scripts/push-url-file.sh`; this node does not reproduce or edit that
+  transport. The systemd timer remains T-75 and waits through the AccessPlan's
+  resolver leg, but scheduling the URL push itself remains open boundary work.
 
 ## Does not own
 
@@ -327,7 +339,10 @@ each legacy line into the active run's ledger as a `compat` receipt.
   It calls `alertctl` once and inherits its bounded delivery policy; it does
   not loop or blind-redial. Failures without a trustworthy plan use one legacy
   date-level notification. Any alert-adapter failure is logged but the
-  scheduler's original nonzero result is preserved.
+  scheduler's original nonzero result is preserved. Webcast host selection is
+  exact: an unset local identity is allowed only for a plan matching the
+  configured/default box identity; every other host is a run-bound
+  `schedule_host_unsupported` refusal with no installer invocation.
 
 ## Parallel work boundary
 
@@ -353,7 +368,9 @@ spans both sides and must move in one change.
 - Operations facade, RunPlan-only study date selection, pinned-config
   immutability, study/preflight separation, and nightly alert boundaries:
   `python3 tests/opsctl.py`; schedule success/failure/sibling/dry-run drill:
-  `scripts/schedule-nightly.sh --check`; public-surface governance:
+  `scripts/schedule-nightly.sh --check` (local webcast, box webcast, unchanged
+  phone route, sibling continuation, dry-run non-mutation, and unknown-host
+  refusal); public-surface governance:
   `python3 tests/ops_surface.py` and `scripts/doc-lint.sh`.
 - Execution identity: `bash -n scripts/execution-profile.sh
   tests/execution_profile.sh`; `tests/execution_profile.sh`; `cargo test --lib

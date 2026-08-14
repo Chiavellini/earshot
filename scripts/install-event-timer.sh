@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# Install or verify one schema-3 phone RunPlan as one systemd USER timer.
+# Install or verify one schema-3 phone/webcast RunPlan as one systemd USER timer.
 #
 #   scripts/install-event-timer.sh \
 #     --run-dir var/runs/<EVENT_ID>/<RUN_ID> \
-#     --expected-host earshot-useast1 [--verify-only] [--repo <dir>]
+#     --expected-host earshot-useast1 [--fire-at-utc UTC]
+#     [--verify-only] [--repo <dir>]
 #
 # This is deliberately not an event-env/date/HHMM template. The immutable
-# RunPlan owns identity and starts_at; the phone schedule is always T-25. A
-# successful return means all of the following are true:
+# RunPlan owns identity and starts_at; phone fires at T-25 and webcast at
+# T-75. A reviewed webcast recovery may name one exact future fire override.
+# A successful return means all of the following are true:
 #
 #   * systemd reports both units loaded with no pending daemon reload;
 #   * the one timer is active+enabled and its effective descriptor is exact;
@@ -22,11 +24,12 @@
 # commands.
 set -euo pipefail
 
-RUN_DIR_RAW="" EXPECTED_HOST="" REPO="" VERIFY_ONLY=0
+RUN_DIR_RAW="" EXPECTED_HOST="" REPO="" VERIFY_ONLY=0 FIRE_AT_UTC="" FIRE_OVERRIDE_SET=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --run-dir)       RUN_DIR_RAW="${2:?}"; shift 2 ;;
     --expected-host) EXPECTED_HOST="${2:?}"; shift 2 ;;
+    --fire-at-utc)   FIRE_AT_UTC="${2:?}"; FIRE_OVERRIDE_SET=1; shift 2 ;;
     --repo)          REPO="${2:?}"; shift 2 ;;
     --verify-only)   VERIFY_ONLY=1; shift ;;
     -h|--help)       sed -n '2,31p' "$0"; exit 0 ;;
@@ -38,7 +41,7 @@ REPO="${REPO:-${EARSHOT_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}}
 REPO=$(cd "$REPO" && pwd -P)
 cd "$REPO"
 [[ -n "$RUN_DIR_RAW" && -n "$EXPECTED_HOST" ]] || {
-  echo "usage: $0 --run-dir var/runs/<EVENT_ID>/<RUN_ID> --expected-host <stable-id> [--verify-only] [--repo <dir>]" >&2
+  echo "usage: $0 --run-dir var/runs/<EVENT_ID>/<RUN_ID> --expected-host <stable-id> [--fire-at-utc UTC] [--verify-only] [--repo <dir>]" >&2
   exit 2
 }
 
@@ -70,7 +73,7 @@ EARSHOT_REPO="$REPO" python3 scripts/eventctl.py verify --run-dir "$RUN_DIR" >/d
 }
 
 # Export only shell-safe, plan-derived values. No event env is sourced here.
-PLAN_EXPORTS=$(python3 - "$REPO" "$RUN_DIR" "$EXPECTED_HOST" <<'PY'
+PLAN_EXPORTS=$(python3 - "$REPO" "$RUN_DIR" "$EXPECTED_HOST" "$FIRE_AT_UTC" <<'PY'
 import datetime as dt
 import json
 import re
@@ -79,14 +82,19 @@ import subprocess
 import sys
 from pathlib import Path
 
-repo, run, expected_host = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+repo, run, expected_host, fire_override = (
+    Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3], sys.argv[4]
+)
 plan = json.loads((run / "control/run-plan.json").read_text())
 if plan.get("schema") != 3 or plan.get("kind") != "run-plan":
     raise SystemExit("schema-3 RunPlan required")
-if plan.get("lane") != "phone":
-    raise SystemExit(f"phone scheduler received lane={plan.get('lane')!r}")
+lane = plan.get("lane")
+if lane not in {"phone", "webcast"}:
+    raise SystemExit(f"systemd scheduler received unsupported lane={lane!r}")
 if plan.get("execution_enabled") is not True:
-    raise SystemExit("phone scheduler requires an execution-enabled plan")
+    raise SystemExit("systemd scheduler requires an execution-enabled plan")
+if lane == "webcast" and plan.get("capture_only") is not False:
+    raise SystemExit("webcast scheduler requires an execution-enabled RunPlan")
 if plan.get("execution_host_id") != expected_host:
     raise SystemExit(
         f"RunPlan host {plan.get('execution_host_id')!r} != expected host {expected_host!r}"
@@ -109,8 +117,65 @@ if "preflight_passed" not in reached:
 if not state["active"]:
     raise SystemExit("RunPlan is terminal or archived")
 start = dt.datetime.fromisoformat(plan["starts_at_utc"].replace("Z", "+00:00"))
-fire = start - dt.timedelta(minutes=25)
+if fire_override:
+    if lane != "webcast":
+        raise SystemExit("--fire-at-utc override is webcast-only")
+    try:
+        fire = dt.datetime.fromisoformat(fire_override.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise SystemExit(f"--fire-at-utc is not ISO-8601: {exc}")
+    if fire.utcoffset() != dt.timedelta(0) or not fire_override.endswith("Z"):
+        raise SystemExit("--fire-at-utc must be an exact UTC timestamp ending in Z")
+    fire = fire.astimezone(dt.timezone.utc)
+    if fire <= dt.datetime.now(dt.timezone.utc):
+        raise SystemExit("--fire-at-utc must be strictly future")
+    if fire > start:
+        raise SystemExit("--fire-at-utc may not be after RunPlan starts_at_utc")
+else:
+    fire = start - dt.timedelta(minutes=25 if lane == "phone" else 75)
+
+argv = [str(repo / "scripts" / "event-autorun.sh"), "--run-dir", str(run)]
+environment = {
+    "EARSHOT_EXECUTION_HOST": plan["execution_host_id"],
+    "EARSHOT_REPO": str(repo),
+    "EARSHOT_RUN_DIR": str(run),
+    "EARSHOT_RUN_PLAN_SHA256": plan["plan_sha256"],
+}
+account = ""
+if lane == "webcast":
+    argv = [
+        str(repo / "scripts" / "arm-on-url.sh"), "--run-dir", str(run),
+        "--i-am-live", "--fillable",
+    ]
+    env_rel = plan.get("event_env_path")
+    if not env_rel:
+        raise SystemExit("webcast RunPlan has no pinned event env/account locator")
+    env_path = (repo / env_rel).resolve()
+    if not env_path.is_file() or env_path.is_symlink():
+        raise SystemExit(f"webcast event env is not a regular file: {env_path}")
+    match = re.search(
+        r'^\s*(?:export\s+)?(?:EARSHOT_ACCOUNT_PROFILE|ACCOUNT_ENV)=["\x27]([^"\x27]+)["\x27]',
+        env_path.read_text(errors="replace"), re.M,
+    )
+    if not match:
+        raise SystemExit("webcast event env has no literal account profile locator")
+    raw_account = match.group(1)
+    home = str(Path.home())
+    raw_account = raw_account.replace("${HOME}", home).replace("$HOME", home)
+    if raw_account.startswith("~/"):
+        raw_account = home + raw_account[1:]
+    account_path = Path(raw_account)
+    if not account_path.is_absolute():
+        raise SystemExit("webcast account profile locator must resolve to an absolute path")
+    account_path = account_path.resolve()
+    if not account_path.is_file() or account_path.is_symlink():
+        raise SystemExit(f"webcast account profile is not a regular file: {account_path}")
+    account = str(account_path)
+    if unsafe.search(account):
+        raise SystemExit("account profile path contains characters unsupported by the unit boundary")
+    environment["EARSHOT_ACCOUNT_ENV"] = account
 values = {
+    "PLAN_LANE": lane,
     "PLAN_EVENT_ID": plan["event_id"],
     "PLAN_RUN_ID": plan["run_id"],
     "PLAN_SHA256": plan["plan_sha256"],
@@ -118,6 +183,9 @@ values = {
     "LABEL": f"com.earshot.run.{plan['plan_sha256'][:20]}",
     "FIRE_AT_UTC": fire.strftime("%Y-%m-%dT%H:%M:%SZ"),
     "ON_CALENDAR": fire.strftime("%Y-%m-%d %H:%M:%S UTC"),
+    "ACCOUNT_ENV": account,
+    "PROGRAM_JSON": json.dumps(argv, separators=(",", ":")),
+    "ENVIRONMENT_JSON": json.dumps(environment, separators=(",", ":"), sort_keys=True),
 }
 for key, value in values.items():
     print(f"{key}={shlex.quote(value)}")
@@ -129,17 +197,27 @@ SERVICE="$LABEL.service"
 TIMER="$LABEL.timer"
 SERVICE_PATH="$UNIT_DIR/$SERVICE"
 TIMER_PATH="$UNIT_DIR/$TIMER"
+if [[ "$PLAN_LANE" == webcast ]]; then
+  EXEC_START="$REPO/scripts/arm-on-url.sh --run-dir $RUN_DIR --i-am-live --fillable"
+else
+  EXEC_START="$REPO/scripts/event-autorun.sh --run-dir $RUN_DIR"
+fi
+SERVICE_ENVIRONMENT="Environment=EARSHOT_REPO=$REPO
+Environment=EARSHOT_RUN_DIR=$RUN_DIR
+Environment=EARSHOT_RUN_PLAN_SHA256=$PLAN_SHA256
+Environment=EARSHOT_EXECUTION_HOST=$PLAN_HOST"
+if [[ "$PLAN_LANE" == webcast ]]; then
+  SERVICE_ENVIRONMENT="$SERVICE_ENVIRONMENT
+Environment=EARSHOT_ACCOUNT_ENV=$ACCOUNT_ENV"
+fi
 SERVICE_BODY="[Unit]
-Description=EARSHOT schema-3 phone run $PLAN_EVENT_ID/$PLAN_RUN_ID
+Description=EARSHOT schema-3 $PLAN_LANE run $PLAN_EVENT_ID/$PLAN_RUN_ID
 
 [Service]
 Type=oneshot
 WorkingDirectory=$REPO
-Environment=EARSHOT_REPO=$REPO
-Environment=EARSHOT_RUN_DIR=$RUN_DIR
-Environment=EARSHOT_RUN_PLAN_SHA256=$PLAN_SHA256
-Environment=EARSHOT_EXECUTION_HOST=$PLAN_HOST
-ExecStart=$REPO/scripts/event-autorun.sh --run-dir $RUN_DIR
+$SERVICE_ENVIRONMENT
+ExecStart=$EXEC_START
 TimeoutStopSec=150
 KillMode=mixed"
 TIMER_BODY="[Unit]
@@ -203,6 +281,20 @@ UNIT_FILE_STATE=$(show_value "$TIMER" UnitFileState)
   echo "REFUSED: $TIMER is not enabled (state=$UNIT_FILE_STATE)" >&2
   rollback_loaded_job; exit 1
 }
+TIMER_LIST=$("$SYSTEMCTL" --user list-timers "$TIMER" --all --no-legend --no-pager 2>/dev/null) || {
+  echo "REFUSED: $TIMER is absent from the loaded timer list" >&2
+  rollback_loaded_job; exit 1
+}
+TIMER_LIST="$TIMER_LIST" python3 - "$TIMER" <<'PY' || {
+import os
+import sys
+timer = sys.argv[1]
+if timer not in {field for line in os.environ["TIMER_LIST"].splitlines() for field in line.split()}:
+    raise SystemExit(1)
+PY
+  echo "REFUSED: loaded timer list does not name exact unit $TIMER" >&2
+  rollback_loaded_job; exit 1
+}
 
 SERVICE_LOADED=$("$SYSTEMCTL" --user cat "$SERVICE" --no-pager 2>/dev/null) || {
   echo "REFUSED: cannot read loaded $SERVICE" >&2; rollback_loaded_job; exit 1;
@@ -216,6 +308,7 @@ cleanup_readback() { rm -f -- "$READBACK"; }
 trap cleanup_readback EXIT
 if ! SERVICE_EXPECTED="$SERVICE_BODY" TIMER_EXPECTED="$TIMER_BODY" \
 SERVICE_LOADED="$SERVICE_LOADED" TIMER_LOADED="$TIMER_LOADED" \
+PROGRAM_JSON="$PROGRAM_JSON" ENVIRONMENT_JSON="$ENVIRONMENT_JSON" \
 python3 - "$READBACK" "$PLAN_EVENT_ID" "$PLAN_RUN_ID" "$PLAN_SHA256" \
   "$PLAN_HOST" "$LABEL" "$FIRE_AT_UTC" "$REPO" "$RUN_DIR" <<'PY'
 import hashlib
@@ -237,6 +330,8 @@ def normalize(value):
 
 service = normalize(os.environ["SERVICE_LOADED"])
 timer = normalize(os.environ["TIMER_LOADED"])
+program = json.loads(os.environ["PROGRAM_JSON"])
+environment = json.loads(os.environ["ENVIRONMENT_JSON"])
 if service != normalize(os.environ["SERVICE_EXPECTED"]):
     raise SystemExit("loaded service descriptor differs from exact RunPlan service")
 if timer != normalize(os.environ["TIMER_EXPECTED"]):
@@ -255,13 +350,8 @@ payload = {
     "execution_host_id": host,
     "label": label,
     "fire_at_utc": fire,
-    "program_arguments": [f"{repo}/scripts/event-autorun.sh", "--run-dir", run],
-    "environment": {
-        "EARSHOT_EXECUTION_HOST": host,
-        "EARSHOT_REPO": repo,
-        "EARSHOT_RUN_DIR": run,
-        "EARSHOT_RUN_PLAN_SHA256": plan_sha,
-    },
+    "program_arguments": program,
+    "environment": environment,
     "descriptor_sha256": descriptor_hash,
     "stop_timeout_seconds": 150,
     "kill_mode": "mixed",
@@ -279,6 +369,7 @@ then
 fi
 
 PROOF_ARGS=(--run-dir "$RUN_DIR" --readback "$READBACK")
+[[ "$FIRE_OVERRIDE_SET" == 1 ]] && PROOF_ARGS+=(--fire-at-utc "$FIRE_AT_UTC")
 [[ "$VERIFY_ONLY" == 1 ]] && PROOF_ARGS+=(--verify-only)
 if ! EARSHOT_REPO="$REPO" python3 scripts/schedule-proof.py "${PROOF_ARGS[@]}"; then
   echo "REFUSED: loaded job was not admitted as scheduled" >&2

@@ -11,7 +11,8 @@ Unattended lifecycle/retry logic in `scripts/event-autorun.sh` and
 `scripts/webcast-autorun.sh`, plus mid-call phone
 recovery in `scripts/redial-supervisor.sh` and event-timer installation in
 `scripts/install-event-timer.sh`, wrapped for the remote host by
-`scripts/box-event-install.sh`. It also owns the autorun environment
+`scripts/box-event-install.sh` (phone) and `scripts/box-webcast-install.sh`
+(webcast). It also owns the autorun environment
 templates under `configs/*-autorun.env`. The historical run accumulator
 (`docs/history/RUNBOOK.md`) and the phone-lane handoff
 (`docs/history/PHONE-LANE-HANDOFF.md`) are frozen evidence owned by
@@ -37,6 +38,30 @@ call. It also pushes the gitignored digit store over stdin (never argv, never
 git) because `scripts/deploy-box.sh` excludes `state/`, and refuses when the
 config's `bind`, the env's `BIND_PORT`, and the `/e/<port>` in
 `EARSHOT_STREAM_URL` disagree.
+
+`scripts/box-webcast-install.sh` is the corresponding no-phone remote
+boundary. It requires one canonical schema-2 AccessPlan, refuses
+`static-public`, admits typed non-static strategies including `preresolved`,
+matches the RunPlan host to `EARSHOT_BOX_EXECUTION_HOST` (default
+`earshot-useast1`), and verifies that preflight already left an executable,
+non-symlink box pin at `state/<EVENT_ID>/earshot-pinned`. It neither copies a
+digit store nor inspects a bind port or Twilio URL. The exact RunPlan and
+receipt prefix cross through private rsync staging and
+`run-host-boundary.py reconcile --expected-host`; only then does the wrapper
+invoke the timer installer and re-verify the box-owned ledger.
+
+`scripts/install-event-timer.sh` accepts phone and webcast schema-3 plans.
+Phone retains T-25 and `event-autorun.sh`; webcast uses T-75 and
+`arm-on-url.sh --run-dir ... --i-am-live --fillable`, with the resolved
+`EARSHOT_ACCOUNT_ENV` in the unit. The webcast-only `--fire-at-utc` recovery
+override has the same strictly-future/no-later-than-start contract as the
+launchd installer. Both lanes retain `TimeoutStopSec=150`, `KillMode=mixed`,
+and the linger gate. Success is based on manager readback: exact loaded
+descriptor bytes with `NeedDaemonReload=no`, active/enabled state, exact timer
+presence in `systemctl --user list-timers`, and a scheduler-aware
+`schedule-proof.py` check. Webcast launchd readbacks require the Homebrew PATH
+pin; systemd-user readbacks deliberately do not, while both require
+`EARSHOT_ACCOUNT_ENV`.
 
 `scripts/event-autorun.sh` honors the event env's `BIND_PORT` (2026-08-05: it
 was declared in every staged env and ignored, hardcoded to 8080 — so an event
@@ -312,6 +337,13 @@ early terminal exit, a killed child being replaced with a different PID, a
 fake-SSH box tail overriding the stale local prefix within a declared bound,
 and a failed box refresh paging without mutating local run state.
 
+`tests/typed_scheduler_boundary.sh` additionally drives both scheduler kinds
+with stateful local manager stubs. It covers phone systemd compatibility,
+webcast systemd T-75/late-fire argv and environment, loaded timer-list
+readback, static-public refusal before SSH, the executable box-pin gate,
+private staging/reconciliation, and the remote durable `scheduled` receipt.
+No test invokes a real scheduler, network, dial, deploy, or runtime.
+
 ## Migration status
 
 Supervision is now generic one-RunPlan shell orchestration with one launch and
@@ -320,6 +352,9 @@ are implemented and offline-green. The CAPTURE-owned phone/webcast launcher
 and schedule hooks are deliberately untouched; they must install the monitor
 as a sibling before M1 is production-complete.
 The M4 monitor-side box read-through is implemented and offline-green.
+Phone and webcast now share the loaded systemd-user scheduling proof on the
+box without sharing ingress-specific policy; the laptop launchd path remains
+available and unchanged for local webcast RunPlans.
 `event-status.sh` is owned and actively claimed by `control.operate`; that
 renderer still needs its owner to consume the same bounded snapshot rather
 than report `STALE_PREFIX_POSSIBLE`.

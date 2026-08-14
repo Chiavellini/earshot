@@ -900,8 +900,9 @@ status = "active"
 doc = "docs/nodes/control-supervise.md"
 doc_style = "node"
 owns = [
-  # schedules ONE phone event on the box and verifies the LOADED unit
+  # schedules one phone or webcast event on the box and verifies the LOADED unit
   "scripts/box-event-install.sh",
+  "scripts/box-webcast-install.sh",
   "configs/*-autorun.env",
   "scripts/arm-when-url.sh",
   "scripts/event-autorun.sh",

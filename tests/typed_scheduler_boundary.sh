@@ -16,7 +16,8 @@ mkdir -p "$HOME/.earshot"
 printf 'EARSHOT_ACCOUNT_FIXTURE=1\n' > "$HOME/.earshot/account.env"
 
 for path in eventctl.py access-plan.py schedule-proof.py capture-ready.py \
-  pcm-gate.sh arm-on-url.sh install-event-timer.sh install-t0-agents.sh; do
+  pcm-gate.sh arm-on-url.sh install-event-timer.sh install-t0-agents.sh \
+  box-webcast-install.sh run-host-boundary.py; do
   cp "$ROOT/scripts/$path" "$REPO/scripts/$path"
 done
 printf '#!/usr/bin/env bash\nexit 0\n' > "$REPO/scripts/event-autorun.sh"
@@ -59,6 +60,38 @@ CONFIG_PATH="configs/webcast.toml"
 EVENT_DATE="$DATE"
 ACCOUNT_ENV="\$HOME/.earshot/account.env"
 EOF
+cat > "$REPO/configs/box-webcast.toml" <<EOF
+[event]
+id = "KXEARNINGSMENTIONSCHEDULER-TEST-BOX-WEBCAST"
+starts_at = "$START"
+[[sources]]
+kind = "pipe"
+cmd = ["ffmpeg", "-i", "\$HOME/box-web-stream.url"]
+[[keywords]]
+market_ticker = "KXEARNINGSMENTIONSCHEDULER-TEST-FOO"
+phrase = "foo"
+EOF
+cat > "$REPO/configs/box-webcast.env" <<EOF
+CONFIG_PATH="configs/box-webcast.toml"
+EVENT_DATE="$DATE"
+ACCOUNT_ENV="\$HOME/.earshot/account.env"
+EOF
+cat > "$REPO/configs/dispatch-webcast.toml" <<EOF
+[event]
+id = "KXEARNINGSMENTIONSCHEDULER-TEST-DISPATCH-WEBCAST"
+starts_at = "$START"
+[[sources]]
+kind = "pipe"
+cmd = ["ffmpeg", "-i", "\$HOME/dispatch-web-stream.url"]
+[[keywords]]
+market_ticker = "KXEARNINGSMENTIONSCHEDULER-TEST-FOO"
+phrase = "foo"
+EOF
+cat > "$REPO/configs/dispatch-webcast.env" <<EOF
+CONFIG_PATH="configs/dispatch-webcast.toml"
+EVENT_DATE="$DATE"
+ACCOUNT_ENV="\$HOME/.earshot/account.env"
+EOF
 cat > "$REPO/configs/static-webcast.toml" <<EOF
 [event]
 id = "KXEARNINGSMENTIONSCHEDULER-TEST-STATIC"
@@ -85,12 +118,22 @@ eventctl init --config configs/phone.toml --event-env configs/phone.env \
   --host-id "$HOST_ID" --account-fingerprint "$FP"
 eventctl init --config configs/webcast.toml --event-env configs/webcast.env \
   --host-id "$HOST_ID" --account-fingerprint "$FP"
+eventctl init --config configs/box-webcast.toml \
+  --event-env configs/box-webcast.env --host-id "$HOST_ID" \
+  --account-fingerprint "$FP"
+eventctl init --config configs/dispatch-webcast.toml \
+  --event-env configs/dispatch-webcast.env --host-id "$HOST_ID" \
+  --account-fingerprint "$FP"
 eventctl init --config configs/static-webcast.toml \
   --event-env configs/static-webcast.env --host-id "$HOST_ID" \
   --account-fingerprint "$FP"
 PHONE_RUN=$(find "$REPO/var/runs/KXEARNINGSMENTIONSCHEDULER-TEST-PHONE" \
   -mindepth 1 -maxdepth 1 -type d -print -quit)
 WEB_RUN=$(find "$REPO/var/runs/KXEARNINGSMENTIONSCHEDULER-TEST-WEBCAST" \
+  -mindepth 1 -maxdepth 1 -type d -print -quit)
+BOX_WEB_RUN=$(find "$REPO/var/runs/KXEARNINGSMENTIONSCHEDULER-TEST-BOX-WEBCAST" \
+  -mindepth 1 -maxdepth 1 -type d -print -quit)
+DISPATCH_WEB_RUN=$(find "$REPO/var/runs/KXEARNINGSMENTIONSCHEDULER-TEST-DISPATCH-WEBCAST" \
   -mindepth 1 -maxdepth 1 -type d -print -quit)
 STATIC_RUN=$(find "$REPO/var/runs/KXEARNINGSMENTIONSCHEDULER-TEST-STATIC" \
   -mindepth 1 -maxdepth 1 -type d -print -quit)
@@ -99,10 +142,18 @@ for transition in prepared admission_resolved study_completed preflight_passed; 
 done
 for transition in prepared access_acquired study_completed preflight_passed; do
   eventctl record --run-dir "$WEB_RUN" --transition "$transition"
+  eventctl record --run-dir "$BOX_WEB_RUN" --transition "$transition"
+  eventctl record --run-dir "$DISPATCH_WEB_RUN" --transition "$transition"
   eventctl record --run-dir "$STATIC_RUN" --transition "$transition"
 done
 EARSHOT_REPO="$REPO" python3 "$REPO/scripts/access-plan.py" bind \
   --run-dir "$WEB_RUN" --access-mode public --resolver-kind external-command \
+  --resolver-argv-json '["scripts/test-resolver.sh"]' >/dev/null
+EARSHOT_REPO="$REPO" python3 "$REPO/scripts/access-plan.py" bind \
+  --run-dir "$BOX_WEB_RUN" --access-mode public --resolver-kind external-command \
+  --resolver-argv-json '["scripts/test-resolver.sh"]' >/dev/null
+EARSHOT_REPO="$REPO" python3 "$REPO/scripts/access-plan.py" bind \
+  --run-dir "$DISPATCH_WEB_RUN" --access-mode public --resolver-kind external-command \
   --resolver-argv-json '["scripts/test-resolver.sh"]' >/dev/null
 EARSHOT_REPO="$REPO" python3 "$REPO/scripts/access-plan.py" bind \
   --run-dir "$STATIC_RUN" --access-mode public --resolver-kind static-public \
@@ -180,6 +231,15 @@ case "$cmd" in
       echo 'Unexpected=corrupt'
     fi
     ;;
+  list-timers)
+    unit=""
+    for arg in "$@"; do
+      [[ "$arg" == *.timer ]] && unit="$arg"
+    done
+    [[ -n "$unit" && -f "$STUB_SYSTEMD_STATE/$unit.active" ]] || exit 1
+    printf 'Thu 2026-08-20 20:45:00 UTC 1 week left - - %s %s\n' \
+      "$unit" "${unit%.timer}.service"
+    ;;
   *) exit 7 ;;
 esac
 SH
@@ -232,6 +292,45 @@ PY
   *) exit 7 ;;
 esac
 SH
+cat > "$STUB/bin/ssh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -o|-i) shift 2 ;;
+    *) break ;;
+  esac
+done
+host=${1:?}; shift
+command=${1:?}
+printf 'ssh %s %s\n' "$host" "$command" >> "$STUB_LOG"
+HOME="$REMOTE_HOME" USER=stub-user \
+EARSHOT_SYSTEMD_USER_DIR="$REMOTE_SYSTEMD_USER_DIR" \
+STUB_SYSTEMD_STATE="$REMOTE_SYSTEMD_STATE" \
+EARSHOT_REPO="$REMOTE_REPO" \
+/bin/bash -c "$command"
+SH
+cat > "$STUB/bin/rsync" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+dry=0
+args=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -ani) dry=1; shift ;;
+    -e) shift 2 ;;
+    -*) shift ;;
+    *) args+=("$1"); shift ;;
+  esac
+done
+[[ ${#args[@]} == 2 ]]
+src=${args[0]}
+dest=${args[1]#*:}
+printf 'rsync dry=%s %s %s\n' "$dry" "$src" "$dest" >> "$STUB_LOG"
+[[ "$dry" == 1 ]] && exit 0
+mkdir -p "$dest"
+cp -a "$src"/. "$dest"/
+SH
 cat > "$REPO/scripts/test-resolver.sh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -271,7 +370,8 @@ print('{"media_sequence": 101}')
 print('{"media_sequence": 102}')
 PY
 chmod +x "$STUB/bin/loginctl" "$STUB/bin/systemctl" \
-  "$STUB/bin/launchctl" "$STUB/bin/ffmpeg" "$REPO/scripts/test-resolver.sh" \
+  "$STUB/bin/launchctl" "$STUB/bin/ssh" "$STUB/bin/rsync" \
+  "$STUB/bin/ffmpeg" "$REPO/scripts/test-resolver.sh" \
   "$REPO/scripts/launch-webcast.sh" "$REPO/scripts/notify.sh"
 
 export USER=stub-user
@@ -317,12 +417,97 @@ SERVICE="$EARSHOT_SYSTEMD_USER_DIR/$PHONE_LABEL.service"
 grep -q '^TimeoutStopSec=150$' "$SERVICE"
 grep -q '^KillMode=mixed$' "$SERVICE"
 grep -qF -- "--run-dir $(cd "$PHONE_RUN" && pwd -P)" "$SERVICE"
+# The generalized timer must not perturb the existing phone descriptor bytes
+# between its last environment line and ExecStart.
+python3 - "$SERVICE" "$HOST_ID" <<'PY'
+import pathlib, sys
+service, host = pathlib.Path(sys.argv[1]), sys.argv[2]
+assert f"Environment=EARSHOT_EXECUTION_HOST={host}\nExecStart=" in service.read_text()
+PY
 [[ "$(scheduled_count "$PHONE_RUN")" == 1 ]]
 ENABLES_BEFORE=$(grep -c 'systemctl --user enable --now' "$STUB_LOG" || true)
 "$REPO/scripts/install-event-timer.sh" --run-dir "$PHONE_RUN" \
   --expected-host "$HOST_ID" --verify-only >/dev/null
 [[ "$(scheduled_count "$PHONE_RUN")" == 1 ]]
 [[ "$(grep -c 'systemctl --user enable --now' "$STUB_LOG" || true)" == "$ENABLES_BEFORE" ]]
+
+# Webcast can use the same systemd-user boundary on the box: T-75 (or an exact
+# reviewed late-fire override), arm-on-url argv, account env, no launchd PATH.
+BOX_FIRE=$(python3 - <<'PY'
+import datetime as dt
+print((dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ"))
+PY
+)
+"$REPO/scripts/install-event-timer.sh" --run-dir "$BOX_WEB_RUN" \
+  --expected-host "$HOST_ID" --fire-at-utc "$BOX_FIRE" >/dev/null
+BOX_WEB_SHA=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["plan_sha256"])' \
+  "$BOX_WEB_RUN/control/run-plan.json")
+BOX_WEB_LABEL="com.earshot.run.${BOX_WEB_SHA:0:20}"
+BOX_SERVICE="$EARSHOT_SYSTEMD_USER_DIR/$BOX_WEB_LABEL.service"
+BOX_TIMER="$EARSHOT_SYSTEMD_USER_DIR/$BOX_WEB_LABEL.timer"
+CANON_REPO=$(cd "$REPO" && pwd -P)
+CANON_ACCOUNT=$(cd "$HOME/.earshot" && pwd -P)/account.env
+grep -qF "ExecStart=$CANON_REPO/scripts/arm-on-url.sh --run-dir $(cd "$BOX_WEB_RUN" && pwd -P) --i-am-live --fillable" "$BOX_SERVICE"
+grep -qF "Environment=EARSHOT_ACCOUNT_ENV=$CANON_ACCOUNT" "$BOX_SERVICE"
+! grep -q '^Environment=PATH=' "$BOX_SERVICE"
+BOX_ON_CALENDAR="${BOX_FIRE%Z}"
+BOX_ON_CALENDAR="${BOX_ON_CALENDAR/T/ } UTC"
+grep -qF "OnCalendar=$BOX_ON_CALENDAR" "$BOX_TIMER"
+grep -q "systemctl --user list-timers .*${BOX_WEB_LABEL}.timer" "$STUB_LOG"
+[[ "$(scheduled_count "$BOX_WEB_RUN")" == 1 ]]
+
+# The remote webcast installer is a typed transport boundary: static-public
+# refuses before SSH, while a non-static canonical plan is staged, reconciled,
+# checked for an existing executable box pin, and admitted only after the
+# remote loaded systemd readback writes its scheduled receipt.
+REMOTE_REPO="$TMP/remote-repo"
+REMOTE_HOME="$HOME"
+REMOTE_SYSTEMD_USER_DIR="$TMP/remote-systemd-user"
+REMOTE_SYSTEMD_STATE="$TMP/remote-systemd-state"
+export REMOTE_REPO REMOTE_HOME REMOTE_SYSTEMD_USER_DIR REMOTE_SYSTEMD_STATE
+mkdir -p "$REMOTE_REPO/scripts" "$REMOTE_REPO/configs" \
+  "$REMOTE_REPO/state" "$REMOTE_SYSTEMD_STATE"
+for path in eventctl.py access-plan.py schedule-proof.py run-host-boundary.py \
+  install-event-timer.sh arm-on-url.sh event-autorun.sh; do
+  cp "$REPO/scripts/$path" "$REMOTE_REPO/scripts/$path"
+done
+cp "$REPO/configs/dispatch-webcast.toml" \
+  "$REPO/configs/dispatch-webcast.env" "$REMOTE_REPO/configs/"
+DISPATCH_EVENT=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["event_id"])' \
+  "$DISPATCH_WEB_RUN/control/run-plan.json")
+mkdir -p "$REMOTE_REPO/state/$DISPATCH_EVENT"
+printf 'fixture binary\n' > "$REMOTE_REPO/state/$DISPATCH_EVENT/earshot-pinned"
+chmod +x "$REMOTE_REPO/scripts/"* "$REMOTE_REPO/state/$DISPATCH_EVENT/earshot-pinned"
+
+SSH_BEFORE=$(grep -c '^ssh ' "$STUB_LOG" || true)
+if EARSHOT_BOX_EXECUTION_HOST="$HOST_ID" EARSHOT_BOX=stub-box \
+    EARSHOT_BOX_KEY="$TMP/no-key" EARSHOT_BOX_REPO="$REMOTE_REPO" \
+    EARSHOT_SSH="$STUB/bin/ssh" EARSHOT_RSYNC="$STUB/bin/rsync" \
+    "$REPO/scripts/box-webcast-install.sh" --run-dir "$STATIC_RUN" \
+      > "$TMP/static-box-refusal.log" 2>&1; then
+  echo "FAIL: static-public AccessPlan reached box dispatch" >&2
+  exit 1
+fi
+grep -q 'static-public AccessPlan' "$TMP/static-box-refusal.log"
+[[ "$(grep -c '^ssh ' "$STUB_LOG" || true)" == "$SSH_BEFORE" ]]
+
+EARSHOT_BOX_EXECUTION_HOST="$HOST_ID" EARSHOT_BOX=stub-box \
+  EARSHOT_BOX_KEY="$TMP/no-key" EARSHOT_BOX_REPO="$REMOTE_REPO" \
+  EARSHOT_SSH="$STUB/bin/ssh" EARSHOT_RSYNC="$STUB/bin/rsync" \
+  "$REPO/scripts/box-webcast-install.sh" --run-dir "$DISPATCH_WEB_RUN" \
+    >/dev/null
+REMOTE_DISPATCH_RUN="$REMOTE_REPO/var/runs/$DISPATCH_EVENT/$(basename "$DISPATCH_WEB_RUN")"
+[[ "$(scheduled_count "$REMOTE_DISPATCH_RUN")" == 1 ]]
+DISPATCH_SHA=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["plan_sha256"])' \
+  "$REMOTE_DISPATCH_RUN/control/run-plan.json")
+DISPATCH_SERVICE="$REMOTE_SYSTEMD_USER_DIR/com.earshot.run.${DISPATCH_SHA:0:20}.service"
+CANON_REMOTE_REPO=$(cd "$REMOTE_REPO" && pwd -P)
+CANON_REMOTE_DISPATCH_RUN=$(cd "$REMOTE_DISPATCH_RUN" && pwd -P)
+grep -qF "ExecStart=$CANON_REMOTE_REPO/scripts/arm-on-url.sh --run-dir $CANON_REMOTE_DISPATCH_RUN --i-am-live --fillable" \
+  "$DISPATCH_SERVICE"
+grep -q '^TimeoutStopSec=150$' "$DISPATCH_SERVICE"
+grep -q '^KillMode=mixed$' "$DISPATCH_SERVICE"
+[[ ! -e "$REMOTE_REPO/state/hunt/numbers.env" ]]
 
 # Good launchd install and verify-only: exactly one bootstrap and one receipt.
 # A valid static-public AccessPlan is not schedulable until this boundary can

@@ -577,7 +577,9 @@ def expected_program(repo: Path, run: Path, plan: dict) -> list[str]:
     raise Refusal(f"unsupported RunPlan lane {plan.get('lane')!r}")
 
 
-def expected_environment(repo: Path, run: Path, plan: dict) -> dict[str, str]:
+def expected_environment(
+    repo: Path, run: Path, plan: dict, scheduler: str
+) -> dict[str, str]:
     value = {
         "EARSHOT_EXECUTION_HOST": plan["execution_host_id"],
         "EARSHOT_REPO": str(repo),
@@ -586,12 +588,12 @@ def expected_environment(repo: Path, run: Path, plan: dict) -> dict[str, str]:
     }
     if plan.get("lane") == "webcast":
         value["EARSHOT_ACCOUNT_ENV"] = str(resolve_account_profile(repo, plan))
-        # Pinned fire-time PATH (AMAT 2026-08-13): the webcast lane schedules
-        # via launchd, whose default PATH resolves python3 to Apple's 3.9 —
-        # no tomllib, no playwright — and the arm dies at fire time. Must
-        # mirror install-t0-agents.sh's plist env exactly. The phone lane
-        # schedules via systemd on the box, whose default PATH is healthy.
-        value["PATH"] = "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        if scheduler == "launchd":
+            # Pinned fire-time PATH (AMAT 2026-08-13): launchd's default
+            # resolves python3 to Apple's 3.9 (no tomllib/playwright). The
+            # Linux systemd-user path is intentionally left at its healthy
+            # host default; a Homebrew override would be invalid on the box.
+            value["PATH"] = "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
     return value
 
 
@@ -663,7 +665,7 @@ def validate_readback(readback: dict, repo: Path, run: Path, plan: dict,
         "label": f"com.earshot.run.{plan['plan_sha256'][:20]}",
         "fire_at_utc": expected_fire(plan, fire_override),
         "program_arguments": expected_program(repo, run, plan),
-        "environment": expected_environment(repo, run, plan),
+        "environment": expected_environment(repo, run, plan, readback["scheduler"]),
     }
     for field, wanted in comparisons.items():
         if readback[field] != wanted:
