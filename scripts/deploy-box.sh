@@ -46,6 +46,10 @@ DRY=()
 
 cd "$(dirname "$0")/.."
 
+SOURCE_COMMIT="$(git rev-parse HEAD 2>/dev/null || echo UNKNOWN-NOT-A-GIT-CHECKOUT)"
+SOURCE_DIRTY="$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+DEPLOYED_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
 rsync -az --delete ${DRY[@]+"${DRY[@]}"} \
   --exclude target --exclude models --exclude .git \
   --exclude state --exclude corpus --exclude vendor \
@@ -64,4 +68,21 @@ ssh -i "$KEY" "$BOX" '
   [[ -n "$SO" ]]   || { echo "DEPLOY BROKEN: no linux libonnxruntime under ~/ear/vendor" >&2; exit 1; }
   echo "vendor OK: $SO"
 '
+
+# The box is intentionally not a git checkout. Publish the source identity only
+# after transfer and platform checks succeed, atomically, so on-box preflight
+# can bind its freshly built pin to the real rsync source.
+{
+  printf 'commit=%s\n' "$SOURCE_COMMIT"
+  printf 'dirty_paths=%s\n' "$SOURCE_DIRTY"
+  printf 'deployed_utc=%s\n' "$DEPLOYED_UTC"
+} | ssh -i "$KEY" "$BOX" '
+  set -e
+  umask 022
+  tmp=~/ear/.DEPLOYED-FROM.tmp.$$
+  cat > "$tmp"
+  chmod 444 "$tmp"
+  mv -f "$tmp" ~/ear/DEPLOYED-FROM
+'
+echo "provenance OK: DEPLOYED-FROM commit ${SOURCE_COMMIT:0:12} dirty_paths=$SOURCE_DIRTY deployed_utc=$DEPLOYED_UTC"
 echo "deploy OK"

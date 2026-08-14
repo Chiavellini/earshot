@@ -90,7 +90,7 @@ check() {  # check <PASS|FAIL|WARN> <message>
 }
 
 # ── What does THIS config need? ────────────────────────────────────────────
-EVENT_ID="" BIND_PORT="" ENGINE="" MODEL_DIR="" CAP_CENTS="" BUDGET="" ORDER_NOTIONAL="" HAS_TWILIO=0
+EVENT_ID="" BIND_PORT="" ENGINE="" MODEL_DIR="" CAP_CENTS="" BUDGET="" ORDER_NOTIONAL="" HAS_TWILIO=0 HAS_PIPE=0
 if [[ -n "$CONFIG" ]]; then
   if [[ ! -f "$CONFIG" ]]; then
     echo "NO-GO: config not found: $CONFIG" >&2; exit 1
@@ -106,6 +106,7 @@ det = cfg.get("detector", {})
 engine = det.get("engine", "stub")
 model_dir = (det.get(engine) or {}).get("model_dir", "")
 binds = [s.get("bind", "") for s in cfg.get("sources", []) if s.get("kind") == "twilio_stream"]
+has_pipe = any(s.get("kind") == "pipe" for s in cfg.get("sources", []))
 port = binds[0].rsplit(":", 1)[-1] if binds else ""
 kws = cfg.get("keywords", [])
 cap = max((k.get("max_price_cents", 0) for k in kws), default=0)
@@ -121,6 +122,7 @@ print(f"CAP_CENTS\t{cap}")
 print(f"BUDGET\t{budget}")
 print(f"ORDER_NOTIONAL\t{risk.get('max_order_notional_cents', 100)}")
 print(f"HAS_TWILIO\t{1 if binds else 0}")
+print(f"HAS_PIPE\t{1 if has_pipe else 0}")
 PY
   )
   if [[ "$CFG_FACTS" == ERR* ]]; then
@@ -131,11 +133,16 @@ PY
       EVENT_ID) EVENT_ID="$v" ;; BIND_PORT) BIND_PORT="$v" ;; ENGINE) ENGINE="$v" ;;
       MODEL_DIR) MODEL_DIR="$v" ;; CAP_CENTS) CAP_CENTS="$v" ;; BUDGET) BUDGET="$v" ;;
       ORDER_NOTIONAL) ORDER_NOTIONAL="$v" ;; HAS_TWILIO) HAS_TWILIO="$v" ;;
+      HAS_PIPE) HAS_PIPE="$v" ;;
     esac
   done <<<"$CFG_FACTS"
   check PASS "config $CONFIG → event $EVENT_ID (engine=$ENGINE, bind port=${BIND_PORT:-none}, cap=${CAP_CENTS}c x${BUDGET})"
-  if [[ "$HAS_TWILIO" != 1 ]]; then
-    check WARN "config has NO twilio_stream source — this is not a phone lane; box-ready still checks the host, but scripts/phone-event-prep refuses webcast-only events"
+  if [[ "$HAS_TWILIO" == 1 ]]; then
+    check PASS "phone source declared — TLS ingress and per-port routing are required"
+  elif [[ "$HAS_PIPE" == 1 ]]; then
+    check PASS "webcast source declared — phone ingress and digit-store gates are not applicable"
+  else
+    check WARN "config declares neither a twilio_stream nor pipe source — host lane requirements are ambiguous"
   fi
 fi
 
@@ -179,6 +186,16 @@ say BOX_CAP "$(sed -n 's/^pub const MENTION_FILL_CAP_CENTS: u64 = \([0-9]*\);.*/
 say ORT_SO "$(find "$R/vendor" -name 'libonnxruntime*.so*' -not -path '*dSYM*' 2>/dev/null | head -1)"
 say ORT_DYLIB "$(find "$R/vendor" -name '*.dylib' 2>/dev/null | head -1)"
 say MODELS "$(ls "$R/models" 2>/dev/null | tr '\n' ',')"
+
+for tool in ffmpeg curl streamlink yt-dlp node; do
+  key=$(printf '%s' "$tool" | tr '[:lower:]-' '[:upper:]_')
+  say "TOOL_$key" "$(command -v "$tool" 2>/dev/null)"
+done
+
+# Report only. A parentless decoder/fetcher may be a surviving regression or
+# a legitimate systemd child; readiness makes it visible but never kills it.
+say ORPHAN_FETCHERS "$(ps -eo pid=,ppid=,etimes=,args= 2>/dev/null \
+  | awk '$2 == 1 && $0 ~ /(ffmpeg|streamlink|yt-dlp|cdn-cachebust-fetch|hls-edge-fetch)/ {gsub(/[[:space:]]+/, " "); sub(/^ /, ""); printf "%s || ", $0}')"
 
 say CADDY_ACTIVE "$(systemctl is-active caddy 2>/dev/null)"
 say CADDY_ROUTES "$(grep -o '/e/[0-9]\{4\}' /etc/caddy/Caddyfile 2>/dev/null | sort -u | tr '\n' ' ')"
@@ -347,34 +364,51 @@ if [[ -n "$MODEL_DIR" ]]; then
   fi
 fi
 
-# ── TLS ingress ────────────────────────────────────────────────────────────
-DOMAIN=$(r CADDY_DOMAIN)
-[[ "$(r CADDY_ACTIVE)" == active ]] \
-  && check PASS "caddy active (domain media.$DOMAIN)" \
-  || check FAIL "caddy is $(r CADDY_ACTIVE) — Twilio cannot reach this box's media endpoint. Fix: sudo systemctl restart caddy"
-
-TLS_DAYS=$(r TLS_DAYS)
-if [[ -z "$TLS_DAYS" ]]; then
-  check FAIL "TLS handshake to media.$DOMAIN:443 failed — check the A record still points at this box and :443 is open"
-elif (( TLS_DAYS < 10 )); then
-  check FAIL "TLS cert for media.$DOMAIN expires in ${TLS_DAYS}d — Let's Encrypt renews at 30d, so under 10 means renewal is already failing"
-else
-  check PASS "TLS cert for media.$DOMAIN valid ${TLS_DAYS}d ($(r TLS_ENDDATE))"
+# Every webcast recipe can select any of these fetch/decode legs. yt-dlp is
+# configured with `--js-runtimes node`, so the runtime itself is load-bearing.
+if [[ -n "$CONFIG" && "$HAS_PIPE" == 1 ]]; then
+  for tool in ffmpeg curl streamlink yt-dlp node; do
+    key=$(printf '%s' "$tool" | tr '[:lower:]-' '[:upper:]_')
+    path=$(r "TOOL_$key")
+    if [[ -n "$path" ]]; then
+      check PASS "webcast tool: $tool ($path)"
+    else
+      check FAIL "webcast tool MISSING on the box: $tool"
+    fi
+  done
 fi
 
-# THE SECOND 2026-08-05 BLOCKER, found only in hindsight: the Caddyfile routes a
-# FIXED set of ports, and TLN's phone config bound 8093. Even with a fresh
-# binary that arm's wss://…/e/8093 would have hit the `respond 404` catch-all.
-ROUTES=$(r CADDY_ROUTES)
-if [[ -n "$BIND_PORT" ]]; then
-  if [[ " $ROUTES " == *" /e/$BIND_PORT "* ]]; then
-    check PASS "TLS ingress routes /e/$BIND_PORT → 127.0.0.1:$BIND_PORT"
-    check PASS "stream URL for this event: wss://media.$DOMAIN/e/$BIND_PORT"
-  else
-    check FAIL "TLS ingress does NOT route /e/$BIND_PORT — Twilio's handshake would hit Caddy's 404 catch-all and no media would ever arrive. Routed today: ${ROUTES:-none}. Fix: rebind the config to a routed port, or add the route to deploy/caddy/Caddyfile and re-run scripts/install-tls-ingress.sh"
-  fi
+# ── TLS ingress ────────────────────────────────────────────────────────────
+DOMAIN=$(r CADDY_DOMAIN); ROUTES=$(r CADDY_ROUTES)
+if [[ -n "$CONFIG" && "$HAS_TWILIO" != 1 ]]; then
+  check PASS "phone-only Caddy/TLS /e/<port> gates not applicable to this webcast config"
 else
-  check WARN "no --config: cannot check that this event's bind port is routed. Routed ports: ${ROUTES:-none}"
+  [[ "$(r CADDY_ACTIVE)" == active ]] \
+    && check PASS "caddy active (domain media.$DOMAIN)" \
+    || check FAIL "caddy is $(r CADDY_ACTIVE) — Twilio cannot reach this box's media endpoint. Fix: sudo systemctl restart caddy"
+
+  TLS_DAYS=$(r TLS_DAYS)
+  if [[ -z "$TLS_DAYS" ]]; then
+    check FAIL "TLS handshake to media.$DOMAIN:443 failed — check the A record still points at this box and :443 is open"
+  elif (( TLS_DAYS < 10 )); then
+    check FAIL "TLS cert for media.$DOMAIN expires in ${TLS_DAYS}d — Let's Encrypt renews at 30d, so under 10 means renewal is already failing"
+  else
+    check PASS "TLS cert for media.$DOMAIN valid ${TLS_DAYS}d ($(r TLS_ENDDATE))"
+  fi
+
+  # THE SECOND 2026-08-05 BLOCKER, found only in hindsight: the Caddyfile routes a
+  # FIXED set of ports, and TLN's phone config bound 8093. Even with a fresh
+  # binary that arm's wss://…/e/8093 would have hit the `respond 404` catch-all.
+  if [[ -n "$BIND_PORT" ]]; then
+    if [[ " $ROUTES " == *" /e/$BIND_PORT "* ]]; then
+      check PASS "TLS ingress routes /e/$BIND_PORT → 127.0.0.1:$BIND_PORT"
+      check PASS "stream URL for this event: wss://media.$DOMAIN/e/$BIND_PORT"
+    else
+      check FAIL "TLS ingress does NOT route /e/$BIND_PORT — Twilio's handshake would hit Caddy's 404 catch-all and no media would ever arrive. Routed today: ${ROUTES:-none}. Fix: rebind the config to a routed port, or add the route to deploy/caddy/Caddyfile and re-run scripts/install-tls-ingress.sh"
+    fi
+  else
+    check WARN "no --config: cannot check that this event's bind port is routed. Routed ports: ${ROUTES:-none}"
+  fi
 fi
 
 # ── Credentials ────────────────────────────────────────────────────────────
@@ -396,9 +430,13 @@ if [[ -n "$ACCOUNT" ]]; then
 fi
 # state/ is rsync-EXCLUDED, so digits never arrive by deploy. This is a WARN,
 # not a FAIL: scripts/box-event-install.sh pushes them at schedule time.
-[[ "$(r NUMBERS_ENV)" == MISSING ]] \
-  && check WARN "no $BOX_REPO/state/hunt/numbers.env on the box (state/ is rsync-excluded) — scripts/box-event-install.sh pushes the digits over stdin at schedule time" \
-  || check PASS "state/hunt/numbers.env present on the box (mode $(r NUMBERS_ENV))"
+if [[ -n "$CONFIG" && "$HAS_TWILIO" != 1 ]]; then
+  check PASS "phone digit store not applicable to this webcast config"
+else
+  [[ "$(r NUMBERS_ENV)" == MISSING ]] \
+    && check WARN "no $BOX_REPO/state/hunt/numbers.env on the box (state/ is rsync-excluded) — scripts/box-event-install.sh pushes the digits over stdin at schedule time" \
+    || check PASS "state/hunt/numbers.env present on the box (mode $(r NUMBERS_ENV))"
+fi
 
 # ── Scheduler ──────────────────────────────────────────────────────────────
 [[ "$(r LINGER)" == yes ]] \
@@ -419,13 +457,20 @@ esac
 STALE_TIMERS=$(r EARSHOT_TIMERS)
 [[ -n "$STALE_TIMERS" ]] && check WARN "old earshot timers still loaded: $STALE_TIMERS — disarm what is finished: systemctl --user disable --now <name>"
 
+ORPHAN_FETCHERS=$(r ORPHAN_FETCHERS)
+if [[ -n "$ORPHAN_FETCHERS" ]]; then
+  check WARN "parentless webcast fetcher/decoder process(es) visible (report only; not killed): $ORPHAN_FETCHERS"
+else
+  check PASS "no parentless webcast fetcher/decoder processes visible"
+fi
+
 # ── Repair ─────────────────────────────────────────────────────────────────
 if [[ "$REPAIR" == 1 ]]; then
   echo
   if [[ -n "$DIRTY_BUILD" ]]; then
     # AGENTS.md: deployment must identify an immutable commit. A dirty rsync
-    # produces a box binary no commit describes, and preflight can only record
-    # commit=UNKNOWN-NOT-A-GIT-CHECKOUT for it.
+    # produces a box binary no clean commit describes. DEPLOYED-FROM records the
+    # dirty count, but that provenance is diagnostic rather than an immutable release.
     check FAIL "--repair REFUSED: binary-affecting paths are uncommitted, so the deployed binary would match no commit:
 $DIRTY_BUILD      Commit them (or stash), then re-run. HEAD is $HEAD_SHA."
   else
@@ -466,7 +511,12 @@ for line in open(os.environ["GATES_TMP"]).read().splitlines():
     if not line.strip():
         continue
     v, _, m = line.partition("\t")
-    gates.append({"verdict": v, "msg": m})
+    if v in {"PASS", "FAIL", "WARN"} and m:
+        gates.append({"verdict": v, "msg": m})
+    elif gates:
+        # Shell diagnostics may include indented path/fix continuations. Keep
+        # them inside the preceding gate instead of minting invalid verdicts.
+        gates[-1]["msg"] += "\n" + line
 fails = int(os.environ["FAILS"])
 out = {
     "schema": 1,

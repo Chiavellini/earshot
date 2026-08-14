@@ -350,15 +350,28 @@ fi
 # THAT commit", and the previous code printed `git tree clean at ` with an
 # EMPTY commit and scored it PASS — a check passing vacuously, the same defect
 # class as the placeholder allowlist caught earlier today.
+PIN_PROVENANCE="git"
+DEPLOYED_UTC=""
 if git rev-parse --git-dir >/dev/null 2>&1; then
   HEAD_SHA=$(git rev-parse HEAD)
   dirty=$(git status --porcelain | wc -l | tr -d ' ')
   [[ "$dirty" == 0 ]] && check PASS "git tree clean at $(git rev-parse --short HEAD)" \
                       || check WARN "git tree has $dirty dirty paths — the pin records what is BUILT, review before trusting"
 else
-  HEAD_SHA="UNKNOWN-NOT-A-GIT-CHECKOUT"
-  dirty="n/a"
-  check WARN "NOT a git checkout (rsync-deployed host) — the pin CANNOT record a commit. Provenance is the rsync source, so verify the laptop tree is committed and clean before trusting this pin."
+  PIN_PROVENANCE="DEPLOYED-FROM"
+  stamp_commit=$(sed -n 's/^commit=//p' DEPLOYED-FROM 2>/dev/null | head -1)
+  stamp_dirty=$(sed -n 's/^dirty_paths=//p' DEPLOYED-FROM 2>/dev/null | head -1)
+  DEPLOYED_UTC=$(sed -n 's/^deployed_utc=//p' DEPLOYED-FROM 2>/dev/null | head -1)
+  if [[ "$stamp_commit" =~ ^[0-9a-f]{40}$ && "$stamp_dirty" =~ ^[0-9]+$ && -n "$DEPLOYED_UTC" ]]; then
+    HEAD_SHA="$stamp_commit"
+    dirty="$stamp_dirty"
+    check PASS "rsync provenance: DEPLOYED-FROM commit ${HEAD_SHA:0:12}, dirty_paths=$dirty, deployed_utc=$DEPLOYED_UTC"
+  else
+    HEAD_SHA="UNKNOWN-NOT-A-GIT-CHECKOUT"
+    dirty="n/a"
+    PIN_PROVENANCE="missing"
+    check WARN "NOT a git checkout and DEPLOYED-FROM is missing or malformed — the pin cannot cite its rsync source. Run scripts/deploy-box.sh from the laptop, then preflight this fresh deploy."
+  fi
 fi
 # cargo lives in ~/.cargo/bin, which a NON-INTERACTIVE shell does not get: the
 # profile that adds it is skipped. This is the same minimal-env class as the
@@ -367,11 +380,18 @@ fi
 if ! command -v cargo >/dev/null 2>&1; then
   check FAIL "cargo not on PATH (looked in ~/.cargo/bin) — cannot build or pin"
 fi
-if cargo build --release 2>&1 | tail -1 | grep -q "Finished"; then
+BUILD_LOG="$STATE_DIR/preflight-build.log"
+cargo build --release >"$BUILD_LOG" 2>&1
+BUILD_RC=$?
+printf 'EXIT:%s\n' "$BUILD_RC" >> "$BUILD_LOG"
+echo "cargo build EXIT:$BUILD_RC (log: $BUILD_LOG)"
+if [[ $BUILD_RC -eq 0 ]]; then
   cp target/release/earshot "$STATE_DIR/earshot-pinned"
   {
+    echo "provenance=$PIN_PROVENANCE"
     echo "commit=$HEAD_SHA"
     echo "dirty_paths=$dirty"
+    [[ -n "$DEPLOYED_UTC" ]] && echo "deployed_utc=$DEPLOYED_UTC"
     echo "sha256=$(shasum -a 256 "$STATE_DIR/earshot-pinned" | awk '{print $1}')"
     echo "built=$(date "+%Y-%m-%d %H:%M:%S %z")"
   } > "$STATE_DIR/pinned.info"
@@ -412,8 +432,12 @@ if cargo build --release 2>&1 | tail -1 | grep -q "Finished"; then
     esac
     export ORT_DYLIB_PATH
   fi
-  SMOKE_OUT=$(run_with_timeout 90 "$STATE_DIR/earshot-pinned" detector-smoke --config "$CONFIG" 2>&1 | tail -1)
+  SMOKE_LOG="$STATE_DIR/detector-smoke.log"
+  run_with_timeout 90 "$STATE_DIR/earshot-pinned" detector-smoke --config "$CONFIG" >"$SMOKE_LOG" 2>&1
   SMOKE_RC=$?
+  SMOKE_OUT=$(tail -1 "$SMOKE_LOG")
+  printf 'EXIT:%s\n' "$SMOKE_RC" >> "$SMOKE_LOG"
+  echo "detector-smoke EXIT:$SMOKE_RC (log: $SMOKE_LOG)"
   if [[ $SMOKE_RC -eq 0 && "$SMOKE_OUT" == *"detector-smoke OK"* ]]; then
     check PASS "detector heartbeat: $SMOKE_OUT"
   elif [[ $SMOKE_RC -eq 124 ]]; then

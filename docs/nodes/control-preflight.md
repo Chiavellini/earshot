@@ -44,6 +44,13 @@ publishes a self-hashed run-scoped `preflight-inputs.json` binding. An explicit
 `--run-dir` is only an assertion about which unique active run was expected; it
 cannot select around ambiguity.
 
+`execution_host_id` is an input to `plan_sha256`, not mutable scheduling
+metadata. A box event is compiled for `earshot-useast1` at `eventctl init`;
+changing execution host requires a new RunPlan attempt from init onward. An
+on-box preflight therefore consumes only a box-hosted attempt and builds its
+pin from that freshly deployed checkout; it never reuses a laptop event-state
+pin.
+
 The date-level adapter `scripts/preflight-nightly.sh` derives its work set from
 immutable schema-3 RunPlans whose `starts_at_utc` falls on the requested UTC
 date. It never derives the event set from `configs/*-autorun.env`: an env with
@@ -103,7 +110,14 @@ Evidence inputs are consumed by name, never produced here:
 ## Output contracts
 
 Success pins `<state-dir>/earshot-pinned` and `pinned.info` with build
-provenance/hash and emits a complete PASS/WARN checklist. The schema-1
+provenance/hash and emits a complete PASS/WARN checklist. In a git checkout,
+the provenance is the checkout commit and dirty count. In the rsync-deployed
+box tree, preflight validates the root `DEPLOYED-FROM` stamp and records
+`provenance=DEPLOYED-FROM`, its commit, dirty count, and deployment time; a
+missing or malformed stamp is a loud WARN with unknown commit provenance.
+The release build and detector-smoke outputs live beside the pin as
+`preflight-build.log` and `detector-smoke.log`, each ending in an explicit
+`EXIT:<status>` line. The schema-1
 `PreflightReport` at `<state-dir>/preflight-result.json` remains compatible
 with `assert-ready.sh` and additionally records the exact RunId, RunPlan hash,
 preflight-binding path/hash, lane, and strategy mode. It always says

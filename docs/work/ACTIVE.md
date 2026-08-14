@@ -168,3 +168,144 @@ Work order `docs/work/SOLUTION-OBSERVABILITY.md`; node work stayed within
 
 All mandated offline gates are green. No deploy, push, schedule, real phone
 page, or money-policy change was performed.
+
+## Box webcast HOST lane — 2026-08-14 close-out
+
+Work order `docs/work/BOX-HOST.md`; source changes stayed in
+`platform.deploy` and `control.preflight`. `scripts/execution-profile.sh`
+belongs to the foreign `control.operate` claim and was invoked but not edited.
+
+- **H1 CLOSED.** Real-box `box-ready.sh` against
+  `configs/webcast-amat-26aug13-arm-wc.toml` returned GO with 27 PASS, zero
+  WARN, and zero FAIL gates. `ffmpeg`, `curl`, `streamlink`, `yt-dlp`, and
+  `node` all resolve on the box; the configured streaming-CTC model and Linux
+  ORT pass; phone-only Caddy/TLS `/e/<port>` and digit-store checks are
+  explicit not-applicable PASSes. Schema 1 remains valid with `stream_url=null`;
+  multiline diagnostics stay within one gate record. Evidence:
+  `state/box-host-lane/box-ready-amat-go.log` and `.json` on the laptop.
+- **H2 PARTIAL.** The owned host mechanism is proven: after a fresh deploy,
+  real on-box AMAT preflight built release (`EXIT:0`), wrote
+  `state/KXEARNINGSMENTIONAMAT-26AUG13-WEBCAST/earshot-pinned`, recorded
+  `provenance=DEPLOYED-FROM`, commit `15285f9be58a`, dirty count 19 and the
+  exact pin hash in `pinned.info`, compiled all keywords, and passed Linux ORT
+  detector-smoke (`build_ms=706`, `total_ms=814`, `EXIT:0`). Overall preflight
+  remained correctly red with exactly one failure: R lane has not yet
+  published the required run-scoped AccessPlan. No false `access_acquired` or
+  `preflight_passed` receipt was minted. Box evidence:
+  `state/box-host-lane/preflight-amat-1.log` plus the event's
+  `preflight-build.log`, `detector-smoke.log`, `pinned.info`, pin, and red
+  `preflight-result.json`.
+- **H3 PARTIAL.** Box `~/.earshot/ms.env` was atomically configured mode 0600;
+  `execution-profile.sh resolve` returns `earshot-useast1` and
+  `sha256:d13943b5cd4a799fcfb6c9d48b4c7f14a71dd4ff9883494521c18e7da1676399`.
+  A new on-box AMAT plan verifies with that identity and
+  `plan_sha256=83cb6f8942b7876cc03d621f1aeef9ff8c75a96c08009c0105bbe53cb223746f`.
+  The launcher's exact host/fingerprint equality predicates both returned 0,
+  and a real `launch-webcast.sh` invocation with `/bin/echo`, default DRY RUN,
+  no `--wait-live`, and no `--i-am-live` exited 0. The script itself evaluates
+  identity only inside its live branch, so entering that branch for a nominal
+  "dry identity check" would violate this lane's no-arm rule. Box evidence:
+  `state/box-host-lane/execution-profile.log`, `eventctl-init.log`, and
+  `launch-dry-identity.log`.
+- **H4 CLOSED.** `fetch-models.sh` ran on the box and skipped checksum-pinned
+  artifacts already present. Both configured model directories exist; four
+  `libonnxruntime*.so*` files and zero `*.dylib` files were asserted. The
+  unparenthesized `find` expression is fixed. Box evidence:
+  `state/box-host-lane/fetch-models.log`.
+- **H5 CLOSED.** `box-ready.sh` reports parentless ffmpeg/streamlink/yt-dlp/
+  cache-busting fetchers without killing them. The real-box result was none.
+
+Two deploys were journaled after explicit dry-run review: 05:19Z at dirty
+count 18 and 05:24Z at dirty count 19, both from unchanged HEAD `15285f9` and
+with identical before/after source identity. Before any build the box had 8.7
+GiB free; after model verification it still had 8.7 GiB. No timer was
+installed, no URL was pushed, no dial or arm occurred, and no trade-capable
+binary was launched. The real preflight performed its normal mailer test; no
+phone page was requested.
+
+Focused verification: shell syntax green; `python3 tests/preflight_proof.py`
+15/15 green; `python3 tests/ops_surface.py` 8/8 green; `scripts/doc-lint.sh`
+green. Because Deploy 2 also carried schedule-lane edits,
+`python3 tests/schedule_proof.py` (15/15) and
+`tests/typed_scheduler_boundary.sh` were green before that deploy.
+
+### Boundary requests from HOST
+
+1. **To R (`control.acquire`)** — land the master S-A `preresolved` AccessPlan
+   plus `urlfile-wait.sh`/`push-url-file.sh`. Then fresh-deploy and rerun AMAT
+   preflight once; it must advance the existing on-box plan from its one
+   `plan_compiled` receipt through `preflight_passed`. Do not copy laptop
+   `state/` or relax either deploy exclusion.
+2. **To `control.launch`** — expose a read-only identity-check mode, or evaluate
+   the host/fingerprint equality guard before the live-only branch, so the
+   launcher's own guard can be exercised without `--i-am-live`, fake scheduler
+   receipts, or an arm binary. HOST did not touch the forbidden launcher.
+
+### Proposed `BOX-CHECKS.md` text (not applied; `.claude/skills/**` is forbidden)
+
+> For a webcast config, `box-ready.sh` requires ffmpeg, curl, streamlink,
+> yt-dlp, Node, the configured model, and Linux ORT; Caddy/TLS `/e/<port>` and
+> the phone digit store are explicitly not applicable. A GO also reports any
+> parentless webcast fetchers but never kills them. `deploy-box.sh` atomically
+> writes root `DEPLOYED-FROM` (commit, dirty count, deployment UTC) after rsync
+> and Linux-ORT verification. Run webcast preflight only on the box after a
+> fresh deploy; its `pinned.info` must cite that stamp. Never push the laptop
+> pin or relax the `state/` / `var/runs/` excludes.
+
+## Box webcast SCHEDULE lane — 2026-08-13
+
+Work order `docs/work/BOX-SCHEDULE.md`; changes stayed within
+`control.operate` and `control.supervise`, plus the required registry/claim and
+close-out surfaces.
+
+- **S1 CLOSED.** `install-event-timer.sh` is lane-aware: phone remains T-25
+  and byte-compatible, webcast is T-75 with exact `arm-on-url.sh --run-dir …
+  --i-am-live --fillable` argv and `EARSHOT_ACCOUNT_ENV`, and webcast supports
+  the same bounded `--fire-at-utc` override as launchd. Both lanes retain
+  linger, `TimeoutStopSec=150`, and `KillMode=mixed`; manager readback now also
+  requires the exact timer in `systemctl --user list-timers`.
+- **S2 CLOSED.** New `box-webcast-install.sh` validates a canonical schema-2
+  AccessPlan, refuses `static-public`, leaves typed non-static kinds including
+  seam S-E's `preresolved` admissible, enforces the default/configured box host
+  and pre-existing executable non-symlink box pin, then reuses private staged
+  rsync → host-boundary reconcile → remote timer install → loaded readback →
+  box-ledger verification. It has no phone digit, port, or Twilio path.
+- **S3 CLOSED.** Schedule proof now keys expected environment on scheduler:
+  webcast always requires `EARSHOT_ACCOUNT_ENV`; only launchd requires the
+  Homebrew PATH pin. A systemd webcast readback is covered directly.
+- **S4 CLOSED.** Webcast dispatch keys on immutable `execution_host_id`:
+  local → unchanged launchd installer argv, box (default `earshot-useast1`) →
+  box webcast installer, any other or ambiguous host → critical refusal with
+  no installer. Phone routing is unchanged. The offline selftest proves all
+  four outcomes and sibling continuation.
+- **S5 NOT WORKED (stretch).** Lane R's `push-url-file.sh` has not landed in
+  this checkout, so this lane did not invent or edit its transport. The
+  `control.operate` contract records the required manual push step for
+  `preresolved` box events until a later claimed change adds the laptop
+  resolve-push launchd mode.
+
+Focused and required gates are green: `tests/typed_scheduler_boundary.sh`,
+`python3 tests/schedule_proof.py` (15 tests), `python3 tests/opsctl.py`,
+`python3 tests/ops_surface.py`, `scripts/schedule-nightly.sh --check`, `bash
+-n` on all three touched shell scripts, `scripts/doc-lint.sh`, and `git diff
+--check`. The scheduler test includes a fully offline remote fixture whose
+stubs exercise staging, host reconciliation, an existing drill pin, loaded
+systemd unit/timer readback, and the durable `scheduled` receipt. No real
+scheduler, deploy, network, URL push, dial, page, arm, trade, or event state
+was touched.
+
+### Boundary requests from this lane
+
+1. **To RESOLVE (`control.acquire`)** — land and contract-test the
+   `preresolved` AccessPlan kind plus `push-url-file.sh`; then S5 may claim
+   `install-t0-agents.sh` and schedule that public transport at T-75. Until
+   then the manual push step is mandatory.
+2. **To the operator skill owner** — update the forbidden
+   `.claude/skills/**/SKILL.md` scheduler note to export/configure
+   `EARSHOT_BOX_EXECUTION_HOST` and to name the manual preresolved URL push
+   during bring-up. This lane did not edit `.claude/skills/**`.
+3. **To the integration operator** — after R and H land, rehearse an immutable
+   drill artifact through the real box systemd user manager, verify the loaded
+   unit/list-timers output, let it fire under minimal env, kill it with real
+   SIGTERM, remove the drill unit, and journal both install/removal actions.
+   This lane performed only offline fixtures, per the live-safety boundary.

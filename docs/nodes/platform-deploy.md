@@ -17,6 +17,13 @@ and deployed service configuration under `deploy/`, including
 event, right now?* — and answers it at prep time rather than at T-60. It is
 read-only except under `--repair`, which refuses while `src/`, `Cargo.toml`, or
 `Cargo.lock` are dirty so the deployed binary always corresponds to a commit.
+For a webcast config, GO additionally proves that `ffmpeg`, `curl`,
+`streamlink`, `yt-dlp`, and the Node runtime selected by yt-dlp are executable
+on the box, the configured detector model and Linux ORT are present, and no
+macOS dylib crossed the platform boundary. Caddy, TLS, `/e/<port>` routing, and
+the phone digit store are phone-only gates; they are explicitly not applicable
+to a webcast config rather than WARN degradations. Parentless webcast
+fetcher/decoder processes are reported as WARN evidence but are never killed.
 
 The source deploy excludes both runtime authorities: legacy `state/` and typed
 `var/runs/`. Once a schema-3 run is dispatched, the target host owns the
@@ -36,6 +43,11 @@ ready.
 The target `DeploymentSpec` identifies source revision/worktree, destination
 host/path, SSH identity, excluded host-local directories, and required
 post-deploy invariants. Target identity must be resolved before mutation.
+`scripts/deploy-box.sh` derives the full source commit and total dirty-path
+count before transfer. After the transfer and Linux-ORT invariant succeed, it
+atomically writes those facts plus deployment time to `DEPLOYED-FROM` in the
+box repository root. The stamp is additive provenance; it is not a substitute
+for a clean immutable release.
 
 ## Output contracts
 
@@ -50,7 +62,10 @@ box binary's sha256 prefix and build time, the box's compiled
 `MENTION_FILL_CAP_CENTS`, the resolved `wss://` stream URL, and one record per
 gate. Exit 0 is GO, 1 is NO-GO with the first blocker named on stdout. Consumers
 should treat a missing or stale artifact as NO-GO rather than as absence of
-evidence.
+evidence. For webcast configs `stream_url` remains null and the phone-only
+gates appear as PASS/not-applicable records, preserving schema 1. Multiline
+diagnostics remain one gate record with continuation text in `msg`; every
+`verdict` is exactly `PASS`, `WARN`, or `FAIL`.
 
 Three facts it exists to surface, all knowable at prep time and all missed on
 2026-08-05: the deployed binary must be **newer than every source file** and its
@@ -81,10 +96,11 @@ consume only the deployment receipt.
 
 ## Verification
 
-Run `bash -n scripts/deploy-box.sh`. In a network-authorized release flow, run
+Run `bash -n scripts/box-ready.sh scripts/deploy-box.sh scripts/fetch-models.sh`.
+In a network-authorized release flow, first check remote disk headroom, run
 `scripts/deploy-box.sh --check-only`, inspect the explicit rsync delta, then
-perform the real deploy only in an authorized release flow and verify the
-remote platform-library/smoke checks plus TLS configuration.
+perform the real deploy and verify `DEPLOYED-FROM`, the Linux-only ORT/model
+set, the webcast tool gates, and a real config's `box-ready.sh` GO output.
 
 ## Migration status
 

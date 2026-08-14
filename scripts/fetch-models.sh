@@ -37,7 +37,7 @@ fetch_onnxruntime_dylib() {
     echo "vendor/onnxruntime/$dir already present — skipping"
   fi
   local dylib
-  dylib="$(find "$PWD/$dir/lib" -maxdepth 1 -name 'libonnxruntime.*.dylib' -o -name 'libonnxruntime.so.*' 2>/dev/null | head -1)"
+  dylib="$(find "$PWD/$dir/lib" -maxdepth 1 \( -name 'libonnxruntime.*.dylib' -o -name 'libonnxruntime.so.*' \) 2>/dev/null | head -1)"
   echo ""
   echo "  streaming_ctc engine needs:  export ORT_DYLIB_PATH=\"$dylib\""
   echo ""
