@@ -790,11 +790,21 @@ paths = [
   "scripts/chorus-register-resolve.py",
   # 2026-08-12: cites the RUNBOOK by path; follows the docs/history/ move.
   "scripts/manifest-probe.sh",
+  # 2026-08-13 box-resolve lane: the `preresolved` kind and the two ends of its
+  # transport. Extended rather than opened as a second claim — doc-lint permits
+  # exactly one open claim per node.
+  "scripts/urlfile-wait.sh",
+  "scripts/push-url-file.sh",
+  "tests/preresolved_arm.sh",
 ]
 verification = [
   "bash -n scripts/manifest-probe.sh scripts/venue-probe.sh",
+  "bash -n scripts/urlfile-wait.sh scripts/push-url-file.sh",
   "python3 tests/access_plan.py",
   "python3 scripts/access-plan.py --help",
+  "scripts/urlfile-wait.sh --check",
+  "scripts/push-url-file.sh --check",
+  "bash tests/preresolved_arm.sh",
 ]
 evidence = ["docs/nodes/control-acquire.md"]
 

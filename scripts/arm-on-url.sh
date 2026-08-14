@@ -119,6 +119,12 @@ for key,value in values.items(): print(f"{key}={shlex.quote(value)}")
 PY
 ) || { echo "REFUSED: AccessPlan/RunPlan cannot execute in this scheduler context" >&2; exit 1; }
 eval "$EXPORTS"
+# `eval "KEY=value"` creates a shell variable with no export attribute, so the
+# AccessPlan's own deadline was computed here and then invisible to every
+# resolver ever launched. A resolver that blocks (urlfile-wait) has to know when
+# to stop; the deadline is the one value it must inherit. Non-secret integer,
+# read by no existing resolver, so nothing else changes.
+export RESOLVER_DEADLINE_EPOCH
 
 STATE_DIR="$REPO/state/$PLAN_EVENT"
 mkdir -p "$STATE_DIR"

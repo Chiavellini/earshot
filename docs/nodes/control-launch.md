@@ -140,7 +140,13 @@ AccessPlan resolver on a bounded schedule until the plan's `deadline_utc`
 (pages once per failure class; `browser-resolve` exit 5 — a registration
 wall — pages its own message and keeps retrying so an operator fix inside the
 window still arms), and expands portable `$HOME/` tokens in the resolver argv
-before executing it.
+before executing it. It also **exports** `RESOLVER_DEADLINE_EPOCH` into the
+resolver's environment: the value was computed and then held in a shell
+variable created by `eval`, which carries no export attribute, so no resolver
+could ever read it. A resolver that blocks rather than polls —
+`scripts/urlfile-wait.sh`, the box side of the resolver split — needs to know
+when to stop. The environment copy only narrows a bound the AccessPlan already
+fixes in the resolver argv; the plan, not the environment, stays the authority.
 
 Launch also owns the **no-stream watchdog** (Gap Q): a placed call is not a
 stream — on 2026-07-29 calls ran to completion while nothing ever accept()ed.

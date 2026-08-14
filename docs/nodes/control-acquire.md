@@ -9,7 +9,9 @@ into host-usable media without starting the event runtime or dialing.
 
 Venue resolution and probing in `scripts/choruscall-resolve.py`,
 `scripts/youtube-resolve.sh`, `scripts/venue-probe.sh`, and
-`scripts/manifest-probe.sh`.
+`scripts/manifest-probe.sh`, plus both ends of the resolver split —
+`scripts/push-url-file.sh` (the host that mints) and `scripts/urlfile-wait.sh`
+(the host that captures).
 
 ## Does not own
 
@@ -48,6 +50,46 @@ It is explicitly non-secret: literal material supplied to token/password/
 cookie/auth/key-shaped resolver options and URL user-info credentials are
 refused; credentials remain environment or external-secret references. The
 compiler does not execute resolver argv or perform a network request.
+
+### The resolver split (`preresolved`)
+
+Some venues cannot be resolved on the host that will capture them: the us-east
+box has no browser and no operator to pass a registration wall, and THE AMAT
+RULE puts the session on the laptop at prep time. The `preresolved` resolver
+kind names that arrangement. Its resolver argv invokes
+`scripts/urlfile-wait.sh` — it mints nothing and waits — and the plan
+additionally records a `resolver.preresolve` block naming the kind and exact
+argv of the leg that DOES mint the URL on the other host. That block is present
+only for `preresolved`; every other kind's `resolver` object is byte-identical
+to what it was before the kind existed, which matters because
+`access_plan_sha256` is baked into the PCM proof and re-checked by
+`capture-ready`.
+
+`bind` derives the wait's bounds rather than trusting an operator to retype
+them, appending to the argv: `--deadline-utc` equal to `resolver.deadline_utc`,
+`--expect-plan-sha256` equal to the RunPlan's `plan_sha256`, and `--fresh-secs`.
+An operator-supplied value that disagrees is refused. Because they live in argv
+they are covered by the plan hash, so a fire-time environment variable can
+narrow those bounds but never widen them. `preresolved` argv must also spell
+URL files with a literal `$HOME/` prefix and must name exactly the URL files its
+sources read: the runtime expands no other spelling, so `${HOME}/` would make
+the wait address a path under the repository.
+
+`preresolved` is deliberately the one kind whose capture vantage may not be
+defaulted — see below.
+
+### Capture vantage
+
+`capture.vantage` is a deliberate label, not a copy of the execution host. A
+defaulted vantage is indistinguishable in the artifact from a chosen one, so
+capture from two different networks would pool silently — the hazard
+`scripts/venue-probe.sh` names when it tells an operator to label a bot-walled
+capture CDMX-vantage and never pool its Δrace with us-east. `bind` therefore
+refuses to default the vantage for a `preresolved` plan (cross-host by
+construction) or for a plan compiled for the capture box while binding runs
+elsewhere. Every other cross-host default gets a loud WARN and still binds:
+this node must not redden callers whose plans it knows nothing about. The
+pooling guard itself belongs to `evidence.measure`, not here.
 
 `bind` never registers, signs in, opens a browser, or tests the network. A
 human-session mode is accepted only when the caller explicitly supplies the
@@ -93,6 +135,23 @@ and resolver credentials are exclusive to one event attempt; continuous edge
 fetching belongs to the runtime source and paid calls belong to
 `control.phone_session`.
 
+`scripts/push-url-file.sh` additionally reaches another host over SSH. The URL
+bytes travel on **stdin** and never in argv — these URLs carry session tokens
+and argv is `ps`-visible — so the only thing on the remote command line is the
+url-file's basename, which is regex-validated before it reaches a shell. The
+literal `$HOME` survives into the remote shell, because the destination is the
+executing host's home and not the pusher's. Publication is a remote temp file
+in the target's own directory, `chmod 0644`, then rename; the landed bytes are
+proven by reading back their hash. Alongside the url-file it publishes a
+sidecar `<url-file>.meta` carrying `run_plan_sha256`, `url_sha256`, and
+`pushed_utc`. Each push appends one line to `state/<EVENT>/url-push.jsonl`
+recording the hash and never the URL, so the journal outlives the token.
+
+Neither script ever prints the URL. Everything a fire-time resolver writes
+lands in `state/<EVENT>/arm-on-url-<RUN_ID>.log`, which `pull-box-state.sh`
+copies back to the laptop; the url-sha is the durable identifier, following
+`pcm-gate`.
+
 ## Failure contract
 
 Deadline, auth, non-media response, zero decoded PCM, rate limit, or unsupported
@@ -109,6 +168,33 @@ session is missing or expired. While waiting it retries `--click-play`
 (~30 s) and prints a heartbeat (~5 min) so a silent watch is visible in the
 fire-time log. The wall decision (`is_wall`) is a pure function pinned by the
 `--check` self-test.
+
+`scripts/urlfile-wait.sh` exits 0 only when the url-file present on this host
+belongs to THIS attempt; 3 = the resolver deadline passed with no such file;
+2 = usage, including a missing `--deadline-utc`. It fails closed on that
+missing deadline rather than inventing one, because `arm-on-url` runs a
+resolver with no timeout and only tests the deadline after the child returns —
+a wait that bounded itself would sail past the call. Acceptance requires a
+regular non-symlink file whose first line is an `http(s)` endpoint, plus a
+sidecar whose `run_plan_sha256` equals this attempt's and whose `url_sha256`
+equals the file's. **Attempt identity, not mtime, is what refuses a prior
+attempt's file**: the url-file path is derived from the pinned config, so every
+attempt of one event reuses it — AMAT 2026-08-13 ran two attempts eleven
+minutes apart against one `$HOME/amat-stream.url` with one `20:45:00Z`
+deadline, and no freshness window wide enough to cover the fire window can
+separate them. `--fresh-secs` remains a sanity bound (mtime not older than the
+bound, not further ahead than tolerated clock skew) and defaults to the 90-min
+fire window: T-75 scheduler lead plus the event-start+15-min deadline.
+
+`scripts/push-url-file.sh` exits 0 only when the pushed bytes were read back
+and hashed equal; 1 = refused; 2 = usage. It refuses a plan whose resolver kind
+is not `preresolved` (a native resolver runs on the executing host and needs no
+push), a terminal or archived RunPlan, and — importantly — a run that has
+already reached `capture_ready`: real configs `cat` the url-file inside the
+pipe source, so a late push would silently swap what the detector listens to
+under a running arm. A pushed endpoint that does not look like an HLS playlist
+is a loud WARN rather than a refusal, because the PCM gate requires HLS
+continuity and a DASH manifest can never reach `capture_ready`.
 
 The AccessPlan compiler/validator additionally refuses a phone or terminal
 RunPlan, a config or RunPlan hash mismatch, unknown/non-pipe source shape,
@@ -131,9 +217,27 @@ production posture.
 ## Verification
 
 Run each resolver's offline `--check`/`--selftest` where provided,
-`scripts/venue-probe.sh --check`, and the source node's
+`scripts/venue-probe.sh --check`, `scripts/urlfile-wait.sh --check`,
+`scripts/push-url-file.sh --check`, and the source node's
 `python3 scripts/hls-edge-fetch.py --selftest`. Live venue tests record vantage
 and decoded-byte evidence.
+
+`push-url-file.sh --check` exercises the transport against a stubbed `ssh`
+(`EARSHOT_SSH`) that performs the remote command for real against a fake home,
+so atomicity, mode, and the absence of a leftover temp file are demonstrated
+rather than asserted. Its load-bearing checks are that no URL and no token
+appears in any argv or on stdout, and that a transport failure publishes
+nothing.
+
+`bash tests/preresolved_arm.sh` is the end-to-end rig: a real
+`push-url-file.sh` push over a stubbed ssh, then `arm-on-url` driving the real
+wait through four cases — the pushed file arms exactly once with a PCM proof; a
+PRIOR attempt's file is refused (and refused by the WAIT, proven by the absence
+of a `pcm-proof.json`, not by a later gate); a stale file is refused; and a URL
+that never arrives exhausts the deadline with exactly one page. It also pins
+seam S-E (`install-t0-agents.sh` refuses only `static-public`, so a
+`preresolved` plan is first-class to it) and asserts that the resolver child
+can actually read `RESOLVER_DEADLINE_EPOCH`.
 
 Run `python3 tests/access_plan.py` for isolated schema-3 RunPlan tests covering
 legacy creation/validation, canonical public and registered-session binding,
@@ -144,6 +248,34 @@ that resolver argv is never executed. These tests use temporary repositories
 only and make no network request.
 
 ## Migration status
+
+### Token lifetime across vantages — measured 2026-08-14
+
+How long a laptop-minted URL stays usable from a second vantage decides whether
+a pushed URL can be trusted at fire time. Method: the AMAT 2026-08-13
+browser-class token (`media-server.com`), minted on the laptop at
+`2026-08-13T15:09:56Z`, was fetched at **14 h 02 m** of age from both the CDMX
+laptop and the us-east-1 box, with the URL supplied on stdin via `curl -K -` so
+it never entered argv.
+
+| vantage | status | TTFB | body |
+|---|---|---|---|
+| laptop (CDMX) | 200 | 1.151 s | 8 B (`#EXTM3U`) |
+| us-east-1 box | 200 | 0.105 s | 8 B (`#EXTM3U`) |
+
+**Authorization lifetime is at least 14 h 02 m and is not vantage-bound** — the
+token outlives the laptop session by many hours and is honoured from us-east.
+**The media-bearing lifetime is `not_resolvable`** from this evidence: the
+manifest is empty because the call ended, not because the token expired, and
+separating the two requires a second live browser-class venue. It is recorded
+as unresolved rather than guessed.
+
+The consequence for `--fresh-secs` is that its default is NOT token-derived.
+The push-to-arm gap is minutes and authorization outlives it by roughly two
+orders of magnitude, so expiry is not the risk freshness guards; a prior
+attempt's file is, and attempt identity handles that. The default is therefore
+the fire window (5400 s = T-75 lead + start+15 min deadline), stated as a
+sanity bound.
 
 The versioned AccessPlan, explicit access-prerequisite gate, and preflight
 consumer now exist. Resolvers still publish their compatibility

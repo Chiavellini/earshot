@@ -1,5 +1,5 @@
 ---
-as_of: 2026-08-13
+as_of: 2026-08-14
 authority: architecture/claims.toml
 ---
 
@@ -29,6 +29,7 @@ protection by itself.
 | `fix-wire-truth-lane` | `runtime.kalshi.fix` | Independent raw FIX observation tape |
 | `admission-evidence-lane` | admission, capture, measure, preflight, grade | Probe/current-stream admission, in-process audio evidence, historical measurement |
 | `capture-reliability-lane` | `control.launch`, `runtime.source.pipe`, `runtime.source.port` | C1/C2 closed: real `--wait-live` liveness (no ENDLIST + advancing tail + decodable bytes) and a bounded pipe-leg respawn budget. C2b's template edit and C3–C6 sit outside these nodes — see the requests below |
+| `box-resolve-lane` | `control.acquire`, `control.launch` | R1–R5 closed: the `preresolved` AccessPlan kind, `urlfile-wait.sh` / `push-url-file.sh`, deliberate capture vantage, and the exported resolver deadline. Δrace vantage pooling lives in `evidence.measure` — see the requests below |
 
 Older phone, TLS, readiness, settlement, expansion, hunt, notification, build,
 risk, detector, and source-pipe work remains represented by its existing claim.
@@ -309,3 +310,152 @@ was touched.
    unit/list-timers output, let it fire under minimal env, kill it with real
    SIGTERM, remove the drill unit, and journal both install/removal actions.
    This lane performed only offline fixtures, per the live-safety boundary.
+
+## Box-resolve lane — 2026-08-14
+
+Work order `docs/work/BOX-RESOLVE.md` (master `docs/work/BOX-WEBCAST.md`, seams
+S-A/S-E/S-F). Nodes claimed by extending the one existing open claim per node
+(doc-lint permits no second): `control.acquire` (`tls.acquire`, which also
+gains `scripts/urlfile-wait.sh`, `scripts/push-url-file.sh`, and
+`tests/preresolved_arm.sh`) and `control.launch` (`phone_tls.launch`, whose
+paths already covered `scripts/arm-on-url.sh` and its contract doc).
+
+**R1 CLOSED.** `preresolved` is a first-class resolver kind whose argv invokes
+the new `scripts/urlfile-wait.sh`. Two design corrections came out of the
+evidence rather than the plan:
+
+- **Freshness by timestamp cannot satisfy seam S-A.** The url-file path is
+  derived from the pinned config, so every attempt of one event reuses it. On
+  disk today: `KXEARNINGSMENTIONAMAT-26AUG13-WEBCAST` attempts
+  `…-2d71c29ad8ae` (created 18:36:55Z) and `…-2d71c29ad8ae-r2` (18:48:00Z)
+  share `$HOME/amat-stream.url` **and** the `20:45:00Z` deadline. Any window
+  wide enough to cover the T-75 fire window admits the earlier attempt's file.
+  The wait therefore keys on **attempt identity** — a sidecar `<url-file>.meta`
+  naming `run_plan_sha256`, cross-checked against `--expect-plan-sha256` that
+  `bind` bakes into the hash-covered argv — and mtime demotes to a sanity
+  bound. `tests/preresolved_arm.sh` case 2 is exactly this and fails against
+  any mtime-only rule.
+- **The wait must not invent its own deadline.** `arm-on-url.sh:163` runs the
+  resolver with no timeout and only tests the deadline after the child returns
+  (`:166`), and the TERM/INT trap is not installed until `:228`. A blocking
+  resolver that bounded itself would sail past the call. `--deadline-utc` is
+  required; `RESOLVER_DEADLINE_EPOCH` and `EARSHOT_URLFILE_FRESH_SECS` may only
+  narrow what the immutable plan fixed, never widen it. Missing deadline is
+  exit 2 at T-75, not a 90-minute silence.
+
+Evidence: 12 `--check` cases plus live smoke — blocks then accepts on push
+(exit 0), exhausts a 4 s deadline (exit 3), refuses missing deadline and
+malformed attempt hash (exit 2), and never prints the URL.
+
+**R2 CLOSED.** `scripts/push-url-file.sh` resolves locally — `--resolve` runs
+the argv the plan records, `--from-file` takes an already-minted one — and
+publishes to the executing host with the URL bytes on SSH **stdin**: remote tmp
+in the target's own directory, `chmod 0644`, rename, then a hash readback that
+proves the landed bytes. The AccessPlan gained a `resolver.preresolve` block
+(kind + argv of the other host's minting leg) so the push is typed rather than
+operator memory at T-75 — the C9 failure mode. It is emitted **only** for
+`preresolved` and never as `null`: all five AccessPlans published on disk
+re-validate byte- and hash-identically, which matters because
+`access_plan_sha256` is baked into `pcm-gate`'s proof and re-checked by
+`capture-ready`. A smuggled `preresolve` on any other kind is refused by a
+conditional key gate. Evidence: 14 `--check` cases against a stubbed `ssh` that
+performs the remote command for real — no URL and no token in any argv, stdout,
+or journal; mode 0644; no leftover temp file; a transport failure publishes
+nothing. Two refusals worth naming: a push is refused once the run has reached
+`capture_ready` (configs `cat` the url-file at runtime, so a late push would
+swap what the detector hears under a running arm), and a non-HLS endpoint is a
+loud WARN because `pcm-gate.sh:329-334` can never certify it.
+
+**R3 CLOSED (partly `not_resolvable`, deliberately).** Measured 2026-08-14: the
+AMAT 26AUG13 `media-server.com` token, minted on the laptop at
+`2026-08-13T15:09:56Z`, returned **HTTP 200 from both the CDMX laptop (TTFB
+1.151 s) and the us-east-1 box (0.105 s)** at 14 h 02 m of age, with the URL on
+stdin via `curl -K -` so it never entered argv. Authorization lifetime is
+therefore **≥ 14 h 02 m and not vantage-bound**. The **media-bearing** lifetime
+is recorded `not_resolvable`: the manifest is empty because the call ended, not
+because the token expired, and separating the two needs a second live
+browser-class venue. Consequently `--fresh-secs` is **not** token-derived — the
+push-to-arm gap is minutes and authorization outlives it by ~350× — so its
+default is the fire window (5400 s = T-75 lead + start+15 min deadline), stated
+as a sanity bound. Method and numbers are in the `control.acquire` contract.
+
+**R4 CLOSED, narrower than specified, on evidence.** `bind` refuses a defaulted
+`--vantage` for a `preresolved` plan (cross-host by construction) or for a plan
+compiled for the capture box while binding runs elsewhere; every other
+cross-host default gets a loud WARN and still binds. The blanket refusal was
+tried first and **measurably reddened a file this lane may not fix**:
+`tests/typed_scheduler_boundary.sh:149-158` (lane S, `control.supervise`) binds
+four plans for `earshot-test-host` before exporting an execution host at `:567`,
+so an ambient `EARSHOT_EXECUTION_HOST` made lane S's suite fail — reproduced,
+then designed out. That suite now passes under a plain environment, a
+mismatching `EARSHOT_EXECUTION_HOST`, and both host variables exported.
+`tests/access_plan.py` pins both identity variables so these rules cannot pass
+or fail by ambient environment.
+
+**R5 CLOSED — a real gap was found, so `control.launch` was touched.** The rig
+was written first and went red on it: `arm-on-url.sh:118-121` prints `KEY=value`
+lines that bash `eval`s, and `eval "FOO=bar"` creates a shell variable with **no
+export attribute**, so `RESOLVER_DEADLINE_EPOCH` has never been visible to any
+resolver the tool has ever launched. The fix is one line, `export
+RESOLVER_DEADLINE_EPOCH`; no existing resolver reads that name
+(`youtube-resolve.sh` takes its deadline positionally, `q4-resolve.sh` computes
+its own, `choruscall-resolve.py` and `browser-resolve.py` use `--wait-secs`), so
+nothing else changes. Everything else in `arm-on-url.sh` drives a preresolved
+plan **unmodified**, which is what the rig proves. `tests/preresolved_arm.sh`
+was created new rather than extending the scheduler rig, which lane S owns.
+
+**Seam S-E verified, not assumed.** `install-t0-agents.sh:151` and
+`box-webcast-install.sh:98` each refuse only `static-public`, so a
+`preresolved` plan is first-class to both. The rig pins the shape of that gate
+so a future change to it surfaces here. This answers the typed-scheduler lane's
+boundary request #1: the kind and `push-url-file.sh` are landed and
+contract-tested, so S5 may now schedule the push.
+
+Gates, all green and each logged to a file with its exit code (never through
+`head`/`tail`): `python3 tests/access_plan.py` (24 tests, was 12), `bash
+tests/preresolved_arm.sh`, `scripts/urlfile-wait.sh --check`,
+`scripts/push-url-file.sh --check`, `bash -n` on all three touched shell
+scripts, `python3 tests/capture_ready.py`, `python3 tests/ops_surface.py`,
+`python3 tests/opsctl.py`, `python3 tests/schedule_proof.py`,
+`tests/typed_scheduler_boundary.sh`, and `scripts/doc-lint.sh` (532 governed
+files). Neither new script matches `ops-surface-check.py`'s `TRADE_CAPABLE` or
+`DATED` triggers, so no `architecture/operations.toml` entry is owed.
+
+### Boundary requests from this lane
+
+1. **To `evidence.measure` (`scripts/system-analysis.py`)** — R4 makes the
+   capture vantage deliberate, but nothing yet *enforces* it: no analysis
+   refuses to pool Δrace across vantages, and `capture.vantage` is validated
+   for shape only, never compared against anything. Please add a pooling guard
+   keyed on `capture.vantage` so a us-east box capture cannot be averaged with
+   CDMX history (`scripts/venue-probe.sh:125-129` states the rule in prose
+   today). This lane may not edit that file.
+2. **To `control.launch`** — the resolver retries to the deadline but
+   `pcm-gate.sh` runs exactly once (`arm-on-url.sh:197-203`, exit 4 with no
+   retry). For preresolved events that asymmetry is sharp: a URL accepted at
+   T-70 whose token has aged out fails PCM at T-69 and the arm is dead while
+   the operator holds a good URL. `capture-ready.py`'s
+   `MAX_PCM_AGE_SECONDS = 180` budgets the whole push→wait→pcm→ready chain.
+   Consider a bounded PCM retry inside the resolver deadline.
+3. **To `control.launch`** — `arm-on-url.sh:177,182` formats the deadline for
+   its pages with BSD `date -u -r <epoch>`; on the Linux box `-r` takes a file,
+   so the guard falls through and the page silently degrades to the literal
+   string "the AccessPlan deadline". Cheap to route through `python3`.
+4. **To the operator skill owner** (proposed text, not applied — this lane did
+   not edit `.claude/skills/**`): `event-prep` needs (a) the browser-class
+   box-event bind recipe — `--resolver-kind preresolved --resolver-argv-json
+   '["scripts/urlfile-wait.sh","$HOME/<lc>-stream.url"]' --preresolve-kind
+   browser-network --preresolve-argv-json '<the browser-resolve argv>'
+   --vantage <deliberate label>` — noting that `bind` fills the deadline,
+   attempt hash, and freshness bound itself; and (b) the push step
+   `scripts/push-url-file.sh --run-dir <run> --resolve` inside the fire window,
+   with the note that it refuses once `capture_ready` is reached.
+5. **To the integration operator** — the token-lifetime measurement is
+   `not_resolvable` for media-bearing life. The next live browser-class venue
+   should be measured while the call is still running, from both vantages, to
+   close it.
+
+No deployment, dial, page, schedule, arm, order, or trade was performed by this
+lane, and no money policy was touched. The only network activity was the R3
+measurement: two read-only HTTP GETs of an already-finished call's manifest,
+one from each vantage.

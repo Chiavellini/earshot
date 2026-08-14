@@ -62,6 +62,11 @@ class AccessPlanTest(unittest.TestCase):
         self.env = {
             **os.environ,
             "EARSHOT_REPO": str(self.repo),
+            # BOTH identity variables are pinned. eventctl and access-plan read
+            # EARSHOT_EXECUTION_HOST first, so leaving it to the ambient shell
+            # would make the cross-host vantage rules pass or fail by whatever
+            # the developer happens to export.
+            "EARSHOT_EXECUTION_HOST": "box-useast1",
             "EARSHOT_HOST_ID": "box-useast1",
             "EARSHOT_KALSHI_ACCOUNT_FINGERPRINT": "sha256:" + "a" * 64,
         }
@@ -72,11 +77,46 @@ class AccessPlanTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def cli(self, script: str, *args):
+    def cli(self, script: str, *args, env_overrides=None):
         return subprocess.run(
             [sys.executable, str(self.repo / "scripts" / script), *map(str, args)],
-            cwd=self.repo, env=self.env, text=True, capture_output=True,
+            cwd=self.repo, env={**self.env, **(env_overrides or {})},
+            text=True, capture_output=True,
         )
+
+    PRERESOLVE_ARGV = json.dumps([
+        "python3", "scripts/browser-resolve.py", "--slug", "test",
+        "--url", "https://venue.invalid/player",
+        "--out", "$HOME/test-stream.url",
+    ])
+
+    def bind_preresolved(self, *extra, wait_argv=None, vantage="us-east1/box-primary"):
+        argv = wait_argv or ["scripts/urlfile-wait.sh", "$HOME/test-stream.url"]
+        base = [
+            "access-plan.py", "bind", "--run-dir", self.run_dir,
+            "--access-mode", "public",
+            "--resolver-kind", "preresolved",
+            "--resolver-argv-json", json.dumps(argv),
+            "--preresolve-kind", "browser-network",
+            "--preresolve-argv-json", self.PRERESOLVE_ARGV,
+        ]
+        if vantage:
+            base += ["--vantage", vantage]
+        return self.cli(*base, *extra)
+
+    def plan_sha(self) -> str:
+        return json.loads(
+            (self.run_dir / "control" / "run-plan.json").read_text()
+        )["plan_sha256"]
+
+    def rehash_artifact(self, value: dict):
+        """Rewrite the plan with a recomputed self-hash, canonical bytes."""
+        path = self.run_dir / "control" / "access-plan.json"
+        hashed = {k: v for k, v in value.items() if k != "access_plan_sha256"}
+        value["access_plan_sha256"] = hashlib.sha256(json.dumps(
+            hashed, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+        ).encode()).hexdigest()
+        path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
 
     def init(self, config: Path) -> Path:
         proc = self.cli("eventctl.py", "init", "--config", config)
@@ -95,14 +135,14 @@ class AccessPlanTest(unittest.TestCase):
             "--expiry-mode", "refresh-at-launch", *extra,
         )
 
-    def bind(self, mode="public", *extra):
+    def bind(self, mode="public", *extra, env_overrides=None):
         return self.cli(
             "access-plan.py", "bind", "--run-dir", self.run_dir,
             "--access-mode", mode,
             "--resolver-kind", "q4-api",
             "--resolver-argv-json",
             '["scripts/q4-resolve.sh","--event-id","123","--slug","test"]',
-            *extra,
+            *extra, env_overrides=env_overrides,
         )
 
     def test_create_is_non_media_proof_and_validate_round_trips(self):
@@ -280,6 +320,170 @@ class AccessPlanTest(unittest.TestCase):
             "--canonical",
         )
         self.assertEqual(canonical.returncode, 0, canonical.stderr)
+
+    def test_preresolved_bind_records_both_legs_and_bakes_attempt_identity(self):
+        bound = self.bind_preresolved()
+        self.assertEqual(bound.returncode, 0, bound.stderr)
+        plan = json.loads(
+            (self.run_dir / "control" / "access-plan.json").read_text()
+        )
+        resolver = plan["resolver"]
+        self.assertEqual(resolver["kind"], "preresolved")
+        self.assertEqual(plan["capture"]["vantage"], "us-east1/box-primary")
+        # bind DERIVES the wait's bounds; the operator never retypes them.
+        argv = resolver["argv"]
+        self.assertEqual(argv[0], "scripts/urlfile-wait.sh")
+        self.assertEqual(argv[1], "$HOME/test-stream.url")
+        pairs = dict(zip(argv[2::2], argv[3::2]))
+        self.assertEqual(pairs["--deadline-utc"], resolver["deadline_utc"])
+        self.assertEqual(pairs["--expect-plan-sha256"], self.plan_sha())
+        self.assertEqual(pairs["--fresh-secs"], "5400")
+        # …and records WHICH resolver mints the URL on the other host.
+        self.assertEqual(resolver["preresolve"], {
+            "kind": "browser-network", "argv": json.loads(self.PRERESOLVE_ARGV),
+        })
+        validated = self.cli(
+            "access-plan.py", "validate", "--run-dir", self.run_dir, "--canonical",
+        )
+        self.assertEqual(validated.returncode, 0, validated.stderr)
+        self.assertEqual(
+            json.loads(validated.stdout)["resolver_kind"], "preresolved"
+        )
+
+    def test_preresolved_refuses_a_defaulted_vantage(self):
+        # Cross-host by construction: one host mints, another captures. A
+        # defaulted vantage would silently pool us-east capture with laptop
+        # Δrace history.
+        refused = self.bind_preresolved(vantage=None)
+        self.assertEqual(refused.returncode, 1)
+        self.assertIn("cross-host by construction", refused.stderr)
+
+    def test_bind_refuses_a_defaulted_vantage_for_the_capture_box(self):
+        # The plan is compiled for box-useast1 (setUp's host id); bind runs on
+        # the laptop and box-useast1 IS the declared box, so the vantage must be
+        # deliberate.
+        laptop = {
+            "EARSHOT_EXECUTION_HOST": "laptop-cdmx",
+            "EARSHOT_BOX_EXECUTION_HOST": "box-useast1",
+        }
+        refused = self.bind(env_overrides=laptop)
+        self.assertEqual(refused.returncode, 1)
+        self.assertIn("--vantage must be named explicitly", refused.stderr)
+        named = self.bind("public", "--vantage", "cdmx-residential", env_overrides=laptop)
+        self.assertEqual(named.returncode, 0, named.stderr)
+
+    def test_other_cross_host_defaults_warn_but_never_refuse(self):
+        # A blanket refusal here would redden sibling suites that bind plans for
+        # hosts this node knows nothing about; the WARN carries the same fact.
+        warned = self.bind(env_overrides={
+            "EARSHOT_EXECUTION_HOST": "laptop-cdmx",
+            "EARSHOT_BOX_EXECUTION_HOST": "some-other-box",
+        })
+        self.assertEqual(warned.returncode, 0, warned.stderr)
+        self.assertIn("WARN: --vantage defaulted", warned.stderr)
+        plan = json.loads(
+            (self.run_dir / "control" / "access-plan.json").read_text()
+        )
+        self.assertEqual(plan["capture"]["vantage"], "box-useast1")
+
+    def test_unresolvable_local_identity_keeps_the_default(self):
+        blank = self.bind(env_overrides={
+            "EARSHOT_EXECUTION_HOST": "", "EARSHOT_HOST_ID": "",
+        })
+        self.assertEqual(blank.returncode, 0, blank.stderr)
+        self.assertNotIn("WARN: --vantage defaulted", blank.stderr)
+
+    def test_preresolved_requires_the_other_host_resolve_leg(self):
+        missing = self.cli(
+            "access-plan.py", "bind", "--run-dir", self.run_dir,
+            "--access-mode", "public", "--vantage", "us-east1",
+            "--resolver-kind", "preresolved",
+            "--resolver-argv-json",
+            '["scripts/urlfile-wait.sh","$HOME/test-stream.url"]',
+        )
+        self.assertEqual(missing.returncode, 1)
+        self.assertIn("--preresolve-kind", missing.stderr)
+
+    def test_preresolve_fields_are_refused_on_every_other_kind(self):
+        refused = self.bind(
+            "public",
+            "--preresolve-kind", "browser-network",
+            "--preresolve-argv-json", self.PRERESOLVE_ARGV,
+        )
+        self.assertEqual(refused.returncode, 1, refused.stderr)
+        self.assertIn("only valid for resolver kind preresolved", refused.stderr)
+
+    def test_preresolved_argv_must_use_the_expandable_home_spelling(self):
+        braced = self.bind_preresolved(
+            wait_argv=["scripts/urlfile-wait.sh", "${HOME}/test-stream.url"],
+        )
+        self.assertEqual(braced.returncode, 1)
+        # arm-on-url expands only a literal $HOME/ prefix; ${HOME}/ would make
+        # the wait address ./${HOME}/... under the repo.
+        self.assertIn("spell URL files as $HOME/", braced.stderr)
+
+    def test_preresolved_must_wait_on_the_file_its_sources_read(self):
+        wrong = self.bind_preresolved(
+            wait_argv=["scripts/urlfile-wait.sh", "$HOME/other-stream.url"],
+        )
+        self.assertEqual(wrong.returncode, 1)
+        self.assertIn("wait on exactly the URL files", wrong.stderr)
+
+    def test_preresolved_argv_bounds_may_not_contradict_the_plan(self):
+        lying = self.bind_preresolved(wait_argv=[
+            "scripts/urlfile-wait.sh", "$HOME/test-stream.url",
+            "--expect-plan-sha256", "f" * 64,
+        ])
+        self.assertEqual(lying.returncode, 1)
+        self.assertIn("contradicts the AccessPlan", lying.stderr)
+
+    def test_a_smuggled_preresolve_block_is_refused_on_other_kinds(self):
+        self.assertEqual(self.bind().returncode, 0)
+        path = self.run_dir / "control" / "access-plan.json"
+        value = json.loads(path.read_text())
+        self.assertEqual(value["resolver"]["kind"], "q4-api")
+        self.assertNotIn("preresolve", value["resolver"])
+        value["resolver"]["preresolve"] = {
+            "kind": "browser-network", "argv": json.loads(self.PRERESOLVE_ARGV),
+        }
+        self.rehash_artifact(value)
+        validated = self.cli("access-plan.py", "validate", "--run-dir", self.run_dir)
+        self.assertEqual(validated.returncode, 1)
+        self.assertIn("resolver shape is invalid", validated.stderr)
+
+    def test_preresolved_plan_survives_a_prior_attempts_wait_argv(self):
+        # The AMAT 2026-08-13 shape: two attempts, one url-file path, one
+        # deadline. What separates them is the plan hash baked into argv.
+        self.assertEqual(self.bind_preresolved().returncode, 0)
+        first = json.loads(
+            (self.run_dir / "control" / "access-plan.json").read_text()
+        )
+        first_expect = dict(
+            zip(first["resolver"]["argv"][2::2], first["resolver"]["argv"][3::2])
+        )["--expect-plan-sha256"]
+        # A second attempt is what config drift produces — the AMAT r1/r2
+        # shape. The [[sources]] argv is untouched, so the url-file is identical.
+        self.config.write_text(
+            WEBCAST.format(event=EVENT)
+            + '\n[[keywords]]\n'
+            'market_ticker = "KXEARNINGSMENTIONTEST-26AUG20-BAR"\n'
+            'phrase = "bar"\n'
+        )
+        second_run = self.init(self.config)
+        self.assertNotEqual(second_run, self.run_dir)
+        self.run_dir = second_run
+        self.assertEqual(self.bind_preresolved().returncode, 0)
+        second = json.loads((second_run / "control" / "access-plan.json").read_text())
+        second_expect = dict(
+            zip(second["resolver"]["argv"][2::2], second["resolver"]["argv"][3::2])
+        )["--expect-plan-sha256"]
+        self.assertEqual(
+            first["endpoint"]["url_files"], second["endpoint"]["url_files"]
+        )
+        self.assertEqual(
+            first["resolver"]["deadline_utc"], second["resolver"]["deadline_utc"]
+        )
+        self.assertNotEqual(first_expect, second_expect)
 
     def test_human_session_bind_requires_explicit_non_secret_attestation(self):
         missing = self.bind("registered-session")

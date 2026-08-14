@@ -50,8 +50,21 @@ RESOLVER_KINDS = {
     "browser-network": "browser-resolve.py",
     "choruscall": "choruscall-resolve.py",
     "external-command": None,
+    "preresolved": "urlfile-wait.sh",
     "static-public": None,
 }
+# A kind that MINTS a URL. `preresolved` consumes one, and `static-public` has
+# no resolver at all, so neither can stand in as the other-host resolve leg.
+PRERESOLVE_KINDS = sorted(
+    k for k in RESOLVER_KINDS if k not in {"preresolved", "static-public"}
+)
+# The preresolved freshness bound is DERIVED, not guessed: the webcast fire
+# window is T-75 (the scheduler lead, `schedule-proof.py`) through the resolver
+# deadline (event start + 15 min), i.e. 90 minutes. It is a sanity bound only —
+# the predicate that actually refuses a prior attempt's file is attempt
+# identity (`--expect-plan-sha256`), because every attempt of one event reuses
+# the same `$HOME/<slug>-stream.url` path.
+PRERESOLVED_FRESH_SECS = 5400
 EXPIRY_MODES = {"refresh-at-launch", "stable-public", "resolver-declared"}
 ACCESS_MODES = {"public", "registered-session", "signed-in-session"}
 SENSITIVE_NAME_RE = re.compile(
@@ -206,7 +219,87 @@ def parse_resolver_argv(raw: str) -> list[str]:
     return value
 
 
-def validate_resolver(kind: str, argv: list[str], refs: list[str]):
+def validate_argv_non_secret(argv: list[str], what: str):
+    for index, arg in enumerate(argv):
+        if re.search(r"://[^/@\s:]+:[^/@\s]+@", arg):
+            raise Refusal(f"{what} embeds URL user-info credentials")
+        name, sep, inline = arg.partition("=")
+        if SENSITIVE_NAME_RE.search(name):
+            value = inline if sep else (argv[index + 1] if index + 1 < len(argv) else "")
+            if value and not value.startswith(("$", "${")):
+                raise Refusal(
+                    f"{what} embeds material for sensitive option {name!r};"
+                    " use an environment/external secret reference"
+                )
+
+
+def argv_option(argv: list[str], flag: str) -> str | None:
+    """Value following `flag`, "" when the flag is last, None when absent."""
+    for index, arg in enumerate(argv):
+        if arg == flag:
+            return argv[index + 1] if index + 1 < len(argv) else ""
+    return None
+
+
+def argv_url_files(argv: list[str], what: str) -> list[str]:
+    """URL files an argv names, refusing every spelling the runtime cannot expand.
+
+    `arm-on-url.sh` expands a token only when it literally starts with `$HOME/`;
+    `${HOME}/` and `~/` survive into the executed argv verbatim and make the
+    resolver address `./${HOME}/...` under the repo. `normalize_url_file` folds
+    all three spellings, so equality alone would accept a token that cannot work.
+    """
+    found = []
+    for arg in argv:
+        for match in URL_FILE_RE.findall(arg):
+            if not match.startswith("$HOME/"):
+                raise Refusal(
+                    f"{what} must spell URL files as $HOME/... — the runtime"
+                    f" expands no other form; got {match!r}"
+                )
+            found.append(normalize_url_file(match))
+    return sorted(set(found))
+
+
+def validate_preresolved_argv(
+    argv: list[str],
+    refs: list[str],
+    deadline_utc: str | None,
+    run_plan_sha256: str | None,
+):
+    waited = argv_url_files(argv, "preresolved resolver argv")
+    if waited != list(refs):
+        raise Refusal(
+            "preresolved resolver must wait on exactly the URL files its sources"
+            f" read (waits={waited}, sources={list(refs)})"
+        )
+    for flag, expected in (
+        ("--deadline-utc", deadline_utc),
+        ("--expect-plan-sha256", run_plan_sha256),
+    ):
+        if expected is None:
+            continue
+        got = argv_option(argv, flag)
+        if got is None:
+            raise Refusal(
+                f"preresolved resolver argv must carry {flag} — the wait fails"
+                " closed rather than inventing its own bound"
+            )
+        if got != expected:
+            raise Refusal(
+                f"preresolved resolver argv {flag}={got!r} contradicts the"
+                f" AccessPlan ({expected!r})"
+            )
+
+
+def validate_resolver(
+    kind: str,
+    argv: list[str],
+    refs: list[str],
+    *,
+    deadline_utc: str | None = None,
+    run_plan_sha256: str | None = None,
+):
     if kind not in RESOLVER_KINDS:
         raise Refusal(f"unsupported resolver kind {kind!r}")
     if kind == "static-public":
@@ -217,22 +310,38 @@ def validate_resolver(kind: str, argv: list[str], refs: list[str]):
         return
     if not argv:
         raise Refusal(f"resolver kind {kind} requires exact argv")
-    for index, arg in enumerate(argv):
-        if re.search(r"://[^/@\s:]+:[^/@\s]+@", arg):
-            raise Refusal("resolver argv embeds URL user-info credentials")
-        name, sep, inline = arg.partition("=")
-        if SENSITIVE_NAME_RE.search(name):
-            value = inline if sep else (argv[index + 1] if index + 1 < len(argv) else "")
-            if value and not value.startswith(("$", "${")):
-                raise Refusal(
-                    f"resolver argv embeds material for sensitive option {name!r};"
-                    " use an environment/external secret reference"
-                )
+    validate_argv_non_secret(argv, "resolver argv")
     expected = RESOLVER_KINDS[kind]
     if expected and not any(Path(arg).name == expected for arg in argv):
         raise Refusal(f"resolver kind {kind} argv does not invoke {expected}")
     if not refs:
         raise Refusal(f"resolver kind {kind} requires a URL-file reference in source argv")
+    if kind == "preresolved":
+        validate_preresolved_argv(argv, refs, deadline_utc, run_plan_sha256)
+
+
+def validate_preresolve(value, refs: list[str]):
+    """The other-host leg that MINTS the URL a `preresolved` plan waits for."""
+    if not isinstance(value, dict) or set(value) != {"kind", "argv"}:
+        raise Refusal("AccessPlan preresolve shape is invalid")
+    kind = value.get("kind")
+    if kind not in PRERESOLVE_KINDS:
+        raise Refusal(f"unsupported AccessPlan preresolve kind {kind!r}")
+    argv = value.get("argv")
+    if not isinstance(argv, list) or not argv or not all(
+        isinstance(x, str) and x for x in argv
+    ):
+        raise Refusal("AccessPlan preresolve argv must be a non-empty-string array")
+    validate_argv_non_secret(argv, "preresolve argv")
+    expected = RESOLVER_KINDS[kind]
+    if expected and not any(Path(arg).name == expected for arg in argv):
+        raise Refusal(f"AccessPlan preresolve kind {kind} argv does not invoke {expected}")
+    minted = argv_url_files(argv, "preresolve argv")
+    if minted != list(refs):
+        raise Refusal(
+            "preresolve must mint exactly the URL files the plan waits for"
+            f" (mints={minted}, plan={list(refs)})"
+        )
 
 
 def build_prerequisite(args, deadline: dt.datetime) -> dict:
@@ -295,6 +404,144 @@ def build_prerequisite(args, deadline: dt.datetime) -> dict:
     }
 
 
+RESOLVER_FIELDS = {
+    "kind", "argv", "deadline_utc", "network_performed_at_compile",
+    "secret_material_embedded", "credential_contract",
+}
+
+
+def resolver_fields_for(kind) -> set:
+    """`preresolve` is admitted ONLY for the kind that owns it.
+
+    Never `RESOLVER_FIELDS | {"preresolve"}` unconditionally, and never
+    `set(resolver) - {"preresolve"}`: either would let a `q4-api` plan carry a
+    silent extra block that changes its own hash and nothing rejects.
+    """
+    if kind == "preresolved":
+        return RESOLVER_FIELDS | {"preresolve"}
+    return RESOLVER_FIELDS
+
+
+def resolver_block(kind: str, argv: list[str], deadline_utc: str, preresolve) -> dict:
+    """The resolver object. The key is ABSENT — never null — for other kinds.
+
+    `access_plan_sha256` covers every key, and it is transitively load-bearing
+    (`pcm-gate.sh` bakes it into the PCM proof, `capture-ready.py` re-checks it),
+    so a null placeholder on existing kinds would change every published plan's
+    hash and break artifacts already on disk.
+    """
+    block = {
+        "kind": kind,
+        "argv": argv,
+        "deadline_utc": deadline_utc,
+        "network_performed_at_compile": False,
+        "secret_material_embedded": False,
+        "credential_contract": "environment-or-external-reference-only",
+    }
+    if preresolve is not None:
+        block["preresolve"] = preresolve
+    return block
+
+
+def local_execution_host() -> str:
+    """This machine's execution-host id, resolved exactly as `eventctl.py` does."""
+    return (
+        os.environ.get("EARSHOT_EXECUTION_HOST")
+        or os.environ.get("EARSHOT_HOST_ID")
+        or ""
+    ).strip()
+
+
+def box_execution_host() -> str:
+    """The remote capture host id (seam S-B). Read-only here; lane S routes on it."""
+    return (os.environ.get("EARSHOT_BOX_EXECUTION_HOST") or "earshot-useast1").strip()
+
+
+def resolve_vantage(args, plan: dict):
+    """Settle `capture.vantage`, refusing a silent default where it would lie.
+
+    A defaulted vantage is indistinguishable from a deliberate one in the
+    artifact, so us-east capture would pool with CDMX Δrace history without
+    anyone choosing that (`venue-probe.sh` names the hazard).
+
+    The refusal is deliberately narrow — a `preresolved` plan (cross-host by
+    construction), or a plan compiled for the box while binding somewhere else.
+    A blanket "any cross-host default is fatal" rule reddens callers this node
+    does not own: `tests/typed_scheduler_boundary.sh` binds four plans for
+    `earshot-test-host` before it exports an execution host, so an ambient
+    `EARSHOT_EXECUTION_HOST` in the operator's shell would fail a sibling lane's
+    suite for reasons that have nothing to do with it. Everything outside the
+    two refusal cases gets a loud WARN instead, which carries the same
+    information without holding another lane hostage.
+    """
+    if args.vantage:
+        return
+    plan_host = plan["execution_host_id"]
+    if args.resolver_kind == "preresolved":
+        raise Refusal(
+            "preresolved plans are cross-host by construction (one host mints the"
+            " URL, another captures it): name the capture vantage explicitly with"
+            " --vantage rather than defaulting it to the execution host"
+        )
+    local_host = local_execution_host()
+    if local_host and local_host != plan_host:
+        if plan_host == box_execution_host():
+            raise Refusal(
+                f"RunPlan is compiled for the capture box {plan_host!r} but bind is"
+                f" running on {local_host!r}: --vantage must be named explicitly so"
+                " box capture is never pooled with laptop Δrace history"
+            )
+        print(
+            f"WARN: --vantage defaulted to {plan_host!r} for a plan bound on"
+            f" {local_host!r}; name the capture vantage explicitly if this run will"
+            " be compared against another host's history",
+            file=sys.stderr,
+        )
+    args.vantage = plan_host
+
+
+def complete_preresolved_argv(
+    argv: list[str], deadline_utc: str, run_plan_sha256: str
+) -> list[str]:
+    """Bake the plan's own deadline, attempt identity, and freshness into argv.
+
+    These are derived facts, so bind fills them rather than trusting an operator
+    to retype them; an operator-supplied value that disagrees is refused by
+    `validate_preresolved_argv`. Living in argv makes them hash-covered, which
+    is what stops a fire-time environment variable from widening the window.
+    """
+    completed = list(argv)
+    for flag, value in (
+        ("--deadline-utc", deadline_utc),
+        ("--expect-plan-sha256", run_plan_sha256),
+        ("--fresh-secs", str(PRERESOLVED_FRESH_SECS)),
+    ):
+        if argv_option(completed, flag) is None:
+            completed.extend([flag, value])
+    return completed
+
+
+def build_preresolve(args, refs: list[str]) -> dict | None:
+    kind = getattr(args, "preresolve_kind", None)
+    raw = getattr(args, "preresolve_argv_json", None) or "[]"
+    if args.resolver_kind != "preresolved":
+        if kind or raw != "[]":
+            raise Refusal(
+                "--preresolve-kind/--preresolve-argv-json describe the other host's"
+                " resolve leg and are only valid for resolver kind preresolved"
+            )
+        return None
+    if not kind:
+        raise Refusal(
+            "resolver kind preresolved requires --preresolve-kind: the plan must"
+            " record WHICH resolver mints the URL on the other host, or the push"
+            " step is operator memory at T-75"
+        )
+    value = {"kind": kind, "argv": parse_resolver_argv(raw)}
+    validate_preresolve(value, refs)
+    return value
+
+
 def build_artifact(
     repo: Path,
     run_dir: Path,
@@ -314,16 +561,29 @@ def build_artifact(
             f" (declared={requested_refs}, source={discovered_refs})"
         )
     resolver_argv = parse_resolver_argv(args.resolver_argv_json)
-    validate_resolver(args.resolver_kind, resolver_argv, discovered_refs)
-    if not args.vantage:
-        args.vantage = plan["execution_host_id"]
+    resolve_vantage(args, plan)
     if not VANTAGE_RE.fullmatch(args.vantage or ""):
         raise Refusal("--vantage must be a stable 1-128 character label")
+    # The deadline is settled BEFORE the resolver is validated: a `preresolved`
+    # argv must carry that exact deadline, and a resolver validated against an
+    # unset default would be checked against the wrong bound.
     if not args.deadline_utc:
         starts = parse_utc(plan["starts_at_utc"], "RunPlan starts_at_utc")
         args.deadline_utc = (
             starts + dt.timedelta(minutes=15)
         ).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if args.resolver_kind == "preresolved":
+        resolver_argv = complete_preresolved_argv(
+            resolver_argv, args.deadline_utc, plan["plan_sha256"]
+        )
+    validate_resolver(
+        args.resolver_kind,
+        resolver_argv,
+        discovered_refs,
+        deadline_utc=args.deadline_utc,
+        run_plan_sha256=plan["plan_sha256"],
+    )
+    preresolve = build_preresolve(args, discovered_refs)
     deadline = parse_utc(args.deadline_utc, "resolver deadline")
     starts = parse_utc(plan["starts_at_utc"], "RunPlan starts_at_utc")
     if deadline > starts + dt.timedelta(minutes=30):
@@ -354,14 +614,9 @@ def build_artifact(
             "host_id": plan["execution_host_id"],
             "vantage": args.vantage,
         },
-        "resolver": {
-            "kind": args.resolver_kind,
-            "argv": resolver_argv,
-            "deadline_utc": args.deadline_utc,
-            "network_performed_at_compile": False,
-            "secret_material_embedded": False,
-            "credential_contract": "environment-or-external-reference-only",
-        },
+        "resolver": resolver_block(
+            args.resolver_kind, resolver_argv, args.deadline_utc, preresolve
+        ),
         "endpoint": {
             "url_files": discovered_refs,
             "publication": "atomic-replace" if discovered_refs else "embedded-in-source-argv",
@@ -482,10 +737,9 @@ def validate_artifact(repo: Path, run_dir: Path, plan: dict, path: Path) -> dict
     if expiry_mode not in EXPIRY_MODES:
         raise Refusal("AccessPlan expiry mode is invalid")
     resolver = artifact.get("resolver")
-    if not isinstance(resolver, dict) or set(resolver) != {
-        "kind", "argv", "deadline_utc", "network_performed_at_compile",
-        "secret_material_embedded", "credential_contract",
-    }:
+    if not isinstance(resolver, dict) or set(resolver) != resolver_fields_for(
+        resolver.get("kind") if isinstance(resolver, dict) else None
+    ):
         raise Refusal("AccessPlan resolver shape is invalid")
     if resolver.get("network_performed_at_compile") is not False:
         raise Refusal("AccessPlan may not claim a compile-time network acquisition")
@@ -505,7 +759,15 @@ def validate_artifact(repo: Path, run_dir: Path, plan: dict, path: Path) -> dict
         raise Refusal("AccessPlan expiry timestamp contradicts its mode")
     if not isinstance(resolver.get("argv"), list):
         raise Refusal("AccessPlan resolver argv is invalid")
-    validate_resolver(resolver.get("kind"), resolver["argv"], refs)
+    validate_resolver(
+        resolver.get("kind"),
+        resolver["argv"],
+        refs,
+        deadline_utc=resolver.get("deadline_utc"),
+        run_plan_sha256=plan["plan_sha256"],
+    )
+    if resolver.get("kind") == "preresolved":
+        validate_preresolve(resolver.get("preresolve"), refs)
     if schema == SCHEMA:
         validate_prerequisite(artifact.get("access_prerequisite"), deadline)
     current = artifact.get("current_media")
@@ -606,6 +868,7 @@ def cmd_validate(args) -> int:
         "access_plan_sha256": artifact["access_plan_sha256"],
         "capture_host_id": artifact["capture"]["host_id"],
         "vantage": artifact["capture"]["vantage"],
+        "resolver_kind": artifact["resolver"]["kind"],
         "current_media_proven": False,
         "access_prerequisite_mode": (
             prerequisite["mode"] if prerequisite else "legacy-undeclared"
@@ -764,6 +1027,17 @@ def parser() -> argparse.ArgumentParser:
             "--resolver-kind", choices=sorted(RESOLVER_KINDS), required=True
         )
         command.add_argument("--resolver-argv-json", default="[]")
+        command.add_argument(
+            "--preresolve-kind",
+            choices=PRERESOLVE_KINDS,
+            help="resolver kind that mints the URL on the OTHER host"
+            " (required for --resolver-kind preresolved)",
+        )
+        command.add_argument(
+            "--preresolve-argv-json",
+            default="[]",
+            help="exact argv of that other-host resolve leg",
+        )
         command.add_argument("--url-file", action="append", default=[])
         command.add_argument("--deadline-utc", required=not canonical)
         command.add_argument(

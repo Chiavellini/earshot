@@ -810,7 +810,12 @@ owns = [
   "scripts/q4-resolve.sh",
   "scripts/q4-register-resolve.py",
   "scripts/chorus-register-resolve.py",
+  # 2026-08-13 box-webcast migration: the two ends of the resolver split for
+  # venues the executing host cannot resolve itself.
+  "scripts/urlfile-wait.sh",
+  "scripts/push-url-file.sh",
   "tests/access_plan.py",
+  "tests/preresolved_arm.sh",
 ]
 inputs = [
   "control.event.qualified",
