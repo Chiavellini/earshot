@@ -287,6 +287,13 @@ paths = [
   # sets, propagated across issuers. Its consumer, scripts/variant-widen.py,
   # sits with variant-study.sh under evidence.benchmark.
   "configs/variant-lexicon.toml",
+  # 2026-08-14 box-webcast §8 integration rehearsal (docs/work/BOX-WEBCAST.md).
+  # NOT an event config: no issuer, no venue, no Kalshi board (board-open.py
+  # --issuer BOXDRILL returns exit 1 for both the open and the ever-traded
+  # question). Named `-wc.toml`, not `-arm-wc.toml`, and given an [event].id
+  # outside the KXEARNINGSMENTION namespace, so it is inert to
+  # missed-arm-check.py's staging globs AND its denominator.
+  "configs/webcast-boxdrill-26aug14-wc.toml",
 ]
 verification = [
   "cargo test --lib prepare",
@@ -379,6 +386,11 @@ paths = [
   "configs/cbrs-26aug12-autorun.env",
   "configs/cbrs-26aug12-safe-observe-autorun.env",
   "configs/cohr-26aug12-autorun.env",
+  # 2026-08-14 box-webcast §8 rehearsal: the drill's event env. It exists only
+  # so install-event-timer.sh:152-176 can derive EARSHOT_ACCOUNT_ENV for the
+  # systemd unit on the box. Named to the `*-autorun.env` convention this
+  # node's glob already owns rather than inventing a second pattern.
+  "configs/boxdrill-26aug14-autorun.env",
 ]
 verification = [
   "bash -n scripts/redial-supervisor.sh",
