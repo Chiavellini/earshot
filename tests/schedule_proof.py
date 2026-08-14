@@ -164,6 +164,11 @@ class ScheduleProofTest(unittest.TestCase):
         }
         if plan["lane"] == "webcast":
             value["environment"]["EARSHOT_ACCOUNT_ENV"] = str(self.account)
+            # Mirrors install-t0-agents.sh's pinned fire-time PATH (AMAT
+            # 2026-08-13: unpinned launchd PATH killed the arm at fire).
+            value["environment"]["PATH"] = (
+                "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+            )
         path = self.repo / f"{plan['lane']}-readback.json"
         path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
         return path

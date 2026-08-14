@@ -586,6 +586,12 @@ def expected_environment(repo: Path, run: Path, plan: dict) -> dict[str, str]:
     }
     if plan.get("lane") == "webcast":
         value["EARSHOT_ACCOUNT_ENV"] = str(resolve_account_profile(repo, plan))
+        # Pinned fire-time PATH (AMAT 2026-08-13): the webcast lane schedules
+        # via launchd, whose default PATH resolves python3 to Apple's 3.9 —
+        # no tomllib, no playwright — and the arm dies at fire time. Must
+        # mirror install-t0-agents.sh's plist env exactly. The phone lane
+        # schedules via systemd on the box, whose default PATH is healthy.
+        value["PATH"] = "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
     return value
 
 

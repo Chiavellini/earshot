@@ -16,17 +16,81 @@
 # exact RunPlan by schedule-proof.py.
 set -euo pipefail
 
-RUN_DIR_RAW="" EXPECTED_HOST="" VERIFY_ONLY=0 FIRE_AT_UTC=""
+RUN_DIR_RAW="" EXPECTED_HOST="" VERIFY_ONLY=0 FIRE_AT_UTC="" SELFTEST=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --run-dir)       RUN_DIR_RAW="${2:?}"; shift 2 ;;
     --expected-host) EXPECTED_HOST="${2:?}"; shift 2 ;;
     --fire-at-utc)   FIRE_AT_UTC="${2:?}"; shift 2 ;;
     --verify-only)   VERIFY_ONLY=1; shift ;;
+    --selftest-readback) SELFTEST=1; shift ;;
     -h|--help)       sed -n '2,24p' "$0"; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
+
+# Offline self-test of the launchctl-print readback regexes against embedded
+# fixtures for BOTH rendering generations. Darwin 25 quotes descriptor keys
+# ('"Month" => 8'); older launchd prints them bare. On 2026-08-13 the unquoted
+# pattern false-failed a CORRECTLY loaded job and the installer rolled it back
+# — the readback had zero test coverage until this flag.
+if [[ "$SELFTEST" == 1 ]]; then
+  "${EARSHOT_PYTHON:-python3}" - <<'PY'
+import re
+
+FIXTURES = {
+    "darwin25-quoted": """
+	event triggers = {
+		com.earshot.run.test.268435627 => {
+			descriptor = {
+				"Minute" => 15
+				"Hour" => 13
+				"Day" => 13
+				"Month" => 8
+			}
+		}
+	}
+	environment = {
+		EARSHOT_RUN_DIR => /repo/var/runs/E/R
+		PATH => /opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin
+	}
+""",
+    "pre25-unquoted": """
+	event triggers = {
+		com.earshot.run.test.268435627 => {
+			descriptor = {
+				Minute => 15
+				Hour => 13
+				Day => 13
+				Month = 8
+			}
+		}
+	}
+	environment = {
+		EARSHOT_RUN_DIR => /repo/var/runs/E/R
+		PATH => /opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin
+	}
+""",
+}
+calendar = {"Month": 8, "Day": 13, "Hour": 13, "Minute": 15}
+environment = {
+    "EARSHOT_RUN_DIR": "/repo/var/runs/E/R",
+    "PATH": "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+}
+for name, printed in FIXTURES.items():
+    for key, value in calendar.items():
+        pattern = rf"(?m)^\s*\"?{key}\"?\s*(?:=>|=)\s*\"?{value}\"?\s*$"
+        assert re.search(pattern, printed), f"{name}: calendar {key} unmatched"
+    for key, value in environment.items():
+        pattern = rf"(?m)^\s*\"?{re.escape(key)}\"?\s*=>\s*\"?{re.escape(value)}\"?\s*$"
+        assert re.search(pattern, printed), f"{name}: environment {key} unmatched"
+    assert not re.search(r"(?m)^\s*\"?Month\"?\s*(?:=>|=)\s*\"?9\"?\s*$", printed), (
+        f"{name}: a wrong calendar value must NOT match"
+    )
+print("install-t0-agents: readback self-test PASS (quoted + unquoted fixtures)")
+PY
+  exit $?
+fi
 
 REPO="${EARSHOT_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 REPO=$(cd "$REPO" && pwd -P)
@@ -205,6 +269,12 @@ value = {
         "EARSHOT_REPO": repo,
         "EARSHOT_RUN_DIR": run,
         "EARSHOT_RUN_PLAN_SHA256": plan_sha,
+        # launchd's default PATH is /usr/bin:/bin:/usr/sbin:/sbin, where
+        # python3 is Apple's 3.9 — no tomllib, no playwright. Every python on
+        # the fire path imports tomllib unconditionally, so an unpinned PATH
+        # kills the arm at fire time (AMAT 2026-08-13; same pin as
+        # hunt-daily.sh / event-autorun.sh / slate-daily.sh).
+        "PATH": "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
     },
     "StartCalendarInterval": {
         "Month": int(month),
@@ -265,6 +335,9 @@ environment = {
     "EARSHOT_REPO": repo,
     "EARSHOT_RUN_DIR": run,
     "EARSHOT_RUN_PLAN_SHA256": plan_sha,
+    # Must mirror the build block above byte-for-byte; the plist comparison
+    # below enforces the mirror at runtime.
+    "PATH": "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
 }
 expected = {
     "Label": label,
@@ -293,12 +366,16 @@ if not arg_match:
 loaded_argv = [line.strip() for line in arg_match.group(1).splitlines() if line.strip()]
 if loaded_argv != argv:
     raise SystemExit(f"launchctl loaded argv differs: {loaded_argv!r}")
+# Darwin 25 renders descriptor keys QUOTED ('"Month" => 8'); older launchd
+# prints them bare. Accept both — on 2026-08-13 the bare-only pattern rolled
+# back a correctly loaded job (verified by hand, calendar exact) as a false
+# mismatch. `--selftest-readback` pins both renderings.
 for key, value in environment.items():
-    pattern = rf"(?m)^\s*{re.escape(key)}\s*=>\s*{re.escape(value)}\s*$"
+    pattern = rf"(?m)^\s*\"?{re.escape(key)}\"?\s*=>\s*\"?{re.escape(value)}\"?\s*$"
     if not re.search(pattern, printed):
         raise SystemExit(f"launchctl loaded environment differs for {key}")
 for key, value in expected["StartCalendarInterval"].items():
-    pattern = rf"(?m)^\s*{key}\s*(?:=>|=)\s*{value}\s*$"
+    pattern = rf"(?m)^\s*\"?{key}\"?\s*(?:=>|=)\s*\"?{value}\"?\s*$"
     if not re.search(pattern, printed):
         raise SystemExit(f"launchctl loaded calendar differs for {key}")
 
