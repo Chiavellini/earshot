@@ -967,13 +967,30 @@ impl WaitLiveRig {
 
     /// Runs the real launcher in dry posture with `arm` stubbed by `/bin/echo`.
     fn run(&self, curl: &Path, pcm_gate_rc: i32) -> (String, bool) {
+        // Historical default stubs: pcm-gate is a bare exit, the fetcher and
+        // ffmpeg exit instantly. The instant-exit fetcher is exactly what hid
+        // the AMAT 2026-08-13 wedge — the real fetcher never exits — so the
+        // wedge tests below pass their own bodies via run_with.
+        self.run_with(
+            curl,
+            &format!("exit {pcm_gate_rc}\n"),
+            "exit 0\n",
+            "exit 0\n",
+        )
+    }
+
+    fn run_with(
+        &self,
+        curl: &Path,
+        pcm_body: &str,
+        fetch_body: &str,
+        ffmpeg_body: &str,
+    ) -> (String, bool) {
         let account = self.cwd.join("acct.env");
         std::fs::write(&account, "# empty test account env\n").unwrap();
-        let pcm = self.stub("pcm-gate-stub", &format!("exit {pcm_gate_rc}\n"));
-        // Part 3's fallback: a fetcher that yields nothing, so a failed
-        // pcm-gate cannot be rescued into a false LIVE by real tools.
-        let fetch = self.stub("cachebust-stub", "exit 0\n");
-        let ffmpeg = self.stub("ffmpeg-stub", "exit 0\n");
+        let pcm = self.stub("pcm-gate-stub", pcm_body);
+        let fetch = self.stub("cachebust-stub", fetch_body);
+        let ffmpeg = self.stub("ffmpeg-stub", ffmpeg_body);
         // MUST be stubbed. The VOD and timeout verdicts page on purpose, and
         // `page`/`critical_alert` fall back to the REAL scripts/notify.sh,
         // which reaches Gmail SMTP whenever ~/.kalshi/mail_env exists. Without
@@ -1016,6 +1033,7 @@ impl WaitLiveRig {
             .env("EARSHOT_WAIT_LIVE_POLL_SECS", "1")
             .env("EARSHOT_WAIT_LIVE_TIMEOUT_SECS", "6")
             .env("EARSHOT_WAIT_LIVE_PCM_SECS", "1")
+            .env("EARSHOT_WAIT_LIVE_DECODE_GRACE_SECS", "2")
             .output()
             .expect("failed to run launch-webcast.sh");
 
@@ -1109,5 +1127,159 @@ fn empty_arg_array_uses_the_bash3_safe_expansion() {
     assert!(
         Path::new("/bin/bash").exists(),
         "sanity: this test assumes a POSIX box"
+    );
+}
+
+// ── the AMAT 2026-08-13 wedge ───────────────────────────────────────────────
+//
+// `cdn-cachebust-fetch.sh` NEVER exits by design (a crash-proof pipe leg), and
+// bash command substitution waits for every member of a pipeline. On AMAT the
+// gate's `live_decodes` fallback therefore blocked forever inside ONE loop
+// iteration; the 3600 s deadline is a top-of-loop guard, so it never re-ran,
+// and the launcher sat at "first tail seen — need one advance" for three hours
+// while the stream ran to its end. The old suite could not see this because
+// its fetcher stub exits instantly. These tests stub the truth.
+
+/// A fetcher stub that records its pid and never exits — the real thing.
+fn wedge_fetch_body(rig: &WaitLiveRig) -> String {
+    format!(
+        "echo $$ > '{}'\nwhile :; do sleep 1; done\n",
+        rig.cwd.join("fetch.pid").display()
+    )
+}
+
+/// After the launcher exits, the fetcher's whole process group must be dead —
+/// an orphan holding the venue open is its own defect.
+fn assert_fetch_dead(rig: &WaitLiveRig, out: &str) {
+    let pid_file = rig.cwd.join("fetch.pid");
+    assert!(
+        pid_file.exists(),
+        "fetch stub never ran — the test proved nothing:\n{out}"
+    );
+    let pid = std::fs::read_to_string(&pid_file).unwrap().trim().to_string();
+    for _ in 0..10 {
+        let alive = Command::new("kill")
+            .args(["-0", &pid])
+            .output()
+            .unwrap()
+            .status
+            .success();
+        if !alive {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+    let _ = Command::new("kill").args(["-9", &pid]).output();
+    panic!("fetcher (pid {pid}) survived the gate — orphaned child:\n{out}");
+}
+
+#[test]
+fn wedged_cachebust_fetcher_cannot_hang_the_gate() {
+    let rig = WaitLiveRig::new("wedge");
+    let curl = rig.curl(LIVE_BODY);
+    let started = std::time::Instant::now();
+    // pcm-gate fails → fallback runs the never-exiting fetcher; ffmpeg exits
+    // with no bytes, so the leg can only end by the watchdog.
+    let (out, ok) = rig.run_with(&curl, "exit 1\n", &wedge_fetch_body(&rig), "exit 0\n");
+    assert!(!ok, "a wedged fetcher must not arm:\n{out}");
+    assert!(
+        out.contains("never passed"),
+        "the gate deadline must fire and say so:\n{out}"
+    );
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(40),
+        "the gate ran {:?} — the deadline did not bound the decode leg:\n{out}",
+        started.elapsed()
+    );
+    assert_fetch_dead(&rig, &out);
+}
+
+#[test]
+fn cachebust_fallback_bounded_still_passes() {
+    let rig = WaitLiveRig::new("wedgepass");
+    let curl = rig.curl(LIVE_BODY);
+    // ffmpeg emits well over the floor (PCM_SECS=1 → floor 25600) then exits;
+    // the fetcher keeps looping — the CBRS rescue shape. The gate must take
+    // the bytes, kill the fetcher group, and arm via the cachebust verdict.
+    let (out, ok) = rig.run_with(
+        &curl,
+        "exit 1\n",
+        &wedge_fetch_body(&rig),
+        "head -c 64000 /dev/zero\n",
+    );
+    assert!(ok, "floor-satisfying bytes via cachebust must arm:\n{out}");
+    assert!(
+        out.contains("via cachebust"),
+        "the pass must name the winning leg:\n{out}"
+    );
+    assert!(
+        out.contains("cdn-cachebust-fetch.sh"),
+        "the operator must be told to arm the cachebust leg:\n{out}"
+    );
+    assert_fetch_dead(&rig, &out);
+}
+
+#[test]
+fn stalled_direct_pcm_gate_cannot_hang_the_gate() {
+    let rig = WaitLiveRig::new("pcmstall");
+    let curl = rig.curl(LIVE_BODY);
+    let started = std::time::Instant::now();
+    // The direct leg's ffmpeg (inside the real pcm-gate) has stalled on a
+    // connected-but-silent venue: same wedge class, other leg.
+    let (out, ok) = rig.run_with(
+        &curl,
+        "while :; do sleep 1; done\n",
+        "exit 0\n",
+        "exit 0\n",
+    );
+    assert!(!ok, "a stalled pcm-gate must not hang or arm:\n{out}");
+    assert!(out.contains("never passed"), "{out}");
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(40),
+        "the gate ran {:?} — the pcm leg was not bounded:\n{out}",
+        started.elapsed()
+    );
+}
+
+/// Lock in the property the AMAT postmortem initially mis-diagnosed: busting
+/// IS per-poll. Every playlist GET must carry a fresh `_cb=` value; a frozen
+/// CDN copy is only ever defeated by that uniqueness.
+#[test]
+fn every_poll_fetch_carries_a_fresh_cachebuster() {
+    let rig = WaitLiveRig::new("bustargv");
+    let log = rig.cwd.join("curl.log");
+    let counter = rig.cwd.join("curl.count");
+    let curl = rig.stub(
+        "curl-argv-stub",
+        &format!(
+            "echo \"$@\" >> '{log}'\n\
+             n=$(cat '{c}' 2>/dev/null || echo 0)\n\
+             n=$((n+1)); echo \"$n\" > '{c}'\n\
+             printf '%s\\n' \"$(printf '{body}' | sed \"s/{{N}}/$n/g\")\"\n",
+            log = log.display(),
+            c = counter.display(),
+            body = FROZEN_BODY,
+        ),
+    );
+    // Frozen tail → the gate spins to its deadline, giving us several polls.
+    let (out, ok) = rig.run(&curl, 0);
+    assert!(!ok, "frozen fixture must refuse:\n{out}");
+    let logged = std::fs::read_to_string(&log).unwrap_or_default();
+    let mut busters: Vec<&str> = logged
+        .split_whitespace()
+        .filter(|w| w.contains("_cb="))
+        .collect();
+    let total = busters.len();
+    assert!(
+        total >= 3,
+        "expected several busted fetches, saw {total}:\n{logged}"
+    );
+    busters.sort();
+    busters.dedup();
+    assert!(
+        busters.len() == total,
+        "cachebuster values repeated across polls ({} unique of {}):\n{logged}",
+        busters.len(),
+        total
     );
 }

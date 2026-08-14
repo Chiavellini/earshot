@@ -70,6 +70,9 @@ RUN_DIR_OVERRIDE=""
 WAIT_LIVE_TIMEOUT_SECS="${EARSHOT_WAIT_LIVE_TIMEOUT_SECS:-3600}"
 WAIT_LIVE_POLL_SECS="${EARSHOT_WAIT_LIVE_POLL_SECS:-15}"
 WAIT_LIVE_PCM_SECS="${EARSHOT_WAIT_LIVE_PCM_SECS:-6}"
+# Connect/probe headroom on top of PCM_SECS for each live_decodes leg; the
+# per-leg budget is PCM_SECS + this, clamped to the gate's remaining deadline.
+WAIT_LIVE_DECODE_GRACE_SECS="${EARSHOT_WAIT_LIVE_DECODE_GRACE_SECS:-20}"
 # Tool seams, in the pcm-gate.sh:48-51 idiom — the live gate has never had a
 # test, and an un-stubbable `curl` is why.
 CURL="${EARSHOT_CURL:-curl}"
@@ -565,9 +568,8 @@ trap 'handle_shutdown_signal INT' INT
 # Cache-busted fetch. One unique query param plus Cache-Control: no-cache is
 # the whole difference between seeing the encoder and seeing a CDN's frozen
 # copy of it (scripts/cdn-cachebust-fetch.sh:14-21, CBRS 2026-08-12).
-# NOTE the divergence from cdn-cachebust-fetch.sh:40, which busts with
-# `date +%s%N`: BSD date has no %N and prints a literal "N", so on this laptop
-# that token is CONSTANT and busts nothing. $RANDOM is unique on both.
+# `date +%s` + $RANDOM rather than %s%N: %N support varies across the date
+# builds this repo runs under, and epoch+RANDOM is unique on all of them.
 live_bust() { printf '%s%s_cb=%s%s' "$1" "$([[ "$1" == *\?* ]] && echo '&' || echo '?')" "$(date +%s)" "$RANDOM"; }
 live_fetch() { "$CURL" -fsSL --max-time 10 -H 'Cache-Control: no-cache' "$(live_bust "$1")" 2>/dev/null || true; }
 # Last non-comment, non-blank entry = the newest segment. Deliberately NOT
@@ -586,6 +588,37 @@ live_media_url() { # $1 = url, $2 = body
   [[ "$variant" != http* ]] && variant="${url%/*}/$variant"
   printf '%s' "$variant"
 }
+# Own-pgroup exec: setsid where it exists (the box), perl setpgrp on macOS —
+# same shape and provenance as preflight-nightly.sh's run_with_timeout;
+# neither timeout nor gtimeout exists on this laptop.
+live_pgroup() {
+  if command -v setsid >/dev/null 2>&1; then exec setsid "$@"; fi
+  exec perl -e 'setpgrp(0,0); exec @ARGV or die "exec failed: $!"' -- "$@"
+}
+
+# live_bounded <secs> <cmd…> → cmd's rc, or 124 when the watchdog fired.
+# The child runs in its OWN process group and a timeout kills the WHOLE group —
+# a bare `kill $pid` would orphan a child's own children (the AMAT wedge class).
+live_bounded() {
+  local secs="$1"; shift
+  local pid end
+  live_pgroup "$@" </dev/null & pid=$!
+  # Subshell-local: live_decodes only ever runs inside $( ), so this trap dies
+  # with the subshell and cannot leak into the launcher's own signal handling.
+  trap 'kill -TERM -- "-'"$pid"'" 2>/dev/null' EXIT INT TERM
+  end=$(( $(date +%s) + secs ))
+  while kill -0 "$pid" 2>/dev/null; do
+    if (( $(date +%s) >= end )); then
+      kill -TERM -- "-$pid" 2>/dev/null; sleep 2
+      kill -9 -- "-$pid" 2>/dev/null
+      wait "$pid" 2>/dev/null
+      return 124
+    fi
+    sleep 1
+  done
+  wait "$pid" 2>/dev/null
+}
+
 # Part 3: bytes that actually decode. pcm-gate.sh is the repo's authority here
 # (it is what caught YouTube's segment-layer bot-wall on HOOD 07-29). If it
 # fails we try ONCE more through the cache-busting fetcher, because on the CBRS
@@ -593,20 +626,55 @@ live_media_url() { # $1 = url, $2 = body
 # goes deaf on a stream that is still running. Refusing to arm there would just
 # trade C1's false LIVE for a false DEAD, so the fallback is part of the gate,
 # and it names the leg the operator must arm (C2b).
+#
+# EVERY leg here is bounded (AMAT 2026-08-13): the fetcher never exits by
+# design (a crash-proof pipe leg), bash command substitution waits for every
+# pipeline member, and the gate's deadline is a top-of-loop guard — so one
+# unbounded child wedged the gate forever while the stream ran. PCM bytes go
+# to a FILE because a background child inheriting this command substitution's
+# stdout would hold the pipe open after the function returns.
 live_decodes() { # $1 = media url; echoes the winning path, returns 0/1
-  if "$PCM_GATE" --kind hls --url "$1" --secs "$WAIT_LIVE_PCM_SECS" >/dev/null 2>&1; then
-    printf 'direct'; return 0
-  fi
+  local remaining budget rc
+  remaining=$(( LIVE_DEADLINE - $(date +%s) ))
+  (( remaining > 0 )) || return 1
+  budget=$(( WAIT_LIVE_PCM_SECS + WAIT_LIVE_DECODE_GRACE_SECS ))
+  (( budget > remaining )) && budget=$remaining
+
+  rc=0
+  live_bounded "$budget" "$PCM_GATE" --kind hls --url "$1" \
+      --secs "$WAIT_LIVE_PCM_SECS" >/dev/null 2>&1 || rc=$?
+  if (( rc == 0 )); then printf 'direct'; return 0; fi
+
   [[ -x "$CACHEBUST_FETCH" ]] || return 1
-  local urlfile="${STATE_DIR}/.live-gate-url" floor=$(( WAIT_LIVE_PCM_SECS * 32000 * 80 / 100 )) got
+  remaining=$(( LIVE_DEADLINE - $(date +%s) ))
+  (( remaining > 0 )) || return 1
+  budget=$(( WAIT_LIVE_PCM_SECS + WAIT_LIVE_DECODE_GRACE_SECS ))
+  (( budget > remaining )) && budget=$remaining
+
+  local urlfile="${STATE_DIR}/.live-gate-url" pcmfile="${STATE_DIR}/.live-gate-pcm"
+  local floor=$(( WAIT_LIVE_PCM_SECS * 32000 * 80 / 100 )) got pid end
   printf '%s\n' "$1" > "$urlfile"
-  # `|| true` is load-bearing: the fetcher loops forever by design and takes
-  # SIGPIPE when ffmpeg exits at -t, so under `set -o pipefail` this assignment
-  # would otherwise kill the launcher outright.
-  got=$({ "$CACHEBUST_FETCH" "$urlfile" 1 2>/dev/null \
-          | "${EARSHOT_FFMPEG:-ffmpeg}" -loglevel error -nostdin -i - -vn -f s16le -ac 1 -ar 16000 \
-              -t "$WAIT_LIVE_PCM_SECS" - 2>/dev/null | wc -c | tr -d ' '; } || true)
-  rm -f "$urlfile"
+  : > "$pcmfile"
+  live_pgroup bash -c '"$1" "$2" 1 2>/dev/null \
+      | "$3" -loglevel error -nostdin -i - -vn -f s16le -ac 1 -ar 16000 \
+          -t "$4" - 2>/dev/null' \
+      live-decode "$CACHEBUST_FETCH" "$urlfile" "${EARSHOT_FFMPEG:-ffmpeg}" \
+      "$WAIT_LIVE_PCM_SECS" > "$pcmfile" </dev/null & pid=$!
+  trap 'kill -TERM -- "-'"$pid"'" 2>/dev/null' EXIT INT TERM
+  end=$(( $(date +%s) + budget ))
+  while kill -0 "$pid" 2>/dev/null; do
+    got=$(wc -c < "$pcmfile" | tr -d ' ')
+    (( got >= floor )) && break
+    (( $(date +%s) >= end )) && break
+    sleep 1
+  done
+  # Unconditional group kill: on floor, on ffmpeg-done-fetcher-alive, and on
+  # timeout alike. No orphan fetcher may outlive the gate — an armed run's
+  # pipe leg is the ONLY thing allowed to hold this venue open.
+  kill -TERM -- "-$pid" 2>/dev/null; sleep 1; kill -9 -- "-$pid" 2>/dev/null
+  wait "$pid" 2>/dev/null
+  got=$(wc -c < "$pcmfile" | tr -d ' ')
+  rm -f "$urlfile" "$pcmfile"
   [[ "${got:-0}" -ge "$floor" ]] || return 1
   printf 'cachebust'
 }

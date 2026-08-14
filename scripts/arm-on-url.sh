@@ -95,13 +95,22 @@ if not account and plan.get("event_env_path"):
             account = match.group(1).replace("${HOME}", str(Path.home())).replace("$HOME", str(Path.home()))
 if not account:
     raise SystemExit("EARSHOT_ACCOUNT_ENV or pinned event env ACCOUNT_ENV must name the account profile")
+# $HOME/ tokens in the argv are portable by design (the AccessPlan is a
+# non-secret artifact); expand them HERE exactly as url_files above — the argv
+# is executed directly (no shell), so an unexpanded token would make the
+# resolver write to ./$HOME/... under the repo (latent on AMAT 2026-08-13).
+resolver_argv = [
+    str(Path.home() / x[len("$HOME/"):]) if x.startswith("$HOME/") else x
+    for x in resolver["argv"]
+]
 values = {
     "PLAN_EVENT": plan["event_id"],
     "PLAN_RUN_ID": plan["run_id"],
     "PLAN_CONFIG": str((repo / plan["config_path"]).resolve()),
     "PLAN_HOST": plan["execution_host_id"],
-    "RESOLVER_ARGV_JSON": json.dumps(resolver["argv"], separators=(",", ":")),
+    "RESOLVER_ARGV_JSON": json.dumps(resolver_argv, separators=(",", ":")),
     "RESOLVER_KIND": resolver["kind"],
+    "RESOLVER_DEADLINE_EPOCH": str(int(deadline.timestamp())),
     "URL_FILE": url_path,
     "PCM_KIND": kind,
     "ACCOUNT_ENV": str(Path(account).expanduser().resolve()),
@@ -128,8 +137,12 @@ PINNED_BIN="$STATE_DIR/earshot-pinned"
   exit 1
 }
 
-# Run exactly the AccessPlan resolver argv. No eval, filename map, resolver
-# guess, or manual escalation loop exists here. static-public has empty argv.
+# Run exactly the AccessPlan resolver argv. No eval, filename map, or resolver
+# guess exists here. static-public has empty argv. A failure RETRIES on a
+# bounded schedule until the AccessPlan's own resolver deadline — AMAT
+# 2026-08-13 died single-shot at T-75 while the fix (register, or a later
+# manifest mint) was minutes of operator time away; the deadline, not one
+# attempt, is the contract.
 if [[ "$RESOLVER_KIND" != static-public ]]; then
   RESOLVER_TMP=$(mktemp "${TMPDIR:-/tmp}/earshot-resolver-argv.XXXXXX")
   python3 -c '
@@ -142,12 +155,34 @@ for x in json.loads(sys.argv[1]): print(x)
   done < "$RESOLVER_TMP"
   rm -f -- "$RESOLVER_TMP"
   [[ "${#RESOLVER_ARGV[@]}" -gt 0 ]] || { echo "REFUSED: resolver argv is empty" >&2; exit 1; }
-  echo "RESOLVER: executing AccessPlan argv (${RESOLVER_ARGV[0]})"
-  if ! "${RESOLVER_ARGV[@]}"; then
-    page "$PLAN_EVENT NOT ARMED — resolver failed" \
-      "AccessPlan resolver exited nonzero for $PLAN_RUN_ID. No capture-ready receipt or runtime was created."
-    exit 3
-  fi
+  RESOLVER_RETRY_SECS="${EARSHOT_RESOLVER_RETRY_SECS:-30}"
+  RESOLVER_PAGED=0 RESOLVER_WALL_PAGED=0
+  while :; do
+    echo "RESOLVER: executing AccessPlan argv (${RESOLVER_ARGV[0]}) at $(date -u +%FT%TZ)"
+    RC=0
+    "${RESOLVER_ARGV[@]}" || RC=$?
+    (( RC == 0 )) && break
+    NOW=$(date +%s)
+    if (( NOW >= RESOLVER_DEADLINE_EPOCH )); then
+      page "$PLAN_EVENT NOT ARMED — resolver failed" \
+        "AccessPlan resolver exhausted its deadline for $PLAN_RUN_ID (last exit $RC). No capture-ready receipt or runtime was created."
+      exit 3
+    fi
+    if (( RC == 5 )); then
+      # browser-resolve's wall verdict: a human can fix this INSIDE the window
+      # (register / repair the profile) and the next attempt succeeds.
+      if (( ! RESOLVER_WALL_PAGED )); then
+        RESOLVER_WALL_PAGED=1
+        page "$PLAN_EVENT resolver BLOCKED BY REGISTRATION WALL — retrying" \
+          "The venue player is behind a registration/login form. Fix it now (register in the profile / standing identity); the resolver retries every ${RESOLVER_RETRY_SECS}s until $(date -u -r "$RESOLVER_DEADLINE_EPOCH" +%FT%TZ 2>/dev/null || echo "the AccessPlan deadline")."
+      fi
+    elif (( ! RESOLVER_PAGED )); then
+      RESOLVER_PAGED=1
+      page "$PLAN_EVENT resolver failed (exit $RC) — retrying" \
+        "AccessPlan resolver exited $RC; retrying every ${RESOLVER_RETRY_SECS}s until $(date -u -r "$RESOLVER_DEADLINE_EPOCH" +%FT%TZ 2>/dev/null || echo "the AccessPlan deadline")."
+    fi
+    sleep "$RESOLVER_RETRY_SECS"
+  done
 fi
 
 PCM_PROOF="$RUN_DIR/control/pcm-proof.json"

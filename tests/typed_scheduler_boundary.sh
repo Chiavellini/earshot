@@ -351,8 +351,11 @@ assert p["ProgramArguments"][1:] == ["--run-dir", str(__import__('pathlib').Path
 assert len([x for x in p["ProgramArguments"] if x.endswith("arm-on-url.sh")]) == 1
 assert set(p["EnvironmentVariables"]) == {
   "EARSHOT_ACCOUNT_ENV", "EARSHOT_EXECUTION_HOST", "EARSHOT_REPO",
-  "EARSHOT_RUN_DIR", "EARSHOT_RUN_PLAN_SHA256"
+  "EARSHOT_RUN_DIR", "EARSHOT_RUN_PLAN_SHA256", "PATH"
 }
+# AMAT 2026-08-13: without a pinned PATH, launchd resolves python3 to Apple's
+# 3.9 (no tomllib/playwright) and the fire path dies before the resolver runs.
+assert p["EnvironmentVariables"]["PATH"] == "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 assert p["EnvironmentVariables"]["EARSHOT_ACCOUNT_ENV"] == str(
   (__import__('pathlib').Path.home() / ".earshot" / "account.env").resolve()
 )
@@ -420,9 +423,127 @@ if "$REPO/scripts/arm-on-url.sh" --run-dir "$WEB_RUN" \
 fi
 [[ "$(wc -l < "$LAUNCH_COUNT" | tr -d ' ')" == 1 ]]
 
+# ── resolver retry-until-deadline (AMAT 2026-08-13) ─────────────────────────
+# The resolver used to be single-shot: one nonzero exit at T-75 was a total
+# miss even when the fix (register, or a manifest minted at call start) was
+# minutes away. It must now retry inside the AccessPlan deadline, and the
+# portable $HOME/ tokens in the bound argv must reach the resolver EXPANDED.
+cat > "$REPO/configs/retry-webcast.toml" <<EOF
+[event]
+id = "KXEARNINGSMENTIONSCHEDULER-TEST-RETRY"
+starts_at = "$START"
+[[sources]]
+kind = "pipe"
+cmd = ["ffmpeg", "-i", "\$HOME/retry-stream.url"]
+[[keywords]]
+market_ticker = "KXEARNINGSMENTIONSCHEDULER-TEST-FOO"
+phrase = "foo"
+EOF
+cat > "$REPO/configs/retry-webcast.env" <<EOF
+CONFIG_PATH="configs/retry-webcast.toml"
+EVENT_DATE="$DATE"
+ACCOUNT_ENV="\$HOME/.earshot/account.env"
+EOF
+eventctl init --config configs/retry-webcast.toml \
+  --event-env configs/retry-webcast.env --host-id "$HOST_ID" \
+  --account-fingerprint "$FP"
+RETRY_RUN=$(find "$REPO/var/runs/KXEARNINGSMENTIONSCHEDULER-TEST-RETRY" \
+  -mindepth 1 -maxdepth 1 -type d -print -quit)
+for transition in prepared access_acquired study_completed preflight_passed; do
+  eventctl record --run-dir "$RETRY_RUN" --transition "$transition"
+done
+cat > "$REPO/scripts/flaky-resolver.sh" <<SH
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "\$@" > "$STUB/flaky-argv"
+n=\$(cat "\$HOME/.flaky-count" 2>/dev/null || echo 0)
+n=\$((n+1)); echo "\$n" > "\$HOME/.flaky-count"
+(( n >= 3 )) || exit 1
+tmp="\$HOME/.retry-stream.url.\$\$"
+printf 'https://media.example.invalid/live/master.m3u8\n' > "\$tmp"
+mv -f -- "\$tmp" "\$HOME/retry-stream.url"
+SH
+chmod +x "$REPO/scripts/flaky-resolver.sh"
+EARSHOT_REPO="$REPO" python3 "$REPO/scripts/access-plan.py" bind \
+  --run-dir "$RETRY_RUN" --access-mode public --resolver-kind external-command \
+  --resolver-argv-json '["scripts/flaky-resolver.sh","--out","$HOME/retry-stream.url"]' \
+  --url-file '$HOME/retry-stream.url' >/dev/null
+eventctl record --run-dir "$RETRY_RUN" --transition scheduled
+RETRY_EVENT=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["event_id"])' \
+  "$RETRY_RUN/control/run-plan.json")
+mkdir -p "$REPO/state/$RETRY_EVENT"
+printf 'fixture binary\n' > "$REPO/state/$RETRY_EVENT/earshot-pinned"
+chmod +x "$REPO/state/$RETRY_EVENT/earshot-pinned"
+RETRY_SHA=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["plan_sha256"])' \
+  "$RETRY_RUN/control/run-plan.json")
+EARSHOT_RUN_PLAN_SHA256="$RETRY_SHA" EARSHOT_RESOLVER_RETRY_SECS=1 \
+  "$REPO/scripts/arm-on-url.sh" --run-dir "$RETRY_RUN" \
+    --i-am-live --fillable --secs 6 >/dev/null
+[[ "$(cat "$TMP/home/.flaky-count")" == 3 ]]  # failed twice, succeeded third
+[[ "$(wc -l < "$LAUNCH_COUNT" | tr -d ' ')" == 2 ]]
+# The argv reached the resolver with $HOME expanded, not as a literal token.
+# (normpath: $TMPDIR carries a trailing slash, Path.home() collapses it.)
+EXPANDED_URL=$(python3 -c 'import os,sys;print(os.path.normpath(sys.argv[1]))' \
+  "$TMP/home/retry-stream.url")
+grep -qx "$EXPANDED_URL" "$STUB/flaky-argv"
+! grep -q '\$HOME' "$STUB/flaky-argv"
+
+# An always-failing resolver must exhaust the deadline and exit 3 — bounded,
+# not infinite, and never launched.
+cat > "$REPO/configs/retry2-webcast.toml" <<EOF
+[event]
+id = "KXEARNINGSMENTIONSCHEDULER-TEST-RETRYB"
+starts_at = "$START"
+[[sources]]
+kind = "pipe"
+cmd = ["ffmpeg", "-i", "\$HOME/retry2-stream.url"]
+[[keywords]]
+market_ticker = "KXEARNINGSMENTIONSCHEDULER-TEST-FOO"
+phrase = "foo"
+EOF
+cat > "$REPO/configs/retry2-webcast.env" <<EOF
+CONFIG_PATH="configs/retry2-webcast.toml"
+EVENT_DATE="$DATE"
+ACCOUNT_ENV="\$HOME/.earshot/account.env"
+EOF
+eventctl init --config configs/retry2-webcast.toml \
+  --event-env configs/retry2-webcast.env --host-id "$HOST_ID" \
+  --account-fingerprint "$FP"
+RETRY2_RUN=$(find "$REPO/var/runs/KXEARNINGSMENTIONSCHEDULER-TEST-RETRYB" \
+  -mindepth 1 -maxdepth 1 -type d -print -quit)
+for transition in prepared access_acquired study_completed preflight_passed; do
+  eventctl record --run-dir "$RETRY2_RUN" --transition "$transition"
+done
+cat > "$REPO/scripts/dead-resolver.sh" <<'SH'
+#!/usr/bin/env bash
+exit 1
+SH
+chmod +x "$REPO/scripts/dead-resolver.sh"
+NEAR_DEADLINE=$(python3 -c 'import datetime as dt;print((dt.datetime.now(dt.timezone.utc)+dt.timedelta(seconds=4)).strftime("%Y-%m-%dT%H:%M:%SZ"))')
+EARSHOT_REPO="$REPO" python3 "$REPO/scripts/access-plan.py" bind \
+  --run-dir "$RETRY2_RUN" --access-mode public --resolver-kind external-command \
+  --resolver-argv-json '["scripts/dead-resolver.sh"]' \
+  --url-file '$HOME/retry2-stream.url' --deadline-utc "$NEAR_DEADLINE" >/dev/null
+eventctl record --run-dir "$RETRY2_RUN" --transition scheduled
+RETRY2_EVENT=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["event_id"])' \
+  "$RETRY2_RUN/control/run-plan.json")
+mkdir -p "$REPO/state/$RETRY2_EVENT"
+printf 'fixture binary\n' > "$REPO/state/$RETRY2_EVENT/earshot-pinned"
+chmod +x "$REPO/state/$RETRY2_EVENT/earshot-pinned"
+RETRY2_SHA=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["plan_sha256"])' \
+  "$RETRY2_RUN/control/run-plan.json")
+RC2=0
+EARSHOT_RUN_PLAN_SHA256="$RETRY2_SHA" EARSHOT_RESOLVER_RETRY_SECS=1 \
+  "$REPO/scripts/arm-on-url.sh" --run-dir "$RETRY2_RUN" \
+    --i-am-live --fillable --secs 6 >/dev/null 2>&1 || RC2=$?
+[[ "$RC2" == 3 ]]
+[[ "$(wc -l < "$LAUNCH_COUNT" | tr -d ' ')" == 2 ]]  # no new launch
+
 # Neither fire-time supervisor owns a process-group KILL/re-arm loop.
-! rg -q 'kill[[:space:]]+-KILL|kill[[:space:]]+--[[:space:]]+-|kill[[:space:]]+-TERM[[:space:]]+-' \
+# (grep -E, not rg: ripgrep is absent on some hosts and a missing tool must
+# never silently pass an assertion.)
+! grep -Eq 'kill[[:space:]]+-KILL|kill[[:space:]]+--[[:space:]]+-|kill[[:space:]]+-TERM[[:space:]]+-' \
   "$REPO/scripts/arm-on-url.sh"
-[[ "$(rg -c 'exec .*arm-on-url\.sh' "$ROOT/scripts/webcast-autorun.sh")" == 1 ]]
+[[ "$(grep -Ec 'exec .*arm-on-url\.sh' "$ROOT/scripts/webcast-autorun.sh")" == 1 ]]
 
 echo "typed_scheduler_boundary: PASS"

@@ -417,6 +417,10 @@ def validate_pcm_proof(
         raise Refusal("PCM proof does not establish the declared 16kHz mono byte floor")
     continuity = proof.get("continuity")
     source_kind = proof.get("source_kind")
+    # Field-name note: `distinct_media_sequences` is kept for schema stability,
+    # but since 2026-08-13 pcm-gate feeds it the distinct playlist TAIL count
+    # (falling back to media-sequence only when no segment lines exist) — the
+    # CBRS/AMAT CDN class freezes #EXT-X-MEDIA-SEQUENCE while still appending.
     if source_kind == "hls":
         if continuity != {
             "status": "advanced",

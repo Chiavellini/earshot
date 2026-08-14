@@ -18,6 +18,7 @@ Read-only (one GET per poll). Usage:
     scripts/pdt-log.py <m3u8-url> [poll_ms=250] [secs=180] > pdt.jsonl
 """
 
+import itertools
 import json
 import re
 import sys
@@ -26,11 +27,42 @@ import urllib.request
 
 UA = "Mozilla/5.0 (X11; Linux x86_64) earshot-pdt-log/1"
 
+# CloudFront on the media-server venue class serves a FROZEN playlist body to
+# any client that re-fetches the same URL string, even while the encoder keeps
+# appending (CBRS 2026-08-12; AMAT 2026-08-13 — pcm-gate refused a live stream
+# on this exact blindness). A unique query param per request is the defence;
+# the counter keeps two same-nanosecond calls distinct.
+_bust_counter = itertools.count()
+
+
+def busted(url: str) -> str:
+    sep = "&" if "?" in url else "?"
+    return f"{url}{sep}_cb={time.time_ns()}{next(_bust_counter)}"
+
 
 def fetch(url: str) -> str:
-    req = urllib.request.Request(url, headers={"User-Agent": UA})
+    req = urllib.request.Request(
+        busted(url),
+        headers={
+            "User-Agent": UA,
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+        },
+    )
     with urllib.request.urlopen(req, timeout=5) as r:
         return r.read().decode("utf-8", "replace")
+
+
+def tail_segment(body: str) -> str | None:
+    """Last non-comment, non-blank line = newest segment. The advance signal
+    cdn-cachebust-fetch.sh and the launch-webcast live gate use — deliberately
+    NOT #EXT-X-MEDIA-SEQUENCE, which this CDN class freezes while appending."""
+    tail = None
+    for ln in body.splitlines():
+        ln = ln.strip()
+        if ln and not ln.startswith("#"):
+            tail = ln
+    return tail
 
 
 def resolve_media(url: str) -> str:
@@ -82,6 +114,7 @@ def main() -> None:
             "n_segments": nseg,
             "last_pdt": pdts[-1] if pdts else None,
             "last_extinf": extinfs[-1] if extinfs else None,
+            "tail": tail_segment(body),
         }
         # Only interesting transitions need the full record; but a dense log is
         # cheap and lets you reconstruct exactly WHEN a new segment appeared.

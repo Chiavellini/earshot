@@ -29,7 +29,10 @@ invents a URL: if nothing is observed, it exits nonzero and pages, because the
 failure this script exists to prevent is a SILENT one.
 
 Exit 0 only when a manifest was observed AND written. 3 = deadline with
-nothing seen. 4 = page never loaded. 2 = usage.
+nothing seen. 4 = page never loaded. 5 = a registration/login wall is blocking
+the player (paged IMMEDIATELY — on AMAT 2026-08-13 this script watched a
+registration form in silence for 110 minutes; a wall is a page-worthy state
+the second it is seen, and it stays a human step). 2 = usage.
 Node: control.acquire (compatibility surface: $HOME/<slug>-stream.url).
 """
 import argparse
@@ -64,6 +67,63 @@ def looks_master(url, body):
     return bool(MASTER_HINT.search(url))
 
 
+# In-page probe: visible form/input/media census for one frame. Kept dumb on
+# purpose — the DECISION lives in is_wall(), which is pure and self-tested.
+WALL_PROBE_JS = """() => {
+  const vis = el => {
+    const r = el.getBoundingClientRect();
+    const s = getComputedStyle(el);
+    return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none';
+  };
+  const count = sel => Array.from(document.querySelectorAll(sel)).filter(vis).length;
+  return {
+    pw: count('input[type=password]'),
+    email: count('input[type=email]'),
+    text: count('form input[type=text], form input:not([type])'),
+    forms: count('form'),
+    media: document.querySelectorAll('video, audio').length,
+  };
+}"""
+
+
+def is_wall(sig):
+    """A visible password field, or a visible form asking for email/text with
+    no media element on the page, is a registration/login wall (the AMAT
+    2026-08-13 shape: First name / Last name / E-mail / Company, no player)."""
+    return sig.get("pw", 0) > 0 or (
+        sig.get("forms", 0) > 0
+        and (sig.get("email", 0) > 0 or sig.get("text", 0) >= 2)
+        and sig.get("media", 0) == 0
+    )
+
+
+def probe_wall(pg):
+    """Merge the census across the top frame and every child frame (the
+    Ford/OpenExchange class embeds the player — and its wall — in an iframe)."""
+    total = {"pw": 0, "email": 0, "text": 0, "forms": 0, "media": 0}
+    for frame in pg.frames:
+        try:
+            sig = frame.evaluate(WALL_PROBE_JS)
+            for k in total:
+                total[k] += int(sig.get(k, 0))
+        except Exception:
+            continue
+    return total
+
+
+def try_click_play(pg):
+    for sel in ["text=/listen|play|launch|join|webcast|audio/i",
+                "button[aria-label*='lay' i]", ".vjs-big-play-button", "video"]:
+        try:
+            el = pg.locator(sel).first
+            if el.count() and el.is_visible():
+                el.click(timeout=4000)
+                print(f"CLICKED {sel}", flush=True)
+                pg.wait_for_timeout(2500)
+        except Exception:
+            pass
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--slug", required=True)
@@ -86,6 +146,15 @@ def main():
         assert not MANIFEST_RE.search("https://x/style.css")
         assert looks_master("https://x/master.m3u8", "#EXT-X-STREAM-INF:BANDWIDTH=1")
         assert not looks_master("https://x/media.m3u8", "#EXTINF:6.0,")
+        # Wall verdicts (AMAT 2026-08-13 fixtures): the registration form
+        # (name/email/company, no player) IS a wall; a page with a form AND a
+        # media element (a consent overlay next to a player) is NOT; a lone
+        # password field always is.
+        assert is_wall({"pw": 0, "email": 1, "text": 3, "forms": 1, "media": 0})
+        assert is_wall({"pw": 1, "email": 0, "text": 0, "forms": 0, "media": 1})
+        assert not is_wall({"pw": 0, "email": 1, "text": 1, "forms": 1, "media": 1})
+        assert not is_wall({"pw": 0, "email": 0, "text": 1, "forms": 1, "media": 0})
+        assert not is_wall({"pw": 0, "email": 0, "text": 0, "forms": 0, "media": 0})
         print("browser-resolve: self-test PASS")
         return 0
 
@@ -134,17 +203,13 @@ def main():
             return 4
 
         if a.click_play:
-            for sel in ["text=/listen|play|launch|join|webcast|audio/i",
-                        "button[aria-label*='lay' i]", ".vjs-big-play-button", "video"]:
-                try:
-                    el = pg.locator(sel).first
-                    if el.count() and el.is_visible():
-                        el.click(timeout=4000)
-                        print(f"CLICKED {sel}", flush=True)
-                        pg.wait_for_timeout(2500)
-                except Exception:
-                    pass
+            try_click_play(pg)
 
+        wall_hit = False
+        started = time.time()
+        last_wall_check = 0.0
+        last_click = time.time()
+        last_beat = time.time()
         while time.time() < deadline and not any(found.values()):
             pg.wait_for_timeout(3000)
             if found:      # a variant is in hand; give the master a short grace
@@ -152,11 +217,46 @@ def main():
                 while time.time() < grace and not any(found.values()):
                     pg.wait_for_timeout(2000)
                 break
+            now = time.time()
+            # A wall is a page-worthy state the moment it is seen — never a
+            # quiet one (AMAT 2026-08-13: 110 silent minutes at a form).
+            # First check right away, then every 60 s in case one is minted
+            # later by the page.
+            if last_wall_check == 0.0 or now - last_wall_check >= 60:
+                last_wall_check = now
+                if is_wall(probe_wall(pg)):
+                    wall_hit = True
+                    break
+            if a.click_play and now - last_click >= 30:
+                last_click = now
+                try_click_play(pg)
+            if now - last_beat >= 300:
+                print(f"WAITING {int(now - started)}/{a.wait_secs}s — no manifest yet",
+                      flush=True)
+                last_beat = now
 
         try:
             (browser or ctx).close()
         except Exception:
             pass
+
+    if wall_hit and not found:
+        print(f"WALL-DETECTED: {a.slug} — a registration/login form is blocking "
+              f"the player", file=sys.stderr)
+        if not a.no_notify:
+            if a.profile:
+                page(f"{a.slug} RESOLVER BLOCKED BY WALL (profile session dead)",
+                     f"{a.url} shows a registration/login form even with profile "
+                     f"{a.profile} — the saved session is missing or expired. "
+                     f"Re-register in that profile NOW, or manual: DevTools m3u8 "
+                     f"→ printf '%s' '<URL>' > {out}")
+            else:
+                page(f"{a.slug} RESOLVER BLOCKED BY REGISTRATION WALL",
+                     f"{a.url} gates its player behind a form and this AccessPlan "
+                     f"has no session. Register NOW in a browser (standing identity), "
+                     f"then manual: DevTools m3u8 → printf '%s' '<URL>' > {out}. "
+                     f"For next time: bind registered-session + --profile.")
+        return 5
 
     if not found:
         print(f"NO-MANIFEST: {a.slug} — nothing manifest-shaped in {a.wait_secs}s", file=sys.stderr)

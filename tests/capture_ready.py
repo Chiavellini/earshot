@@ -323,6 +323,85 @@ class CaptureReadyTest(unittest.TestCase):
         self.assertEqual(capture.returncode, 0, capture.stderr)
         self.assertEqual(self.transitions(run).count("capture_ready"), 1)
 
+    def test_frozen_media_sequence_with_advancing_tail_passes(self):
+        """AMAT 2026-08-13: this CDN class freezes #EXT-X-MEDIA-SEQUENCE while
+        the encoder keeps appending. The tail segment line is the advance
+        signal; a frozen sequence header must not fail a moving playlist."""
+        run, plan, _event_env, _port = self.make_run("webcast")
+        _portable, url_file = self.webcast_url(plan)
+        ffmpeg = Path(self.temp.name) / "ffmpeg-tailadv"
+        ffmpeg.write_text("#!/bin/sh\nhead -c 192000 /dev/zero\n")
+        ffmpeg.chmod(0o755)
+        pdt = Path(self.temp.name) / "pdt-tailadv.py"
+        pdt.write_text(
+            'print(\'{"media_sequence": 101, "tail": "seg101.ts"}\')\n'
+            'print(\'{"media_sequence": 101, "tail": "seg102.ts"}\')\n'
+        )
+        proof = run / "control" / "pcm-proof.json"
+        gate = self.cli(
+            self.repo / "scripts" / "pcm-gate.sh",
+            "--kind",
+            "hls",
+            "--url-file",
+            url_file,
+            "--run-dir",
+            run,
+            "--proof-json",
+            proof,
+            env={
+                **self.env,
+                "EARSHOT_FFMPEG": str(ffmpeg),
+                "EARSHOT_PDT_LOG": str(pdt),
+                "EARSHOT_CURL": str(
+                    self.curl_stub("curl-tailadv", self.LIVE_MANIFEST)
+                ),
+                "PCM_GATE_SEQ_SECS": "1",
+            },
+        )
+        self.assertEqual(gate.returncode, 0, gate.stderr + gate.stdout)
+        pcm = json.loads(proof.read_text())
+        self.assertEqual(pcm["continuity"]["status"], "advanced")
+        self.assertGreaterEqual(pcm["continuity"]["distinct_media_sequences"], 2)
+
+    def test_advancing_sequence_with_frozen_tail_fails(self):
+        """When segment lines exist, the tail is authoritative: a sequence
+        header that ticks over a playlist whose newest segment never changes
+        is a stalled stream wearing a live header."""
+        run, plan, _event_env, _port = self.make_run("webcast")
+        _portable, url_file = self.webcast_url(plan)
+        ffmpeg = Path(self.temp.name) / "ffmpeg-tailfrozen"
+        ffmpeg.write_text("#!/bin/sh\nhead -c 192000 /dev/zero\n")
+        ffmpeg.chmod(0o755)
+        pdt = Path(self.temp.name) / "pdt-tailfrozen.py"
+        pdt.write_text(
+            'print(\'{"media_sequence": 101, "tail": "seg101.ts"}\')\n'
+            'print(\'{"media_sequence": 102, "tail": "seg101.ts"}\')\n'
+        )
+        proof = run / "control" / "pcm-proof.json"
+        gate = self.cli(
+            self.repo / "scripts" / "pcm-gate.sh",
+            "--kind",
+            "hls",
+            "--url-file",
+            url_file,
+            "--run-dir",
+            run,
+            "--proof-json",
+            proof,
+            env={
+                **self.env,
+                "EARSHOT_FFMPEG": str(ffmpeg),
+                "EARSHOT_PDT_LOG": str(pdt),
+                "EARSHOT_CURL": str(
+                    self.curl_stub("curl-tailfrozen", self.LIVE_MANIFEST)
+                ),
+                "PCM_GATE_SEQ_SECS": "1",
+            },
+        )
+        self.assertEqual(gate.returncode, 1, gate.stderr + gate.stdout)
+        self.assertIn("tail never advanced", gate.stderr)
+        self.assertFalse(proof.exists())
+
     def test_hls_without_continuity_cannot_publish_proof(self):
         run, plan, _event_env, _port = self.make_run("webcast")
         _portable, url_file = self.webcast_url(plan)

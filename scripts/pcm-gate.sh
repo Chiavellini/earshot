@@ -214,12 +214,16 @@ PY
 # it, because arm-on-url.sh — the unattended one — gates HERE and never passes
 # --wait-live at all.
 if [[ "$KIND" == "hls" ]]; then
-  PL_BODY=$("$CURL" -fsSL --max-time 10 -H 'Cache-Control: no-cache' "$URL" 2>/dev/null || true)
+  # Cache-busted: the no-cache HEADER alone is ignored by the CloudFront class
+  # that froze CBRS 26AUG12 and AMAT 26AUG13; only a unique query param reaches
+  # the origin (mirrors launch-webcast.sh live_bust / cdn-cachebust-fetch.sh).
+  pg_bust() { printf '%s%s_cb=%s%s' "$1" "$([[ "$1" == *\?* ]] && echo '&' || echo '?')" "$(date +%s)" "$RANDOM"; }
+  PL_BODY=$("$CURL" -fsSL --max-time 10 -H 'Cache-Control: no-cache' "$(pg_bust "$URL")" 2>/dev/null || true)
   if grep -q 'EXT-X-STREAM-INF' <<<"$PL_BODY"; then
     PL_VARIANT=$(grep -v '^#' <<<"$PL_BODY" | grep -v '^[[:space:]]*$' | head -1 | tr -d '\r')
     if [[ -n "$PL_VARIANT" ]]; then
       [[ "$PL_VARIANT" != http* ]] && PL_VARIANT="${URL%/*}/$PL_VARIANT"
-      PL_BODY=$("$CURL" -fsSL --max-time 10 -H 'Cache-Control: no-cache' "$PL_VARIANT" 2>/dev/null || true)
+      PL_BODY=$("$CURL" -fsSL --max-time 10 -H 'Cache-Control: no-cache' "$(pg_bust "$PL_VARIANT")" 2>/dev/null || true)
     fi
   fi
   if grep -q 'EXT-X-ENDLIST' <<<"$PL_BODY"; then
@@ -240,10 +244,28 @@ if [[ "$KIND" == "youtube" ]]; then
           | "$FFMPEG" -loglevel error -i - -vn -f s16le -ac 1 -ar 16000 -t "$SECS" - 2>>"$ERR" \
           | wc -c | tr -d ' ')
 else
-  BYTES=$("$FFMPEG" -loglevel error -fflags nobuffer -flags low_delay \
-            -probesize 200000 -analyzeduration 3000000 -live_start_index -1 \
-            -i "$URL" -vn -f s16le -ac 1 -ar 16000 -t "$SECS" - 2>"$ERR" \
-          | wc -c | tr -d ' ')
+  # Bounded (AMAT 2026-08-13 wedge class): ffmpeg with no I/O timeout blocks
+  # forever on a connected-but-stalled venue, and this gate runs on unattended
+  # paths (arm-on-url.sh). Own-pgroup child + watchdog; PCM bytes go to a file
+  # so the count survives the kill.
+  PCM_TMP=$(mktemp "${TMPDIR:-/tmp}/earshot-pcm-bytes.XXXXXX")
+  if command -v setsid >/dev/null 2>&1; then PG=(setsid); else PG=(perl -e 'setpgrp(0,0); exec @ARGV or die "exec failed: $!"' --); fi
+  "${PG[@]}" "$FFMPEG" -loglevel error -fflags nobuffer -flags low_delay \
+      -probesize 200000 -analyzeduration 3000000 -live_start_index -1 \
+      -i "$URL" -vn -f s16le -ac 1 -ar 16000 -t "$SECS" - \
+      > "$PCM_TMP" 2>"$ERR" </dev/null & PCM_PID=$!
+  PCM_END=$(( $(date +%s) + SECS + ${PCM_GATE_DECODE_GRACE_SECS:-20} ))
+  while kill -0 "$PCM_PID" 2>/dev/null; do
+    if (( $(date +%s) >= PCM_END )); then
+      kill -TERM -- "-$PCM_PID" 2>/dev/null; sleep 2
+      kill -9 -- "-$PCM_PID" 2>/dev/null
+      break
+    fi
+    sleep 1
+  done
+  wait "$PCM_PID" 2>/dev/null || true
+  BYTES=$(wc -c < "$PCM_TMP" | tr -d ' ')
+  rm -f "$PCM_TMP"
 fi
 BYTES="${BYTES:-0}"
 
@@ -283,10 +305,21 @@ fi
 
 SEQ_SECS="${PCM_GATE_SEQ_SECS:-12}"
 SEQ_JSON=$("$PYTHON" "$PDT_LOG" "$URL" 1000 "$SEQ_SECS" 2>"$ERR" || true)
-SEQS=$(printf '%s\n' "$SEQ_JSON" | sed -n 's/.*"media_sequence": *\([0-9]*\).*/\1/p' | sort -un | wc -l | tr -d ' ')
-POLLS=$(printf '%s\n' "$SEQ_JSON" | grep -c media_sequence || true)
+# Advance = distinct TAIL SEGMENT lines, not #EXT-X-MEDIA-SEQUENCE: the CBRS/
+# AMAT CDN class freezes that header while the encoder keeps appending, which
+# is exactly why launch-webcast.sh's live gate rejects it as a signal. pdt-log
+# emits both; the sequence count remains as a fallback for playlists that list
+# no segment lines at all. The proof field name distinct_media_sequences is
+# kept for schema stability — since 2026-08-13 it carries the distinct-advance
+# count (tails when available), and capture-ready.py documents the same.
+SEQS=$(printf '%s\n' "$SEQ_JSON" | sed -n 's/.*"tail": *"\([^"]*\)".*/\1/p' | sort -u | wc -l | tr -d ' ')
+POLLS=$(printf '%s\n' "$SEQ_JSON" | grep -c '"tail"' || true)
+if [[ "${SEQS:-0}" -eq 0 ]]; then
+  SEQS=$(printf '%s\n' "$SEQ_JSON" | sed -n 's/.*"media_sequence": *\([0-9]*\).*/\1/p' | sort -un | wc -l | tr -d ' ')
+  POLLS=$(printf '%s\n' "$SEQ_JSON" | grep -c media_sequence || true)
+fi
 
-echo "seq    : ${SEQS:-0} distinct MEDIA-SEQUENCE value(s) across ${POLLS:-0} poll(s) in ${SEQ_SECS}s"
+echo "seq    : ${SEQS:-0} distinct playlist tail state(s) across ${POLLS:-0} poll(s) in ${SEQ_SECS}s"
 if [[ "${SEQS:-0}" -ge 2 ]]; then
   publish_proof advanced "$SEQS" "$POLLS" "$SEQ_SECS" || exit 1
   echo "PCM-GATE PASS: $LABEL decoded $BYTES/$EXPECT bytes AND its playlist is advancing"
@@ -308,8 +341,8 @@ if [[ "${POLLS:-0}" -eq 0 ]]; then
   exit 0
 fi
 
-echo "PCM-GATE FAIL: $LABEL decoded $BYTES bytes but MEDIA-SEQUENCE never advanced" >&2
-echo ">>> over ${SEQ_SECS}s / ${POLLS} polls the playlist stood still. This is the" >&2
-echo ">>> AAOI-26AUG06 shape: audio decodes from a buffer while the stream behind" >&2
-echo ">>> it is already dead, so the arm fires and loses every leg seconds later." >&2
+echo "PCM-GATE FAIL: $LABEL decoded $BYTES bytes but the playlist tail never advanced" >&2
+echo ">>> over ${SEQ_SECS}s / ${POLLS} polls (cache-busted) the playlist stood still." >&2
+echo ">>> This is the AAOI-26AUG06 shape: audio decodes from a buffer while the stream" >&2
+echo ">>> behind it is already dead, so the arm fires and loses every leg seconds later." >&2
 exit 1
