@@ -33,9 +33,26 @@ the box ledger with the laptop's shorter prefix.
 
 `scripts/deploy-box.sh --check-only` must show no run-affecting differences
 (`src/`, `scripts/`, `configs/`, `deploy/`, `tests/`, `Cargo.toml`,
-`Cargo.lock`). `~/ear` is an rsync'd copy, not a git checkout — provenance is
-whatever the laptop was at last deploy; preflight records
-`commit=UNKNOWN-NOT-A-GIT-CHECKOUT` and WARNs.
+`Cargo.lock`). `~/ear` is an rsync'd copy, not a git checkout.
+
+**Provenance is no longer unknown (2026-08-13).** After rsync and the Linux-ORT
+invariant, `deploy-box.sh` atomically writes `~/ear/DEPLOYED-FROM` (mode 444)
+with `commit=`, `dirty_paths=`, `deployed_utc=`. Preflight reads it and records
+`provenance=DEPLOYED-FROM` in `pinned.info` instead of the old
+`commit=UNKNOWN-NOT-A-GIT-CHECKOUT` WARN. Measured on the 26AUG14 box drill:
+
+```
+provenance=DEPLOYED-FROM
+commit=b0c4210b295daecf03089153a2df8afe5ee819cb
+dirty_paths=0
+deployed_utc=2026-08-14T15:58:14Z
+```
+
+`dirty_paths` is the number to read. Deploy from a clean tree and a box pin
+cites an immutable commit; deploy dirty and the pin's provenance is only as good
+as that count (the HOST lane's first box pins were `dirty_paths=18` and `19`).
+`deploy-box.sh` does **not** refuse a dirty tree — only `box-ready.sh --repair`
+does, and only for binary-affecting paths.
 
 Excluded: `target`, `models`, `.git`, `state`, `corpus`, `var/runs`, and
 **`vendor`** — `vendor/` is platform-specific; shipping macOS onnxruntime to
@@ -65,7 +82,30 @@ order refuses on OrderNotional. At cap 97 with a 100¢ notional cap,
 - `models/<model_dir>` present for the config's engine — `models/` is
   gitignored AND rsync-excluded; fetch per host with `scripts/fetch-models.sh`.
 
+## Webcast configs (2026-08-13/14)
+
+`box-ready.sh --config <webcast cfg>` reaches a real GO/NO-GO, not a WARN
+cascade. It additionally probes **`ffmpeg`, `curl`, `streamlink`, `yt-dlp`, and
+`node`** — each missing tool is a FAIL. `node` is load-bearing because yt-dlp
+runs `--js-runtimes node`.
+
+The phone-only gates become explicit **not-applicable PASSes**, not WARNs: the
+Caddy/TLS `/e/<port>` route and the digit store do not apply to a webcast
+config. Schema 1 stays valid with `stream_url=null`.
+
+A GO also reports any **parentless** webcast fetcher/decoder still running
+(`ffmpeg`, `streamlink`, `yt-dlp`, `cdn-cachebust-fetch`, `hls-edge-fetch`) —
+report only, it never kills them. The box once held 18 orphans. Measured on the
+26AUG14 drill: a webcast config reached **GO with 27 PASS / 0 WARN / 0 FAIL**.
+
+Run webcast preflight **on the box** after a fresh deploy, so the pin is built
+where the arm will demand it (`state/<EVENT_ID>/earshot-pinned`, which
+`arm-on-url.sh:139-140` requires executable — there is no cargo fallback).
+Never push the laptop pin and never relax the `state/` / `var/runs/` excludes.
+
 ## TLS ingress
+
+Phone lane only — a webcast config records these as not applicable.
 
 - `caddy` active; cert not near expiry (renewal at 30 d; under 10 = failing).
 - **`/e/<the config's bind port>` routed in the INSTALLED

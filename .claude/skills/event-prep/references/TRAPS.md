@@ -182,3 +182,24 @@ and the continuity predicate counts distinct TAIL SEGMENTS, never
 `#EXT-X-MEDIA-SEQUENCE` (the header this CDN freezes while appending). Rule:
 a resolver or gate watching silently is a page-worthy state — never a quiet
 one.
+
+## A box-preflighted run cannot be scheduled from the laptop (2026-08-14)
+
+Seam S-C puts webcast preflight ON the box, so `preflight_passed` is minted
+into the BOX ledger. But `box-webcast-install.sh` checks `preflight_passed` on
+the **laptop's** run dir before it ever opens an SSH connection, and
+`pull-box-state.sh` explicitly refuses to publish a nonterminal run
+("inventory only; not publishing nonterminal typed run"). So the two halves of
+the supported path do not meet: there is no supported door that returns
+pre-launch box receipts to the laptop.
+
+The data model already allows it — `run-host-boundary.py` accepts
+`incoming_prefix_destination` — only the transport is missing. Until a lane
+lands one, the box drill's workaround is a plain `rsync` of
+`var/runs/<E>/<R>/` in both directions, journaled as a gap. The receipts stay
+genuine box-minted receipts; only their transport is unsupported.
+
+**Never close the gap by re-recording the receipts locally.** A hand-written
+`preflight_passed` on the laptop would be a fabricated proof of a build that
+happened somewhere else, which is exactly the class the typed ledger exists to
+prevent.

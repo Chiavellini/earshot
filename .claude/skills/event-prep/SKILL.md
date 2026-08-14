@@ -186,6 +186,54 @@ are IMMUTABLE — a binding mistake costs a whole new RunPlan attempt, so get
 the mode and `--wait-secs` right the first time. Register for webcasts as
 **bdelriom@actinver.com.mx** (standing identity), never the personal gmail.
 
+### Browser-class venue on the BOX — the `preresolved` split (2026-08-14)
+
+The box has no browser and no operator to pass a wall, so a browser-class venue
+executing there splits the work: the **laptop resolves and pushes**, the **box
+waits and arms**. Bind `preresolved`:
+
+```sh
+scripts/opsctl.sh bind-access --run-dir <run> --access-mode public \
+  --vantage us-east1/<label> \
+  --resolver-kind preresolved \
+  --resolver-argv-json '["scripts/urlfile-wait.sh","$HOME/<lc>-stream.url"]' \
+  --preresolve-kind browser-network \
+  --preresolve-argv-json '<the browser-resolve argv that would have run here>'
+```
+
+Four things that bite if you do not know them:
+
+- **`--vantage` is mandatory.** `bind` hard-refuses a defaulted vantage for
+  `preresolved` (cross-host by construction) and for a plan compiled for the
+  box while bind runs elsewhere. Pick a deliberate label — us-east capture must
+  never pool its Δrace with CDMX history.
+- **There is no `--expect-plan-sha256` flag.** `bind` synthesizes
+  `--deadline-utc`, `--expect-plan-sha256` and `--fresh-secs 5400` into the
+  resolver argv itself, so they are hash-covered. Do not pass them by hand; a
+  contradicting value is refused.
+- **Freshness is attempt identity, not mtime.** The url-file path comes from the
+  pinned config, so every attempt of one event reuses it (the AMAT r1/r2 shape).
+  `urlfile-wait.sh` keys on a `<url-file>.meta` sidecar naming
+  `run_plan_sha256`; mtime is only a sanity bound.
+- **The `$HOME/` spelling is literal.** `${HOME}/` and `~/` are refused, because
+  `arm-on-url.sh` expands only that one form on the executing host.
+
+Then push **inside the fire window** — not before, or the file ages past
+`--fresh-secs` and the wait refuses it:
+
+```sh
+scripts/push-url-file.sh --run-dir <run> --resolve     # or --from-file <path>
+```
+
+It runs the plan's recorded `preresolve.argv` locally, then publishes the URL
+bytes over SSH **stdin** (never argv — tokens are `ps`-visible), tmp + rename,
+mode 0644, with a hash readback. It refuses once the run reaches
+`capture_ready`, because the config `cat`s the url-file at runtime and a late
+push would swap what the detector hears under a running arm.
+
+**S5 is open: this push is MANUAL.** No scheduled job does it yet, so a
+`preresolved` box event needs a human (or this skill) inside the window.
+
 ## Phase 6 — ADMISSION (phone lane, Q-ADMIT)
 
 Probe inside the venue's real window — default T-90..T-30; a
@@ -248,9 +296,20 @@ python3 scripts/posture-from-study.py configs/<event>-arm.toml \
 ```sh
 scripts/opsctl.sh preflight --date <DATE>
 export EARSHOT_LOCAL_EXECUTION_HOST=<stable-laptop-id>    # webcast scheduling refuses without it
+export EARSHOT_BOX_EXECUTION_HOST=earshot-useast1         # default; the box side of the route
 scripts/opsctl.sh schedule --date <DATE>
 scripts/assert-ready.sh configs/<each-event-config>.toml
 ```
+
+- **Webcast dispatch is host-directed (2026-08-13), not lane-directed.**
+  `schedule-nightly` routes each webcast plan on its immutable
+  `execution_host_id`: equal to `EARSHOT_LOCAL_EXECUTION_HOST` ⇒
+  `install-t0-agents.sh` (launchd, unchanged); equal to
+  `EARSHOT_BOX_EXECUTION_HOST` ⇒ `box-webcast-install.sh` (systemd user timer
+  on the box, T-75); anything else ⇒ a loud refusal with no installer. Setting
+  the two variables to the SAME value is itself a refusal (ambiguous host).
+  A box event is compiled for the box at `init` — `execution_host_id` is inside
+  `plan_sha256`, so you cannot move a run between hosts, only re-init it.
 
 - Fire-time behavior worth knowing when reading logs (2026-08-13 fixes): the
   resolver RETRIES on a bounded schedule until the AccessPlan `deadline_utc`
