@@ -80,7 +80,8 @@ the work orders reference them.
   `scripts/pcm-gate.sh` carries the ENDLIST half for the unattended
   `arm-on-url.sh` path. Proof: the same ENDLIST playlist over real HTTP armed
   the old gate (exit 0) and is refused by the new one (exit 7). Five tests
-  where there were none.
+  where there were none. (Residual found 2026-08-13: the gate's decode legs
+  were unbounded and wedged on AMAT — closed as **C7**.)
 - **C2 CLOSED 2026-08-13** No webcast leg respawn: a leg that hit an HLS
   sequence gap died for good; when all legs died the arm exited. Live proof:
   COHR 2026-08-12 arm exited at 21:35:44Z mid-call, both legs dead on sequence
@@ -104,6 +105,42 @@ the work orders reference them.
 - **C6** Recorder-tool bypass: `bridge-probe` hardcodes `max_reconnects=0`
   and probe caps; pointing a recorder at a tradeable call bypasses every
   hardening (`docs/history/POSTMORTEM-26AUG04.md` — the 335k-contract miss).
+- **C7 CLOSED 2026-08-13** Live-gate wedge: `live_decodes` piped
+  `cdn-cachebust-fetch.sh` — which never exits by design — into a command
+  substitution, and bash waits for every pipeline member; the gate's 3600 s
+  deadline is a top-of-loop guard, so one unbounded child froze the gate at
+  "need one advance" from 21:13Z until killed at 00:12Z while the AMAT stream
+  demonstrably advanced (segments 1219→1585). Both decode legs now run under
+  an own-process-group watchdog with unconditional group kill (no orphan may
+  hold the venue open); per-leg budget clamps to the gate deadline. Live
+  proof: AMAT 2026-08-13; the survived `.live-gate-url` temp file was the
+  forensic tell. Three wedge regression tests stub the fetcher with the truth
+  (a never-exiting loop) — the old suite's `exit 0` stub is exactly why C1's
+  five tests missed this.
+- **C8 CLOSED 2026-08-13** pcm-gate cache blindness + wrong predicate: its
+  playlist poller (`scripts/pdt-log.py`) re-fetched the identical URL with no
+  cache defence, so CloudFront served one frozen body all window ("541642
+  bytes decoded but MEDIA-SEQUENCE never advanced" on a live stream) — and
+  the predicate used the exact header this CDN freezes while appending, which
+  `launch-webcast.sh` already rejects as a signal. Every playlist fetch now
+  carries a unique `_cb` + no-cache headers, continuity counts distinct TAIL
+  segments (sequence only as a no-segments fallback), and the decode leg got
+  the same own-pgroup bound. Proof field `distinct_media_sequences` keeps its
+  name (schema stability) and carries the distinct-advance count.
+- **C9 CLOSED 2026-08-13** Resolver single-shot, deadline-blind, wall-silent:
+  `browser-resolve` watched AMAT's registration form for 110 minutes with no
+  page and no wall verdict; `arm-on-url` ran it once and exited 3 with the
+  fix minutes away; the AccessPlan `deadline_utc` was parsed then discarded;
+  the bound argv carried an unexpanded `$HOME/` token. Now: in-loop wall
+  detection across all frames (exit 5, paged IMMEDIATELY, `is_wall` pinned by
+  `--check`), heartbeat + click-play retry while waiting, `arm-on-url`
+  retries every 30 s until `deadline_utc` (wall verdicts page their own
+  message and keep retrying so an in-window human fix still arms), and
+  `$HOME/` argv tokens expand exactly as url-files do. Live proof: the real
+  AMAT player page now yields `WALL-DETECTED`/exit 5 in seconds. Residual:
+  binding discipline is procedure — registration venues bind
+  `registered-session` with a prep-time profile (event-prep skill, THE AMAT
+  RULE); no code can retrofit a session at T-75.
 
 ### Evidence / storage (tape is banked) — `SOLUTION-EVIDENCE.md`
 
@@ -172,6 +209,35 @@ the work orders reference them.
 - **L5** The nightly slate/hunt/stage jobs commit autonomously and can land
   mid-work (observed twice during this cleanup) — any long-running repo
   operation must expect concurrent automation commits.
+- **L6 CLOSED 2026-08-13** Darwin-25 readback rollback:
+  `install-t0-agents.sh`'s launchctl-print regex expected bare calendar keys;
+  Darwin 25 renders them quoted (`"Month" => 8`), so a CORRECTLY loaded job
+  was torn down as a false mismatch — twice on AMAT day, each requiring a
+  manual bootstrap + hand-verified `scheduled` receipt. The regexes now accept
+  both renderings and `--selftest-readback` pins quoted + unquoted fixtures
+  offline (the readback previously had zero test coverage).
+- **L7 CLOSED 2026-08-13** No PATH in the scheduler plist: under launchd the
+  fire path resolved python3 to Apple's 3.9 — no `tomllib` (imported
+  unconditionally by eventctl/access-plan/capture-ready), no `playwright` —
+  so the FIRST live firing of the typed scheduler died in its first seconds.
+  The plist env now pins `PATH=/opt/homebrew/bin:...` in the build, the
+  readback expectation, and `schedule-proof.py`'s webcast contract (phone
+  lane schedules via systemd on the box, whose default PATH is healthy).
+- **L8 CLOSED 2026-08-13** Pinned-input circularity + archived-run poisoning:
+  `_check_pinned_inputs` refused the very terminal receipt its message
+  demanded once a config drifted (three restore-the-bytes dances in one day);
+  `verify` had no state awareness, so archived attempts failed forever and
+  turned every day-walker row red; `study-nightly` counted archived plans as
+  fatal date-wide collisions; `init-date` created successors without closing
+  predecessors. Now: closing transitions + the post-terminal audit tail are
+  pinned-exempt (chain integrity and the typed gate untouched — a tampered
+  archived run still fails verify), `verify` soft-passes closed runs with a
+  labeled `pinned inputs superseded` note, the study selector filters
+  non-active attempts via the typed reducer, and `init-date` auto-closes
+  never-launched drifted predecessors (`blocked`+`archived`, actor `stage`,
+  idempotent; LAUNCHED predecessors are an explicit human refusal). Live
+  proof: the three archived AMAT attempts now verify OK-with-note and the
+  access day-walk reads `pass=1 terminal=3 fail=0` where it read `fail=2`.
 
 ## 4. Requires an operator ruling (deliberately NOT delegated to the work orders)
 

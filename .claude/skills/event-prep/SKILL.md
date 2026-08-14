@@ -153,13 +153,38 @@ resolver from the venue:
 | Q4 guest-registration wall | `scripts/q4-register-resolve.py` (uses `~/.earshot/registration.env`) |
 | Chorus Call Dynamic Media Frame (`webcastid`) | `choruscall` → `scripts/choruscall-resolve.py`; self-serve form → `scripts/chorus-register-resolve.py` |
 | YouTube Live | `youtube-live` → `scripts/youtube-resolve.sh` — ⚠ the BOX is bot-walled at the segment layer (manifest 200s, media refused); laptop vantage only |
-| unknown venue page | `browser-network` → `scripts/browser-resolve.py` (headless, watches for the master m3u8; never logs in or passes walls) |
+| **REGISTRATION WALL** (media-server MMC `edge.media-server.com/mmc/p/<hash>`, or ANY player asking name/email/company) | `browser-network` + **`registered-session`** — see the mandatory prep step below; NEVER bind these `public` |
+| unknown venue page, no wall | `browser-network` → `scripts/browser-resolve.py` (headless, watches for the master m3u8; never logs in or passes walls — exit **5** + immediate page when a wall appears) |
 | a stable public m3u8 | `static-public` |
 
+**THE AMAT RULE (2026-08-13, a full call lost):** if the player page shows or
+can show a registration/login form, the binding is `registered-session` with a
+browser profile the registration was done in AT PREP TIME — never `public`:
+
+```sh
+# 1. Register ONCE into a persistent profile (headed; standing identity;
+#    tick "keep me logged in"; verify the player loads PAST the form):
+python3 scripts/browser-resolve.py --slug <lc> --url <player-url> \
+  --profile ~/.earshot/profiles/<lc> --headed --wait-secs 120 --no-notify
+# 2. Bind with the profile in the resolver argv:
+scripts/opsctl.sh bind-access --run-dir <run> --access-mode registered-session \
+  --attested-by <operator> --session-ref "browser-profile:$HOME/.earshot/profiles/<lc>" \
+  --session-expires-at-utc <call-end+2h> --resolver-kind browser-network \
+  --resolver-argv-json '["python3","scripts/browser-resolve.py","--slug","<lc>","--url","<player-url>","--profile","'"$HOME"'/.earshot/profiles/<lc>","--out","$HOME/<lc>-stream.url","--click-play","--wait-secs","6600"]' \
+  --url-file '$HOME/<lc>-stream.url'
+```
+
+Timing law for this venue family (measured: COHR 20:36Z for a 20:30Z call,
+CBRS 20:58Z for 21:00Z, AMAT ~21:13Z): **the manifest is minted AT call
+start**, so `--wait-secs` must span fire→start+15 min (T-75 fire ⇒ ≥ 6600).
+The AccessPlan `deadline_utc` defaults to starts+15 (ceiling starts+30) and
+gates the resolver's retry loop, not just its first attempt.
+
 `bind-access` records a **non-secret** prerequisite and never resolves media
-itself; session modes require `--attested-by` + `--session-ref`. Register for
-webcasts as **bdelriom@actinver.com.mx** (standing identity), never the
-personal gmail.
+itself; session modes require `--attested-by` + `--session-ref`. AccessPlans
+are IMMUTABLE — a binding mistake costs a whole new RunPlan attempt, so get
+the mode and `--wait-secs` right the first time. Register for webcasts as
+**bdelriom@actinver.com.mx** (standing identity), never the personal gmail.
 
 ## Phase 6 — ADMISSION (phone lane, Q-ADMIT)
 
@@ -227,6 +252,14 @@ scripts/opsctl.sh schedule --date <DATE>
 scripts/assert-ready.sh configs/<each-event-config>.toml
 ```
 
+- Fire-time behavior worth knowing when reading logs (2026-08-13 fixes): the
+  resolver RETRIES on a bounded schedule until the AccessPlan `deadline_utc`
+  (a failure pages once, then retries every 30 s); `browser-resolve` exit 5 =
+  registration wall, paged IMMEDIATELY and retried — an operator can register
+  mid-window and the next attempt succeeds. The scheduler plist pins PATH
+  (launchd's default python3 has no tomllib/playwright), and its launchctl
+  readback accepts Darwin-25's quoted keys — `scripts/install-t0-agents.sh
+  --selftest-readback` proves both renderings offline.
 - Preflight pins the binary at `state/<E>/earshot-pinned`. **A rerun rebuilds
   from the CURRENT checkout and clobbers the pin in place** — `pinned.info` is
   the only provenance; on 26AUG12 a rerun swapped a green pin for one carrying

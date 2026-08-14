@@ -551,6 +551,9 @@ paths = [
   # path stayed idle. Banked as corpus; the misuse is fixed upstream by
   # chain-capture.sh's refuse-to-record guard.
   "scripts/chain-capture.sh",
+  # 2026-08-13 AMAT C8: pdt-log gained per-fetch cache-busting + the tail
+  # field pcm-gate's continuity predicate now counts (operator fix-session).
+  "scripts/pdt-log.py",
   "corpus/bridge-probes/pgr_2026_08_04_leg01.json",
   "corpus/bridge-probes/pgr_2026_08_04_leg01.jsonl",
   "corpus/bridge-probes/pgr_2026_08_04_leg02.json",
@@ -1250,6 +1253,7 @@ paths = [
   "scripts/green-guardian.sh",
   "scripts/night-before-sweep.sh",
   "tests/eventctl_lifecycle.py",
+  "tests/study_nightly_selector.py",
   "tests/run_host_boundary.py",
   "tests/opsctl.py",
   "tests/execution_profile.sh",

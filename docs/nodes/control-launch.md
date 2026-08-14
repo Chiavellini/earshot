@@ -110,7 +110,15 @@ no-cache`) and advancement is measured on the last segment ENTRY, never on
 running, so a sequence-based test reports a live venue dead. Decodability is
 delegated to `scripts/pcm-gate.sh`; if that fails, the gate retries once
 through `scripts/cdn-cachebust-fetch.sh` and, on success, names `cachebust` as
-the leg the operator must arm. An `#EXT-X-ENDLIST` verdict never breaks the
+the leg the operator must arm. **Both decode legs run under an own-process-
+group watchdog** (`WAIT_LIVE_PCM_SECS` + `EARSHOT_WAIT_LIVE_DECODE_GRACE_SECS`,
+default 20, clamped to the gate's remaining deadline; the fetcher pipeline
+writes PCM to a file and the whole group is killed unconditionally afterward —
+no orphan may hold the venue open). This is the AMAT 2026-08-13 close: the
+fetcher never exits by design, bash command substitution waits for every
+pipeline member, and the gate's deadline is a top-of-loop guard — one
+unbounded child wedged the gate for three hours while the stream ran. An
+`#EXT-X-ENDLIST` verdict never breaks the
 loop — a pinned URL can still flip to the live stream — but it pages once, so
 watching the wrong URL surfaces as a page rather than a silent wait. The loop
 is bounded by `--wait-live-timeout-secs` (default 3600) and refuses with
@@ -120,7 +128,19 @@ runtime's 30 s idle guard.
 
 `scripts/pcm-gate.sh` enforces the same `#EXT-X-ENDLIST` refusal before it
 decodes anything, because `scripts/arm-on-url.sh` — the unattended path — gates
-on pcm-gate and never passes `--wait-live` at all.
+on pcm-gate and never passes `--wait-live` at all. Since 2026-08-13 pcm-gate's
+playlist fetches carry the same cache-buster, its decode leg runs under the
+same own-pgroup watchdog (`PCM_GATE_DECODE_GRACE_SECS`, default 20), and its
+continuity verdict counts distinct playlist TAIL segments from
+`scripts/pdt-log.py` (which busts and no-caches every poll), falling back to
+`#EXT-X-MEDIA-SEQUENCE` only when a playlist lists no segment lines. The proof
+field `distinct_media_sequences` keeps its name for schema stability and
+carries the distinct-advance count. `arm-on-url.sh` retries a failing
+AccessPlan resolver on a bounded schedule until the plan's `deadline_utc`
+(pages once per failure class; `browser-resolve` exit 5 — a registration
+wall — pages its own message and keeps retrying so an operator fix inside the
+window still arms), and expands portable `$HOME/` tokens in the resolver argv
+before executing it.
 
 Launch also owns the **no-stream watchdog** (Gap Q): a placed call is not a
 stream — on 2026-07-29 calls ran to completion while nothing ever accept()ed.

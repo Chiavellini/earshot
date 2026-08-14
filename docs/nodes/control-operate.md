@@ -89,11 +89,19 @@ could not be audited and restarts kept overwriting fixed report paths.
   `arm-on-url.sh --run-dir ...` launchd job, reads the loaded job back, and
   delegates the durable `scheduled` fact to `schedule-proof.py`. It refuses a
   placeholder/past fire, host mismatch, argv mismatch, or partially installed
-  descriptor; an on-disk plist is not coverage.
+  descriptor; an on-disk plist is not coverage. The plist environment pins
+  `PATH=/opt/homebrew/bin:...` (launchd's default resolves python3 to Apple's
+  3.9 — no tomllib/playwright — and the fire path dies; AMAT 2026-08-13), and
+  the launchctl readback accepts both key renderings (Darwin 25 quotes
+  descriptor keys; the bare-only regex rolled back a correctly loaded job).
+  `--selftest-readback` pins both fixtures offline.
 - `scripts/study-nightly.sh` — RunPlan-driven variant-study runner in call
   order (generalizes the hand-written per-day study scripts). A UTC date
   selects only immutable schema-3 plans by `starts_at_utc`; each plan pins the
-  exact config and event env. Issuer/date filename tokens never select an
+  exact config and event env. Terminal/archived attempts are closed evidence,
+  not candidates: the typed reducer filters them before collision detection,
+  so a superseded predecessor never collides with its active successor.
+  Issuer/date filename tokens never select an
   event, and the script prevalidates the complete set before measuring
   anything. Parsed config/env staging metadata is checked independently, so
   an expected event whose RunPlan compilation failed makes the date nonzero
@@ -259,9 +267,22 @@ each legacy line into the active run's ledger as a `compat` receipt.
   `compat` with no active run), 1 refusal or integrity failure, 2 usage,
   3 recoverable truncated tail. An illegal transition modifies nothing; a
   refused `init` writes nothing. `verify` fails loud on any mutation of
-  the plan, the config, the env, any earlier receipt, any newline-terminated
+  the plan, any earlier receipt, any newline-terminated
   corrupt receipt (including the last one), or any corrupt/missing sibling run
-  candidate. Only a non-newline-terminated final JSONL fragment is diagnosed
+  candidate. Pinned config/env drift fails loud on ACTIVE runs only: a
+  terminal/archived run legitimately outlives its pinned bytes (its successor
+  owns the current ones) and verifies OK with a labeled
+  `pinned inputs superseded` note — chain integrity stays hard for closed
+  runs. Symmetrically, `record` exempts closing transitions
+  (`descope|blocked|aborted|failed|archived`) and the post-terminal audit
+  tail from the pinned-input check: closing a superseded run must never
+  require restoring old bytes, and the exemption cannot legalize an illegal
+  transition (the typed gate still runs). `init-date` terminal-closes
+  never-launched predecessor attempts whose pinned config drifted
+  (`blocked`+`archived`, actor `stage`, idempotent); a LAUNCHED predecessor is
+  an explicit refusal a human resolves, and aborted/failed predecessors keep
+  their post-mortem tail open. Only a non-newline-terminated final JSONL
+  fragment is diagnosed
   as recoverable (repair = manual truncation to the reported byte offset;
   eventctl never auto-truncates the ledger).
   Only the current RunPlan schema is writable/readable. Existing schema-1 and
@@ -293,8 +314,10 @@ each legacy line into the active run's ledger as a `compat` receipt.
   still allowing those aggregate scripts to process ready siblings.
 - `study-nightly.sh` fails before its first detector invocation if no schema-3
   RunPlan exists for the requested UTC date, if a selected plan or pinned
-  input fails `eventctl verify`, if two plans ambiguously select one event or
-  config, or if parsed staging metadata expects a config that has no plan.
+  input fails `eventctl verify`, if two ACTIVE plans ambiguously select one
+  event or config (closed attempts are filtered by the typed reducer first,
+  and a config whose only attempts are closed is named as such — re-stage the
+  date), or if parsed staging metadata expects a config that has no plan.
   Filename dates are never a compatibility fallback. Once verified, pinned
   config bytes are read-only: a widening need creates a proposal plus a
   critical alert/nonzero verdict and requires a new RunPlan attempt. Study

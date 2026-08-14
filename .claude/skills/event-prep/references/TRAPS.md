@@ -150,3 +150,35 @@ keyword, a stale binary).
 Validated = scheduler-fired (not manual), killed with SIGTERM (not the STOP
 file), under the scheduler's minimal env. Equivalent-looking manual drills
 validated the wrong paths before the 2026-07-15 MS run.
+
+## A registration venue bound `public` loses the whole call (AMAT 2026-08-13)
+
+`edge.media-server.com` MMC players (and any player asking name/email/company)
+gate the manifest behind a form. Bound `public`, the headless resolver —
+which refuses walls by design — watched that form from T-75 until its watch
+expired; zero coverage. Registration venues are `registered-session` with a
+persistent browser profile registered AT PREP TIME (SKILL Phase 5, THE AMAT
+RULE). `browser-resolve` now exits 5 and pages the moment it sees a wall, and
+`arm-on-url` retries until the AccessPlan deadline — but detection-at-fire is
+damage control; the binding decision at prep is the fix. AccessPlans are
+immutable: a wrong mode or a short `--wait-secs` costs a whole new attempt.
+
+## A "bounded" gate is only as bounded as its slowest child (AMAT 2026-08-13)
+
+The live gate's 3600 s deadline was a top-of-loop guard, and one loop
+iteration piped a fetcher that never exits into a command substitution — bash
+waits for EVERY pipeline member, so the gate wedged forever at "need one
+advance" while the stream ran to its end. Anything unbounded inside a loop
+makes the loop's deadline fiction. Both decode legs now run under an
+own-process-group watchdog; the regression test stubs the fetcher with the
+truth (`while :; do sleep 1; done`), not with `exit 0`.
+
+## The no-cache HEADER does not bust this CDN — only a unique query param does
+
+pcm-gate decoded 541 KB of real audio and still said "VANTAGE IS DEAD":
+its playlist poller (`pdt-log.py`) re-fetched the identical URL and CloudFront
+served the frozen copy every time. Every playlist fetch now carries `_cb=<ns>`
+and the continuity predicate counts distinct TAIL SEGMENTS, never
+`#EXT-X-MEDIA-SEQUENCE` (the header this CDN freezes while appending). Rule:
+a resolver or gate watching silently is a page-worthy state — never a quiet
+one.

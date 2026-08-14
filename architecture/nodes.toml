@@ -697,6 +697,7 @@ owns = [
   "scripts/execution-profile.sh",
   "scripts/opsctl.sh",
   "tests/eventctl_lifecycle.py",
+  "tests/study_nightly_selector.py",
   "tests/execution_profile.sh",
   "tests/run_host_boundary.py",
   "tests/opsctl.py",

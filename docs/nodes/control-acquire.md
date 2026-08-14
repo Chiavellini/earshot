@@ -75,8 +75,10 @@ bound by preflight without putting numbers, passcodes, or a CallSid here.
 
 `scripts/access-plan.py check-day --date YYYY-MM-DD` is the read-only daily
 join consumed by canonical operations. It selects schema-3 RunPlans by their
-immutable `starts_at_utc` (never a filename), verifies each ledger and pinned
-config, skips phone and terminal siblings explicitly, and requires every
+immutable `starts_at_utc` (never a filename), verifies each ledger (chain
+integrity always hard; pinned-input drift on a terminal/archived sibling is a
+labeled soft pass — a superseded attempt outlives its bytes by design), skips
+phone and terminal siblings explicitly, and requires every
 active webcast run to have a valid schema-2 AccessPlan. It continues across
 siblings but exits nonzero when any webcast is missing, legacy, corrupt, or
 contradictory. A missing plan prints the generic `bind-access` next action and
@@ -96,6 +98,17 @@ fetching belongs to the runtime source and paid calls belong to
 Deadline, auth, non-media response, zero decoded PCM, rate limit, or unsupported
 manifest/access plan returns nonzero and notifies through `platform.notify`
 when requested. HTTP 200 alone is never proof of usable media.
+
+`scripts/browser-resolve.py` exits 0 only when a manifest was observed and
+written; 3 = deadline with nothing seen; 4 = page never loaded; **5 = a
+registration/login wall is blocking the player** — detected in-loop across the
+top frame and every child frame, paged IMMEDIATELY (never at the deadline;
+AMAT 2026-08-13 watched a form in silence for 110 minutes), and left as the
+human step it is. With `--profile` the same verdict means the persistent
+session is missing or expired. While waiting it retries `--click-play`
+(~30 s) and prints a heartbeat (~5 min) so a silent watch is visible in the
+fire-time log. The wall decision (`is_wall`) is a pure function pinned by the
+`--check` self-test.
 
 The AccessPlan compiler/validator additionally refuses a phone or terminal
 RunPlan, a config or RunPlan hash mismatch, unknown/non-pipe source shape,
