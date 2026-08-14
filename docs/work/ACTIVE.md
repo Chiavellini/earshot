@@ -459,3 +459,110 @@ No deployment, dial, page, schedule, arm, order, or trade was performed by this
 lane, and no money policy was touched. The only network activity was the R3
 measurement: two read-only HTTP GETs of an already-finished call's manifest,
 one from each vantage.
+
+## Box-webcast integration rehearsal (§8) — 2026-08-14
+
+Master `docs/work/BOX-WEBCAST.md` §8, run by the integrating operator session
+after R/H/S landed (`1bb759d`, `b959c4e`, `144152c`). This lane wrote no
+`src/`, no `scripts/`, and no money policy; it added a drill config + event env
+under the existing `control.prepare` / `control.supervise` claims and appended
+this section.
+
+**Verdict: §8 PASSES through `capture_ready` and the launcher, and is PARTIAL
+beyond it.** The break is not a defect in the migration — it is a property of
+`arm` that no boardless rehearsal can get around (D4 below).
+
+### §8.2 chain, item by item
+
+| step | verdict | evidence |
+|---|---|---|
+| drill config, observe posture, no open board | PASS | `board-open.py --issuer BOXDRILL` exit 1 for open **and** `--any-status` |
+| RunPlan compiled FOR the box | PASS | `execution_host_id=earshot-useast1` inside `plan_sha256` |
+| `preresolved` AccessPlan bound | PASS | first published outside the rig; `state/box-drill-lane/access-bind*.log` |
+| deploy | PASS | `DEPLOYED-FROM commit=c2f6f531f9b1 dirty_paths=0` |
+| `box-ready` GO for a webcast config | PASS | 27 PASS / 0 WARN / 0 FAIL, `box-ready-drill2.log` |
+| **preflight on the box** | PASS | 25/4/0; closes HOST boundary request #1 |
+| `opsctl schedule` routes to the box | PASS | real `schedule-nightly` → `box-webcast-install`, `schedule-r5.log` |
+| systemd timer LOADED readback | PASS | `TimeoutStopSec=150`, `KillMode=mixed`, no PATH line (S-D correct) |
+| fires at a real future T-75 | PASS | timer-fired 17:04:00Z and 17:39:00Z, both natural `starts_at − 75` |
+| laptop pushes the url-file | PASS | URL on SSH stdin, `URLFILE-FRESH` on attempt identity |
+| PCM proof at fire time | PASS | 189952/192000 bytes, endlist absent, 7 distinct tails |
+| `capture_ready` | PASS | receipt + `control/capture-ready.json` |
+| `launch-webcast` arms | **PARTIAL** | identity gate, pinned binary and posture all correct; the Rust arm refused at market validation |
+| SIGTERM kill drill mid-run | **NOT EXERCISED** | nothing ever attached to kill — see D4 |
+| terminal receipts | PASS | `failed` recorded truthfully, no false success |
+| `pull-box-state` → graders see it | PASS | 2 terminal runs published with `evidence_pulled` |
+| `missed-arm-check` | PASS | exit 0, no drill row — inert by identity design |
+
+§8.3 verification: `cargo test` 522 passed / 0 failed / 8 ignored (30 suites,
+`EARSHOT_REQUIRE_MODELS=1` + ORT); `access_plan.py` (24), `schedule_proof.py`
+(15), `opsctl.py`, `ops_surface.py`, `preflight_proof.py`, `capture_ready.py`,
+`typed_scheduler_boundary.sh`, `schedule-nightly --check`, `urlfile-wait
+--check` (12), `push-url-file --check` (14), `doc-lint.sh` (534 files) — all
+green. `urlfile-wait`/`push-url-file` selftests ran on the box for the first
+time. Every gate logged to `state/box-drill-lane/` with its exit code.
+
+### Defects found
+
+- **D1 — the box/laptop receipt boundary has no supported door, in EITHER
+  direction.** Seam S-C mints `preflight_passed` on the box;
+  `box-webcast-install.sh:104-114` reads it from the **laptop** ledger; and
+  `pull-box-state.sh:634` refuses to publish a nonterminal run. The reverse
+  also bites: closing a superseded attempt locally left the box with two active
+  runs and on-box preflight correctly refused `ambiguous: 2 active runs`. A
+  third instance appeared at grade time — a run whose terminal receipt existed
+  only on the box failed local `verify` outright. `run-host-boundary.py:158-164`
+  already accepts `incoming_prefix_destination`, so only the transport is
+  missing. Worked around with plain `rsync` both ways, journaled as gaps; **no
+  receipt was ever hand-written.** This blocks every box webcast event, not
+  just browser-class ones, and it is the single biggest obstacle to a
+  skill-navigated box event.
+- **D2 — `tests/preresolved_arm.sh` case 2 is not load-proof.** Red once while
+  `cargo test` saturated the machine (15-min load average 40), then 3/3 green
+  isolated. Mechanism confirmed, not assumed: the case binds an 8-second
+  deadline, and under load that deadline expires during `arm-on-url.sh`'s
+  python-heavy preconditions, so `:79-80` refuses with "deadline has passed"
+  (exit 1) instead of the expected resolver exhaustion (exit 3). Product
+  behaviour is correct; the rig's budget is not.
+- **D3 — the box path forces a live posture with no dry-run door.**
+  `box-webcast-install.sh:88-89` refuses any plan that is not
+  `execution_enabled`, and `install-event-timer.sh:201` hardcodes
+  `--i-am-live --fillable`. There is no way to schedule a box webcast run that
+  cannot trade. For this drill the absent board and the 1¢ non-crossing cap
+  *were* the entire safety envelope. **Operator ruling wanted before a real box
+  event.**
+- **D4 — a boardless rehearsal can never exercise the arm.** `arm` validates
+  every allowlist ticker at start-up and refuses twice over, measured:
+  `api 404: not_found` for a non-existent ticker, and `status is "finalized",
+  not active — refusing to arm` for a settled one. Only `status=active` starts
+  it. So `source_attached`, a mid-run SIGTERM, and live-arm terminal receipts
+  are unreachable under a no-open-board constraint. The operator ruled to accept
+  §8 PARTIAL rather than point the drill at an open tradeable board. **SCHEDULE
+  boundary request #3 therefore stays OPEN**; closing it needs either an
+  active-market drill posture or a fake-Kalshi validation seam.
+- **D5 — the failure path raised a critical phone alert.** Correct behaviour on
+  a real event, surprising in a drill: `alertctl.py raise --severity critical`
+  fired on the terminal `failed`. It was killed before writing any artifact and
+  no page was delivered (verified: no alert files anywhere, no `alertctl`
+  process).
+- **D6 — the decision journal is keyed on the MARKET event ticker, not the run's
+  event id.** Retargeting the allowlist made the box open
+  `state/decision-prod-KXEARNINGSMENTIONAMAT-26AUG13.jsonl` under a drill whose
+  event id is `BOXDRILL-26AUG14-WEBCAST`. It was created 0 bytes and removed; no
+  real evidence was touched. A drill that borrows a real event's tickers will
+  reach into that event's decision namespace.
+- Known-and-hit: the CDMX→AWS SSH transport dropped once mid-chain
+  (`ssh: Operation timed out`); a retry cleared it. An unattended box event has
+  no retry loop around its operator steps.
+
+### Teardown (readback-proven)
+
+Both drill units removed from `~/.config/systemd/user/` and
+`systemctl --user list-timers` reports **no earshot timers loaded**; the
+synthetic stream is stopped and port 8099 closed; **zero parentless fetchers**
+(the H5 class); `~/drill`, both url-files and the stray decision journal
+removed. Drill artifacts kept deliberately: `state/BOXDRILL-26AUG14-WEBCAST/`
+and its four `var/runs/` attempts, as the evidence behind this section.
+
+No real event was touched. AS 26AUG18 has no config, plan, timer or state on
+either host. No order reached any wire; no board was open at any point.
