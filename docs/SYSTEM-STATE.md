@@ -270,19 +270,95 @@ the work orders reference them.
   ssh then refuses outright. Left OPEN because the other SSH callers
   (`box-webcast-install.sh`, `deploy-box.sh`, `box-ready.sh`) still open
   unmultiplexed connections and can trip the same wall.
-- **E11 OPEN 2026-08-16 — ledger fork by mis-ordered close.** A box run's
-  `scheduled` receipt is minted on the BOX. Recording anything on the laptop
-  copy before pulling it back forks the chain *permanently*: both hosts then
-  hold a different receipt at the same index, no prefix relation can ever exist
-  again, and `--dispatch-only` correctly refuses forever. Walked into during
-  the 08-16 proof — closed a scheduled drill attempt on the laptop, and the two
-  ledgers were irreconcilable from that moment (laptop index 6 `blocked`, box
-  index 6 `scheduled`). Recovery is to close the box copy directly over SSH.
-  Mitigated but not closed: the refusal now names the cause and prints the
-  fix. A real fix would make `eventctl record` refuse a laptop-side write to a
-  run whose `execution_host_id` is not this host without a fresh pull — that
-  needs host-awareness in `eventctl`, which is a `control.operate` change.
-  **Order of operations, always: schedule → pull → close → dispatch.**
+- **E14 CLOSED 2026-08-17 (found while proving E11) — three more gates that
+  could not fail on the laptop.** The E9 mechanism again, in files E9 did not
+  touch: `/bin/bash` 3.2.57 (the only bash on this machine; `bash` in PATH
+  resolves to it) does NOT trip `set -e` on a failing bare `[[ ]]` **or on
+  `! cmd`** — inside a function too (measured with a script-file probe, not
+  `-c`). `tests/typed_scheduler_boundary.sh` asserted with ~45 bare `[[ ]]`
+  and 2 `! grep`; `scripts/schedule-nightly.sh --check` with 10 bare `[[ ]]`
+  and 3 `! grep` — including the E12 alert-target assertions; and
+  `tests/execution_profile.sh` with 8. **Measured: with the E12 assertion in
+  `schedule-nightly.sh --check` changed to an impossible value, `--check`
+  printed PASS.** Those gates could only fail through `grep -q`, python
+  asserts, eventctl calls and explicit `if …; then exit 1`. (The box's Linux
+  bash 5 does trip errexit on `[[ ]]`, so the blindness was laptop-only — but
+  the laptop is where these gates run.) Closed the same way as E9: every
+  bare assertion is now `[[ … ]] || fail $LINENO` (`fail` prints the failing
+  source line) or `must_not cmd`; the two stub-internal guards got explicit
+  exits. Proved red by tampering: `typed_scheduler_boundary.sh` now dies at
+  the exact line when a `scheduled_count` is made impossible or when the E11
+  transfer call is removed; `schedule-nightly.sh --check` dies at line 257
+  with the E12 assertion made impossible; `execution_profile.sh` dies at its
+  first assertion. `pull-box-state.sh --check` and `preresolved_arm.sh` were
+  already immune (E9/E8 fixes). The honest gate immediately exposed one
+  pre-existing load fragility it had been hiding: `typed_scheduler_boundary.sh`'s
+  dead-resolver case bound a **4 s** AccessPlan deadline with ~8 `python3`
+  starts between the bind and arm-on-url's deadline check; at load avg ≥130
+  (other agent sessions + a VM on this laptop, 08-17 afternoon) the rig lost
+  its own race (`arm` exited 1 "deadline has passed", not 3). Given the E8
+  treatment: `EARSHOT_TEST_DEADLINE_SECS` (default 25) and a distinct
+  "RIG LOST ITS OWN RACE" failure so a load flake can never read as a
+  product failure. `preresolved_arm.sh` case 1 fails the same way at that
+  load with its default 25 s budget — use its knob (`=60`) on a loaded
+  machine; it is control.acquire's file and was left as E8 designed it.
+  **Standing rule, restated: on this machine a
+  bare `[[ ]]` or `! cmd` on its own line asserts nothing. Grep every new bash
+  gate for `^\s*\[\[ .* \]\]\s*$` and `^\s*! ` before believing it.**
+- **E11 CLOSED 2026-08-17 (was OPEN 08-16) — ledger fork by mis-ordered
+  close.** A box run's `scheduled` receipt is minted on the BOX. Recording
+  anything on the laptop copy before pulling it back forks the chain
+  *permanently*: both hosts then hold a different receipt at the same index,
+  no prefix relation can ever exist again, and `--dispatch-only` correctly
+  refuses forever. Walked into during the 08-16 proof — closed a scheduled
+  drill attempt on the laptop, and the two ledgers were irreconcilable from
+  that moment (laptop index 6 `blocked`, box index 6 `scheduled`). Recovery
+  was to close the box copy directly over SSH. **Order of operations, always:
+  schedule → pull → close → dispatch.**
+  Closed by making that order mechanical rather than remembered. Why not the
+  E12-style env guard: laptop-side writes to a box-host run are NORMAL before
+  dispatch (stage/study/preflight receipts land on the laptop for box runs —
+  `schedule-nightly.sh --check` does exactly that), and
+  `EARSHOT_EXECUTION_HOST` is set in one of four `~/.earshot` env bundles, so
+  "plan host ≠ this host ⇒ refuse" would break the chain and be mostly inert.
+  What was missing was a local fact saying **who currently holds write
+  authority over this copy** — it moves to the box at dispatch and comes back
+  at pull, and nothing recorded either. Now:
+  `control/authority.json` (control.operate) — host-private, NOT a receipt,
+  NOT in the chain, NOT an artifact destination, NEVER transported (both
+  installers' rsyncs and the puller's rsync carry
+  `--exclude=/control/authority.json`; `run-host-boundary.py` ignores it on
+  BOTH sides via `HOST_PRIVATE`, so a stray copy can neither cross nor block a
+  reconcile) — written only by the new `eventctl authority` door:
+  `--transfer-to <host>` (installer), `--returned-from <host>` (puller),
+  `--reclaim --reason` (operator escape for a box that is gone; a later
+  dispatch/pull still surfaces any divergence), `--show`. `Ledger.append`
+  refuses while it says `remote`, **after** the transition gate has said
+  "append" and before the first byte, so idempotent no-ops (nightly
+  `init-date`) stay green and only a real write refuses — with ONE line naming
+  the pull. Wired: `box-webcast-install.sh` and `box-event-install.sh` transfer
+  after the box has verified+published (full, `--dispatch-only`, and a green
+  `--verify-only`; a CLOSED attempt is not transferred — its `archived` tail is
+  laptop bookkeeping); `pull-box-state.sh` returns right after each successful
+  publish/advance and BEFORE `record_evidence_pulled`. `alertctl` (E12) is
+  covered by the same door: a `compat` row on a dispatched copy refuses whether
+  or not the env variable is set. Deliberately unchanged: transport still
+  records no receipt; the sidecar is not one. **Residual:** after a
+  `--prelaunch` pull the returned authority is a snapshot claim; if the box's
+  timer is still armed the box may extend again — re-pull before closing if
+  time has passed (the full fix is live read-through, M4). Also: existing
+  dispatched real runs have no sidecar and converge to `remote` through the
+  next nightly `--verify-only`/full install — do not touch them by hand.
+  Proof, each red by tampering: `tests/eventctl_lifecycle.py::TestAuthority`
+  (9 cases; guard disabled → 3 fail), `tests/run_host_boundary.py` sidecar case
+  (filter removed → fails), `tests/typed_scheduler_boundary.sh` (the 08-16
+  close-after-dispatch is now `REFUSED: E11`; transfer call removed → dies at
+  the sidecar assertion), `pull-box-state.sh --check` (return removed → the
+  terminal pull refuses at `evidence_pulled`; exclude+filter removed → the
+  stray sidecar refuses `file bytes differ`; guard disabled → the `must_not`
+  close fails), `tests/alertctl.py` (guard disabled → fails). Runbook:
+  `docs/runbooks/EVENT-LIFECYCLE.md` §7 "Closing or re-recording a DISPATCHED
+  run".
 - **E10 CLOSED 2026-08-16** Every re-preflight on the box makes the *next*
   `pull-box-state.sh` refuse the whole event: the box rewrites legacy
   `state/<E>/box/` artefacts (`detector-smoke.log` et al), the puller's
@@ -403,6 +479,12 @@ the work orders reference them.
   python@3.14`** — the preflight gate above catches that on the next prep
   night; the durable fix is macOS ≥ 26.1 (newer dyld-cache expat) or a
   rebuilt bottle.
+  Note for the record: `scripts/box-ready.sh` (its "Interpreter pin" block,
+  dated 2026-08-05) already knew "Homebrew python3 3.14.6 has tomllib but a
+  BROKEN plistlib" and routed around it locally — the fact lived in one
+  script for twelve days without reaching the ledger or the scheduler that
+  actually needed it. When a script routes around a host fact, the fact goes
+  in the ledger the same day.
   **A second class-(b) instance found while proving it:**
   `tests/typed_scheduler_boundary.sh` — the only offline gate over the plist
   build/readback path — hard-pinned `EARSHOT_PYTHON` to Homebrew

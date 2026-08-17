@@ -20,9 +20,16 @@ box — a webcast attempt was compiled on the laptop, dispatched, preflighted on
 the box, pulled back, scheduled, and read back as a LOADED timer with **zero
 hand transport**. What did **not** change: the canonical evidence tree has
 still never been populated by a live run (**E1**), money policy is still
-unruled (**§4 O1–O5**), and the laptop's own scheduler is currently dead
-(**L9**). Do not read "12 commits of reliability work" as "the system is
-reliable." Read it as "the chain can now be trusted to tell you when it isn't."
+unruled (**§4 O1–O5**), and the laptop's own scheduler ~~is currently dead
+(**L9**)~~ — *repaired the same afternoon (route 2), see the L9 entry*. Do not
+read "12 commits of reliability work" as "the system is reliable." Read it as
+"the chain can now be trusted to tell you when it isn't."
+
+*Afternoon addendum (same day):* **E11 CLOSED** (ledger write authority is a
+host-private fact enforced by `eventctl`), **L9 REPAIRED**, **E14** found and
+closed (three more gates whose bare `[[ ]]`/`! cmd` assertions were inert
+under macOS bash 3.2 — including the one that "pinned" E12), **E13** in
+progress. Class (b) delivered again within hours of this page being written.
 
 ## 2. What actually landed (mechanisms, not commits)
 
@@ -79,8 +86,9 @@ a newer expat than macOS ships) means `import plistlib` fails, so **the laptop
 cannot schedule a webcast event at all right now**. The box is unaffected —
 systemd, no plist — which is exactly why the 08-16/17 drill ran end to end
 while this was broken. Detection is closed (preflight now imports what the
-chain imports); **the repair is open and is the operator's call** — two routes
-in the L9 entry.
+chain imports); the repair was the operator's call — route 2 was ruled and
+applied 08-17 13:09 local (L9 entry has the command, the reversal file, and
+the `brew upgrade` re-break warning).
 
 ## 3. Gate status right now (measured, not assumed)
 
@@ -88,10 +96,10 @@ in the L9 entry.
 |---|---|---|
 | `scripts/doc-lint.sh` | **RED, 12 errors** | *Not ours.* Every error is an untracked nightly-staged config (`as-`/`hd-`/`klar-`/`tol-`/`tgt-` for 26AUG18–19) with no registry entry. The nightly jobs commit autonomously (**L5**); these appeared mid-session. |
 | `cargo test` | 29 suites green, **2 red** | `node_contract_registry_is_consistent` (same root cause as doc-lint above) and `kalshi::executor::tests::prestage_enumerates_all_tranches` (**E6**, pre-existing, client-id mismatch at `src/kalshi/executor.rs:1651`). |
-| `tests/typed_scheduler_boundary.sh` | green | Extended this session with `--dispatch-only` and rehearsal-posture cases; each new assertion proved red by tampering. |
-| `tests/alertctl.py` | green (14) | Two new E12 cases. |
-| `pull-box-state.sh --check` | green | Extended with `--prelaunch` and `--supersede-legacy` cases. |
-| `schedule-nightly.sh --check` | green | Now asserts the alert **target**, not merely that an alert was raised. |
+| `tests/typed_scheduler_boundary.sh` | green (honest since 08-17 13:xx) | **Was blind on the laptop**: ~45 bare `[[ ]]` asserted nothing under bash 3.2 (E14) and the plist path ran under a pinned python@3.13 (L9). Now `[[ … ]] \|\| fail $LINENO` throughout, production `python3`, plus the E11 sidecar/close-after-dispatch cases; every tamper dies at its line. |
+| `tests/alertctl.py` | green (15) | Two E12 cases + the E11 dispatched-copy case (refuses without the env var; lands after the return). |
+| `pull-box-state.sh --check` | green | `--prelaunch`, `--supersede-legacy`, and the two E11 cases (stray sidecar never crosses; the 08-16 incident replayed with the doctrine enforced). |
+| `schedule-nightly.sh --check` | green (honest since 08-17) | **Was blind on the laptop** (E14): printed PASS with the E12 target assertion made impossible. Now `\|\| fail $LINENO` / `must_not`; dies at line 257 under that tamper. |
 | laptop webcast scheduling | green (repaired 13:09 local) | L9 route 2 applied — `pyexpat` repointed at Homebrew expat, reversal copy `pyexpat.cpython-314-darwin.so.orig-26aug17` alongside. `tests/typed_scheduler_boundary.sh` now runs under the production `python3` (it was pinned to python@3.13 and could not see the break). Re-breaks on `brew upgrade python@3.14`; preflight catches it. |
 
 **Before you diagnose anything, run doc-lint and confirm the 12 errors are
@@ -123,14 +131,16 @@ during the rehearsal.
 
 Judgement, not a restatement. Rank by *what can silently destroy an event*.
 
-1. **E11 — permanent ledger fork by mis-ordered close (OPEN).** The most
-   dangerous open item, because ordinary correct-looking operator action
-   reaches it and there is no recovery short of `eventctl init`. Only mitigated
-   (the refusal now names the cause). The real fix is host-awareness in
-   `eventctl record` — refuse a laptop-side write to a run whose
-   `execution_host_id` is not this host without a fresh pull. That is a
-   `control.operate` change. **Order of operations, always: schedule → pull →
-   close → dispatch.**
+1. ~~**E11 — permanent ledger fork by mis-ordered close.**~~ CLOSED 2026-08-17:
+   ledger write authority is now a host-private fact (`control/authority.json`,
+   written only by `eventctl authority`), handed to the box by both installers
+   at dispatch and returned by the puller; `Ledger.append` refuses in between
+   with one line naming the pull. `schedule → pull → close → dispatch` is
+   enforced, not remembered. Residual (in the ledger): after a `--prelaunch`
+   pull the box may still extend if its timer is armed — re-pull before closing
+   if time has passed. Also found+closed on the way: **E14**, three gates whose
+   bare `[[ ]]`/`! cmd` assertions were inert under macOS bash 3.2 (incl. the
+   one that "pinned" E12).
 2. **E1 — the canonical `var/runs/` tree has never held live evidence.** Every
    real capture to date landed in legacy `state/<E>/`. Every grader, audit and
    skill downstream assumes the canonical tree. Until one live run populates it,
