@@ -59,7 +59,37 @@ fi
 BOX="${EARSHOT_BOX:-ubuntu@3.212.174.94}"
 KEY="${EARSHOT_BOX_KEY:-$HOME/.ssh/earshot-useast1.pem}"
 BOX_REPO="${EARSHOT_BOX_REPO:-~/ear}"
-SSH=(ssh -o ConnectTimeout=15 -o BatchMode=yes -i "$KEY" "$BOX")
+SSH_BIN="${EARSHOT_SSH:-ssh}"
+SSH_OPTS=(-o ConnectTimeout=15 -o BatchMode=yes -i "$KEY")
+
+# One multiplexed master per invocation (E13). This script opens one gathered
+# round-trip by default and ~3 more under --repair (its child deploy-box.sh
+# owns its own master); sshd's MaxStartups drops bursts of fresh connections
+# AT RANDOM. Mirror of scripts/pull-box-state.sh start_ssh_mux; the socket
+# MUST live under /tmp, not TMPDIR (macOS TMPDIR is ~50 chars; unix sockaddr
+# paths cap near 104 bytes).
+SSH_MUX_DIR=""
+start_ssh_mux() {
+  SSH_MUX_DIR=$(mktemp -d /tmp/ear-ready-mux.XXXXXX) || return 1
+  SSH_OPTS+=(-o ControlMaster=auto -o "ControlPath=$SSH_MUX_DIR/mux" -o ControlPersist=120)
+}
+stop_ssh_mux() {
+  [[ -n "$SSH_MUX_DIR" ]] || return 0
+  if [[ -S "$SSH_MUX_DIR/mux" ]]; then   # a stub or an unreachable box leaves no socket
+    "$SSH_BIN" "${SSH_OPTS[@]}" -O exit "$BOX" >/dev/null 2>&1 || true
+  fi
+  rm -rf -- "$SSH_MUX_DIR"; SSH_MUX_DIR=""
+}
+# ONE exit trap, set once: the gates temp file (created late) is cleaned here
+# too — a second `trap … EXIT` later would silently drop the mux teardown.
+GATES_TMP=""
+on_exit() {
+  [[ -n "$GATES_TMP" ]] && rm -f "$GATES_TMP"
+  stop_ssh_mux
+}
+start_ssh_mux || { echo "NO-GO: could not allocate the SSH multiplex directory under /tmp" >&2; exit 1; }
+trap on_exit EXIT
+SSH=("$SSH_BIN" "${SSH_OPTS[@]}" "$BOX")
 
 # ── Interpreter pin (2026-08-05, measured on the CDMX laptop) ───────────────
 # Homebrew python3 3.14.6 has tomllib but a BROKEN plistlib; /usr/bin/python3
@@ -498,8 +528,7 @@ mkdir -p "$(dirname "$JSON_OUT")" 2>/dev/null
 # Gate lines go through a FILE, not a pipe: the python below is itself fed by a
 # heredoc, so anything piped to it is discarded (this silently produced an
 # artifact with "gates": [] on the first run).
-GATES_TMP=$(mktemp "${TMPDIR:-/tmp}/box-ready-gates.XXXXXX")
-trap 'rm -f "$GATES_TMP"' EXIT
+GATES_TMP=$(mktemp "${TMPDIR:-/tmp}/box-ready-gates.XXXXXX")   # cleaned by on_exit (set once above)
 printf '%s\n' "${LINES[@]}" > "$GATES_TMP"
 GATES_TMP="$GATES_TMP" JSON_OUT="$JSON_OUT" FAILS="$FAILS" WARNS="$WARNS" \
   BOX="$BOX" EVENT_ID="$EVENT_ID" CONFIG="$CONFIG" HEAD_SHA="$HEAD_SHA" \

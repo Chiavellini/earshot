@@ -16,10 +16,66 @@
 #
 #   scripts/deploy-box.sh                 # laptop tree → box ~/ear/
 #   scripts/deploy-box.sh --check-only    # dry-run, show what would change
+#   scripts/deploy-box.sh --check         # offline self-test (stub ssh/rsync)
 #
 # After deploy, verifies the box still has a host-platform libonnxruntime and
 # runs detector-smoke against the example config class actually armed next.
+#
+# Every ssh and rsync leg rides ONE multiplexed master per invocation (E13):
+# ControlMaster=auto, socket under /tmp, ControlPersist=120, torn down on exit.
 set -euo pipefail
+
+# ── Offline self-test ────────────────────────────────────────────────────────
+# Stub ssh/rsync log their argv; the real script is re-invoked against them.
+# Assertions go through must/must_not: bash 3.2 (macOS) does not trip `set -e`
+# on a bare `[[ ]]` (SYSTEM-STATE E9/E14).
+if [[ "${1:-}" == "--check" ]]; then
+  T=$(mktemp -d /tmp/deploy-box-check.XXXXXX)
+  trap 'rm -rf -- "$T"' EXIT
+  ARGV_LOG="$T/argv.log"
+  mkdir -p "$T/bin"
+  cat > "$T/bin/ssh" <<'SH'
+#!/usr/bin/env bash
+printf 'ssh %s\n' "$*" >> "$EARSHOT_CHECK_ARGV_LOG"
+cat >/dev/null   # swallow any heredoc payload (provenance)
+exit 0
+SH
+  cat > "$T/bin/rsync" <<'SH'
+#!/usr/bin/env bash
+printf 'rsync %s\n' "$*" >> "$EARSHOT_CHECK_ARGV_LOG"
+exit 0
+SH
+  chmod +x "$T/bin/ssh" "$T/bin/rsync"
+  must()     { "$@" || { echo "deploy-box --check: FAIL: expected to succeed: $*" >&2; exit 1; }; }
+  must_not() { if "$@"; then echo "deploy-box --check: FAIL: expected to fail: $*" >&2; exit 1; fi; }
+  run_stubbed() {  # run_stubbed <args...>
+    EARSHOT_CHECK_ARGV_LOG="$ARGV_LOG" EARSHOT_SSH="$T/bin/ssh" EARSHOT_RSYNC="$T/bin/rsync" \
+      EARSHOT_BOX=stub-box EARSHOT_BOX_KEY="$T/no-key" "$0" "$@" </dev/null >"$T/out.log" 2>&1
+  }
+  : > "$ARGV_LOG"
+  must run_stubbed
+  # Exactly three transport legs: the rsync, the ORT invariant ssh, the
+  # provenance ssh — every one of them on the same multiplexed master.
+  must test "$(grep -c '^ssh ' "$ARGV_LOG")" = 2
+  must test "$(grep -c '^rsync ' "$ARGV_LOG")" = 1
+  must test "$(grep -c '^ssh .*-o ControlMaster=auto .*-o ControlPath=/tmp/ear-deploy-mux\.[^/ ]*/mux .*-o ControlPersist=120 ' "$ARGV_LOG")" = 2
+  must grep -q '^rsync .*-e [^ ]*ssh -i [^ ]* -o ControlMaster=auto -o ControlPath=/tmp/ear-deploy-mux\.[^/ ]*/mux -o ControlPersist=120 ' "$ARGV_LOG"
+  # No teardown may reach a stub (a stub never made a socket) …
+  must_not grep -q -- ' -O exit' "$ARGV_LOG"
+  # … and the mux dir is gone after the run.
+  for d in $(sed -n 's/.*ControlPath=\(\/tmp\/ear-deploy-mux\.[^/ ]*\)\/mux.*/\1/p' "$ARGV_LOG" | sort -u); do
+    must_not test -e "$d"
+  done
+  must grep -q '^deploy OK$' "$T/out.log"
+  # --check-only is the dry-run: one rsync leg, no ssh at all.
+  : > "$ARGV_LOG"
+  must run_stubbed --check-only
+  must test "$(grep -c '^rsync ' "$ARGV_LOG")" = 1
+  must grep -q '^rsync .*--dry-run' "$ARGV_LOG"
+  must_not grep -q '^ssh ' "$ARGV_LOG"
+  echo "deploy-box --check: PASS"
+  exit 0
+fi
 
 # BOX ADDRESS. An Elastic IP (eipalloc-0d0f5d3654883fb68 → 3.212.174.94) was
 # attached 2026-07-29 15:57Z, so the address is now STABLE across stop/start.
@@ -41,8 +97,28 @@ if [[ -z "${EARSHOT_BOX:-}" ]] && command -v aws >/dev/null 2>&1; then
 fi
 BOX="${EARSHOT_BOX:-ubuntu@3.212.174.94}"   # c6a.4xlarge + EIP, 2026-07-29
 KEY="${EARSHOT_BOX_KEY:-$HOME/.ssh/earshot-useast1.pem}"
+SSH_BIN="${EARSHOT_SSH:-ssh}"
+RSYNC_BIN="${EARSHOT_RSYNC:-rsync}"
+SSH_OPTS=(-i "$KEY")
 DRY=()
 [[ "${1:-}" == "--check-only" ]] && DRY=(--dry-run -v)
+
+# One multiplexed master per invocation (E13). Mirror of
+# scripts/pull-box-state.sh start_ssh_mux; socket under /tmp, never TMPDIR.
+SSH_MUX_DIR=""
+start_ssh_mux() {
+  SSH_MUX_DIR=$(mktemp -d /tmp/ear-deploy-mux.XXXXXX) || return 1
+  SSH_OPTS+=(-o ControlMaster=auto -o "ControlPath=$SSH_MUX_DIR/mux" -o ControlPersist=120)
+}
+stop_ssh_mux() {
+  [[ -n "$SSH_MUX_DIR" ]] || return 0
+  if [[ -S "$SSH_MUX_DIR/mux" ]]; then   # a stub or a pre-SSH failure leaves no socket
+    "$SSH_BIN" "${SSH_OPTS[@]}" -O exit "$BOX" >/dev/null 2>&1 || true
+  fi
+  rm -rf -- "$SSH_MUX_DIR"; SSH_MUX_DIR=""
+}
+start_ssh_mux || { echo "deploy REFUSED: could not allocate the SSH multiplex directory under /tmp" >&2; exit 1; }
+trap stop_ssh_mux EXIT
 
 cd "$(dirname "$0")/.."
 
@@ -50,17 +126,17 @@ SOURCE_COMMIT="$(git rev-parse HEAD 2>/dev/null || echo UNKNOWN-NOT-A-GIT-CHECKO
 SOURCE_DIRTY="$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
 DEPLOYED_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-rsync -az --delete ${DRY[@]+"${DRY[@]}"} \
+"$RSYNC_BIN" -az --delete ${DRY[@]+"${DRY[@]}"} \
   --exclude target --exclude models --exclude .git \
   --exclude state --exclude corpus --exclude vendor \
   --exclude /var/runs/ --exclude /var/host-boundary-staging/ \
-  -e "ssh -i $KEY" ./ "$BOX":~/ear/
+  -e "$SSH_BIN ${SSH_OPTS[*]}" ./ "$BOX":~/ear/
 
 [[ "${1:-}" == "--check-only" ]] && exit 0
 
 # Post-deploy invariant: the box must still hold a Linux ORT. This is the
 # check that would have caught both incidents at deploy time.
-ssh -i "$KEY" "$BOX" '
+"$SSH_BIN" "${SSH_OPTS[@]}" "$BOX" '
   set -e
   SO=$(find ~/ear/vendor -name "libonnxruntime*.so*" 2>/dev/null | head -1)
   MACH=$(find ~/ear/vendor -name "*.dylib" 2>/dev/null | head -1)
@@ -76,7 +152,7 @@ ssh -i "$KEY" "$BOX" '
   printf 'commit=%s\n' "$SOURCE_COMMIT"
   printf 'dirty_paths=%s\n' "$SOURCE_DIRTY"
   printf 'deployed_utc=%s\n' "$DEPLOYED_UTC"
-} | ssh -i "$KEY" "$BOX" '
+} | "$SSH_BIN" "${SSH_OPTS[@]}" "$BOX" '
   set -e
   umask 022
   tmp=~/ear/.DEPLOYED-FROM.tmp.$$

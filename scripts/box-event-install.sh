@@ -67,7 +67,39 @@ fi
 BOX="${EARSHOT_BOX:-ubuntu@3.212.174.94}"
 KEY="${EARSHOT_BOX_KEY:-$HOME/.ssh/earshot-useast1.pem}"
 BOX_REPO="${EARSHOT_BOX_REPO:-~/ear}"
-SSH=(ssh -o ConnectTimeout=15 -o BatchMode=yes -i "$KEY" "$BOX")
+SSH_BIN="${EARSHOT_SSH:-ssh}"
+RSYNC_BIN="${EARSHOT_RSYNC:-rsync}"
+SSH_OPTS=(-o ConnectTimeout=15 -o BatchMode=yes -i "$KEY")
+
+# One multiplexed master per invocation (E13): a phone dispatch opens ~9
+# ssh/rsync legs in a few seconds and sshd's MaxStartups drops bursts of fresh
+# connections AT RANDOM. Mirror of scripts/pull-box-state.sh start_ssh_mux.
+# The socket MUST live under /tmp, not TMPDIR (macOS TMPDIR is ~50 chars and
+# unix sockaddr paths cap near 104 bytes).
+SSH_MUX_DIR=""
+start_ssh_mux() {
+  SSH_MUX_DIR=$(mktemp -d /tmp/ear-event-mux.XXXXXX) || return 1
+  SSH_OPTS+=(-o ControlMaster=auto -o "ControlPath=$SSH_MUX_DIR/mux" -o ControlPersist=120)
+}
+stop_ssh_mux() {
+  [[ -n "$SSH_MUX_DIR" ]] || return 0
+  # Only a real master owns a socket; a stub or a pre-SSH refusal leaves none,
+  # and then no teardown call may reach the box.
+  if [[ -S "$SSH_MUX_DIR/mux" ]]; then
+    "$SSH_BIN" "${SSH_OPTS[@]}" -O exit "$BOX" >/dev/null 2>&1 || true
+  fi
+  rm -rf -- "$SSH_MUX_DIR"; SSH_MUX_DIR=""
+}
+# ONE exit trap, set once (a later `trap … EXIT` would silently drop the mux
+# teardown); staging cleanup is a flag inside it.
+STAGING_LIVE=0
+on_exit() {
+  if (( STAGING_LIVE )); then cleanup_staging; fi
+  stop_ssh_mux
+}
+start_ssh_mux || { echo "REFUSED: could not allocate the SSH multiplex directory under /tmp" >&2; exit 1; }
+trap on_exit EXIT
+SSH=("$SSH_BIN" "${SSH_OPTS[@]}" "$BOX")
 
 # ── Exact typed run selection (read-only locally) ─────────────────────────
 # Disarm keeps its legacy label-only form so an operator can stop a stale unit
@@ -221,18 +253,18 @@ if [[ "$VERIFY_ONLY" != 1 ]]; then
   cleanup_staging() {
     "${SSH[@]}" "case '$STAGING' in '$REMOTE_REPO'/var/host-boundary-staging/dispatch.*) rm -rf -- '$STAGING';; esac" >/dev/null 2>&1 || true
   }
-  trap cleanup_staging EXIT
+  STAGING_LIVE=1   # on_exit (set once above) now cleans staging too
   "${SSH[@]}" "mkdir -p '$STAGING/$PLAN_EVENT_ID'" || {
     echo "REFUSED: cannot create staged event directory" >&2; exit 1;
   }
-  RSYNC_RSH="ssh -o ConnectTimeout=15 -o BatchMode=yes -i $KEY"
+  RSYNC_RSH="$SSH_BIN ${SSH_OPTS[*]}"   # same options — same multiplexed master — for rsync
   # control/authority.json is THIS host's private authority marker (E11); it
   # never travels. Both passes must carry the same exclude or the stability
   # check itemises it as a change. run-host-boundary.py ignores it too.
-  rsync -a --delete --exclude=/control/authority.json -e "$RSYNC_RSH" "$RUN_DIR/" "$BOX:$STAGED_RUN/" || {
+  "$RSYNC_BIN" -a --delete --exclude=/control/authority.json -e "$RSYNC_RSH" "$RUN_DIR/" "$BOX:$STAGED_RUN/" || {
     echo "REFUSED: RunPlan prefix transfer failed" >&2; exit 1;
   }
-  STABILITY=$(rsync -ani --checksum --delete --exclude=/control/authority.json -e "$RSYNC_RSH" \
+  STABILITY=$("$RSYNC_BIN" -ani --checksum --delete --exclude=/control/authority.json -e "$RSYNC_RSH" \
     "$RUN_DIR/" "$BOX:$STAGED_RUN/") || {
       echo "REFUSED: RunPlan prefix stability check failed" >&2; exit 1;
     }
@@ -245,7 +277,7 @@ if [[ "$VERIFY_ONLY" != 1 ]]; then
     echo "REFUSED: box rejected the staged RunPlan prefix" >&2; exit 1;
   }
   cleanup_staging
-  trap - EXIT
+  STAGING_LIVE=0
 else
   REMOTE_REPO=$("${SSH[@]}" "cd ${BOX_REPO} && pwd -P") || {
     echo "REFUSED: cannot resolve the box repository" >&2; exit 1;

@@ -856,6 +856,8 @@ paths = [
 ]
 verification = [
   "bash -n scripts/deploy-box.sh",
+  "bash -n scripts/box-ready.sh",
+  "scripts/deploy-box.sh --check",
   "bash -n scripts/install-tls-ingress.sh",
 ]
 evidence = ["docs/nodes/platform-deploy.md"]

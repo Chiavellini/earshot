@@ -77,7 +77,14 @@ in the **installed** `/etc/caddy/Caddyfile`, since every unrouted path returns
 ## Side effects and exclusive resources
 
 It writes and may delete files inside the explicit remote deployment root,
-connects over SSH, may download model artifacts, and may install/reload TLS
+connects over SSH — through ONE multiplexed master per invocation
+(`ControlMaster=auto`, socket under a private `mktemp -d /tmp/ear-<deploy|ready>-mux.XXXXXX`,
+never `TMPDIR`; `ControlPersist=120`; torn down by `ssh -O exit` from the
+single EXIT trap only when a socket exists, so a stubbed or unreachable run
+never touches the box on the way out; E13). `box-ready.sh --repair`'s child
+`deploy-box.sh` owns its own master. Both scripts honour `EARSHOT_SSH` /
+`EARSHOT_RSYNC` so an offline self-test can stand in a logging stub. It may
+download model artifacts, and may install/reload TLS
 service configuration. The rsync path must preserve `vendor/`, `target/`,
 `models/`, `corpus/`, `state/`, `var/runs/`, the host-boundary staging
 namespace, credentials, and other declared host-local assets.
@@ -96,7 +103,17 @@ consume only the deployment receipt.
 
 ## Verification
 
-Run `bash -n scripts/box-ready.sh scripts/deploy-box.sh scripts/fetch-models.sh`.
+Run `bash -n scripts/box-ready.sh scripts/deploy-box.sh scripts/fetch-models.sh`
+and `scripts/deploy-box.sh --check` (offline: stub ssh/rsync log their argv;
+asserts exactly three transport legs — rsync, ORT invariant, provenance — all
+carrying `ControlMaster=auto` / a `/tmp/ear-deploy-mux.*/mux` ControlPath /
+`ControlPersist=120`, no `-O exit` reaching the stub, the mux dir gone after
+the run, and `--check-only` = one dry-run rsync and no ssh; each assertion
+proved red by dropping ControlPersist, the socket guard, or the trap). For
+`box-ready.sh` the offline proof is a stub `ssh` that exits 255:
+`EARSHOT_SSH=<stub> EARSHOT_BOX=stub-box EARSHOT_BOX_KEY=/dev/null
+scripts/box-ready.sh --json <tmp>` → NO-GO exit 1, one logged leg with the
+mux options, no teardown, no leftover mux dir.
 In a network-authorized release flow, first check remote disk headroom, run
 `scripts/deploy-box.sh --check-only`, inspect the explicit rsync delta, then
 perform the real deploy and verify `DEPLOYED-FROM`, the Linux-only ORT/model

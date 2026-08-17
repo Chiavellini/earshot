@@ -313,15 +313,19 @@ SH
 cat > "$STUB/bin/ssh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
+opts=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -o|-i) shift 2 ;;
+    -o|-i) opts+=("$1" "$2"); shift 2 ;;
     *) break ;;
   esac
 done
 host=${1:?}; shift
 command=${1:?}
 printf 'ssh %s %s\n' "$host" "$command" >> "$STUB_LOG"
+# E13: the transport options, on a line that does NOT match '^ssh ' so the
+# connection counts above stay truthful.
+printf 'ssh-opts %s\n' "${opts[*]-}" >> "$STUB_LOG"
 HOME="$REMOTE_HOME" USER=stub-user \
 EARSHOT_SYSTEMD_USER_DIR="$REMOTE_SYSTEMD_USER_DIR" \
 STUB_SYSTEMD_STATE="$REMOTE_SYSTEMD_STATE" \
@@ -334,10 +338,11 @@ set -euo pipefail
 dry=0
 args=()
 excludes=()
+rsh=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -ani) dry=1; shift ;;
-    -e) shift 2 ;;
+    -e) rsh=$2; shift 2 ;;
     --exclude=*) excludes+=("${1#--exclude=}"); shift ;;
     -*) shift ;;
     *) args+=("$1"); shift ;;
@@ -347,6 +352,7 @@ done
 src=${args[0]}
 dest=${args[1]#*:}
 printf 'rsync dry=%s %s %s\n' "$dry" "$src" "$dest" >> "$STUB_LOG"
+printf 'rsync-rsh %s\n' "${rsh-}" >> "$STUB_LOG"
 [[ "$dry" == 1 ]] && exit 0
 mkdir -p "$dest"
 cp -a "$src"/. "$dest"/
@@ -540,6 +546,25 @@ grep -qF "ExecStart=$CANON_REMOTE_REPO/scripts/arm-on-url.sh --run-dir $CANON_RE
 grep -q '^TimeoutStopSec=150$' "$DISPATCH_SERVICE"
 grep -q '^KillMode=mixed$' "$DISPATCH_SERVICE"
 [[ ! -e "$REMOTE_REPO/state/hunt/numbers.env" ]] || fail $LINENO
+# E13: every ssh AND rsync leg of one dispatch (10 for a full install) rides ONE
+# multiplexed master — ControlMaster=auto, a socket under /tmp (never TMPDIR:
+# macOS's ~50-char TMPDIR plus the socket name overruns the ~104-byte sockaddr
+# limit and ssh refuses outright), ControlPersist=120 — and no teardown
+# (`ssh -O exit`) ever reaches a stub, which never made a socket. sshd's
+# MaxStartups drops bursts of fresh connections AT RANDOM; that is what
+# surfaced as "rsync failed for run <a different run each retry>" and cascaded
+# into E12.
+N_OPTS=$(grep -c '^ssh-opts ' "$STUB_LOG" || true)
+[[ "$N_OPTS" -gt 0 ]] || fail $LINENO
+[[ "$N_OPTS" == "$(grep -c '^ssh-opts .*-o ControlMaster=auto .*-o ControlPath=/tmp/[^ ]*/mux .*-o ControlPersist=120' "$STUB_LOG" || true)" ]] || fail $LINENO
+N_RSH=$(grep -c '^rsync-rsh ' "$STUB_LOG" || true)
+[[ "$N_RSH" -gt 0 ]] || fail $LINENO
+[[ "$N_RSH" == "$(grep -c '^rsync-rsh .*ControlPath=/tmp/[^ ]*/mux' "$STUB_LOG" || true)" ]] || fail $LINENO
+must_not grep -q '^ssh -O ' "$STUB_LOG"
+must_not grep -q '^ssh .* -O exit' "$STUB_LOG"
+for d in $(sed -n 's/.*ControlPath=\(\/tmp\/[^/ ]*\)\/mux.*/\1/p' "$STUB_LOG" | sort -u); do
+  [[ ! -e "$d" ]] || fail $LINENO   # the mux dir is torn down on exit
+done
 # E11: a full dispatch hands the chain to the box. THIS copy says so
 # (host-private sidecar, not a receipt), the box's copy carries no sidecar.
 authority_of() {  # authority_of <run-dir>  → unset|local|remote

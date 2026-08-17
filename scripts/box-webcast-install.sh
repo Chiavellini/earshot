@@ -37,6 +37,9 @@
 # `pull-box-state.sh --prelaunch` returns authority. A CLOSED attempt is not
 # transferred: it will never be extended by the box, and its `archived` tail is
 # laptop bookkeeping.
+#
+# Every ssh and rsync leg rides ONE multiplexed master per invocation (E13):
+# ControlMaster=auto, socket under /tmp, ControlPersist=120, torn down on exit.
 set -euo pipefail
 
 REPO="${EARSHOT_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
@@ -81,7 +84,38 @@ KEY="${EARSHOT_BOX_KEY:-$HOME/.ssh/earshot-useast1.pem}"
 BOX_REPO="${EARSHOT_BOX_REPO:-~/ear}"
 SSH_BIN="${EARSHOT_SSH:-ssh}"
 RSYNC_BIN="${EARSHOT_RSYNC:-rsync}"
-SSH=("$SSH_BIN" -o ConnectTimeout=15 -o BatchMode=yes -i "$KEY" "$BOX")
+SSH_OPTS=(-o ConnectTimeout=15 -o BatchMode=yes -i "$KEY")
+
+# One multiplexed master per invocation (E13). A full dispatch opens ten
+# ssh/rsync legs in a few seconds; sshd's MaxStartups drops bursts of fresh
+# connections AT RANDOM, which surfaced as "rsync failed for run <a different
+# run each retry>" and cascaded into E12. Mirror of scripts/pull-box-state.sh
+# start_ssh_mux. The socket MUST live under /tmp, not TMPDIR: unix sockaddr
+# paths cap near 104 bytes and macOS's TMPDIR alone is ~50.
+SSH_MUX_DIR=""
+start_ssh_mux() {
+  SSH_MUX_DIR=$(mktemp -d /tmp/ear-dispatch-mux.XXXXXX) || return 1
+  SSH_OPTS+=(-o ControlMaster=auto -o "ControlPath=$SSH_MUX_DIR/mux" -o ControlPersist=120)
+}
+stop_ssh_mux() {
+  [[ -n "$SSH_MUX_DIR" ]] || return 0
+  # Only a real master owns a socket. A stub, or a refusal before the first
+  # connection, leaves none — and then no teardown call may reach the box.
+  if [[ -S "$SSH_MUX_DIR/mux" ]]; then
+    "$SSH_BIN" "${SSH_OPTS[@]}" -O exit "$BOX" >/dev/null 2>&1 || true
+  fi
+  rm -rf -- "$SSH_MUX_DIR"; SSH_MUX_DIR=""
+}
+# ONE exit trap, set once. A later `trap … EXIT` would silently replace it and
+# leave the master behind; staging cleanup is a flag inside it instead.
+STAGING_LIVE=0
+on_exit() {
+  if (( STAGING_LIVE )); then cleanup_staging; fi
+  stop_ssh_mux
+}
+start_ssh_mux || { echo "REFUSED: could not allocate the SSH multiplex directory under /tmp" >&2; exit 1; }
+trap on_exit EXIT
+SSH=("$SSH_BIN" "${SSH_OPTS[@]}" "$BOX")
 
 RUN_DIR=$(python3 - "$REPO" "$RUN_DIR_RAW" <<'PY'
 from pathlib import Path
@@ -258,11 +292,11 @@ if [[ "$VERIFY_ONLY" != 1 ]]; then
   cleanup_staging() {
     "${SSH[@]}" "case '$STAGING' in '$REMOTE_REPO'/var/host-boundary-staging/dispatch.*) rm -rf -- '$STAGING';; esac" >/dev/null 2>&1 || true
   }
-  trap cleanup_staging EXIT
+  STAGING_LIVE=1   # on_exit (set once above) now cleans staging too
   "${SSH[@]}" "mkdir -p '$STAGING/$PLAN_EVENT_ID'" || {
     echo "REFUSED: cannot create staged event directory" >&2; exit 1;
   }
-  RSYNC_RSH="$SSH_BIN -o ConnectTimeout=15 -o BatchMode=yes -i $KEY"
+  RSYNC_RSH="$SSH_BIN ${SSH_OPTS[*]}"   # same options — same multiplexed master — for rsync
   # control/authority.json is THIS host's private authority marker (E11); it
   # never travels. Both passes must carry the same exclude or the stability
   # check itemises it as a change. run-host-boundary.py ignores it too.
@@ -297,7 +331,7 @@ if [[ "$VERIFY_ONLY" != 1 ]]; then
     exit 1
   }
   cleanup_staging
-  trap - EXIT
+  STAGING_LIVE=0
 else
   "${SSH[@]}" "cd '$REMOTE_REPO' && EARSHOT_REPO='$REMOTE_REPO' python3 scripts/eventctl.py verify --run-dir '$REMOTE_RUN'" >/dev/null || {
     echo "REFUSED: installed box RunPlan/ledger is missing or invalid" >&2; exit 1;

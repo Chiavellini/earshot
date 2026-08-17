@@ -91,6 +91,16 @@ without transferring: the box will never extend a dead run, and its
 dispatch (fail-closed; the nightly re-run reconciles `already-equal` and
 retries the door).
 
+**SSH multiplexing (E13, 2026-08-17).** Every ssh and rsync leg of one
+invocation — ten for a full webcast dispatch, ~nine for a phone dispatch —
+rides one multiplexed master (`ControlMaster=auto`, socket under a private
+`mktemp -d /tmp/ear-<dispatch|event>-mux.XXXXXX`, never `TMPDIR`,
+`ControlPersist=120`) in both installers, mirroring `pull-box-state.sh`. One
+EXIT trap is set once and owns both staging cleanup (a flag) and the
+teardown; `ssh -O exit` runs only when a socket exists, so a stub-driven or
+pre-SSH-refused run never issues a teardown. rsync uses the same option set
+via `-e`, so it rides the same master.
+
 **Scheduled posture (O6, 2026-08-16).** Both installers previously hardcoded
 `--i-am-live --fillable` into every webcast unit, so a drill that exercised the
 detector was scheduled fillable by construction and its inertness rested on
@@ -409,7 +419,11 @@ It also pins E11: after a full dispatch and after `--dispatch-only` the local
 sidecar says `remote` and the box copy carries none; a laptop-side `blocked`
 on the dispatched attempt is `REFUSED: E11` with the receipts unchanged; the
 puller's return (simulated) makes the close a clean extension; a closed
-dispatch leaves authority local. Since 2026-08-17 every assertion in this file
+dispatch leaves authority local. For E13 it asserts, on the recorded stub
+argv, that every ssh leg of a full dispatch carries the three multiplex
+options, every rsync `-e` carries the ControlPath, no `-O exit` reaches the
+stub, and the mux dir is gone afterwards (red before the change; the socket
+guard and ControlPersist tampers each die at their line). Since 2026-08-17 every assertion in this file
 is `[[ … ]] || fail $LINENO` or `must_not` — macOS bash 3.2 does not trip
 `set -e` on a bare `[[ ]]`, so until then the file's ~45 bare assertions were
 inert on the laptop (SYSTEM-STATE E14); the plist path now runs under the
