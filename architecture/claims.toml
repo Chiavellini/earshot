@@ -8,7 +8,7 @@ authority = "open-collaboration-claims"
 [[claim]]
 id = "root.architecture"
 node = "project.architecture"
-worker = "event-lifecycle-lane"
+worker = "event-lifecycle-lane + ledger-authority-lane + ssh-mux-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
@@ -353,7 +353,7 @@ evidence = ["docs/nodes/control-operator.md"]
 [[claim]]
 id = "phone.supervise"
 node = "control.supervise"
-worker = "phone-lane + typed-scheduler-lane + cerebras-live-lane + coherent-live-lane"
+worker = "phone-lane + typed-scheduler-lane + cerebras-live-lane + coherent-live-lane + ledger-authority-lane + ssh-mux-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
@@ -840,7 +840,7 @@ evidence = ["docs/nodes/control-acquire.md"]
 [[claim]]
 id = "tls.deploy"
 node = "platform.deploy"
-worker = "tls-box-lane + typed-scheduler-lane"
+worker = "tls-box-lane + typed-scheduler-lane + ssh-mux-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
@@ -1154,7 +1154,7 @@ evidence = [
 [[claim]]
 id = "missed_arm.reconcile"
 node = "control.grade"
-worker = "admission-evidence-lane + event-lifecycle-lane + run-audit-lane + typed-scheduler-lane + coherent-live-grade-lane"
+worker = "admission-evidence-lane + event-lifecycle-lane + run-audit-lane + typed-scheduler-lane + coherent-live-grade-lane + ledger-authority-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
@@ -1257,7 +1257,7 @@ evidence = ["VERIFICATIONS.md"]
 [[claim]]
 id = "ops.lifecycle_ledger"
 node = "control.operate"
-worker = "event-lifecycle-lane + execution-identity-lane + typed-scheduler-lane + runplan-day-selection-lane + nightly-alert-lane + cerebras-live-lane + coherent-live-lane"
+worker = "event-lifecycle-lane + execution-identity-lane + typed-scheduler-lane + runplan-day-selection-lane + nightly-alert-lane + cerebras-live-lane + coherent-live-lane + ledger-authority-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
@@ -1322,7 +1322,7 @@ evidence = [
 [[claim]]
 id = "notify.delivery_log"
 node = "platform.notify"
-worker = "prep-night-26aug05 + event-lifecycle-lane"
+worker = "prep-night-26aug05 + event-lifecycle-lane + ledger-authority-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true

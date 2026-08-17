@@ -385,7 +385,14 @@ export EARSHOT_LAUNCH_UID=501
 export STUB_SYSTEMD_STATE="$STUB/systemd"
 export STUB_LAUNCHD_STATE="$STUB/launchd"
 export STUB_LOG="$STUB/calls.log"
-export EARSHOT_PYTHON=/opt/homebrew/opt/python@3.13/bin/python3.13
+# The plist build/readback path (install-t0-agents.sh) runs under $EARSHOT_PYTHON,
+# default `python3` — the SAME interpreter the laptop scheduler uses at fire
+# time. Until 2026-08-17 this line hard-pinned Homebrew python@3.13, so this
+# gate stayed green for five days while the production interpreter could not
+# `import plistlib` (SYSTEM-STATE L9): a gate that runs under a different
+# interpreter than the thing it guards cannot see that interpreter break.
+# Override only to test a specific interpreter, never to make the gate pass.
+export EARSHOT_PYTHON="${EARSHOT_PYTHON:-python3}"
 : > "$STUB_LOG"
 
 scheduled_count() {

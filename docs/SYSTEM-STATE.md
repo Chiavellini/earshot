@@ -344,9 +344,9 @@ the work orders reference them.
 
 ### Lifecycle / process
 
-- **L9 OPEN 2026-08-17 — the laptop webcast scheduler is dead right now, and it
-  is an interpreter catch-22.** Found while clearing stale launchd jobs, not by
-  a gate. Homebrew `python@3.14`'s `pyexpat` is linked against a newer expat
+- **L9 REPAIRED 2026-08-17 (route 2; was OPEN the same morning) — the laptop
+  webcast scheduler was dead, an interpreter catch-22.** Found while clearing
+  stale launchd jobs, not by a gate. Homebrew `python@3.14`'s `pyexpat` is linked against a newer expat
   than `/usr/lib/libexpat.1.dylib` (`Symbol not found:
   _XML_SetAllocTrackerActivationThreshold`), so **`import plistlib` fails**.
   `install-t0-agents.sh` imports `plistlib` at `:276` (plist build) and `:337`
@@ -370,20 +370,47 @@ the work orders reference them.
   file's header warns that a gate crying wolf four times in five trains the
   operator to ignore the fifth). Verified live: preflight prints `[PASS] …
   tomllib` and `[FAIL] … CANNOT import plistlib`.
-  **The repair itself is still OPEN and is the operator's call.** Root cause
-  measured: `pyexpat.cpython-314-darwin.so` records
-  `/usr/lib/libexpat.1.dylib` at current version 8.0.0, but macOS ships an
-  older libexpat in the dyld cache; Homebrew's own `expat 2.7.3` **is**
-  installed (keg-only) and does export the missing symbol. Two routes:
-  1. `brew reinstall python@3.14` — clean, but **17 live processes run on that
-     interpreter**, including a multi-day `pm_trader_loop.py --stake-usd 5` and
-     several `Kilos/DaC` collectors. Do it when those are safe to interrupt.
-  2. Surgical and reversible, and it does not disturb running processes (they
-     have already mapped the file):
-     `install_name_tool -change /usr/lib/libexpat.1.dylib
-     /opt/homebrew/opt/expat/lib/libexpat.1.dylib <pyexpat.so>` then
-     `codesign -f -s - <pyexpat.so>`. Reverted by any future `brew upgrade
-     python@3.14`, which the preflight gate above will then catch.
+  Root cause measured: `pyexpat.cpython-314-darwin.so` records
+  `/usr/lib/libexpat.1.dylib` at current version 8.0.0, but macOS 26.0.1
+  (25A362) ships `expat_2.7.1` in the dyld cache and the symbol arrived in
+  2.7.2; Homebrew's own `expat 2.7.3` **is** installed (keg-only) and does
+  export it. The older keg `python@3.14 3.14.3_1` imports both modules fine
+  under the same libexpat reference, so the 3.14.6 bottle introduced the
+  dependency — which means `brew reinstall` of the same bottle would most
+  likely re-hit it. Two routes were on the table:
+  1. `brew reinstall python@3.14` — interrupts **17 live processes on that
+     interpreter** (a multi-day `pm_trader_loop.py --stake-usd 5`, `Kilos/DaC`
+     collectors) and, per the above, is not even certain to fix it.
+  2. Surgical and reversible; does not disturb running processes.
+  **Operator ruled route 2; applied 2026-08-17 13:09 local.** Never rewrite the
+  mapped inode in place — patch a copy and rename it over the original so
+  every running process keeps the old inode:
+  ```
+  SO=/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/pyexpat.cpython-314-darwin.so
+  cp -p "$SO" "$SO.orig-26aug17"      # reversal copy, kept alongside
+  cp -p "$SO" "$SO.patched.tmp"
+  install_name_tool -change /usr/lib/libexpat.1.dylib /opt/homebrew/opt/expat/lib/libexpat.1.dylib "$SO.patched.tmp"
+  codesign -f -s - "$SO.patched.tmp"
+  mv -f "$SO.patched.tmp" "$SO"
+  ```
+  Reversal: `mv -f "$SO.orig-26aug17" "$SO"`. Header pad was 2064 B against
+  the +16 B the longer path needs, so the load command fit without relinking.
+  Proof, RED then GREEN under the exact fire-path env
+  (`env -i PATH=/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin python3 -c
+  "import tomllib, plistlib"`): EXIT:1 → EXIT:0, `expat_2.7.3` loaded;
+  `otool -L` shows the Homebrew dylib; the trader loop's 4 pids and all 18
+  python processes survived. **Reverted by any future `brew upgrade
+  python@3.14`** — the preflight gate above catches that on the next prep
+  night; the durable fix is macOS ≥ 26.1 (newer dyld-cache expat) or a
+  rebuilt bottle.
+  **A second class-(b) instance found while proving it:**
+  `tests/typed_scheduler_boundary.sh` — the only offline gate over the plist
+  build/readback path — hard-pinned `EARSHOT_PYTHON` to Homebrew
+  `python@3.13` since checkpoint `bccee1b`, so it stayed green for five days
+  under an interpreter the scheduler never uses. It now defaults to `python3`
+  (the production interpreter) and was RED with the exact L9 `ImportError`
+  before the patch and green after. Override `EARSHOT_PYTHON` only to test a
+  specific interpreter, never to make the gate pass.
   **The box lane is unaffected**: systemd units are written by
   `install-event-timer.sh`, which uses no plist — which is why the 08-16/17
   box drill ran end to end while this was broken.

@@ -92,7 +92,7 @@ in the L9 entry.
 | `tests/alertctl.py` | green (14) | Two new E12 cases. |
 | `pull-box-state.sh --check` | green | Extended with `--prelaunch` and `--supersede-legacy` cases. |
 | `schedule-nightly.sh --check` | green | Now asserts the alert **target**, not merely that an alert was raised. |
-| laptop webcast scheduling | **DEAD** | L9. Box lane fine. |
+| laptop webcast scheduling | green (repaired 13:09 local) | L9 route 2 applied — `pyexpat` repointed at Homebrew expat, reversal copy `pyexpat.cpython-314-darwin.so.orig-26aug17` alongside. `tests/typed_scheduler_boundary.sh` now runs under the production `python3` (it was pinned to python@3.13 and could not see the break). Re-breaks on `brew upgrade python@3.14`; preflight catches it. |
 
 **Before you diagnose anything, run doc-lint and confirm the 12 errors are
 still only nightly configs.** If they are, they are noise; if the count or the
@@ -136,9 +136,10 @@ Judgement, not a restatement. Rank by *what can silently destroy an event*.
    skill downstream assumes the canonical tree. Until one live run populates it,
    the entire evidence plane is untested against reality. Related: E4 (phone
    in-process audio parity never run live), E5, M3, M6.
-3. **L9 — laptop scheduler dead.** Blocks any laptop-hosted webcast event
-   today. Detection closed; repair needs the operator (17 live processes on
-   that interpreter, including a real-stake trader loop).
+3. ~~**L9 — laptop scheduler dead.**~~ REPAIRED 2026-08-17 (route 2, operator
+   ruling; see the ledger entry for the exact command and reversal). Residual:
+   any `brew upgrade python@3.14` reverts it — the preflight interpreter gate
+   and the now-honest `typed_scheduler_boundary.sh` both go red when it does.
 4. **E13 — other SSH callers still unmultiplexed** (`box-webcast-install.sh`,
    `deploy-box.sh`, `box-ready.sh`) and can trip the same `MaxStartups` wall
    that cascaded into E12.
