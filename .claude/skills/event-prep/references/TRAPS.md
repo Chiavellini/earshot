@@ -183,23 +183,34 @@ and the continuity predicate counts distinct TAIL SEGMENTS, never
 a resolver or gate watching silently is a page-worthy state — never a quiet
 one.
 
-## A box-preflighted run cannot be scheduled from the laptop (2026-08-14)
+## A box-preflighted run needs its receipts pulled before you can schedule it (2026-08-14)
 
 Seam S-C puts webcast preflight ON the box, so `preflight_passed` is minted
 into the BOX ledger. But `box-webcast-install.sh` checks `preflight_passed` on
-the **laptop's** run dir before it ever opens an SSH connection, and
-`pull-box-state.sh` explicitly refuses to publish a nonterminal run
-("inventory only; not publishing nonterminal typed run"). So the two halves of
-the supported path do not meet: there is no supported door that returns
-pre-launch box receipts to the laptop.
+the **laptop's** run dir before it ever opens an SSH connection. Schedule
+without pulling first and you get a refusal that reads like a failed preflight
+when the preflight actually passed — on the other host.
 
-The data model already allows it — `run-host-boundary.py` accepts
-`incoming_prefix_destination` — only the transport is missing. Until a lane
-lands one, the box drill's workaround is a plain `rsync` of
-`var/runs/<E>/<R>/` in both directions, journaled as a gap. The receipts stay
-genuine box-minted receipts; only their transport is unsupported.
+Pull the pre-launch receipts with the supported door:
 
-**Never close the gap by re-recording the receipts locally.** A hand-written
+```
+scripts/pull-box-state.sh --prelaunch --event <EVENT_ID>
+```
+
+`--prelaunch` publishes a run that has **not** reached `launched`, which is the
+only window where this is safe: before `launched` the run has no `capture/`,
+`book/` or `orders/` content, only atomically written control proofs, so there
+is no second growing authority to conflict with. It rides the same
+direction-agnostic `run-host-boundary.py reconcile` prefix primitive as the
+terminal pull, and it deliberately records **no** receipt of its own —
+`evidence_pulled` requires a terminal state. Once the prefix is local,
+`box-webcast-install.sh` and `schedule-nightly.sh` pass unmodified.
+
+A run that has already reached `launched` is still refused, by design; wait for
+terminal and use the ordinary pull.
+
+**Never close the gap by re-recording the receipts locally**, and never fall
+back to a hand `rsync` now that the door exists. A hand-written
 `preflight_passed` on the laptop would be a fabricated proof of a build that
 happened somewhere else, which is exactly the class the typed ledger exists to
 prevent.
@@ -216,5 +227,6 @@ REFUSED: eventctl status refused: REFUSED: ambiguous: 2 active runs for <EVENT>
 
 which is the right refusal for the wrong reason — the attempt IS closed, just
 not where preflight is looking. Push the closed ledger to the box before
-re-preflighting. Both directions of the box/laptop receipt boundary are manual
-today.
+re-preflighting; `scripts/deploy-box.sh` excludes `var/runs/` both directions
+(E3), so a laptop-side close does not travel on a deploy. This direction has no
+one-command door yet — only box→laptop does (`--prelaunch`, above).

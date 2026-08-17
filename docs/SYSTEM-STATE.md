@@ -167,6 +167,44 @@ the work orders reference them.
   240+ commits ahead of `main` with no immutable release artifact. The owed
   acceptance chain: immutable commit → dry rehearsal → operator-approved
   deployment → real loaded-scheduler proof → capture-only production fire.
+- **E7 CLOSED 2026-08-14** Pre-launch receipt boundary: box and laptop each keep
+  their own hash-chained `control/receipts.jsonl`, and no supported transport
+  moved a **pre-terminal** receipt between them — `pull-box-state.sh` published
+  terminal runs only (`:619,633-635`). Measured three times in the §8 rehearsal:
+  the box's `preflight_passed` could not reach the laptop installer; a
+  laptop-side close could not reach the box (`ambiguous: 2 active runs`); a
+  box-only terminal receipt failed local `verify`. Each was worked around with
+  hand `rsync`, which no skill can do and which invites a hand-written receipt.
+  Now: `pull-box-state.sh --prelaunch` publishes a run that has **not** reached
+  `launched`, over the already-tested direction-agnostic
+  `run-host-boundary.py reconcile` prefix primitive. Safe precisely because such
+  a run has no `capture/`, `book/` or `orders/` content — only atomically
+  written control proofs — so the two-growing-partial-authorities danger the
+  terminal-only refusal guards against cannot exist yet. It records **no**
+  receipt: `evidence_pulled` requires `completed|aborted|failed`
+  (`eventctl.py:94-97`) and inventing a lifecycle transition is a schema change.
+  With the prefix on the laptop, `schedule-nightly.sh` and
+  `box-webcast-install.sh` pass unmodified; no gate was weakened.
+- **E8 CLOSED 2026-08-14** `tests/preresolved_arm.sh` was not load-proof **and**
+  did not prove its own claim: case 2 asserted exit 3 for "a prior attempt's
+  url-file is refused", but *absent* and *stale* also exit 3, and under load the
+  8 s deadline expired during the nine `python3` preconditions, producing a
+  fourth path to the same code (observed red once at load 40). Now the bind
+  happens after setup, the budget is named (`EARSHOT_TEST_DEADLINE_SECS`,
+  default 25), the assertions grep the reason (`URLFILE-WRONG-ATTEMPT` /
+  `URLFILE-STALE` / `URLFILE-ABSENT`), and `assert_not_rig_timeout` fails
+  **distinctly** when the rig lost its own race, so a load flake can never again
+  be read as a product failure.
+- **E9 CLOSED 2026-08-14** Green-over-broken selftest, found while patching E7:
+  `pull-box-state.sh --check` passed with the new `--prelaunch` publication gate
+  **deliberately disabled**. Root cause is bash 3.2 (the only bash macOS ships):
+  a failing `[[ ... ]]` does **not** trip `set -e`, though a failing `[ ... ]`
+  does — so ~15 assertions in that selftest, including pre-existing ones, were
+  structurally incapable of failing. All are now `must` / `must_not` helpers
+  that exit non-zero, proved red-then-green twice (once by breaking a
+  pre-existing assertion that had never been able to fire). Same class as the
+  standing rule *never pipe a gate through `tail`, it masks `$?`*. **Rule: in
+  any repo shell gate, assert with `must`/`must_not`, never a bare `[[ ]]`.**
 
 ### Monitoring / grading (we can see it and score it) — `SOLUTION-OBSERVABILITY.md`
 
@@ -239,6 +277,26 @@ the work orders reference them.
   proof: the three archived AMAT attempts now verify OK-with-note and the
   access day-walk reads `pass=1 terminal=3 fail=0` where it read `fail=2`.
 
+### Deliberate behaviours that look like defects — DO NOT PATCH
+
+Surfaced as apparent findings by the 2026-08-14 §8 box-webcast rehearsal and
+triaged against the node contracts. Each is a safety property with a test
+pinning it. A future agent "fixing" one of these regresses the system.
+
+- **`arm` refuses a config whose markets are not active.** This is
+  `runtime.market_validation`'s stated failure contract — *missing/inactive
+  markets fail closed*. It is why the drill had to be retargeted at settled
+  tickers rather than run against nothing. Fail-closed on market identity is
+  the property that keeps a stale allowlist from arming at a live board.
+- **The decision journal is keyed on the market event, not the process
+  attempt or source lane.** `docs/layers/decision.md:32` — *scoped to the
+  trading event, not to an individual process attempt or source lane*. This is
+  the dedupe that stopped the 2026-08-11 quadruple-buy; two lanes covering one
+  call share one journal **on purpose**. Pinned by
+  `tests/e2e_full_chain.rs:294-320`.
+- **A terminal run failure raises a critical page.** Correct for a real event;
+  it only looked wrong because a drill is not an event.
+
 ## 4. Requires an operator ruling (deliberately NOT delegated to the work orders)
 
 Money policy is out of scope for the reliability agents; these stay open until
@@ -256,6 +314,15 @@ the operator rules:
   ev_gate has no P(wrong) term and gates nothing (shadow only).
 - **O5** No pre-arm liquidity survey and no depth-aware sizing; on 08-11 most
   intents found `best_ask=None` or depth above the cap.
+- **O6 OPEN 2026-08-14** The box webcast scheduling path **forces
+  `--i-am-live --fillable`**: there is no non-trading scheduled posture. The one
+  candidate, `capture_only`, requires zero keywords, so it cannot exercise the
+  detector at all — meaning any rehearsal that proves the detector end-to-end on
+  the box is, by construction, a fillable posture. The §8 drill was only made
+  inert by config (1¢ non-crossing OBSERVE + a settled-market allowlist), not by
+  the path. **A real box webcast event is a fillable posture until this is
+  ruled.** Closing it spans 7 refusal sites and 5 test assertions across two
+  nodes, so it is an operator decision, not a reliability patch.
 
 ## 5. Target operating model — the three skills
 

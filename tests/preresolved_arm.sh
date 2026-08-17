@@ -140,6 +140,10 @@ plan_sha() { python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["pla
 
 arm() {  # arm <run-dir>  -> echoes the exit code, never aborts the rig
   local run="$1" rc=0
+  # stderr goes to a file, NOT /dev/null: arm-on-url.sh prints its REFUSED
+  # message before it redirects into the run log, so discarding stderr threw
+  # away the only diagnosis of a precondition refusal. That is exactly how a
+  # load-induced "deadline has passed" masqueraded as "a prior attempt armed".
   EARSHOT_REPO="$REPO" EARSHOT_EXECUTION_HOST="$HOST_ID" \
   EARSHOT_RUN_PLAN_SHA256="$(plan_sha "$run")" \
   EARSHOT_ACCOUNT_ENV="$HOME/.earshot/account.env" \
@@ -147,8 +151,39 @@ arm() {  # arm <run-dir>  -> echoes the exit code, never aborts the rig
   EARSHOT_CURL="$STUB/bin/curl" PCM_GATE_SEQ_SECS=1 \
   EARSHOT_RESOLVER_RETRY_SECS=1 LAUNCH_COUNT="$STUB/launch-count" \
     "$REPO/scripts/arm-on-url.sh" --run-dir "$run" --i-am-live --fillable \
-      --secs 6 >/dev/null 2>&1 || rc=$?
+      --secs 6 >/dev/null 2>"$TMP/arm-stderr.log" || rc=$?
   printf '%s\n' "$rc"
+}
+
+# The arm's own log, where every verdict after the preconditions is written
+# (arm-on-url.sh redirects into it). Asserting on THIS is how a case proves
+# which gate refused, rather than trusting an exit code three causes share.
+arm_log() {  # arm_log <run-dir>
+  local run="$1"
+  printf '%s\n' "$REPO/state/$(basename "$(dirname "$run")")/arm-on-url-$(basename "$run").log"
+}
+
+# Deadline budget for the cases that must EXHAUST it. It has to outlast
+# arm-on-url.sh's preconditions — nine python3 interpreter starts (bind, two
+# plan_sha reads, eventctl verify, access-plan validate, the exports block …) —
+# because the deadline is tested at arm-on-url.sh:79, before the resolver ever
+# runs. At 8s under a loaded machine the deadline expired during setup and the
+# arm refused with exit 1 ("deadline has passed") instead of exit 3 (resolver
+# exhausted), reddening the rig for a reason that had nothing to do with it.
+DEADLINE_SECS="${EARSHOT_TEST_DEADLINE_SECS:-25}"
+
+# No fixed budget can win against an arbitrarily loaded machine — this laptop has
+# been observed at load average 52, where a single python3 start costs seconds.
+# So rather than inflate the budget until it is "probably enough", detect the
+# rig losing its OWN race and say so in those words. A precondition refusal is
+# never evidence about the product; reporting it as a product failure is the
+# defect this guard exists to prevent.
+assert_not_rig_timeout() {  # assert_not_rig_timeout <case-label>
+  grep -q 'deadline has passed' "$TMP/arm-stderr.log" 2>/dev/null || return 0
+  fail "$1: RIG LOST ITS OWN RACE, not a product failure — the AccessPlan deadline
+      expired during arm-on-url.sh's preconditions (load average $(uptime | sed 's/.*averages*: //')).
+      This says nothing about the resolver. Re-run on an unloaded machine, or
+      raise the budget: EARSHOT_TEST_DEADLINE_SECS=60 bash tests/preresolved_arm.sh"
 }
 
 launches() { [[ -f "$STUB/launch-count" ]] && wc -l < "$STUB/launch-count" | tr -d ' ' || echo 0; }
@@ -177,6 +212,7 @@ grep -q 'master.m3u8' "$REPO/state/KXEARNINGSMENTIONPRE1-TEST-WEBCAST/url-push.j
   && fail "push journal recorded the URL instead of its hash"
 
 RC=$(arm "$RUN1")
+assert_not_rig_timeout "case 1"
 [[ "$RC" == 0 ]] || fail "case 1: arm exited $RC with a fresh pushed url-file"
 [[ "$(launches)" == 1 ]] || fail "case 1: expected exactly one launch, got $(launches)"
 [[ -f "$RUN1/control/pcm-proof.json" ]] || fail "case 1: no PCM proof was produced"
@@ -189,11 +225,19 @@ grep -q 'RESOLVER_DEADLINE_EPOCH=<unset>' "$STUB/wait-env" \
 # timestamp-based freshness rule passes this file; only attempt identity
 # refuses it.
 RUN2=$(make_run 2 pre1-stream.url)
-bind_preresolved "$RUN2" pre1-stream.url "$(soon 8)"
+# Everything that costs a python3 start happens BEFORE the deadline clock is
+# bound, so the budget is spent on the wait and not on the rig's own setup.
 [[ "$(plan_sha "$RUN2")" != "$(plan_sha "$RUN1")" ]] || fail "case 2: the two attempts share a plan hash"
 BEFORE=$(launches)
+bind_preresolved "$RUN2" pre1-stream.url "$(soon "$DEADLINE_SECS")"
 RC=$(arm "$RUN2")
-[[ "$RC" == 3 ]] || fail "case 2: a prior attempt's url-file armed (exit $RC)"
+assert_not_rig_timeout "case 2"
+# Assert the REASON, not just the code. Exit 3 is also what an absent file and
+# a stale file produce, so the bare code proved nothing about attempt identity —
+# which is the only thing this case exists to prove.
+grep -q 'URLFILE-WRONG-ATTEMPT' "$(arm_log "$RUN2")" \
+  || fail "case 2: the wait did not refuse on ATTEMPT IDENTITY; arm log says: $(tail -3 "$(arm_log "$RUN2")" 2>/dev/null | tr '\n' ' ')${DEADLINE_HINT:-}"
+[[ "$RC" == 3 ]] || fail "case 2: a prior attempt's url-file armed (exit $RC); stderr: $(tail -1 "$TMP/arm-stderr.log" 2>/dev/null)"
 [[ "$(launches)" == "$BEFORE" ]] || fail "case 2: a prior attempt's url-file reached the launcher"
 [[ ! -e "$RUN2/control/pcm-proof.json" ]] \
   || fail "case 2: the wait admitted the file and the PCM gate refused it — wrong gate"
@@ -201,7 +245,8 @@ grep -q "NOT ARMED — resolver failed" "$STUB/pages" || fail "case 2: no page w
 
 # ── Case 3: a stale-but-correct file is refused on the freshness bound ────────
 RUN3=$(make_run 3 pre3-stream.url)
-bind_preresolved "$RUN3" pre3-stream.url "$(soon 8)"
+# Sidecar + mtime setup costs two more python3 starts, so it happens before the
+# deadline is bound — case 3 was the most load-fragile of the three.
 printf 'https://media.example.invalid/live/master.m3u8\n' > "$HOME/pre3-stream.url"
 PLAN3=$(plan_sha "$RUN3") URLF="$HOME/pre3-stream.url" python3 - <<'PY'
 import hashlib, json, os
@@ -215,18 +260,25 @@ Path(str(p) + ".meta").write_text(json.dumps({
 PY
 python3 -c 'import os,sys;os.utime(sys.argv[1],(1,1))' "$HOME/pre3-stream.url"
 BEFORE=$(launches)
+bind_preresolved "$RUN3" pre3-stream.url "$(soon "$DEADLINE_SECS")"
 RC=$(arm "$RUN3")
-[[ "$RC" == 3 ]] || fail "case 3: a two-day-old url-file armed (exit $RC)"
+assert_not_rig_timeout "case 3"
+grep -q 'URLFILE-STALE' "$(arm_log "$RUN3")" \
+  || fail "case 3: the wait did not refuse on FRESHNESS; arm log says: $(tail -3 "$(arm_log "$RUN3")" 2>/dev/null | tr '\n' ' ')"
+[[ "$RC" == 3 ]] || fail "case 3: a two-day-old url-file armed (exit $RC); stderr: $(tail -1 "$TMP/arm-stderr.log" 2>/dev/null)"
 [[ "$(launches)" == "$BEFORE" ]] || fail "case 3: a stale url-file reached the launcher"
 [[ ! -e "$RUN3/control/pcm-proof.json" ]] || fail "case 3: the wait admitted a stale file"
 
 # ── Case 4: nothing ever arrives — bounded, exit 3, and the page fires ────────
 RUN4=$(make_run 4 pre4-stream.url)
-bind_preresolved "$RUN4" pre4-stream.url "$(soon 8)"
 : > "$STUB/pages"
 BEFORE=$(launches)
+bind_preresolved "$RUN4" pre4-stream.url "$(soon "$DEADLINE_SECS")"
 RC=$(arm "$RUN4")
-[[ "$RC" == 3 ]] || fail "case 4: the wait did not exhaust its deadline (exit $RC)"
+assert_not_rig_timeout "case 4"
+grep -q 'URLFILE-ABSENT\|URLFILE-WAIT ABSENT' "$(arm_log "$RUN4")" \
+  || fail "case 4: the wait did not refuse on an ABSENT file; arm log says: $(tail -3 "$(arm_log "$RUN4")" 2>/dev/null | tr '\n' ' ')"
+[[ "$RC" == 3 ]] || fail "case 4: the wait did not exhaust its deadline (exit $RC); stderr: $(tail -1 "$TMP/arm-stderr.log" 2>/dev/null)"
 [[ "$(launches)" == "$BEFORE" ]] || fail "case 4: an unresolved plan reached the launcher"
 [[ "$(grep -c 'NOT ARMED — resolver failed' "$STUB/pages")" == 1 ]] \
   || fail "case 4: expected exactly one deadline page"

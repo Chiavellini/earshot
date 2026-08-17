@@ -1204,6 +1204,10 @@ paths = [
 ]
 verification = [
   "python3 scripts/missed-arm-check.py --check",
+  # The puller's own offline fixture was never in this list, so nothing ran it
+  # as a gate. It is also the fixture that was passing vacuously under bash 3.2
+  # until its assertions gained teeth (2026-08-14).
+  "scripts/pull-box-state.sh --check",
   "python3 tests/run_audit.py",
   "python3 tests/audit_day.py",
   "python3 tests/score_precision.py",

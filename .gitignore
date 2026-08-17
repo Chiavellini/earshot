@@ -38,3 +38,8 @@ var/audits/
 # Archived run evidence pulled aside from var/runs/ — same class of operational
 # state, kept on disk only.
 var/runs-archive/
+# Private staging + lock for scripts/run-host-boundary.py and the box installers'
+# dispatch trees. Same class as the three above, and deploy-box.sh:56 has always
+# excluded it; only .gitignore was never updated, so `.boundary.lock` showed up
+# as untracked after every host-boundary reconcile.
+var/host-boundary-staging/

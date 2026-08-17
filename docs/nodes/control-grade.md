@@ -54,6 +54,30 @@ manufacture a typed receipt. Repeating a terminal pull is idempotent: the
 remote receipt file is the prefix and the already-recorded local tail is
 preserved.
 
+`--prelaunch` is the one opt-in exception, and it is bounded at `launched`, not
+at "active". A run that has not reached `launched` has no `capture/`, `book/` or
+`orders/` content at all — only atomically published `control/` proofs and the
+append-only ledger — so the growing-tape hazard the default refusal names cannot
+exist yet. Once `launched` is reached the run is refused again, `--prelaunch` or
+not. It publishes through the same `run-host-boundary.py` prefix primitive as
+every other direction and records **no** receipt: `evidence_pulled` requires a
+terminal execution outcome, and returning a preflight prefix is not one. The
+returned receipts are their own proof.
+
+This exists because seam S-C mints `preflight_passed` on the box while
+`schedule-nightly.sh` and `box-webcast-install.sh` both read that receipt from
+the laptop ledger, and a box-only terminal receipt fails local `verify`
+outright. The 2026-08-14 box rehearsal hit all three symptoms of that one
+missing door and had to move run directories by hand. The supported command is:
+
+```sh
+scripts/pull-box-state.sh --event <EVENT_ID> --prelaunch   # after box preflight
+```
+
+Never close that gap by re-recording the receipts locally: a hand-written
+`preflight_passed` is a fabricated proof of a build that happened on another
+host, which is the exact class the typed ledger exists to prevent.
+
 HIMS 26AUG10 needed all three defects at once to read clean. Its phone lane put
 **2 orders on the wire and spent 194¢**, and the day was reported as
 `1 staged, 1 captured, 0 orders … 1¢ non-crossing posture` off the laptop's
@@ -365,7 +389,17 @@ It exercises both `--date` and `--event`, a complete terminal box extension of
 an existing laptop preflight prefix, the local receipt-tail idempotency case,
 byte-divergent evidence refusal, a legacy-only event, active and descoped runs
 that remain inventory-only, a failed run that must publish, a corrupt RunPlan
-that must publish nothing, and dry-run non-mutation.
+that must publish nothing, and dry-run non-mutation. For `--prelaunch` it also
+pins that a pre-launch run publishes, records no `evidence_pulled`, and is
+idempotent — and that a run which reached `launched` is still refused.
+
+Its assertions go through the `must` / `must_not` helpers, and that is a
+correctness requirement rather than style. macOS ships bash 3.2, where a failing
+`[[ ... ]]` does **not** trigger `set -e` (a failing `[ ... ]` does). Every
+assertion here used to be a bare `[[ ... ]]`, so on the operator's own laptop the
+whole gate passed vacuously: measured 2026-08-14, with the `--prelaunch`
+publication path deliberately disabled, `--check` still printed PASS. Do not
+reintroduce a bare `[[ ]]` assertion in this file.
 
 `scripts/pull-box-state.sh --dry-run` performs only the remote read-only
 inventory and writes no local path. Exit codes are the machine surface: `0`

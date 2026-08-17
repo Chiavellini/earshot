@@ -5,6 +5,7 @@
 #   scripts/pull-box-state.sh --date 2026-08-10
 #   scripts/pull-box-state.sh --event KXEARNINGSMENTIONHIMS-26AUG10-PHONE
 #   scripts/pull-box-state.sh --date 2026-08-10 --dry-run
+#   scripts/pull-box-state.sh --event <E> --prelaunch    # pre-launch receipts
 #   scripts/pull-box-state.sh --check                    # offline fixtures
 #
 # Two trees cross the host boundary:
@@ -17,6 +18,26 @@
 # identity and receives an evidence_pulled receipt only after a complete,
 # stable rsync snapshot is local and eventctl verifies the plan, ledger, and
 # pinned inputs. The box is read-only throughout.
+#
+# --prelaunch (2026-08-14) returns the box's PRE-LAUNCH receipt prefix so a run
+# preflighted on the box can be scheduled and verified from the laptop. Seam S-C
+# mints preflight_passed on the box, but schedule-nightly.sh and
+# box-webcast-install.sh both read that receipt from the LAPTOP ledger, and a
+# box-only terminal receipt fails local verify outright — three symptoms of one
+# missing door, all measured in the 2026-08-14 box rehearsal.
+#
+# It is bounded at `launched`, not at "active", and that bound is the whole
+# safety argument. The default refusal below exists because a GROWING tape or
+# ledger copied into the canonical root creates a second partial authority. A
+# run that has not reached `launched` has no capture/, book/ or orders/ content
+# at all — only atomically published control/ proofs and the append-only
+# receipts.jsonl — so the hazard that refusal names cannot exist yet. Once a run
+# reaches `launched`, --prelaunch refuses it like any other active run.
+#
+# It publishes through the same run-host-boundary prefix primitive as every
+# other direction and records NO receipt: evidence_pulled requires
+# completed|aborted|failed (eventctl.py:95), and a pre-launch return is not an
+# evidence outcome. The returned receipts are their own proof.
 set -euo pipefail
 
 EXIT_REFUSED=1
@@ -36,10 +57,11 @@ DATE_FILTER=""
 EVENT_FILTER=""
 DRY_RUN=0
 CHECK_ONLY=0
+PRELAUNCH=0
 WORK_ROOT=""
 
 usage() {
-  sed -n '2,10p' "$SCRIPT_PATH"
+  sed -n '2,11p' "$SCRIPT_PATH"
 }
 
 refuse() {
@@ -249,8 +271,13 @@ terminal = p["state"].get("terminal")
 t = terminal.get("transition") if terminal else None
 if "completed" in reached or t in {"aborted", "failed"}:
     print("terminal")
+elif "launched" in reached:
+    # Launched but not terminal: capture/book/order evidence is growing right
+    # now. Never publishable mid-flight, --prelaunch or not.
+    print("active")
 else:
-    print("nonterminal")
+    # Pre-launch: only control/ proofs and the append-only ledger exist.
+    print("prelaunch")
 ' <<< "$payload"
 }
 
@@ -276,10 +303,36 @@ record_evidence_pulled() {
     "${artifact_args[@]}"
 }
 
+# Assertion helpers. NOT sugar — a correctness requirement.
+#
+# macOS ships bash 3.2 as /bin/bash, and `#!/usr/bin/env bash` resolves to it.
+# In bash 3.2 a failing `[[ ... ]]` does NOT trigger `set -e`, while a failing
+# `[ ... ]` does. Every assertion in this self-check used to be a bare `[[ ... ]]`,
+# so on the operator's own laptop the whole gate passed vacuously — it could not
+# fail. Measured 2026-08-14: with the --prelaunch publication path deliberately
+# disabled, `--check` still printed PASS.
+#
+# These helpers exit non-zero on failure and name the assertion, so a red gate
+# is both real and self-diagnosing. Do not reintroduce a bare `[[ ]]` assertion.
+selftest_fail() {
+  echo "SELFTEST FAIL: $*" >&2
+  exit 1
+}
+
+must() {
+  "$@" || selftest_fail "expected to succeed: $*"
+}
+
+must_not() {
+  if "$@"; then
+    selftest_fail "expected to fail: $*"
+  fi
+}
+
 run_self_check() {
   local check_root source_repo local_repo event_id run_dir run_id
   local legacy_event bad_event active_event active_run failed_event failed_run
-  local descoped_event descoped_run
+  local descoped_event descoped_run launched_event launched_run
   check_root=$(mktemp -d /tmp/pull-box-state-check.XXXXXX)
   trap 'rm -rf -- "$check_root"' RETURN
   source_repo="$check_root/source"
@@ -336,10 +389,10 @@ EOF
   _EARSHOT_PULL_SOURCE_ROOT="$source_repo" \
     _EARSHOT_PULL_REPO_ROOT="$local_repo" \
     "$SCRIPT_PATH" --date 2026-08-12 >/dev/null
-  [[ -f "$local_repo/state/$event_id/box/report.json" ]]
-  [[ ! -e "$local_repo/state/$event_id/box/earshot-pinned" ]]
-  [[ ! -e "$local_repo/state/$event_id/box/rules" ]]
-  [[ -f "$local_repo/var/runs/$event_id/$run_id/report/report.json" ]]
+  must test -f "$local_repo/state/$event_id/box/report.json"
+  must_not test -e "$local_repo/state/$event_id/box/earshot-pinned"
+  must_not test -e "$local_repo/state/$event_id/box/rules"
+  must test -f "$local_repo/var/runs/$event_id/$run_id/report/report.json"
   EARSHOT_REPO="$local_repo" python3 "$local_repo/scripts/eventctl.py" \
     status --run-dir "$local_repo/var/runs/$event_id/$run_id" --json |
     python3 -c 'import json,sys; assert "evidence_pulled" in {r["transition"] for r in json.load(sys.stdin)["state"]["reached"]}'
@@ -359,7 +412,7 @@ EOF
     echo "self-check: divergent run was accepted" >&2
     return 1
   fi
-  grep -q '"runtime_success":true' \
+  must grep -q '"runtime_success":true' \
     "$local_repo/var/runs/$event_id/$run_id/report/report.json"
   printf '{"finalized":true,"runtime_success":true}\n' > \
     "$run_dir/report/report.json"
@@ -371,16 +424,16 @@ EOF
   _EARSHOT_PULL_SOURCE_ROOT="$source_repo" \
     _EARSHOT_PULL_REPO_ROOT="$local_repo" \
     "$SCRIPT_PATH" --event "$legacy_event" --dry-run >/dev/null
-  [[ ! -e "$local_repo/state/$legacy_event" ]]
+  must_not test -e "$local_repo/state/$legacy_event"
   _EARSHOT_PULL_SOURCE_ROOT="$source_repo" \
     _EARSHOT_PULL_REPO_ROOT="$local_repo" \
     "$SCRIPT_PATH" --event "$legacy_event" >/dev/null
-  [[ -f "$local_repo/state/$legacy_event/box/launch.log" ]]
-  [[ ! -e "$local_repo/var/runs/$legacy_event" ]]
+  must test -f "$local_repo/state/$legacy_event/box/launch.log"
+  must_not test -e "$local_repo/var/runs/$legacy_event"
 
   # A nonterminal RunPlan is inventoried and verified in private staging but
-  # never published into the laptop's canonical run root. Growing live files
-  # cannot become a second partial authority.
+  # never published into the laptop's canonical run root BY DEFAULT. Growing
+  # live files cannot become a second partial authority.
   active_event="KXEARNINGSMENTIONACTIVE-26AUG12-PHONE"
   sed "s/$event_id/$active_event/g" "$source_repo/configs/pull-test.toml" > \
     "$source_repo/configs/active.toml"
@@ -394,7 +447,51 @@ EOF
   _EARSHOT_PULL_SOURCE_ROOT="$source_repo" \
     _EARSHOT_PULL_REPO_ROOT="$local_repo" \
     "$SCRIPT_PATH" --event "$active_event" >/dev/null
-  [[ ! -e "$local_repo/var/runs/$active_event/$(basename "$active_run")" ]]
+  must_not test -e "$local_repo/var/runs/$active_event/$(basename "$active_run")"
+
+  # --prelaunch returns that same pre-launch run, because it has not reached
+  # `launched` and therefore has no growing capture/book/order evidence. This is
+  # the supported door for a run preflighted on the box (2026-08-14 D1).
+  _EARSHOT_PULL_SOURCE_ROOT="$source_repo" \
+    _EARSHOT_PULL_REPO_ROOT="$local_repo" \
+    "$SCRIPT_PATH" --event "$active_event" --prelaunch >/dev/null
+  must test -f "$local_repo/var/runs/$active_event/$(basename "$active_run")/control/run-plan.json"
+  # ...and records NO receipt: evidence_pulled requires completed|aborted|failed
+  # and a returned preflight prefix is not an evidence outcome. Assert the
+  # ledger EXISTS first — otherwise a missing file would satisfy must_not
+  # vacuously and prove nothing.
+  must test -f "$local_repo/var/runs/$active_event/$(basename "$active_run")/control/receipts.jsonl"
+  must_not grep -q '"transition":"evidence_pulled"' \
+    "$local_repo/var/runs/$active_event/$(basename "$active_run")/control/receipts.jsonl"
+  # Idempotent: the second return is a boundary no-op, not a divergence.
+  _EARSHOT_PULL_SOURCE_ROOT="$source_repo" \
+    _EARSHOT_PULL_REPO_ROOT="$local_repo" \
+    "$SCRIPT_PATH" --event "$active_event" --prelaunch >/dev/null
+
+  # A run that HAS reached `launched` is refused even under --prelaunch: from
+  # that transition on, capture/book/order evidence is being written and a
+  # mid-flight copy is exactly the second partial authority the default refusal
+  # exists to prevent.
+  launched_event="KXEARNINGSMENTIONLAUNCHED-26AUG12-PHONE"
+  sed "s/$event_id/$launched_event/g" "$source_repo/configs/pull-test.toml" > \
+    "$source_repo/configs/launched.toml"
+  cp "$source_repo/configs/launched.toml" "$local_repo/configs/launched.toml"
+  EARSHOT_REPO="$source_repo" EARSHOT_HOST_ID="box-test" \
+    EARSHOT_KALSHI_ACCOUNT_FINGERPRINT="sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+    python3 "$source_repo/scripts/eventctl.py" init \
+      --config configs/launched.toml >/dev/null
+  launched_run=$(find "$source_repo/var/runs/$launched_event" \
+    -mindepth 1 -maxdepth 1 -type d)
+  for transition in prepared admission_resolved study_completed \
+    preflight_passed scheduled capture_ready launched
+  do
+    EARSHOT_REPO="$source_repo" python3 "$source_repo/scripts/eventctl.py" \
+      record --run-dir "$launched_run" --transition "$transition" >/dev/null
+  done
+  _EARSHOT_PULL_SOURCE_ROOT="$source_repo" \
+    _EARSHOT_PULL_REPO_ROOT="$local_repo" \
+    "$SCRIPT_PATH" --event "$launched_event" --prelaunch >/dev/null
+  must_not test -e "$local_repo/var/runs/$launched_event/$(basename "$launched_run")"
 
   # Failed execution is terminal evidence and is still audit-worthy; a
   # pre-launch descope is terminal bookkeeping but produced no evidence.
@@ -413,7 +510,7 @@ EOF
   _EARSHOT_PULL_SOURCE_ROOT="$source_repo" \
     _EARSHOT_PULL_REPO_ROOT="$local_repo" \
     "$SCRIPT_PATH" --event "$failed_event" >/dev/null
-  grep -q '"transition":"evidence_pulled"' \
+  must grep -q '"transition":"evidence_pulled"' \
     "$local_repo/var/runs/$failed_event/$(basename "$failed_run")/control/receipts.jsonl"
 
   descoped_event="KXEARNINGSMENTIONDESCOPED-26AUG12-PHONE"
@@ -431,7 +528,7 @@ EOF
   _EARSHOT_PULL_SOURCE_ROOT="$source_repo" \
     _EARSHOT_PULL_REPO_ROOT="$local_repo" \
     "$SCRIPT_PATH" --event "$descoped_event" >/dev/null
-  [[ ! -e "$local_repo/var/runs/$descoped_event/$(basename "$descoped_run")" ]]
+  must_not test -e "$local_repo/var/runs/$descoped_event/$(basename "$descoped_run")"
 
   # Invalid run identity aborts the whole staged pull before even its legacy
   # state is installed.
@@ -448,8 +545,8 @@ EOF
     echo "self-check: invalid run was accepted" >&2
     return 1
   fi
-  [[ ! -e "$local_repo/state/$bad_event" ]]
-  [[ ! -e "$local_repo/var/runs/$bad_event" ]]
+  must_not test -e "$local_repo/state/$bad_event"
+  must_not test -e "$local_repo/var/runs/$bad_event"
 
   echo "pull-box-state --check: PASS"
 }
@@ -470,6 +567,10 @@ while [[ $# -gt 0 ]]; do
       DRY_RUN=1
       shift
       ;;
+    --prelaunch)
+      PRELAUNCH=1
+      shift
+      ;;
     --check)
       CHECK_ONLY=1
       shift
@@ -485,7 +586,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ "$CHECK_ONLY" -eq 1 ]]; then
-  [[ -z "$DATE_FILTER" && -z "$EVENT_FILTER" && "$DRY_RUN" -eq 0 ]] ||
+  [[ -z "$DATE_FILTER" && -z "$EVENT_FILTER" && "$DRY_RUN" -eq 0 && "$PRELAUNCH" -eq 0 ]] ||
     usage_error "--check cannot be combined with pull arguments"
   run_self_check
   exit 0
@@ -576,9 +677,11 @@ WORK_ROOT=$(mktemp -d "$LOCAL_REPO/var/.pull-box-state.XXXXXX")
 trap cleanup_work EXIT
 RUN_MANIFEST="$WORK_ROOT/runs.tsv"
 TERMINAL_MANIFEST="$WORK_ROOT/terminal-runs.tsv"
+PRELAUNCH_MANIFEST="$WORK_ROOT/prelaunch-runs.tsv"
 STATE_MANIFEST="$WORK_ROOT/state.txt"
 : > "$RUN_MANIFEST"
 : > "$TERMINAL_MANIFEST"
+: > "$PRELAUNCH_MANIFEST"
 : > "$STATE_MANIFEST"
 
 echo "staging read-only evidence from $SOURCE_LABEL"
@@ -616,7 +719,13 @@ while IFS=$'\t' read -r event_id run_id; do
   verify_run "$staged" || refuse "staged RunPlan/ledger failed verification: $event_id/$run_id"
   class=$(status_class "$staged") ||
     refuse "could not derive staged terminal state: $event_id/$run_id"
+  publish_to=""
   if [[ "$class" == "terminal" ]]; then
+    publish_to="$TERMINAL_MANIFEST"
+  elif [[ "$class" == "prelaunch" && "$PRELAUNCH" -eq 1 ]]; then
+    publish_to="$PRELAUNCH_MANIFEST"
+  fi
+  if [[ -n "$publish_to" ]]; then
     expected_host=$(python3 -c \
       'import json,sys; print(json.load(open(sys.argv[1]))["execution_host_id"])' \
       "$staged/control/run-plan.json") ||
@@ -629,7 +738,9 @@ while IFS=$'\t' read -r event_id run_id; do
       --check-only >/dev/null ||
       refuse "existing local run diverges from box: $event_id/$run_id"
     printf '%s\t%s\t%s\n' "$event_id" "$run_id" "$expected_host" >> \
-      "$TERMINAL_MANIFEST"
+      "$publish_to"
+  elif [[ "$class" == "prelaunch" ]]; then
+    echo "inventory only; not publishing pre-launch typed run (use --prelaunch): $event_id/$run_id"
   else
     echo "inventory only; not publishing nonterminal typed run: $event_id/$run_id"
   fi
@@ -661,9 +772,10 @@ while IFS= read -r event_id; do
   fi
 done < "$STATE_MANIFEST"
 
-# Publish/advance terminal typed runs only, through the same prefix primitive
-# used for laptop->box dispatch. Every collision was check-only validated above
-# before the first legacy or typed destination was created.
+# Publish/advance terminal typed runs — and, under --prelaunch, pre-launch ones
+# — through the same prefix primitive used for laptop->box dispatch. Every
+# collision was check-only validated above before the first legacy or typed
+# destination was created.
 while IFS=$'\t' read -r event_id run_id expected_host; do
   [[ -n "$event_id" ]] || continue
   staged="$WORK_ROOT/runs/$event_id/$run_id"
@@ -674,7 +786,20 @@ while IFS=$'\t' read -r event_id run_id expected_host; do
     --destination "$final" \
     --expected-host "$expected_host" >/dev/null ||
     refuse "could not publish verified box extension: $event_id/$run_id"
-done < "$TERMINAL_MANIFEST"
+done < <(cat "$TERMINAL_MANIFEST" "$PRELAUNCH_MANIFEST")
+
+# Pre-launch returns carry no receipt: evidence_pulled requires
+# completed|aborted|failed, and returning a preflight prefix is not an evidence
+# outcome. Verify what landed and say so; the receipts are their own proof.
+prelaunch_count=0
+while IFS=$'\t' read -r event_id run_id expected_host; do
+  [[ -n "$event_id" ]] || continue
+  final="$LOCAL_REPO/var/runs/$event_id/$run_id"
+  verify_run "$final" ||
+    refuse "published pre-launch RunPlan/ledger failed verification: $event_id/$run_id"
+  echo "pre-launch receipts returned (no receipt recorded): $event_id/$run_id"
+  prelaunch_count=$((prelaunch_count + 1))
+done < "$PRELAUNCH_MANIFEST"
 
 # The public eventctl door is the final authority. Only terminal execution
 # outcomes are eligible: completed, aborted, or failed. Legacy-only state and
@@ -693,5 +818,5 @@ while IFS=$'\t' read -r event_id run_id expected_host; do
 done < "$TERMINAL_MANIFEST"
 
 state_count=$(wc -l < "$STATE_MANIFEST" | tr -d ' ')
-echo "pull complete: $state_count legacy state tree(s), $run_count typed run(s), $terminal_count terminal receipt(s)"
+echo "pull complete: $state_count legacy state tree(s), $run_count typed run(s), $terminal_count terminal receipt(s), $prelaunch_count pre-launch return(s)"
 echo "next: python3 scripts/missed-arm-check.py --date ${DATE_FILTER:-<the event date>}"
