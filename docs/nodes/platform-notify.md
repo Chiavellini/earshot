@@ -17,8 +17,9 @@ run tree, the same facts live in a mode-0600 append-only hash chain at
 proof-bearing path for a never-armed event or the live monitor; neither caller
 writes into `var/runs/`.
 
-**A run ledger may only be written by the run's execution host (E12,
-2026-08-17).** Because alert facts are rows in the RunPlan's own hash chain, a
+**A run ledger may only be written by the host that currently holds its
+ledger authority (E12, 2026-08-17; mechanised for dispatched runs by E11 the
+same day).** Because alert facts are rows in the RunPlan's own hash chain, a
 second host appending to its copy forks that chain permanently — the owning
 host is appending at the same indexes, no prefix relation can ever exist again,
 and the attempt becomes undispatchable, unpullable and unrecoverable. Measured:
@@ -30,7 +31,14 @@ plan's `execution_host_id`, before any append. It refuses only on a **proven**
 mismatch: when the variable is unset this process cannot tell, and refusing
 there would break every ordinary local invocation, so callers that know a run
 is remote must route to `--alert-dir` with a `--scope` themselves
-(`schedule-nightly.sh` does this for box-hosted runs in both lanes).
+(`schedule-nightly.sh` does this for box-hosted runs in both lanes). The
+dispatched case no longer depends on the variable at all: once an installer
+has handed a copy's ledger authority to the execution host
+(`control/authority.json` says `remote`, control.operate E11), the eventctl
+door itself refuses the `compat` append with a one-line `REFUSED: E11 …` and
+no row — pinned by `tests/alertctl.py`
+(`test_alert_refuses_a_run_ledger_whose_authority_was_transferred`), which
+also proves the same raise lands once the puller returns authority.
 
 `scripts/notify.sh` remains the local mail/desktop/speech adapter.
 `scripts/alert-phone.sh` is the critical fallback: it calls only the operator

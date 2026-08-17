@@ -30,7 +30,10 @@
 # This script does NOT dial and does NOT arm. Before scheduling, it transfers
 # the exact verified RunPlan + receipt prefix into a private box staging path,
 # verifies it again against the box's pinned config/env, and publishes it only
-# through scripts/run-host-boundary.py. The box owns every later append.
+# through scripts/run-host-boundary.py. The box owns every later append — and
+# since 2026-08-17 that ownership is recorded on this copy (`eventctl authority
+# --transfer-to`, E11) so a laptop-side write before the pull refuses instead
+# of forking the chain.
 set -uo pipefail
 
 REPO="${EARSHOT_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
@@ -223,10 +226,13 @@ if [[ "$VERIFY_ONLY" != 1 ]]; then
     echo "REFUSED: cannot create staged event directory" >&2; exit 1;
   }
   RSYNC_RSH="ssh -o ConnectTimeout=15 -o BatchMode=yes -i $KEY"
-  rsync -a --delete -e "$RSYNC_RSH" "$RUN_DIR/" "$BOX:$STAGED_RUN/" || {
+  # control/authority.json is THIS host's private authority marker (E11); it
+  # never travels. Both passes must carry the same exclude or the stability
+  # check itemises it as a change. run-host-boundary.py ignores it too.
+  rsync -a --delete --exclude=/control/authority.json -e "$RSYNC_RSH" "$RUN_DIR/" "$BOX:$STAGED_RUN/" || {
     echo "REFUSED: RunPlan prefix transfer failed" >&2; exit 1;
   }
-  STABILITY=$(rsync -ani --checksum --delete -e "$RSYNC_RSH" \
+  STABILITY=$(rsync -ani --checksum --delete --exclude=/control/authority.json -e "$RSYNC_RSH" \
     "$RUN_DIR/" "$BOX:$STAGED_RUN/") || {
       echo "REFUSED: RunPlan prefix stability check failed" >&2; exit 1;
     }
@@ -249,6 +255,20 @@ else
     echo "REFUSED: installed box RunPlan/ledger is missing or invalid" >&2; exit 1;
   }
 fi
+# E11: the box now holds (or has re-proven it holds) this run's chain and will
+# mint the next receipts (`scheduled`, ...). Mark THIS copy's ledger write
+# authority as the box's before anything else can append here — a laptop-side
+# write before `pull-box-state.sh --prelaunch` returns it would fork the chain
+# permanently. Host-private sidecar, not a receipt, never transported. Only
+# active plans reach this line (the guard above refuses terminal/archived), so
+# no closed-attempt exemption is needed. Fail-closed: a failed marker is a
+# failed dispatch; the re-run reconciles `already-equal` and retries here.
+EARSHOT_REPO="$REPO" python3 scripts/eventctl.py authority --run-dir "$RUN_DIR" \
+  --transfer-to "$PLAN_HOST" --by box-event-install >/dev/null || {
+    echo "REFUSED: box holds $PLAN_EVENT_ID/$PLAN_RUN_ID but this copy's ledger authority marker could not be written;" >&2
+    echo "         re-run, or: scripts/eventctl.py authority --run-dir $RUN_DIR --transfer-to $PLAN_HOST --by operator" >&2
+    exit 1
+  }
 
 # ── Push the digit store (stdin, 0600, never argv) ─────────────────────────
 if [[ "$PUSH_DIGITS" == 1 && "$VERIFY_ONLY" != 1 ]]; then

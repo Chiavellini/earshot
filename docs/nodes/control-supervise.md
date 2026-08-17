@@ -74,6 +74,23 @@ a lifecycle transition for a transport step would be a schema change.
 `--verify-only` and `--fire-at-utc` are refused alongside it rather than
 silently ignored. Pinned by `tests/typed_scheduler_boundary.sh`.
 
+**Ledger authority (E11, 2026-08-17).** What every successful transfer DOES
+record is that this copy's ledger write authority now belongs to the box:
+after the box has verified and published the prefix — full install,
+`--dispatch-only`, and a green `--verify-only` re-verify alike — both
+`box-webcast-install.sh` and the phone twin `box-event-install.sh` call
+`eventctl authority --transfer-to <plan host> --by <installer>` (a
+host-private sidecar `control/authority.json`, not a receipt; both rsync
+passes carry `--exclude=/control/authority.json`, and the box's
+`run-host-boundary.py` ignores it, so it never reaches the box). From then on
+`eventctl` refuses any laptop-side append until `pull-box-state.sh
+--prelaunch` returns authority — the 08-16 close-after-dispatch fork is now a
+one-line `REFUSED: E11 …` naming the pull. A CLOSED attempt is dispatched
+without transferring: the box will never extend a dead run, and its
+`archived` tail is laptop bookkeeping. A failed marker write is a failed
+dispatch (fail-closed; the nightly re-run reconciles `already-equal` and
+retries the door).
+
 **Scheduled posture (O6, 2026-08-16).** Both installers previously hardcoded
 `--i-am-live --fillable` into every webcast unit, so a drill that exercised the
 detector was scheduled fillable by construction and its inertness rested on
@@ -388,7 +405,16 @@ with stateful local manager stubs. It covers phone systemd compatibility,
 webcast systemd T-75/late-fire argv and environment, loaded timer-list
 readback, static-public refusal before SSH, the executable box-pin gate,
 private staging/reconciliation, and the remote durable `scheduled` receipt.
-No test invokes a real scheduler, network, dial, deploy, or runtime.
+It also pins E11: after a full dispatch and after `--dispatch-only` the local
+sidecar says `remote` and the box copy carries none; a laptop-side `blocked`
+on the dispatched attempt is `REFUSED: E11` with the receipts unchanged; the
+puller's return (simulated) makes the close a clean extension; a closed
+dispatch leaves authority local. Since 2026-08-17 every assertion in this file
+is `[[ … ]] || fail $LINENO` or `must_not` — macOS bash 3.2 does not trip
+`set -e` on a bare `[[ ]]`, so until then the file's ~45 bare assertions were
+inert on the laptop (SYSTEM-STATE E14); the plist path now runs under the
+production `python3`, not a pinned python@3.13 (L9). No test invokes a real
+scheduler, network, dial, deploy, or runtime.
 
 ## Migration status
 

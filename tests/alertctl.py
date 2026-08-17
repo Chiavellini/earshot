@@ -257,6 +257,46 @@ class AlertCtlTest(unittest.TestCase):
         # The refusal is only worth anything if it happened BEFORE any append.
         self.assertEqual(len(self.rows()), before)
 
+    def test_alert_refuses_a_run_ledger_whose_authority_was_transferred(self) -> None:
+        """E11 mechanises E12's floor for the dispatched case.
+
+        The env-based guard above fires only on a PROVEN host mismatch, and the
+        laptop's plain shell rarely proves anything. Once an installer has
+        handed this copy's ledger authority to the execution host
+        (`eventctl authority --transfer-to`), the eventctl door itself refuses
+        every append — alert rows included — until a pull returns it, whether
+        or not EARSHOT_EXECUTION_HOST is set.
+        """
+        self.eventctl(
+            "authority", "--run-dir", str(self.run_dir),
+            "--transfer-to", "fixture-host", "--by", "test-installer",
+        )
+        before = len(self.rows())
+        env = self.env()
+        env.pop("EARSHOT_EXECUTION_HOST", None)
+        result = subprocess.run(
+            [sys.executable, str(ALERTCTL), *self.raise_args()],
+            text=True,
+            capture_output=True,
+            env=env,
+        )
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("E11", result.stdout + result.stderr)
+        self.assertEqual(len(self.rows()), before)
+        # Returned by the puller: the very same raise now lands.
+        self.eventctl(
+            "authority", "--run-dir", str(self.run_dir),
+            "--returned-from", "fixture-host", "--by", "test-puller",
+        )
+        result = subprocess.run(
+            [sys.executable, str(ALERTCTL), *self.raise_args()],
+            text=True,
+            capture_output=True,
+            env=env,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(self.alert_rows())
+
     def test_alert_writes_the_run_ledger_when_this_host_owns_the_run(self) -> None:
         """The guard must not fire on the ordinary case it sits in front of."""
         env = self.env()

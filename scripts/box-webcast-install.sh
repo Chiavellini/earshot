@@ -28,6 +28,15 @@
 # orders/ content, only atomically written control proofs, so there is no second
 # growing authority for a push to race. It records no receipt — inventing a
 # lifecycle transition for a transport step would be a schema change.
+#
+# What every successful transfer DOES record (E11): this copy's ledger write
+# authority now belongs to the box (`eventctl authority --transfer-to`, a
+# host-private sidecar, not a receipt, never transported). The box mints the
+# next receipts (`scheduled`, ...); a laptop-side append before they are pulled
+# back would fork the chain permanently, so eventctl refuses it until
+# `pull-box-state.sh --prelaunch` returns authority. A CLOSED attempt is not
+# transferred: it will never be extended by the box, and its `archived` tail is
+# laptop bookkeeping.
 set -euo pipefail
 
 REPO="${EARSHOT_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
@@ -197,6 +206,22 @@ PY
 ) || { echo "REFUSED: --run-dir is not a schedulable box webcast plan" >&2; exit 1; }
 eval "$PLAN_EXPORTS"
 
+# E11: authority follows the canonical copy of a run the box will still
+# extend. Called only after the box has verified+published this prefix (or,
+# under --verify-only, re-verified the copy it already holds). Fail-closed: a
+# box that holds the run while this copy still thinks it is writable is the
+# exact fork the door exists to prevent, so a failed marker is a failed
+# dispatch — the nightly re-run reconciles `already-equal` and retries here.
+transfer_authority() {
+  [[ "$RUN_IS_ACTIVE" == 1 ]] || return 0   # closed attempt: laptop keeps its archived tail
+  EARSHOT_REPO="$REPO" python3 scripts/eventctl.py authority --run-dir "$RUN_DIR" \
+    --transfer-to "$PLAN_HOST" --by box-webcast-install >/dev/null || {
+      echo "REFUSED: box holds $PLAN_EVENT_ID/$PLAN_RUN_ID but this copy's ledger authority marker could not be written;" >&2
+      echo "         re-run, or: scripts/eventctl.py authority --run-dir $RUN_DIR --transfer-to $PLAN_HOST --by operator" >&2
+      exit 1
+    }
+}
+
 REMOTE_REPO=$("${SSH[@]}" "cd ${BOX_REPO} && pwd -P") || {
   echo "REFUSED: cannot resolve the box repository" >&2
   exit 1
@@ -238,10 +263,13 @@ if [[ "$VERIFY_ONLY" != 1 ]]; then
     echo "REFUSED: cannot create staged event directory" >&2; exit 1;
   }
   RSYNC_RSH="$SSH_BIN -o ConnectTimeout=15 -o BatchMode=yes -i $KEY"
-  "$RSYNC_BIN" -a --delete -e "$RSYNC_RSH" "$RUN_DIR/" "$BOX:$STAGED_RUN/" || {
+  # control/authority.json is THIS host's private authority marker (E11); it
+  # never travels. Both passes must carry the same exclude or the stability
+  # check itemises it as a change. run-host-boundary.py ignores it too.
+  "$RSYNC_BIN" -a --delete --exclude=/control/authority.json -e "$RSYNC_RSH" "$RUN_DIR/" "$BOX:$STAGED_RUN/" || {
     echo "REFUSED: RunPlan prefix transfer failed" >&2; exit 1;
   }
-  STABILITY=$("$RSYNC_BIN" -ani --checksum --delete -e "$RSYNC_RSH" \
+  STABILITY=$("$RSYNC_BIN" -ani --checksum --delete --exclude=/control/authority.json -e "$RSYNC_RSH" \
     "$RUN_DIR/" "$BOX:$STAGED_RUN/") || {
       echo "REFUSED: RunPlan prefix stability check failed" >&2; exit 1;
     }
@@ -264,6 +292,7 @@ if [[ "$VERIFY_ONLY" != 1 ]]; then
       echo "          scripts/pull-box-state.sh --prelaunch --event $PLAN_EVENT_ID" >&2
       echo "        then close, then dispatch. A chain already forked this way cannot" >&2
       echo "        be rejoined — close the box copy directly over SSH instead." >&2
+      echo "        (since 2026-08-17 eventctl refuses that laptop-side write outright — E11)" >&2
     fi
     exit 1
   }
@@ -274,10 +303,21 @@ else
     echo "REFUSED: installed box RunPlan/ledger is missing or invalid" >&2; exit 1;
   }
 fi
+# The box now holds (or has re-proven it holds) this run's chain: mark this
+# copy accordingly before anything else can append to it. --verify-only lands
+# here too — schedule-nightly sends it once the laptop ledger already shows
+# `scheduled` (i.e. after a pull), and a green re-verify proves the box still
+# holds the armed job, so authority converges back to remote.
+transfer_authority
 
 if [[ "$DISPATCH_ONLY" == 1 ]]; then
   echo "DISPATCHED: $PLAN_EVENT_ID/$PLAN_RUN_ID → $BOX:$REMOTE_RUN (host=$PLAN_HOST resolver=$RESOLVER_KIND)"
-  echo "  no timer installed, no receipt recorded"
+  if [[ "$RUN_IS_ACTIVE" == 1 ]]; then
+    echo "  no timer installed, no receipt recorded; ledger authority now held by the box —"
+    echo "  pull (scripts/pull-box-state.sh --prelaunch --event $PLAN_EVENT_ID) before recording anything on this copy (E11)"
+  else
+    echo "  no timer installed, no receipt recorded (closed attempt: supersession propagated)"
+  fi
   echo "  next: preflight ON the box, then pull-box-state.sh --prelaunch --event $PLAN_EVENT_ID"
   exit 0
 fi

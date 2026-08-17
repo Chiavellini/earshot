@@ -64,6 +64,20 @@ every other direction and records **no** receipt: `evidence_pulled` requires a
 terminal execution outcome, and returning a preflight prefix is not one. The
 returned receipts are their own proof.
 
+What every successful publish/advance DOES do — terminal and `--prelaunch`
+alike — is return this host's ledger write authority (E11, 2026-08-17): right
+after the boundary primitive succeeds and BEFORE any `evidence_pulled` is
+recorded, the puller calls `eventctl authority --returned-from <box host> --by
+pull-box-state`. That is a host-private sidecar (`control/authority.json`),
+not a receipt; the box's own copy of the run is excluded from the rsync
+(`--exclude=/control/authority.json`) and ignored by the boundary primitive,
+so a stray marker on the box can neither cross nor block. Until that return,
+the installers have left this copy refusing every append (the box may have
+minted receipts the laptop lacks — closing on the laptop first is the
+permanent fork that killed the 08-16 attempt), which is why the supported
+order is schedule → **pull** → close → dispatch. Inventory-only, `--check-only`
+and dry-run passes never reach the return.
+
 This exists because seam S-C mints `preflight_passed` on the box while
 `schedule-nightly.sh` and `box-webcast-install.sh` both read that receipt from
 the laptop ledger, and a box-only terminal receipt fails local `verify`
@@ -405,7 +419,16 @@ byte-divergent evidence refusal, a legacy-only event, active and descoped runs
 that remain inventory-only, a failed run that must publish, a corrupt RunPlan
 that must publish nothing, and dry-run non-mutation. For `--prelaunch` it also
 pins that a pre-launch run publishes, records no `evidence_pulled`, and is
-idempotent — and that a run which reached `launched` is still refused.
+idempotent — and that a run which reached `launched` is still refused. For
+E11 it pins two more: (i) a dispatched (authority `remote`) local copy refuses
+a laptop-side `blocked` with `REFUSED: E11` and unchanged receipts, a stray
+`{"junk":1}` sidecar planted on the box side never crosses, and after the
+terminal pull the local marker reads `local pull-box-state` and
+`evidence_pulled` landed; (ii) the 08-16 incident replayed — dispatch, box
+mints through `scheduled`, laptop close refused, `--prelaunch` pull returns
+authority, close succeeds, and the local tail is a byte-extension of the box
+copy. Each is red with the guard, the return call, or the exclude+filter
+disabled.
 
 Its assertions go through the `must` / `must_not` helpers, and that is a
 correctness requirement rather than style. macOS ships bash 3.2, where a failing

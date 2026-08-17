@@ -39,6 +39,14 @@
 # other direction and records NO receipt: evidence_pulled requires
 # completed|aborted|failed (eventctl.py:95), and a pre-launch return is not an
 # evidence outcome. The returned receipts are their own proof.
+#
+# What every successful publish DOES do (E11, 2026-08-17): it returns this
+# copy's ledger write authority (`eventctl authority --returned-from`, a
+# host-private sidecar — not a receipt, never transported, never pulled). The
+# installers hand authority to the box at dispatch so a laptop-side append
+# before the box's receipts come back cannot fork the chain; the pull is the
+# only supported way to get it back. Order of operations, always:
+# schedule → pull → close → dispatch.
 set -euo pipefail
 
 EXIT_REFUSED=1
@@ -171,6 +179,11 @@ rsync_snapshot() {
   if [[ "$kind" == "state" ]]; then
     # These two are reproducible deployment products, not event evidence.
     opts+=(--exclude /earshot-pinned --exclude /rules)
+  else
+    # The execution host's own ledger-authority marker (E11) is host-private
+    # bookkeeping about ITS copy; it must never land here, where this host's
+    # marker lives. run-host-boundary.py ignores it too — two layers.
+    opts+=(--exclude=/control/authority.json)
   fi
 
   mkdir -p "$destination"
@@ -334,6 +347,16 @@ record_evidence_pulled() {
     "${artifact_args[@]}"
 }
 
+# E11: authority comes home with the receipts. Called right after the boundary
+# primitive has published/advanced this run from the execution host's copy —
+# and BEFORE record_evidence_pulled, which would otherwise refuse on the very
+# marker the installer wrote at dispatch. Not a receipt; the sidecar is
+# host-private and the box copy never carries one.
+authority_returned() {  # authority_returned <final-run-dir> <expected-host>
+  EARSHOT_REPO="$LOCAL_REPO" python3 "$EVENTCTL" authority \
+    --run-dir "$1" --returned-from "$2" --by pull-box-state >/dev/null
+}
+
 # Assertion helpers. NOT sugar — a correctness requirement.
 #
 # macOS ships bash 3.2 as /bin/bash, and `#!/usr/bin/env bash` resolves to it.
@@ -402,6 +425,27 @@ EOF
   # the two verified trees divergent.
   mkdir -p "$local_repo/var/runs/$event_id"
   cp -R "$run_dir" "$local_repo/var/runs/$event_id/$run_id"
+  # E11: the installer handed this copy's ledger authority to the box at
+  # dispatch. Until the pull returns it, a laptop-side append is refused —
+  # that append is exactly the fork that killed the 08-16 attempt.
+  authority_of() {  # authority_of <run-dir> → unset|local|remote  (+by)
+    EARSHOT_REPO="$local_repo" python3 "$local_repo/scripts/eventctl.py" authority \
+      --run-dir "$1" --show | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["write_authority"], d.get("by",""))'
+  }
+  EARSHOT_REPO="$local_repo" python3 "$local_repo/scripts/eventctl.py" authority \
+    --run-dir "$local_repo/var/runs/$event_id/$run_id" --transfer-to box-test \
+    --by selftest-installer >/dev/null
+  must test "$(authority_of "$local_repo/var/runs/$event_id/$run_id")" = "remote selftest-installer"
+  local receipts_before
+  receipts_before=$(cat "$local_repo/var/runs/$event_id/$run_id/control/receipts.jsonl")
+  if EARSHOT_REPO="$local_repo" python3 "$local_repo/scripts/eventctl.py" record \
+      --run-dir "$local_repo/var/runs/$event_id/$run_id" --transition blocked \
+      > "$check_root/e11-close.log" 2>&1; then
+    selftest_fail "laptop-side close of a dispatched run was accepted (E11 fork)"
+  fi
+  must grep -q 'REFUSED: E11' "$check_root/e11-close.log"
+  must grep -q -- '--prelaunch' "$check_root/e11-close.log"
+  must test "$(cat "$local_repo/var/runs/$event_id/$run_id/control/receipts.jsonl")" = "$receipts_before"
   local transition
   for transition in prepared admission_resolved study_completed \
     preflight_passed scheduled capture_ready launched source_attached \
@@ -412,6 +456,10 @@ EOF
   done
   printf '{"finalized":true,"runtime_success":true}\n' > \
     "$run_dir/report/report.json"
+  # A stray authority marker on the BOX side is that host's private business:
+  # it must neither cross (rsync exclude) nor block the reconcile (boundary
+  # filter). Plant garbage so a crossing would be loud.
+  printf '{"junk":1}\n' > "$run_dir/control/authority.json"
   mkdir -p "$source_repo/state/$event_id/rules"
   printf '{"sent":2}\n' > "$source_repo/state/$event_id/report.json"
   printf 'reproducible binary\n' > "$source_repo/state/$event_id/earshot-pinned"
@@ -427,6 +475,10 @@ EOF
   EARSHOT_REPO="$local_repo" python3 "$local_repo/scripts/eventctl.py" \
     status --run-dir "$local_repo/var/runs/$event_id/$run_id" --json |
     python3 -c 'import json,sys; assert "evidence_pulled" in {r["transition"] for r in json.load(sys.stdin)["state"]["reached"]}'
+  # ...which was only possible because the pull returned authority FIRST; the
+  # local marker is this host's (by pull-box-state), not the box's garbage.
+  must test "$(authority_of "$local_repo/var/runs/$event_id/$run_id")" = "local pull-box-state"
+  must_not grep -q junk "$local_repo/var/runs/$event_id/$run_id/control/authority.json"
 
   # A second pull accepts the verified local evidence_pulled tail and changes
   # no evidence bytes.
@@ -532,10 +584,48 @@ EOF
   must test -f "$local_repo/var/runs/$active_event/$(basename "$active_run")/control/receipts.jsonl"
   must_not grep -q '"transition":"evidence_pulled"' \
     "$local_repo/var/runs/$active_event/$(basename "$active_run")/control/receipts.jsonl"
+  # ...but it DOES return ledger authority to this host (E11) — a sidecar,
+  # not a receipt.
+  local active_local
+  active_local="$local_repo/var/runs/$active_event/$(basename "$active_run")"
+  must test "$(authority_of "$active_local")" = "local pull-box-state"
   # Idempotent: the second return is a boundary no-op, not a divergence.
   _EARSHOT_PULL_SOURCE_ROOT="$source_repo" \
     _EARSHOT_PULL_REPO_ROOT="$local_repo" \
     "$SCRIPT_PATH" --event "$active_event" --prelaunch >/dev/null
+
+  # E11, the 2026-08-16 incident replayed with the doctrine enforced:
+  # schedule → pull → close → dispatch. The laptop dispatches (authority →
+  # box), the box preflights and schedules (mints receipts the laptop lacks),
+  # the operator tries to close on the laptop: REFUSED, naming the pull. Pull,
+  # then the close is a clean extension the next dispatch can carry.
+  EARSHOT_REPO="$local_repo" python3 "$local_repo/scripts/eventctl.py" authority \
+    --run-dir "$active_local" --transfer-to box-test --by selftest-installer >/dev/null
+  for transition in prepared admission_resolved study_completed \
+    preflight_passed scheduled
+  do
+    EARSHOT_REPO="$source_repo" python3 "$source_repo/scripts/eventctl.py" \
+      record --run-dir "$active_run" --transition "$transition" >/dev/null
+  done
+  if EARSHOT_REPO="$local_repo" python3 "$local_repo/scripts/eventctl.py" record \
+      --run-dir "$active_local" --transition blocked \
+      > "$check_root/e11-prelaunch-close.log" 2>&1; then
+    selftest_fail "close-after-dispatch was accepted before the pull (E11 fork)"
+  fi
+  must grep -q 'REFUSED: E11' "$check_root/e11-prelaunch-close.log"
+  _EARSHOT_PULL_SOURCE_ROOT="$source_repo" \
+    _EARSHOT_PULL_REPO_ROOT="$local_repo" \
+    "$SCRIPT_PATH" --event "$active_event" --prelaunch >/dev/null
+  must grep -q '"transition":"scheduled"' "$active_local/control/receipts.jsonl"
+  must test "$(authority_of "$active_local")" = "local pull-box-state"
+  EARSHOT_REPO="$local_repo" python3 "$local_repo/scripts/eventctl.py" record \
+    --run-dir "$active_local" --transition blocked >/dev/null
+  EARSHOT_REPO="$local_repo" python3 "$local_repo/scripts/eventctl.py" verify \
+    --run-dir "$active_local" >/dev/null
+  # ...and the local tail is now a clean extension of the box's chain, i.e.
+  # what --dispatch-only would carry back: the box copy is a byte prefix.
+  must python3 -c 'import sys; a=open(sys.argv[1],"rb").read(); b=open(sys.argv[2],"rb").read(); sys.exit(0 if a.startswith(b) and a!=b else 1)' \
+    "$active_local/control/receipts.jsonl" "$active_run/control/receipts.jsonl"
 
   # A run that HAS reached `launched` is refused even under --prelaunch: from
   # that transition on, capture/book/order evidence is being written and a
@@ -888,6 +978,11 @@ while IFS=$'\t' read -r event_id run_id expected_host; do
     --destination "$final" \
     --expected-host "$expected_host" >/dev/null ||
     refuse "could not publish verified box extension: $event_id/$run_id"
+  # E11: this copy now holds everything the box had minted as of the snapshot;
+  # it may be written again. Not for --check-only or inventory-only passes —
+  # they never reach this loop.
+  authority_returned "$final" "$expected_host" ||
+    refuse "published box extension but could not return ledger authority: $event_id/$run_id"
 done < <(cat "$TERMINAL_MANIFEST" "$PRELAUNCH_MANIFEST")
 
 # Pre-launch returns carry no receipt: evidence_pulled requires
