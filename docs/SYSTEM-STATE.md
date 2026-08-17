@@ -364,11 +364,29 @@ the work orders reference them.
   re-open L7.
   Note `--selftest-readback` passes and always would: its block imports only
   `re`, so the gate that exists over this file cannot see the breakage.
-  Fix is environmental first — rebuild Homebrew python against the current
-  expat (`brew reinstall python@3.14`) — and then a preflight assertion
-  (`import tomllib, plistlib` under the exact scheduler interpreter) so this is
-  caught the night before rather than at T-75. **The box lane is unaffected**:
-  systemd units are written by `install-event-timer.sh`, which uses no plist.
+  **Detection is closed**: `preflight-event.sh` now imports the required
+  modules under `${EARSHOT_PYTHON:-python3}` — `tomllib` always, `plistlib` on
+  Darwin only (the box writes systemd units and never touches a plist, and this
+  file's header warns that a gate crying wolf four times in five trains the
+  operator to ignore the fifth). Verified live: preflight prints `[PASS] …
+  tomllib` and `[FAIL] … CANNOT import plistlib`.
+  **The repair itself is still OPEN and is the operator's call.** Root cause
+  measured: `pyexpat.cpython-314-darwin.so` records
+  `/usr/lib/libexpat.1.dylib` at current version 8.0.0, but macOS ships an
+  older libexpat in the dyld cache; Homebrew's own `expat 2.7.3` **is**
+  installed (keg-only) and does export the missing symbol. Two routes:
+  1. `brew reinstall python@3.14` — clean, but **17 live processes run on that
+     interpreter**, including a multi-day `pm_trader_loop.py --stake-usd 5` and
+     several `Kilos/DaC` collectors. Do it when those are safe to interrupt.
+  2. Surgical and reversible, and it does not disturb running processes (they
+     have already mapped the file):
+     `install_name_tool -change /usr/lib/libexpat.1.dylib
+     /opt/homebrew/opt/expat/lib/libexpat.1.dylib <pyexpat.so>` then
+     `codesign -f -s - <pyexpat.so>`. Reverted by any future `brew upgrade
+     python@3.14`, which the preflight gate above will then catch.
+  **The box lane is unaffected**: systemd units are written by
+  `install-event-timer.sh`, which uses no plist — which is why the 08-16/17
+  box drill ran end to end while this was broken.
 - **L1** Preflight-thrash class: CBRS 2026-08-12 was missed — preflight went
   red at 20:42 through 21:16 and turned green at 21:20:41Z for a 21:00Z call;
   the launcher correctly refused to arm through red. Interrupted night-before
