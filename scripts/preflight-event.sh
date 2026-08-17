@@ -335,6 +335,30 @@ for tool in "${TOOLS[@]}"; do
   fi
 done
 
+# ── Scheduler interpreter can import what the chain imports ────────────────
+# L9 (2026-08-17): a tool being on PATH says nothing about it WORKING. Homebrew
+# python@3.14's pyexpat is linked against a newer expat than the one macOS
+# ships, so `import plistlib` died — and install-t0-agents.sh builds and reads
+# back the launchd plist with it, so laptop webcast scheduling was dead while
+# every existing gate stayed green. `--selftest-readback` could not see it: its
+# block imports only `re`. Check the modules under the EXACT interpreter the
+# scheduler uses, not this shell's.
+SCHED_PY="${EARSHOT_PYTHON:-python3}"
+# tomllib is imported unconditionally by eventctl/access-plan/capture-ready on
+# every fire path — its absence is what killed the first live typed-scheduler
+# firing (L7, AMAT 2026-08-13).
+REQUIRED_PY_MODULES=(tomllib)
+# plistlib only matters where launchd schedules; the box writes systemd units
+# and never touches a plist. Do not fail a Linux host for it.
+[[ "$(uname -s)" == "Darwin" ]] && REQUIRED_PY_MODULES+=(plistlib)
+for mod in "${REQUIRED_PY_MODULES[@]}"; do
+  if py_err=$("$SCHED_PY" -c "import $mod" 2>&1); then
+    check PASS "scheduler python imports $mod ($SCHED_PY)"
+  else
+    check FAIL "scheduler python CANNOT import $mod ($SCHED_PY): $(printf '%s' "$py_err" | tail -1)"
+  fi
+done
+
 # ── Disk ───────────────────────────────────────────────────────────────────
 # `df -g` is macOS. `df -k` is POSIX and works on both.
 avail_gb=$(df -k / | awk 'NR==2 {printf "%d", $4/1048576}')
