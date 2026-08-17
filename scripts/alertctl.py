@@ -134,7 +134,30 @@ def alert_target(args: argparse.Namespace, *, require_identity: bool) -> AlertTa
         raise AlertError("name exactly one of --run-dir or --alert-dir")
     if run_raw:
         path = Path(run_raw).resolve()
-        return AlertTarget("run", path, run_identity(path))
+        identity = run_identity(path)
+        # E12 defence in depth. Alert facts are rows in the RunPlan's own
+        # hash-chained ledger, so writing them from a host that is not the run's
+        # execution host forks the chain permanently — the owning host appends
+        # its own rows at the same indexes and no prefix relation can ever exist
+        # again, leaving the attempt undispatchable, unpullable and
+        # unrecoverable. Measured 2026-08-16 on a box run.
+        #
+        # Only refuse on a PROVEN mismatch: EARSHOT_EXECUTION_HOST is exported
+        # by the launchers and by the unit env on the executing host, so when it
+        # is set and disagrees we know this process does not own this ledger.
+        # When it is unset we cannot tell, and refusing would break every
+        # ordinary local invocation, so the caller stays responsible (see
+        # schedule-nightly.sh, which routes proven-remote runs to --alert-dir).
+        local_host = os.environ.get("EARSHOT_EXECUTION_HOST", "").strip()
+        if local_host and identity["execution_host_id"] != local_host:
+            raise AlertError(
+                "refusing to write alert facts into a run ledger owned by another"
+                f" host: RunPlan executes on {identity['execution_host_id']!r},"
+                f" this host is {local_host!r}. Appending here would fork the"
+                " hash chain permanently and destroy the attempt. Use"
+                " --alert-dir with --scope for alerts about a remote run."
+            )
+        return AlertTarget("run", path, identity)
     path = Path(alert_raw).resolve()
     scope = getattr(args, "scope", None)
     identity = standalone_identity(scope) if scope else None

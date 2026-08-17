@@ -232,6 +232,44 @@ class AlertCtlTest(unittest.TestCase):
         )
         self.assertEqual(len(self.phone_log.read_text().splitlines()), 2)
 
+    def test_alert_refuses_a_run_ledger_owned_by_another_host(self) -> None:
+        """E12: writing alert facts from a non-owning host forks the chain.
+
+        Alert facts are rows in the RunPlan's own hash-chained ledger. When the
+        run executes elsewhere, the owning host is appending its own rows at the
+        same indexes, so an append here forks the chain PERMANENTLY — the
+        attempt can then never be dispatched, pulled or recovered. Measured
+        2026-08-16: one failed schedule of a box run wrote nine alertctl rows
+        into the laptop copy and destroyed a prepared attempt, which made the
+        failure notification the thing that killed the run it warned about.
+        """
+        before = len(self.rows())
+        env = self.env()
+        env["EARSHOT_EXECUTION_HOST"] = "some-other-host"
+        result = subprocess.run(
+            [sys.executable, str(ALERTCTL), *self.raise_args()],
+            text=True,
+            capture_output=True,
+            env=env,
+        )
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("owned by another host", result.stdout + result.stderr)
+        # The refusal is only worth anything if it happened BEFORE any append.
+        self.assertEqual(len(self.rows()), before)
+
+    def test_alert_writes_the_run_ledger_when_this_host_owns_the_run(self) -> None:
+        """The guard must not fire on the ordinary case it sits in front of."""
+        env = self.env()
+        env["EARSHOT_EXECUTION_HOST"] = "fixture-host"
+        result = subprocess.run(
+            [sys.executable, str(ALERTCTL), *self.raise_args()],
+            text=True,
+            capture_output=True,
+            env=env,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(self.alert_rows())
+
     def test_standalone_alert_is_hash_chained_and_does_not_touch_run_state(self) -> None:
         alert_dir = self.repo / "state" / "alerts"
         receipts = self.run_dir / "control" / "receipts.jsonl"

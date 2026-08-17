@@ -220,7 +220,7 @@ the work orders reference them.
   yields byte-different `run-plan.json` because `created_utc` sits inside
   `plan_sha256` (measured: laptop `eb7371cf…` vs box `1e70343c…`, diff = that
   one field). So transport is mandatory, not a convenience.
-- **E12 OPEN 2026-08-16 — the failure alert destroys the run it warns about.**
+- **E12 CLOSED 2026-08-17 — the failure alert destroyed the run it warned about.**
   `alertctl.py` records alert facts as `kind: compat` rows in the RunPlan's own
   hash-chained ledger (its module docstring states this as the design). For a
   run executing on ANOTHER host that is fatal: the laptop appends while the box
@@ -234,11 +234,29 @@ the work orders reference them.
   permanently kills a prepared box attempt, and the notification path is what
   kills it. Same root cause as E11 (a host writing to a ledger it does not
   own), but system-caused rather than operator-caused, which makes it worse.
-  Fix direction: alerts about a run whose `execution_host_id` is not this host
-  belong in this host's standalone alert ledger (`alert_target` already has a
-  `standalone` kind), keyed by the run identity so nothing is lost. That
-  relocates evidence and so is a `platform.notify` contract change — deliberately
-  NOT made here; it needs its own change with the notify tests.
+  **Fixed in two places, because one alone would be a half-measure:**
+  1. `schedule-nightly.sh critical_alert` now routes a *proven-remote* run's
+     alert to this host's standalone ledger (`--alert-dir state/alerts --scope
+     schedule:<event>:<run>`) instead of `--run-dir`. Proven-remote means the
+     plan's host equals `EARSHOT_BOX_EXECUTION_HOST` and differs from
+     `EARSHOT_LOCAL_EXECUTION_HOST`. A run that cannot be *proven* remote keeps
+     the run-ledger behaviour, so `opsctl alerts --run-dir` stays truthful for
+     local runs — this is a routing decision, not a blanket move off the run
+     ledger. All ten call sites pass the host; the decision lives in the helper
+     so no future call site can forget it. The **phone** lane needed this too:
+     phone always dispatches to the box.
+  2. `alertctl.py alert_target` refuses outright when
+     `EARSHOT_EXECUTION_HOST` is set and disagrees with the plan's
+     `execution_host_id`, before any append. That covers the launcher paths and
+     any future caller. It refuses only on a *proven* mismatch — when the
+     variable is unset the process cannot tell, and refusing there would break
+     every ordinary local invocation.
+  Pinned by `tests/alertctl.py` (refusal happens, and happens *before* any row
+  is appended; plus the owning-host case still writes) and by
+  `schedule-nightly.sh --check`, which now asserts the alert **target** rather
+  than merely that an alert was raised — the pre-fix code emitted an identical
+  `--code`/`--dedupe-key` pair, so the old assertion passed either way. Both
+  proved red by tampering.
 - **E13 OPEN 2026-08-16 — the puller trips sshd's own rate limit.** Every run
   dir costs two rsync invocations (transfer + checksum stability) plus the two
   enumerations, each previously a fresh SSH connection, so an event with

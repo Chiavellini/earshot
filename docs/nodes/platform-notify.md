@@ -17,6 +17,21 @@ run tree, the same facts live in a mode-0600 append-only hash chain at
 proof-bearing path for a never-armed event or the live monitor; neither caller
 writes into `var/runs/`.
 
+**A run ledger may only be written by the run's execution host (E12,
+2026-08-17).** Because alert facts are rows in the RunPlan's own hash chain, a
+second host appending to its copy forks that chain permanently — the owning
+host is appending at the same indexes, no prefix relation can ever exist again,
+and the attempt becomes undispatchable, unpullable and unrecoverable. Measured:
+one failed `opsctl schedule` of a box run wrote nine alert rows into the laptop
+copy and destroyed a prepared attempt, making the failure notification the
+thing that killed the run it was warning about. `alert_target` therefore
+refuses `--run-dir` when `EARSHOT_EXECUTION_HOST` is set and disagrees with the
+plan's `execution_host_id`, before any append. It refuses only on a **proven**
+mismatch: when the variable is unset this process cannot tell, and refusing
+there would break every ordinary local invocation, so callers that know a run
+is remote must route to `--alert-dir` with a `--scope` themselves
+(`schedule-nightly.sh` does this for box-hosted runs in both lanes).
+
 `scripts/notify.sh` remains the local mail/desktop/speech adapter.
 `scripts/alert-phone.sh` is the critical fallback: it calls only the operator
 number provisioned outside the repository, emits only Twilio `<Say>` plus a

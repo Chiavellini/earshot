@@ -20,6 +20,7 @@ BOX_INSTALL="${_EARSHOT_SCHEDULE_BOX_INSTALL:-$REPO/scripts/box-event-install.sh
 BOX_WEBCAST_INSTALL="${_EARSHOT_SCHEDULE_BOX_WEBCAST_INSTALL:-$REPO/scripts/box-webcast-install.sh}"
 NOTIFY="${_EARSHOT_SCHEDULE_NOTIFY:-$REPO/scripts/notify.sh}"
 ALERTCTL="${_EARSHOT_SCHEDULE_ALERTCTL:-$REPO/scripts/alertctl.py}"
+ALERT_DIR="${EARSHOT_ALERT_DIR:-$REPO/state/alerts}"
 
 DATE="" DRY_RUN=0 CHECK_ONLY=0
 while [[ $# -gt 0 ]]; do
@@ -43,8 +44,27 @@ legacy_page() {
 # One invocation delegates durable request/delivery facts, bounded retry, and
 # ambiguous-call suppression to platform.notify. This helper always returns
 # success so notification trouble cannot replace the schedule failure verdict.
-critical_alert() {  # <run-dir> <event-id> <code> <dedupe-key> <body>
-  local run_dir="$1" event_id="$2" code="$3" dedupe="$4" body="$5"
+critical_alert() {  # <run-dir> <event-id> <code> <dedupe-key> <body> [<plan-execution-host>]
+  local run_dir="$1" event_id="$2" code="$3" dedupe="$4" body="$5" plan_host="${6:-}"
+  # E12: alertctl records alert facts as rows in the RunPlan's own hash-chained
+  # ledger. For a run executing on ANOTHER host that is fatal — the box appends
+  # its own rows at the same indexes, the chain forks permanently, and the
+  # attempt can never again be dispatched, pulled or recovered. Measured
+  # 2026-08-16: one failed schedule of a box run wrote nine alertctl rows into
+  # the laptop copy and killed a prepared attempt outright, so the failure
+  # notification destroyed the run it was warning about.
+  #
+  # Route only what we can PROVE is remote to this host's own standalone alert
+  # ledger. A run we cannot prove is remote keeps the existing run-ledger
+  # behaviour, so `opsctl alerts --run-dir` stays truthful for local runs.
+  local box_id="${EARSHOT_BOX_EXECUTION_HOST:-earshot-useast1}"
+  local local_id="${EARSHOT_LOCAL_EXECUTION_HOST:-}"
+  local -a alert_target
+  if [[ -n "$plan_host" && "$plan_host" == "$box_id" && "$plan_host" != "$local_id" ]]; then
+    alert_target=(--alert-dir "$ALERT_DIR" --scope "schedule:$event_id:$(basename "$run_dir")")
+  else
+    alert_target=(--run-dir "$run_dir")
+  fi
   if [[ "$DRY_RUN" == 1 ]]; then
     echo "DRY-RUN WOULD REQUIRE CRITICAL ALERT $event_id code=$code dedupe=$dedupe"
     return 0
@@ -54,7 +74,7 @@ critical_alert() {  # <run-dir> <event-id> <code> <dedupe-key> <body>
     return 0
   fi
   EARSHOT_REPO="$REPO" "$ALERTCTL" raise \
-    --run-dir "$run_dir" --severity critical --code "$code" \
+    "${alert_target[@]}" --severity critical --code "$code" \
     --dedupe-key "$dedupe" --subject "Nightly schedule failed: $event_id" \
     --body "$body" >/dev/null 2>&1 || {
       echo "ALERT DELIVERY FAILED $event_id: original schedule failure remains nonzero" >&2
@@ -220,6 +240,48 @@ EOF
     "$repo/calls/notifications"
   [[ $(grep -c '^run-alert ' "$repo/calls/notifications") == 1 ]]
   ! grep -q '^legacy-page ' "$repo/calls/notifications"
+  # E12: the phone fixture executes on the BOX, so this alert must NOT be
+  # written into a ledger this host does not own. alertctl records alert facts
+  # as rows in the RunPlan's own hash chain; appending from here forks it
+  # permanently and the attempt can never be dispatched, pulled or recovered.
+  # Measured 2026-08-16 on a real box run, where one transient schedule failure
+  # destroyed a prepared attempt. Assert the TARGET, not merely that an alert
+  # happened — the pre-E12 code emitted an identical --code/--dedupe-key pair.
+  grep -q 'run-alert raise --alert-dir .* --scope schedule:' \
+    "$repo/calls/notifications"
+  ! grep -q 'run-alert raise --run-dir ' "$repo/calls/notifications"
+
+  # ...and a run this host DOES own keeps its RunPlan-bound alert, so the fix
+  # is a routing decision rather than a blanket move off the run ledger.
+  cat > "$repo/scripts/box-install-stub.sh" <<'EOF'
+#!/usr/bin/env bash
+printf 'phone %s\n' "$*" >> "$EARSHOT_CHECK_CALLS"
+exit 0
+EOF
+  cat > "$repo/scripts/install-t0-stub.sh" <<'EOF'
+#!/usr/bin/env bash
+printf 'local-web %s\n' "$*" >> "$EARSHOT_CHECK_CALLS"
+exit 17
+EOF
+  chmod +x "$repo/scripts/box-install-stub.sh" "$repo/scripts/install-t0-stub.sh"
+  : > "$repo/calls/invocations"
+  : > "$repo/calls/notifications"
+  local_fail_rc=0
+  EARSHOT_REPO="$repo" \
+    EARSHOT_LOCAL_EXECUTION_HOST="earshot-test-local" \
+    EARSHOT_BOX_EXECUTION_HOST="earshot-test-box" \
+    EARSHOT_CHECK_CALLS="$repo/calls/invocations" \
+    EARSHOT_CHECK_NOTIFICATIONS="$repo/calls/notifications" \
+    _EARSHOT_SCHEDULE_INSTALL_T0="$repo/scripts/install-t0-stub.sh" \
+    _EARSHOT_SCHEDULE_BOX_INSTALL="$repo/scripts/box-install-stub.sh" \
+    _EARSHOT_SCHEDULE_BOX_WEBCAST_INSTALL="$repo/scripts/box-webcast-install-stub.sh" \
+    _EARSHOT_SCHEDULE_NOTIFY="$repo/scripts/notify-stub.sh" \
+    _EARSHOT_SCHEDULE_ALERTCTL="$repo/scripts/alert-stub.sh" \
+    bash "$repo/scripts/schedule-nightly.sh" --date "$date" >/dev/null 2>&1 || local_fail_rc=$?
+  [[ "$local_fail_rc" == 1 ]]
+  grep -q 'run-alert raise --run-dir .*--code schedule_install_failed' \
+    "$repo/calls/notifications"
+  ! grep -q 'run-alert raise --alert-dir ' "$repo/calls/notifications"
 
   # Dry-run neither installs nor calls either notification adapter.
   : > "$repo/calls/invocations"
@@ -344,7 +406,7 @@ while IFS=$'\x1f' read -r run_dir event_id run_id lane event_env host plan_sha; 
       echo "REFUSED $event_id/$run_id: status failed" >&2
       critical_alert "$run_dir" "$event_id" "schedule_status_failed" \
         "nightly-schedule-status" \
-        "The verified RunPlan's lifecycle status could not be read. Scheduling was refused and no successful schedule was recorded."
+        "The verified RunPlan's lifecycle status could not be read. Scheduling was refused and no successful schedule was recorded." "$host"
       PROBLEMS=$((PROBLEMS + 1)); continue
     }
   if ! STATE=$(python3 -c '
@@ -358,7 +420,7 @@ else: print("ready")
     echo "REFUSED $event_id/$run_id: status payload is invalid" >&2
     critical_alert "$run_dir" "$event_id" "schedule_status_invalid" \
       "nightly-schedule-status-invalid" \
-      "The verified RunPlan produced an invalid lifecycle status payload. Scheduling was refused and no successful schedule was recorded."
+      "The verified RunPlan produced an invalid lifecycle status payload. Scheduling was refused and no successful schedule was recorded." "$host"
     PROBLEMS=$((PROBLEMS + 1)); continue
   fi
   case "$STATE" in
@@ -369,7 +431,7 @@ else: print("ready")
       echo "REFUSED $event_id/$run_id: active run has no preflight_passed receipt" >&2
       critical_alert "$run_dir" "$event_id" "schedule_preflight_missing" \
         "nightly-schedule-preflight" \
-        "The active RunPlan has no proof-bearing preflight_passed receipt. Scheduling was refused; complete the generic preparation chain."
+        "The active RunPlan has no proof-bearing preflight_passed receipt. Scheduling was refused; complete the generic preparation chain." "$host"
       PROBLEMS=$((PROBLEMS + 1)); continue ;;
   esac
 
@@ -387,7 +449,7 @@ else: print("ready")
         echo "REFUSED $event_id/$run_id: local and box execution-host IDs collide at '$box_host'" >&2
         critical_alert "$run_dir" "$event_id" "schedule_host_ambiguous" \
           "nightly-schedule-host-ambiguous" \
-          "The configured local and box execution-host identities are identical. Webcast scheduling was refused before either installer ran."
+          "The configured local and box execution-host identities are identical. Webcast scheduling was refused before either installer ran." "$host"
         PROBLEMS=$((PROBLEMS + 1)); continue
       fi
       if [[ -n "$local_host" && "$host" == "$local_host" ]]; then
@@ -396,7 +458,7 @@ else: print("ready")
           echo "REFUSED $event_id/$run_id: launchd install/readback failed" >&2
           critical_alert "$run_dir" "$event_id" "schedule_install_failed" \
             "nightly-schedule-install" \
-            "The local webcast scheduler install/readback proof failed for this RunPlan. No successful schedule may be inferred from an on-disk job file."
+            "The local webcast scheduler install/readback proof failed for this RunPlan. No successful schedule may be inferred from an on-disk job file." "$host"
           PROBLEMS=$((PROBLEMS + 1)); continue
         fi
       elif [[ "$host" == "$box_host" ]]; then
@@ -406,14 +468,14 @@ else: print("ready")
           echo "REFUSED $event_id/$run_id: box webcast dispatch/install/readback failed" >&2
           critical_alert "$run_dir" "$event_id" "schedule_webcast_box_dispatch_failed" \
             "nightly-schedule-webcast-box-dispatch" \
-            "The box webcast dispatch or loaded systemd readback proof failed. No successful schedule was recorded."
+            "The box webcast dispatch or loaded systemd readback proof failed. No successful schedule was recorded." "$host"
           PROBLEMS=$((PROBLEMS + 1)); continue
         fi
       else
         echo "REFUSED $event_id/$run_id: webcast host '$host' matches neither local '${local_host:-<unset>}' nor box '$box_host'" >&2
         critical_alert "$run_dir" "$event_id" "schedule_host_unsupported" \
           "nightly-schedule-host-unsupported" \
-          "The RunPlan execution host matches neither configured webcast scheduler target. Scheduling was refused before installation."
+          "The RunPlan execution host matches neither configured webcast scheduler target. Scheduling was refused before installation." "$host"
         PROBLEMS=$((PROBLEMS + 1)); continue
       fi
       ;;
@@ -422,7 +484,7 @@ else: print("ready")
         echo "REFUSED $event_id/$run_id: phone RunPlan has no event env" >&2
         critical_alert "$run_dir" "$event_id" "schedule_event_env_missing" \
           "nightly-schedule-event-env" \
-          "The phone RunPlan has no pinned event environment. Box dispatch and scheduler installation were refused."
+          "The phone RunPlan has no pinned event environment. Box dispatch and scheduler installation were refused." "$host"
         PROBLEMS=$((PROBLEMS + 1)); continue
       fi
       if ! "$BOX_INSTALL" --event-env "$event_env" --run-dir "$run_dir" \
@@ -430,7 +492,7 @@ else: print("ready")
         echo "REFUSED $event_id/$run_id: box dispatch/install/readback failed" >&2
         critical_alert "$run_dir" "$event_id" "schedule_dispatch_failed" \
           "nightly-schedule-dispatch" \
-          "The phone RunPlan's box dispatch or scheduler readback proof failed. No successful schedule was recorded."
+          "The phone RunPlan's box dispatch or scheduler readback proof failed. No successful schedule was recorded." "$host"
         PROBLEMS=$((PROBLEMS + 1)); continue
       fi
       ;;
@@ -438,7 +500,7 @@ else: print("ready")
       echo "REFUSED $event_id/$run_id: unsupported lane '$lane'" >&2
       critical_alert "$run_dir" "$event_id" "schedule_lane_unsupported" \
         "nightly-schedule-lane" \
-        "The RunPlan names an unsupported ingress lane. Scheduling was refused before installation."
+        "The RunPlan names an unsupported ingress lane. Scheduling was refused before installation." "$host"
       PROBLEMS=$((PROBLEMS + 1)); continue ;;
   esac
   if [[ "$STATE" == scheduled ]]; then
