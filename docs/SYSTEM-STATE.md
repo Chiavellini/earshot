@@ -257,19 +257,46 @@ the work orders reference them.
   than merely that an alert was raised — the pre-fix code emitted an identical
   `--code`/`--dedupe-key` pair, so the old assertion passed either way. Both
   proved red by tampering.
-- **E13 OPEN 2026-08-16 — the puller trips sshd's own rate limit.** Every run
-  dir costs two rsync invocations (transfer + checksum stability) plus the two
-  enumerations, each previously a fresh SSH connection, so an event with
-  several attempts opened ~20 connections in seconds and `MaxStartups` began
-  dropping them at random. It surfaced as `rsync failed for run <a DIFFERENT
-  run on each retry>`, which reads like evidence corruption rather than a
-  connection limit, and it cascaded into E12. Mitigated by multiplexing them
-  onto one carried connection (`ControlMaster=auto`, `ControlPersist=120`);
-  note the socket must live under `/tmp`, not `TMPDIR` — macOS sets TMPDIR to a
-  ~50-char path and `%C` adds 40 more, past the ~104-byte sockaddr limit, and
-  ssh then refuses outright. Left OPEN because the other SSH callers
-  (`box-webcast-install.sh`, `deploy-box.sh`, `box-ready.sh`) still open
-  unmultiplexed connections and can trip the same wall.
+- **E13 CLOSED 2026-08-17 (was OPEN 08-16) — the box callers trip sshd's own
+  rate limit.** Every run dir costs two rsync invocations (transfer + checksum
+  stability) plus the two enumerations, each previously a fresh SSH
+  connection, so an event with several attempts opened ~20 connections in
+  seconds and `MaxStartups` began dropping them at random. It surfaced as
+  `rsync failed for run <a DIFFERENT run on each retry>`, which reads like
+  evidence corruption rather than a connection limit, and it cascaded into
+  E12. First mitigated in the puller only (`ControlMaster=auto`,
+  `ControlPersist=120`; the socket must live under `/tmp`, not `TMPDIR` —
+  macOS sets TMPDIR to a ~50-char path and `%C` adds 40 more, past the
+  ~104-byte sockaddr limit, and ssh then refuses outright). Closed by giving
+  every other box caller the same helper, copied per script (no sourced bash
+  library exists in `scripts/`, and sourcing another node's file would be a
+  dependency on its internals): `box-webcast-install.sh` (10 legs per full
+  dispatch, 7 `--dispatch-only`, 5 `--verify-only`), its phone twin
+  `box-event-install.sh` (~9), `deploy-box.sh` (3) and `box-ready.sh` (1; ~6
+  under `--repair`, whose child deploy owns its own master) each carry every
+  ssh and rsync leg on one master under a private `mktemp -d
+  /tmp/ear-<dispatch|event|deploy|ready>-mux.XXXXXX` with a fixed socket name,
+  `ControlPersist=120`, torn down by `ssh -O exit` from ONE EXIT trap set once
+  (`box-webcast-install.sh` and `box-ready.sh` each used to set a second `trap
+  … EXIT` later, which would have silently replaced the teardown; those are
+  flags inside the single trap now) and only when a socket exists — so a
+  stub-driven or pre-SSH-refused run never touches the box on the way out.
+  rsync rides the same master through `-e "$SSH_BIN ${SSH_OPTS[*]}"` (the
+  webcast installer's hand-duplicated rsh string is gone). Never `-S`/`-M`/`-O`
+  on the normal path: the test stubs parse only `-o`/`-i`. Proof, each red by
+  tampering: `tests/typed_scheduler_boundary.sh` records the stub argv and
+  asserts every ssh leg of a full dispatch carries the three options, every
+  rsync `-e` carries the ControlPath, no `-O exit` reaches the stub, and the mux
+  dir is gone (dropping the socket guard trips the pre-existing connection
+  count; dropping ControlPersist trips the option assertion); new
+  `scripts/deploy-box.sh --check` (offline stub rig; exactly three legs, all
+  multiplexed; `--check-only` = one dry-run rsync, no ssh; red with
+  ControlPersist, the socket guard, or the trap removed); `box-ready.sh` proven
+  with a stub ssh exiting 255 (one leg with the options, no teardown, no
+  leftover dir, NO-GO exit 1). Live closure evidence (`Accepted publickey` per
+  invocation → 1 in the box's `journalctl -u ssh`) is the operator's next
+  network-authorized box contact — not run in this session; the offline rigs
+  prove the option set and the teardown, not sshd's acceptance.
 - **E14 CLOSED 2026-08-17 (found while proving E11) — three more gates that
   could not fail on the laptop.** The E9 mechanism again, in files E9 did not
   touch: `/bin/bash` 3.2.57 (the only bash on this machine; `bash` in PATH

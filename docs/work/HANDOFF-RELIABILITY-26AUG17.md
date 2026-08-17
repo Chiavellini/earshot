@@ -150,9 +150,11 @@ Judgement, not a restatement. Rank by *what can silently destroy an event*.
    ruling; see the ledger entry for the exact command and reversal). Residual:
    any `brew upgrade python@3.14` reverts it — the preflight interpreter gate
    and the now-honest `typed_scheduler_boundary.sh` both go red when it does.
-4. **E13 — other SSH callers still unmultiplexed** (`box-webcast-install.sh`,
-   `deploy-box.sh`, `box-ready.sh`) and can trip the same `MaxStartups` wall
-   that cascaded into E12.
+4. ~~**E13 — other SSH callers still unmultiplexed.**~~ CLOSED 2026-08-17:
+   `box-webcast-install.sh`, `box-event-install.sh`, `deploy-box.sh` (+ an
+   offline `--check`) and `box-ready.sh` each ride one multiplexed master with a
+   single EXIT trap; live `Accepted publickey`-count evidence is still owed on
+   the next network-authorized box contact.
 5. **C3–C6** — venue-derived redial, operator-queue escalation, the T-90…T-30
    probe window against T-30 bridges, host contention with no guard (C5 has a
    built delivery door in `platform.notify`; CAPTURE still owes the guard), and
