@@ -6,30 +6,59 @@
 #
 #   scripts/box-webcast-install.sh --run-dir var/runs/<EVENT_ID>/<RUN_ID>
 #       [--fire-at-utc UTC] [--verify-only]
+#   scripts/box-webcast-install.sh --run-dir <run> --dispatch-only
 #
 # A successful return proves the canonical schema-2 AccessPlan is non-static,
 # the plan is bound to EARSHOT_BOX_EXECUTION_HOST, the box already has its
 # executable preflight pin, and the LOADED systemd unit passed schedule-proof.
+#
+# --dispatch-only stops after the transfer: it publishes the RunPlan prefix on
+# the box and installs NOTHING. It exists because box webcast preflight runs on
+# the box (seam S-C) and hard-refuses without the laptop-bound AccessPlan, while
+# deploy-box.sh excludes var/runs/ and the full path above will not dispatch
+# until preflight_passed — a circle that was previously broken only by hand
+# rsync. So --dispatch-only drops exactly two gates, both of which are
+# SCHEDULING preconditions rather than transport ones: the preflight_passed
+# requirement and the box pin check. Every transport safety property is kept —
+# private staging namespace, checksum stability re-check, remote eventctl
+# verify, and the run-host-boundary prefix reconcile that refuses divergence.
+#
+# It is bounded BEFORE launched, the same bound (and the same reasoning) as
+# pull-box-state.sh --prelaunch: until launched a run has no capture/, book/ or
+# orders/ content, only atomically written control proofs, so there is no second
+# growing authority for a push to race. It records no receipt — inventing a
+# lifecycle transition for a transport step would be a schema change.
 set -euo pipefail
 
 REPO="${EARSHOT_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 REPO=$(cd "$REPO" && pwd -P)
 cd "$REPO"
 
-RUN_DIR_RAW="" VERIFY_ONLY=0 FIRE_AT_UTC=""
+RUN_DIR_RAW="" VERIFY_ONLY=0 FIRE_AT_UTC="" DISPATCH_ONLY=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --run-dir)     RUN_DIR_RAW="${2:?}"; shift 2 ;;
-    --fire-at-utc) FIRE_AT_UTC="${2:?}"; shift 2 ;;
-    --verify-only) VERIFY_ONLY=1; shift ;;
-    -h|--help)     sed -n '2,15p' "$0"; exit 0 ;;
+    --run-dir)       RUN_DIR_RAW="${2:?}"; shift 2 ;;
+    --fire-at-utc)   FIRE_AT_UTC="${2:?}"; shift 2 ;;
+    --verify-only)   VERIFY_ONLY=1; shift ;;
+    --dispatch-only) DISPATCH_ONLY=1; shift ;;
+    -h|--help)       sed -n '2,32p' "$0"; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
 [[ -n "$RUN_DIR_RAW" ]] || {
   echo "usage: $0 --run-dir var/runs/<EVENT_ID>/<RUN_ID> [--fire-at-utc UTC] [--verify-only]" >&2
+  echo "       $0 --run-dir var/runs/<EVENT_ID>/<RUN_ID> --dispatch-only" >&2
   exit 2
 }
+# --dispatch-only installs nothing, so pairing it with a scheduling argument is
+# always a mistake about what the caller is doing. Refuse rather than silently
+# ignore one of them.
+if [[ "$DISPATCH_ONLY" == 1 ]]; then
+  [[ "$VERIFY_ONLY" != 1 ]] || {
+    echo "REFUSED: --dispatch-only and --verify-only are mutually exclusive" >&2; exit 2; }
+  [[ -z "$FIRE_AT_UTC" ]] || {
+    echo "REFUSED: --dispatch-only installs no timer, so --fire-at-utc is meaningless" >&2; exit 2; }
+fi
 
 EXPECTED_HOST="${EARSHOT_BOX_EXECUTION_HOST:-earshot-useast1}"
 EARSHOT_INSTANCE_ID="${EARSHOT_INSTANCE_ID:-i-04c50d76572aa092e}"
@@ -65,13 +94,33 @@ EARSHOT_REPO="$REPO" python3 scripts/eventctl.py verify --run-dir "$RUN_DIR" >/d
   echo "REFUSED: local RunPlan/ledger verification failed" >&2
   exit 1
 }
-EARSHOT_REPO="$REPO" python3 scripts/access-plan.py validate \
-  --run-dir "$RUN_DIR" --canonical >/dev/null || {
-    echo "REFUSED: webcast RunPlan has no canonical schema-2 AccessPlan" >&2
+# A closed attempt is dispatched for one reason only: to tell the box it is
+# dead. It will never acquire media again, so demanding a canonical AccessPlan
+# would block the very propagation that clears "ambiguous: N active runs".
+RUN_IS_ACTIVE=$(EARSHOT_REPO="$REPO" python3 scripts/eventctl.py status \
+  --run-dir "$RUN_DIR" --json | python3 -c \
+  'import json,sys; print("1" if json.load(sys.stdin)["state"]["active"] else "0")') || {
+    echo "REFUSED: cannot read local run state" >&2
     exit 1
   }
+if [[ "$DISPATCH_ONLY" == 1 && "$RUN_IS_ACTIVE" == 0 ]]; then
+  echo "note: dispatching a CLOSED attempt — propagating supersession only"
+else
+  # Say why a closed run is refused, here, in one line. Falling through to the
+  # AccessPlan validator instead reports "no canonical schema-2 AccessPlan",
+  # which sends the operator to look at a perfectly good access plan.
+  [[ "$RUN_IS_ACTIVE" == 1 ]] || {
+    echo "REFUSED: RunPlan is terminal or archived" >&2
+    exit 1
+  }
+  EARSHOT_REPO="$REPO" python3 scripts/access-plan.py validate \
+    --run-dir "$RUN_DIR" --canonical >/dev/null || {
+      echo "REFUSED: webcast RunPlan has no canonical schema-2 AccessPlan" >&2
+      exit 1
+    }
+fi
 
-PLAN_EXPORTS=$(python3 - "$REPO" "$RUN_DIR" "$EXPECTED_HOST" <<'PY'
+PLAN_EXPORTS=$(python3 - "$REPO" "$RUN_DIR" "$EXPECTED_HOST" "$DISPATCH_ONLY" <<'PY'
 import json
 import re
 import shlex
@@ -80,8 +129,14 @@ import sys
 from pathlib import Path
 
 repo, run, expected_host = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+dispatch_only = sys.argv[4] == "1"
 plan = json.loads((run / "control/run-plan.json").read_text())
-access = json.loads((run / "control/access-plan.json").read_text())
+access_path = run / "control/access-plan.json"
+# Only a supersession dispatch may proceed without one; see the bash guard above.
+if dispatch_only and not access_path.exists():
+    access = {}
+else:
+    access = json.loads(access_path.read_text())
 if plan.get("schema") != 3 or plan.get("kind") != "run-plan":
     raise SystemExit("schema-3 RunPlan required")
 if plan.get("lane") != "webcast":
@@ -100,7 +155,9 @@ if resolver_kind == "static-public":
         "static-public AccessPlan cannot produce the exact endpoint-bound PCM proof yet"
     )
 if not isinstance(resolver_kind, str) or not resolver_kind:
-    raise SystemExit("AccessPlan has no typed resolver kind")
+    if not dispatch_only:
+        raise SystemExit("AccessPlan has no typed resolver kind")
+    resolver_kind = "n/a-supersession"
 status = subprocess.run(
     [sys.executable, str(repo / "scripts/eventctl.py"), "status", "--run-dir", str(run), "--json"],
     cwd=repo, text=True, capture_output=True, check=True,
@@ -108,9 +165,24 @@ status = subprocess.run(
 )
 state = json.loads(status.stdout)["state"]
 reached = {r["transition"] for r in state["reached"]}
-if "preflight_passed" not in reached:
+if dispatch_only:
+    # Transport, not scheduling. preflight_passed is precisely what this mode
+    # exists to make reachable, so requiring it here would restore the circle.
+    # The bound instead is pre-launched: past that point the box owns a growing
+    # run and a push from the laptop could race it.
+    if "launched" in reached:
+        raise SystemExit(
+            "RunPlan has reached launched; the box owns it now — pull terminal "
+            "evidence with pull-box-state.sh instead of pushing over it"
+        )
+elif "preflight_passed" not in reached:
     raise SystemExit("RunPlan has not reached preflight_passed")
-if not state["active"]:
+# Scheduling a dead run is always wrong. Propagating the news that a run is
+# dead is the opposite: leaving a superseded attempt "active" on the box is what
+# makes the next on-box preflight refuse with "ambiguous: N active runs". So
+# --dispatch-only deliberately carries closed ledgers too; the prefix reconcile
+# still refuses anything that is not a clean extension of the box's chain.
+if not state["active"] and not dispatch_only:
     raise SystemExit("RunPlan is terminal or archived")
 values = {
     "PLAN_EVENT_ID": plan["event_id"],
@@ -134,11 +206,15 @@ REMOTE_REPO=$("${SSH[@]}" "cd ${BOX_REPO} && pwd -P") || {
   exit 1
 }
 
-PINNED_BIN="$REMOTE_REPO/state/$PLAN_EVENT_ID/earshot-pinned"
-"${SSH[@]}" "test -f '$PINNED_BIN' && test -x '$PINNED_BIN' && test ! -L '$PINNED_BIN'" || {
-  echo "REFUSED: box preflight pin is missing, non-executable, or symlinked: $PINNED_BIN" >&2
-  exit 1
-}
+# The pin is produced BY the box preflight this mode exists to unblock, so it
+# cannot exist yet under --dispatch-only. It remains mandatory for scheduling.
+if [[ "$DISPATCH_ONLY" != 1 ]]; then
+  PINNED_BIN="$REMOTE_REPO/state/$PLAN_EVENT_ID/earshot-pinned"
+  "${SSH[@]}" "test -f '$PINNED_BIN' && test -x '$PINNED_BIN' && test ! -L '$PINNED_BIN'" || {
+    echo "REFUSED: box preflight pin is missing, non-executable, or symlinked: $PINNED_BIN" >&2
+    exit 1
+  }
+fi
 
 # ── Transfer the exact RunPlan + receipt prefix ───────────────────────────
 # A normal source deploy explicitly excludes var/runs. This is the only path
@@ -175,7 +251,21 @@ if [[ "$VERIFY_ONLY" != 1 ]]; then
     exit 1
   }
   "${SSH[@]}" "cd '$REMOTE_REPO' && EARSHOT_REPO='$REMOTE_REPO' python3 scripts/eventctl.py verify --run-dir '$STAGED_RUN' && EARSHOT_REPO='$REMOTE_REPO' python3 scripts/run-host-boundary.py reconcile --repo '$REMOTE_REPO' --incoming '$STAGED_RUN' --destination '$REMOTE_RUN' --expected-host '$PLAN_HOST'" || {
-    echo "REFUSED: box rejected the staged RunPlan prefix" >&2; exit 1;
+    echo "REFUSED: box rejected the staged RunPlan prefix" >&2
+    # Divergence here has one overwhelmingly common cause, and the message from
+    # the boundary primitive ("neither is an exact byte prefix") does not name
+    # it: a box run's `scheduled` receipt is minted on the BOX, so recording
+    # anything on the laptop copy before pulling that receipt back FORKS the
+    # chain, permanently — both sides then hold a different receipt at the same
+    # index and no prefix relation can exist again.
+    if [[ "$RUN_IS_ACTIVE" == 0 ]]; then
+      echo "  hint: was this attempt closed on the laptop AFTER it was scheduled?" >&2
+      echo "        the 'scheduled' receipt is minted on the box; pull it back first:" >&2
+      echo "          scripts/pull-box-state.sh --prelaunch --event $PLAN_EVENT_ID" >&2
+      echo "        then close, then dispatch. A chain already forked this way cannot" >&2
+      echo "        be rejoined — close the box copy directly over SSH instead." >&2
+    fi
+    exit 1
   }
   cleanup_staging
   trap - EXIT
@@ -183,6 +273,13 @@ else
   "${SSH[@]}" "cd '$REMOTE_REPO' && EARSHOT_REPO='$REMOTE_REPO' python3 scripts/eventctl.py verify --run-dir '$REMOTE_RUN'" >/dev/null || {
     echo "REFUSED: installed box RunPlan/ledger is missing or invalid" >&2; exit 1;
   }
+fi
+
+if [[ "$DISPATCH_ONLY" == 1 ]]; then
+  echo "DISPATCHED: $PLAN_EVENT_ID/$PLAN_RUN_ID → $BOX:$REMOTE_RUN (host=$PLAN_HOST resolver=$RESOLVER_KIND)"
+  echo "  no timer installed, no receipt recorded"
+  echo "  next: preflight ON the box, then pull-box-state.sh --prelaunch --event $PLAN_EVENT_ID"
+  exit 0
 fi
 
 TIMER_ARGS=(--run-dir "$REMOTE_RUN" --expected-host "$PLAN_HOST")

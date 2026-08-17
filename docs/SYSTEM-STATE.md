@@ -167,7 +167,7 @@ the work orders reference them.
   240+ commits ahead of `main` with no immutable release artifact. The owed
   acceptance chain: immutable commit → dry rehearsal → operator-approved
   deployment → real loaded-scheduler proof → capture-only production fire.
-- **E7 PARTIAL 2026-08-16 (box→laptop closed, laptop→box OPEN)** Pre-launch
+- **E7 CLOSED 2026-08-16, both directions** Pre-launch
   receipt boundary: box and laptop each keep
   their own hash-chained `control/receipts.jsonl`, and no supported transport
   moved a **pre-terminal** receipt between them — `pull-box-state.sh` published
@@ -190,21 +190,49 @@ the work orders reference them.
   `preflight_passed` → `pull-box-state.sh --prelaunch` (no rsync) →
   `opsctl.sh schedule --date` dispatched, installed and read back a LOADED
   systemd timer at the natural T-75.
-  **The other direction is still open and is NOT cosmetic — it blocks a
-  skill-navigated box webcast event.** Two measured refusals, both reproduced
-  on 08-16:
+  **The other direction is now closed too**, by
+  `box-webcast-install.sh --dispatch-only` — the same transfer the full install
+  already performed (private staging, checksum stability re-check, remote
+  `eventctl verify`, prefix reconcile), stopped before the timer and recording
+  no receipt. It drops exactly two gates, both scheduling preconditions rather
+  than transport ones: the `preflight_passed` requirement and the box pin check
+  (the pin is produced by the very preflight it unblocks). It refuses a
+  `launched` run — past that point the direction reverses to `--prelaunch` —
+  and it deliberately carries **closed** attempts, which is what clears the
+  ambiguity below. Note the file had always been *owned* by `control.supervise`
+  but was in **no claim's paths**, so the missing door could not be worked on
+  until the governance was fixed first. Pinned by
+  `tests/typed_scheduler_boundary.sh` (green; each new assertion proved red by
+  tampering — bound removed, early exit removed, supersession blocked).
+  The two refusals it fixes, both measured 08-16 and both re-measured green
+  after the patch:
   1. Box preflight hard-refuses without the laptop-bound AccessPlan
      (`REFUSED: AccessPlan is not a regular non-symlink file`), so the run dir
      must reach the box *before* preflight — but `deploy-box.sh` excludes
      `var/runs/` (E3) and `box-webcast-install.sh` only dispatches *after*
-     preflight passes. Circular; today only hand `rsync` breaks it.
-  2. A laptop-side close does not travel, so the box still sees the superseded
-     attempt as active: `REFUSED: ambiguous: 2 active runs`.
+     preflight passes. Circular; `--dispatch-only` is the cut.
+  2. A laptop-side close did not travel, so the box still saw the superseded
+     attempt as active: `REFUSED: ambiguous: 2 active runs`. Now
+     `--dispatch-only` on a closed attempt flips the box to `active=False`
+     (measured: `relation=destination_prefix_incoming → advanced`).
   **And the run dir genuinely cannot be re-derived on the box instead of
   transported**: compiling the same config with the same identity on both hosts
   yields byte-different `run-plan.json` because `created_utc` sits inside
   `plan_sha256` (measured: laptop `eb7371cf…` vs box `1e70343c…`, diff = that
   one field). So transport is mandatory, not a convenience.
+- **E11 OPEN 2026-08-16 — ledger fork by mis-ordered close.** A box run's
+  `scheduled` receipt is minted on the BOX. Recording anything on the laptop
+  copy before pulling it back forks the chain *permanently*: both hosts then
+  hold a different receipt at the same index, no prefix relation can ever exist
+  again, and `--dispatch-only` correctly refuses forever. Walked into during
+  the 08-16 proof — closed a scheduled drill attempt on the laptop, and the two
+  ledgers were irreconcilable from that moment (laptop index 6 `blocked`, box
+  index 6 `scheduled`). Recovery is to close the box copy directly over SSH.
+  Mitigated but not closed: the refusal now names the cause and prints the
+  fix. A real fix would make `eventctl record` refuse a laptop-side write to a
+  run whose `execution_host_id` is not this host without a fresh pull — that
+  needs host-awareness in `eventctl`, which is a `control.operate` change.
+  **Order of operations, always: schedule → pull → close → dispatch.**
 - **E10 OPEN 2026-08-16** Every re-preflight on the box makes the *next*
   `pull-box-state.sh` refuse the whole event: the box rewrites legacy
   `state/<E>/box/` artefacts (`detector-smoke.log` et al), the puller's

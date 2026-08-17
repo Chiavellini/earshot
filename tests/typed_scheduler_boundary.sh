@@ -509,6 +509,111 @@ grep -q '^TimeoutStopSec=150$' "$DISPATCH_SERVICE"
 grep -q '^KillMode=mixed$' "$DISPATCH_SERVICE"
 [[ ! -e "$REMOTE_REPO/state/hunt/numbers.env" ]]
 
+# ── --dispatch-only: the pre-preflight transport door (E7) ──────────────────
+# Box webcast preflight runs ON the box and refuses without the laptop-bound
+# AccessPlan, while deploy-box.sh excludes var/runs/ and the full install above
+# will not dispatch until preflight_passed. That circle was previously broken
+# only by hand rsync. These cases pin the door that breaks it, and its bounds.
+PRELAUNCH_RUN_ID="$(basename "$DISPATCH_WEB_RUN")-prelaunch"
+eventctl init --config configs/dispatch-webcast.toml \
+  --event-env configs/dispatch-webcast.env --host-id "$HOST_ID" \
+  --account-fingerprint "$FP" --run-id "$PRELAUNCH_RUN_ID"
+PRELAUNCH_RUN="$REPO/var/runs/$DISPATCH_EVENT/$PRELAUNCH_RUN_ID"
+for transition in prepared access_acquired; do
+  eventctl record --run-dir "$PRELAUNCH_RUN" --transition "$transition"
+done
+EARSHOT_REPO="$REPO" python3 "$REPO/scripts/access-plan.py" bind \
+  --run-dir "$PRELAUNCH_RUN" --access-mode public --resolver-kind external-command \
+  --resolver-argv-json '["scripts/test-resolver.sh"]' >/dev/null
+
+box_install() {  # box_install <extra args...>
+  EARSHOT_BOX_EXECUTION_HOST="$HOST_ID" EARSHOT_BOX=stub-box \
+    EARSHOT_BOX_KEY="$TMP/no-key" EARSHOT_BOX_REPO="$REMOTE_REPO" \
+    EARSHOT_SSH="$STUB/bin/ssh" EARSHOT_RSYNC="$STUB/bin/rsync" \
+    "$REPO/scripts/box-webcast-install.sh" "$@"
+}
+
+# The circle itself: without the flag, a pre-preflight run cannot be dispatched.
+SSH_BEFORE=$(grep -c '^ssh ' "$STUB_LOG" || true)
+if box_install --run-dir "$PRELAUNCH_RUN" > "$TMP/prelaunch-full.log" 2>&1; then
+  echo "FAIL: pre-preflight RunPlan reached the full box install" >&2
+  exit 1
+fi
+grep -q 'has not reached preflight_passed' "$TMP/prelaunch-full.log"
+[[ "$(grep -c '^ssh ' "$STUB_LOG" || true)" == "$SSH_BEFORE" ]]
+
+# --dispatch-only breaks it, and installs nothing.
+box_install --run-dir "$PRELAUNCH_RUN" --dispatch-only > "$TMP/prelaunch-dispatch.log" 2>&1
+grep -q '^DISPATCHED: ' "$TMP/prelaunch-dispatch.log"
+grep -q 'no timer installed, no receipt recorded' "$TMP/prelaunch-dispatch.log"
+REMOTE_PRELAUNCH_RUN="$REMOTE_REPO/var/runs/$DISPATCH_EVENT/$PRELAUNCH_RUN_ID"
+[[ -f "$REMOTE_PRELAUNCH_RUN/control/run-plan.json" ]]
+[[ -f "$REMOTE_PRELAUNCH_RUN/control/access-plan.json" ]]
+# The whole point: transport must not forge a lifecycle transition, and must not
+# install a unit. Both are checked, because either alone would look like success.
+[[ "$(scheduled_count "$PRELAUNCH_RUN")" == 0 ]]
+[[ "$(scheduled_count "$REMOTE_PRELAUNCH_RUN")" == 0 ]]
+PRELAUNCH_SHA=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["plan_sha256"])' \
+  "$REMOTE_PRELAUNCH_RUN/control/run-plan.json")
+[[ ! -e "$REMOTE_SYSTEMD_USER_DIR/com.earshot.run.${PRELAUNCH_SHA:0:20}.service" ]]
+[[ ! -e "$REMOTE_SYSTEMD_USER_DIR/com.earshot.run.${PRELAUNCH_SHA:0:20}.timer" ]]
+
+# Idempotent: a second dispatch of unchanged bytes is an equal-prefix no-op.
+box_install --run-dir "$PRELAUNCH_RUN" --dispatch-only > "$TMP/prelaunch-dispatch2.log" 2>&1
+grep -q '"relation":"equal"' "$TMP/prelaunch-dispatch2.log"
+
+# Closed attempts DO travel — that is what clears "ambiguous: N active runs" on
+# the box. The full install still refuses them.
+eventctl record --run-dir "$PRELAUNCH_RUN" --transition blocked
+eventctl record --run-dir "$PRELAUNCH_RUN" --transition archived
+box_install --run-dir "$PRELAUNCH_RUN" --dispatch-only > "$TMP/prelaunch-super.log" 2>&1
+grep -q 'propagating supersession only' "$TMP/prelaunch-super.log"
+python3 - "$REMOTE_PRELAUNCH_RUN" <<'PY'
+import json, sys
+rows = [json.loads(l) for l in open(sys.argv[1] + "/control/receipts.jsonl") if l.strip()]
+reached = [r.get("transition") for r in rows]
+assert "archived" in reached, f"supersession did not reach the box: {reached}"
+PY
+if box_install --run-dir "$PRELAUNCH_RUN" > "$TMP/prelaunch-closed-full.log" 2>&1; then
+  echo "FAIL: closed RunPlan reached the full box install" >&2
+  exit 1
+fi
+grep -q 'terminal or archived' "$TMP/prelaunch-closed-full.log"
+
+# Bound: once the box owns a launched run, the laptop may not push over it.
+LAUNCHED_RUN_ID="$(basename "$DISPATCH_WEB_RUN")-launched"
+eventctl init --config configs/dispatch-webcast.toml \
+  --event-env configs/dispatch-webcast.env --host-id "$HOST_ID" \
+  --account-fingerprint "$FP" --run-id "$LAUNCHED_RUN_ID"
+LAUNCHED_RUN="$REPO/var/runs/$DISPATCH_EVENT/$LAUNCHED_RUN_ID"
+for transition in prepared access_acquired study_completed preflight_passed \
+    scheduled capture_ready launched; do
+  eventctl record --run-dir "$LAUNCHED_RUN" --transition "$transition"
+done
+EARSHOT_REPO="$REPO" python3 "$REPO/scripts/access-plan.py" bind \
+  --run-dir "$LAUNCHED_RUN" --access-mode public --resolver-kind external-command \
+  --resolver-argv-json '["scripts/test-resolver.sh"]' >/dev/null
+if box_install --run-dir "$LAUNCHED_RUN" --dispatch-only \
+    > "$TMP/launched-dispatch.log" 2>&1; then
+  echo "FAIL: --dispatch-only pushed over a launched run" >&2
+  exit 1
+fi
+grep -q 'has reached launched' "$TMP/launched-dispatch.log"
+
+# Scheduling arguments are refused, not silently ignored.
+if box_install --run-dir "$PRELAUNCH_RUN" --dispatch-only --verify-only \
+    > "$TMP/dispatch-mutex.log" 2>&1; then
+  echo "FAIL: --dispatch-only --verify-only was accepted" >&2
+  exit 1
+fi
+grep -q 'mutually exclusive' "$TMP/dispatch-mutex.log"
+if box_install --run-dir "$PRELAUNCH_RUN" --dispatch-only \
+    --fire-at-utc 2026-08-30T18:45:00Z > "$TMP/dispatch-mutex2.log" 2>&1; then
+  echo "FAIL: --dispatch-only --fire-at-utc was accepted" >&2
+  exit 1
+fi
+grep -q 'meaningless' "$TMP/dispatch-mutex2.log"
+
 # Good launchd install and verify-only: exactly one bootstrap and one receipt.
 # A valid static-public AccessPlan is not schedulable until this boundary can
 # bind its embedded endpoint to a durable PCM proof. Refuse before launchctl

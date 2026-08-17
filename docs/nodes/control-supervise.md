@@ -50,6 +50,30 @@ receipt prefix cross through private rsync staging and
 `run-host-boundary.py reconcile --expected-host`; only then does the wrapper
 invoke the timer installer and re-verify the box-owned ledger.
 
+`--dispatch-only` stops after that transfer and installs nothing. It exists
+because webcast preflight runs ON the box (seam S-C) and hard-refuses without
+the laptop-bound AccessPlan, while `deploy-box.sh` excludes `var/runs/` and the
+full path above refuses until `preflight_passed` — a circle previously broken
+only by hand `rsync`, which no skill can perform and which invites a
+hand-written receipt. The mode drops exactly two gates, both **scheduling**
+preconditions rather than transport ones: the `preflight_passed` requirement
+and the box pin check (the pin is produced by the very preflight it unblocks).
+Every transport property is kept: private staging namespace, checksum
+stability re-check, remote `eventctl verify`, and the prefix reconcile that
+refuses divergence.
+
+Two bounds define it. It refuses a run that has reached `launched` — past that
+point the box owns a growing run and a push could race it, so the direction
+reverses to `pull-box-state.sh` (the same bound, and the same reasoning, as
+that script's `--prelaunch`). And it deliberately **does** carry closed
+(`blocked`/`archived`) attempts, because leaving a superseded attempt `active`
+on the box is exactly what makes the next on-box preflight refuse with
+`ambiguous: N active runs`; a closed attempt needs no canonical AccessPlan,
+since it will never acquire media again. It records **no** receipt — inventing
+a lifecycle transition for a transport step would be a schema change.
+`--verify-only` and `--fire-at-utc` are refused alongside it rather than
+silently ignored. Pinned by `tests/typed_scheduler_boundary.sh`.
+
 `scripts/install-event-timer.sh` accepts phone and webcast schema-3 plans.
 Phone retains T-25 and `event-autorun.sh`; webcast uses T-75 and
 `arm-on-url.sh --run-dir ... --i-am-live --fillable`, with the resolved

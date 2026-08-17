@@ -391,10 +391,18 @@ paths = [
   # systemd unit on the box. Named to the `*-autorun.env` convention this
   # node's glob already owns rather than inventing a second pattern.
   "configs/boxdrill-26aug14-autorun.env",
+  # 2026-08-16: control.supervise has always OWNED this file, but it was in no
+  # claim's paths, so the one door the box webcast chain was missing could not
+  # be worked on without first fixing the governance. --dispatch-only lives
+  # here (E7): box preflight runs on the box and refuses without the
+  # laptop-bound AccessPlan, while deploy-box.sh excludes var/runs/ and the
+  # full install refuses until preflight_passed.
+  "scripts/box-webcast-install.sh",
 ]
 verification = [
   "bash -n scripts/redial-supervisor.sh",
   "bash -n scripts/box-event-install.sh scripts/install-event-timer.sh scripts/event-autorun.sh scripts/webcast-autorun.sh",
+  "bash -n scripts/box-webcast-install.sh",
   "cargo test --test redial_supervisor",
   "tests/operator_escalation.sh",
   "tests/typed_scheduler_boundary.sh",
