@@ -48,6 +48,19 @@ pub struct EventConfig {
 pub struct EventSection {
     pub id: String,
     pub starts_at: String, // RFC 3339; parsed lazily — M0 never schedules
+    /// Rehearsal posture (O6, 2026-08-16). Both schedulers hardcoded
+    /// `--i-am-live --fillable` into every webcast unit, so a drill that
+    /// exercised the detector end-to-end was scheduled fillable by
+    /// construction, and its inertness rested entirely on getting per-word
+    /// caps right in config. When true, the installers build a unit with NO
+    /// fill permission and `schedule-proof.py` asserts the LOADED unit matches
+    /// — so drill inertness becomes structural. The field lives here rather
+    /// than in the RunPlan because the plan's field set is an exact-match
+    /// schema (adding one invalidates every existing plan), while
+    /// `config_sha256` already binds this file into `plan_sha256`.
+    /// Default false: absent means a real event, never a rehearsal.
+    #[serde(default)]
+    pub rehearsal: bool,
 }
 
 #[derive(Debug, Deserialize)]

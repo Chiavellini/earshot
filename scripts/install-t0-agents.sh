@@ -133,6 +133,7 @@ EARSHOT_REPO="$REPO" "$PYTHON" scripts/access-plan.py validate --run-dir "$RUN_D
 PLAN_EXPORTS=$("$PYTHON" - "$REPO" "$RUN_DIR" "$EXPECTED_HOST" "$FIRE_AT_UTC" <<'PY'
 import datetime as dt
 import json
+import os
 import re
 import shlex
 import subprocess
@@ -190,7 +191,26 @@ else:
     fire = start - dt.timedelta(minutes=75)
 local = fire.astimezone()
 argv = [str(repo / "scripts" / "arm-on-url.sh"), "--run-dir", str(run)]
-argv += ["--i-am-live", "--fillable"]
+# O6: posture comes from the plan's PINNED config via the one shared
+# derivation in schedule-proof.py (which re-verifies the config bytes against
+# plan.config_sha256), so the launchd and systemd paths cannot drift apart and
+# a post-compile config edit cannot silently flip a rehearsal into a live fill.
+_posture = subprocess.run(
+    [sys.executable, str(repo / "scripts/schedule-proof.py"), "posture",
+     "--run-dir", str(run)],
+    cwd=repo, text=True, capture_output=True,
+    env={**os.environ, "EARSHOT_REPO": str(repo)},
+)
+if _posture.returncode != 0:
+    raise SystemExit(
+        "could not derive the scheduled posture: "
+        + (_posture.stderr.strip() or "unknown error")
+    )
+_posture_value = _posture.stdout.strip()
+if _posture_value == "live":
+    argv += ["--i-am-live", "--fillable"]
+elif _posture_value != "rehearsal":
+    raise SystemExit(f"unknown scheduled posture {_posture_value!r}")
 env_rel = plan.get("event_env_path")
 if not env_rel:
     raise SystemExit("webcast RunPlan has no pinned event env/account locator")

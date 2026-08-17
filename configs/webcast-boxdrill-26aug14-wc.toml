@@ -24,6 +24,11 @@
 [event]
 id        = "BOXDRILL-26AUG14-WEBCAST"
 starts_at = "2026-08-30T20:00:00Z"
+# O6: this is a DRILL. The scheduler builds a unit with no fill permission at
+# all, schedule-proof asserts the LOADED unit matches, and arm-on-url refuses
+# --i-am-live/--fillable against this plan. Inertness is now structural, not a
+# consequence of remembering to set every keyword to 1c.
+rehearsal = true
 
 [pipeline]
 chunk_ms       = 80

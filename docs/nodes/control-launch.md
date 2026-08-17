@@ -43,6 +43,14 @@ is forbidden as the dial gate: the WS listener binds BEFORE the detector
 build, so on 2026-07-29 the port answered all day while an ORT-less detector
 build hung and the media socket sat unaccepted in the kernel backlog.
 
+`arm-on-url.sh` refuses `--i-am-live` and `--fillable` when the plan's pinned
+config declares `[event] rehearsal = true` (O6, 2026-08-16), using the shared
+`schedule-proof.py posture` derivation. The schedulers already build rehearsal
+units without those flags; this closes the hand-invocation and hand-edited-unit
+route around them, and is the last layer where it can be caught. Posture lives
+in the config because the plan's field set is an exact-match schema, and
+`config_sha256` already binds the config into `plan_sha256`.
+
 A live phone or webcast launch (`--i-am-live`) consumes exactly one immutable
 schema-3 RunPlan. `--run-dir` may name it exactly; otherwise `eventctl status
 --json` must resolve one active run for the config's event. Before starting the

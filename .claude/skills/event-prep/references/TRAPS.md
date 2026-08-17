@@ -219,6 +219,17 @@ terminal and use the ordinary pull.
   try to dodge it by compiling the plan on the box instead — `created_utc` is
   inside `plan_sha256`, so the two hosts produce different plans and the
   AccessPlan then refuses to bind.
+- **A drill config MUST carry `[event] rehearsal = true`.** Scheduled webcast
+  units are `--i-am-live --fillable` unless the pinned config says otherwise.
+  With the flag, the installers build a unit with no fill permission, the
+  LOADED readback refuses one that has it, and `arm-on-url.sh` refuses the
+  flags by hand — so inertness is structural instead of depending on every
+  keyword being 1¢. Check with
+  `python3 scripts/schedule-proof.py posture --run-dir <run>` (`rehearsal` or
+  `live`). Never set it on a real event: it silently withholds every fill.
+  Editing the config after the plan is compiled does not flip posture — it
+  refuses, because the derivation re-verifies the bytes against
+  `plan.config_sha256`.
 - **Order of operations is load-bearing: schedule → pull → close → dispatch.**
   A box run's `scheduled` receipt is minted on the BOX. Record anything on the
   laptop copy before pulling it back and the chain forks *permanently* — both

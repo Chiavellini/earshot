@@ -571,8 +571,12 @@ def expected_program(repo: Path, run: Path, plan: dict) -> list[str]:
         return [str(repo / "scripts" / "event-autorun.sh"), "--run-dir", str(run)]
     if plan.get("lane") == "webcast":
         argv = [str(repo / "scripts" / "arm-on-url.sh"), "--run-dir", str(run)]
-        if plan.get("execution_enabled") is True:
-            argv.extend(["--i-am-live", "--fillable"])
+        # O6: a rehearsal unit must carry NO fill permission, and the readback
+        # is where that becomes structural — a unit built with the flags while
+        # its pinned config declares a rehearsal fails here, whichever
+        # installer wrote it. capture_only runs never had fill argv anyway.
+        if plan.get("execution_enabled") is True and plan_posture(run) == "live":
+            argv.extend(LIVE_ARGV)
         return argv
     raise Refusal(f"unsupported RunPlan lane {plan.get('lane')!r}")
 
@@ -1266,6 +1270,57 @@ def supervise_monitor(args: argparse.Namespace) -> int:
         signal.signal(signal.SIGINT, old_int)
 
 
+REHEARSAL_ARGV: tuple[str, ...] = ()
+LIVE_ARGV: tuple[str, ...] = ("--i-am-live", "--fillable")
+
+
+def plan_posture(run_dir: Path) -> str:
+    """Return "rehearsal" or "live" for one RunPlan (O6, 2026-08-16).
+
+    Both installers previously hardcoded `--i-am-live --fillable` into every
+    webcast unit, so a drill that exercised the detector was scheduled fillable
+    by construction and its inertness depended on per-word caps being right in
+    config. The intent lives in the config's `[event] rehearsal`, not in the
+    RunPlan, because the plan's field set is an exact-match schema — adding a
+    field would invalidate every existing plan — while `config_sha256` already
+    binds the config into `plan_sha256`.
+
+    The config bytes are re-verified against that pinned digest here. Without
+    that, editing the config after compile would silently flip a live event
+    into a rehearsal (or the reverse) while the plan hash still validated.
+    """
+    plan = json.loads((run_dir / "control/run-plan.json").read_text())
+    repo = Path(os.environ.get("EARSHOT_REPO", Path(__file__).resolve().parent.parent))
+    config_path = Path(plan["config_path"])
+    if not config_path.is_absolute():
+        config_path = repo / config_path
+    raw = config_path.read_bytes()
+    digest = hashlib.sha256(raw).hexdigest()
+    if digest != plan["config_sha256"]:
+        raise Refusal(
+            f"config bytes do not match the pinned plan digest ({config_path}):"
+            f" {digest} != {plan['config_sha256']}"
+        )
+    event = tomllib.loads(raw.decode("utf-8")).get("event", {})
+    rehearsal = event.get("rehearsal", False)
+    if type(rehearsal) is not bool:
+        raise Refusal("[event] rehearsal must be a boolean")
+    return "rehearsal" if rehearsal else "live"
+
+
+def posture(args: argparse.Namespace) -> int:
+    print(plan_posture(Path(args.run_dir).resolve()))
+    return 0
+
+
+def posture_parser() -> argparse.ArgumentParser:
+    value = argparse.ArgumentParser(
+        description="Print the scheduled posture (rehearsal|live) for one RunPlan"
+    )
+    value.add_argument("--run-dir", required=True)
+    return value
+
+
 def parser() -> argparse.ArgumentParser:
     value = argparse.ArgumentParser(description=__doc__)
     value.add_argument("--run-dir", required=True)
@@ -1354,6 +1409,8 @@ def main() -> int:
             args = monitor_parser().parse_args(sys.argv[2:])
             validate_monitor_args(args)
             return supervise_monitor(args) if args.supervise else monitor(args)
+        if len(sys.argv) > 1 and sys.argv[1] == "posture":
+            return posture(posture_parser().parse_args(sys.argv[2:]))
         return reconcile(parser().parse_args())
     except Refusal as exc:
         print(f"REFUSED: {exc}", file=sys.stderr)

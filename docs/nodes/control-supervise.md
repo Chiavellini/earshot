@@ -74,9 +74,31 @@ a lifecycle transition for a transport step would be a schema change.
 `--verify-only` and `--fire-at-utc` are refused alongside it rather than
 silently ignored. Pinned by `tests/typed_scheduler_boundary.sh`.
 
+**Scheduled posture (O6, 2026-08-16).** Both installers previously hardcoded
+`--i-am-live --fillable` into every webcast unit, so a drill that exercised the
+detector was scheduled fillable by construction and its inertness rested on
+per-word caps being right in config. Posture is now declared by `[event]
+rehearsal` in the config and derived by the single shared entry point
+`schedule-proof.py posture --run-dir <R>`, which prints `rehearsal` or `live`.
+It lives in the config rather than the RunPlan because the plan's field set is
+an exact-match schema — adding a field invalidates every existing plan — while
+`config_sha256` already binds the config into `plan_sha256`; the derivation
+re-verifies the config bytes against that pinned digest, so a post-compile edit
+cannot silently flip posture. A rehearsal plan is still `execution_enabled`
+(it has keywords, and exercising the detector is the point); only the fill
+permission is withheld. Enforced at three layers: both installers build the
+unit without the flags, `expected_program` makes the LOADED readback refuse a
+rehearsal unit that carries them by any route, and `arm-on-url.sh` refuses
+`--i-am-live`/`--fillable` against a rehearsal plan so a hand invocation cannot
+route around the scheduler. `install-event-timer.sh` derives it **once** and
+exports `PLAN_POSTURE`, because that script writes the unit from `argv` while
+`ExecStart=` is assembled separately in bash — deriving twice is how those two
+drift.
+
 `scripts/install-event-timer.sh` accepts phone and webcast schema-3 plans.
 Phone retains T-25 and `event-autorun.sh`; webcast uses T-75 and
-`arm-on-url.sh --run-dir ... --i-am-live --fillable`, with the resolved
+`arm-on-url.sh --run-dir ...` (plus `--i-am-live --fillable` when the posture
+is `live`), with the resolved
 `EARSHOT_ACCOUNT_ENV` in the unit. The webcast-only `--fire-at-utc` recovery
 override has the same strictly-future/no-later-than-start contract as the
 launchd installer. Both lanes retain `TimeoutStopSec=150`, `KillMode=mixed`,

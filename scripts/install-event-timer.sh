@@ -76,6 +76,7 @@ EARSHOT_REPO="$REPO" python3 scripts/eventctl.py verify --run-dir "$RUN_DIR" >/d
 PLAN_EXPORTS=$(python3 - "$REPO" "$RUN_DIR" "$EXPECTED_HOST" "$FIRE_AT_UTC" <<'PY'
 import datetime as dt
 import json
+import os
 import re
 import shlex
 import subprocess
@@ -142,11 +143,30 @@ environment = {
     "EARSHOT_RUN_PLAN_SHA256": plan["plan_sha256"],
 }
 account = ""
+posture = "n/a"
 if lane == "webcast":
-    argv = [
-        str(repo / "scripts" / "arm-on-url.sh"), "--run-dir", str(run),
-        "--i-am-live", "--fillable",
-    ]
+    # O6: posture comes from the plan's PINNED config through the one shared
+    # derivation in schedule-proof.py, which re-verifies the config bytes
+    # against plan.config_sha256. Derived ONCE here and exported, because this
+    # script writes the unit from `argv` while the ExecStart= line below is
+    # built separately in bash — deriving it twice is how those two drift.
+    _posture = subprocess.run(
+        [sys.executable, str(repo / "scripts/schedule-proof.py"), "posture",
+         "--run-dir", str(run)],
+        cwd=repo, text=True, capture_output=True,
+        env={**os.environ, "EARSHOT_REPO": str(repo)},
+    )
+    if _posture.returncode != 0:
+        raise SystemExit(
+            "could not derive the scheduled posture: "
+            + (_posture.stderr.strip() or "unknown error")
+        )
+    posture = _posture.stdout.strip()
+    argv = [str(repo / "scripts" / "arm-on-url.sh"), "--run-dir", str(run)]
+    if posture == "live":
+        argv += ["--i-am-live", "--fillable"]
+    elif posture != "rehearsal":
+        raise SystemExit(f"unknown scheduled posture {posture!r}")
     env_rel = plan.get("event_env_path")
     if not env_rel:
         raise SystemExit("webcast RunPlan has no pinned event env/account locator")
@@ -184,6 +204,7 @@ values = {
     "FIRE_AT_UTC": fire.strftime("%Y-%m-%dT%H:%M:%SZ"),
     "ON_CALENDAR": fire.strftime("%Y-%m-%d %H:%M:%S UTC"),
     "ACCOUNT_ENV": account,
+    "PLAN_POSTURE": posture,
     "PROGRAM_JSON": json.dumps(argv, separators=(",", ":")),
     "ENVIRONMENT_JSON": json.dumps(environment, separators=(",", ":"), sort_keys=True),
 }
@@ -198,7 +219,14 @@ TIMER="$LABEL.timer"
 SERVICE_PATH="$UNIT_DIR/$SERVICE"
 TIMER_PATH="$UNIT_DIR/$TIMER"
 if [[ "$PLAN_LANE" == webcast ]]; then
-  EXEC_START="$REPO/scripts/arm-on-url.sh --run-dir $RUN_DIR --i-am-live --fillable"
+  # O6: PLAN_POSTURE was derived ONCE in the block above, from the plan's
+  # pinned config. Do not re-derive it here — this line and the argv the unit
+  # is actually written from must never be able to disagree.
+  case "$PLAN_POSTURE" in
+    live)      EXEC_START="$REPO/scripts/arm-on-url.sh --run-dir $RUN_DIR --i-am-live --fillable" ;;
+    rehearsal) EXEC_START="$REPO/scripts/arm-on-url.sh --run-dir $RUN_DIR" ;;
+    *) echo "REFUSED: unknown scheduled posture '$PLAN_POSTURE'" >&2; exit 1 ;;
+  esac
 else
   EXEC_START="$REPO/scripts/event-autorun.sh --run-dir $RUN_DIR"
 fi

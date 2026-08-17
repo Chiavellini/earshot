@@ -44,6 +44,22 @@ PY
 EARSHOT_REPO="$REPO" python3 scripts/eventctl.py verify --run-dir "$RUN_DIR" >/dev/null || {
   echo "REFUSED: RunPlan/ledger/pinned-input verification failed" >&2; exit 1;
 }
+
+# O6: the installers build a rehearsal unit without fill flags, but nothing
+# stopped an operator (or a hand-edited unit) from passing them anyway. The
+# posture is declared in the plan's pinned config, so refuse here too — the
+# arming path is the last place this can be caught, and it is cheap.
+if [[ "$FILLABLE" == 1 || "$LIVE" == 1 ]]; then
+  ARM_POSTURE=$(EARSHOT_REPO="$REPO" python3 scripts/schedule-proof.py \
+    posture --run-dir "$RUN_DIR") || {
+      echo "REFUSED: could not derive the declared posture" >&2; exit 1; }
+  [[ "$ARM_POSTURE" != rehearsal ]] || {
+    echo "REFUSED: this RunPlan's pinned config declares [event] rehearsal = true;" >&2
+    echo "         --i-am-live/--fillable are refused. Drop them, or clear the flag" >&2
+    echo "         in the config and recompile the plan." >&2
+    exit 1
+  }
+fi
 ACCESS_JSON=$(EARSHOT_REPO="$REPO" python3 scripts/access-plan.py validate \
   --run-dir "$RUN_DIR" --canonical) || { echo "REFUSED: canonical immutable AccessPlan invalid" >&2; exit 1; }
 

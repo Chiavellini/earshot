@@ -379,15 +379,44 @@ the operator rules:
   ev_gate has no P(wrong) term and gates nothing (shadow only).
 - **O5** No pre-arm liquidity survey and no depth-aware sizing; on 08-11 most
   intents found `best_ask=None` or depth above the cap.
-- **O6 OPEN 2026-08-14** The box webcast scheduling path **forces
-  `--i-am-live --fillable`**: there is no non-trading scheduled posture. The one
-  candidate, `capture_only`, requires zero keywords, so it cannot exercise the
-  detector at all — meaning any rehearsal that proves the detector end-to-end on
-  the box is, by construction, a fillable posture. The §8 drill was only made
-  inert by config (1¢ non-crossing OBSERVE + a settled-market allowlist), not by
-  the path. **A real box webcast event is a fillable posture until this is
-  ruled.** Closing it spans 7 refusal sites and 5 test assertions across two
-  nodes, so it is an operator decision, not a reliability patch.
+- **O6 CLOSED 2026-08-16 (was OPEN 08-14, corrected 08-16)** Every scheduled webcast run —
+  **not just the box** — hardcodes `--i-am-live --fillable`:
+  `install-event-timer.sh:201` (systemd/box) and `install-t0-agents.sh:193`
+  (launchd/laptop). There is no *scheduler-level* non-trading posture. The one
+  candidate, `capture_only`, is `not keywords` by construction
+  (`eventctl.py:380`, enforced at `src/main.rs:1732`), so it cannot exercise the
+  detector at all: any rehearsal that proves detection end-to-end is, by
+  construction, scheduled fillable.
+  **The correction:** this is not an unguarded path. Exposure is bounded by
+  policy that is already deliberate and standing — per-word `max_price_cents`
+  set from the study (`posture-from-study.py`: FILL 97¢ / OBSERVE 1¢, the
+  evidence-gated rule), plus `max_event_notional_cents`, which at 100 vs a 97¢
+  fill cap admits **exactly one order per event** (measured 26AUG06 CELH), plus
+  the `risk.rs` hard caps. The §8 drill was inert by that same mechanism (1¢
+  non-crossing OBSERVE + settled-market allowlist), which is the designed
+  control, not a workaround.
+  **RULED + CLOSED 2026-08-16 (operator chose a rehearsal posture).** Posture
+  is now declared by `[event] rehearsal` in the config and derived by one
+  shared entry point, `schedule-proof.py posture --run-dir <R>`. It lives in
+  the config, not the RunPlan, because the plan's field set is an exact-match
+  schema (`_validate_plan_shape`) — adding a field would invalidate every
+  existing plan — while `config_sha256` already binds the config into
+  `plan_sha256`; the derivation re-verifies the config bytes against that
+  pinned digest, so editing the config after compile cannot silently flip
+  posture (it refuses instead). A rehearsal plan stays `execution_enabled` —
+  it has keywords and exercising the detector is the whole point; only fill
+  permission is withheld. **Enforced at three layers**, each proved red by
+  tampering: both installers build the unit without the flags; the LOADED
+  readback (`expected_program`) refuses a rehearsal unit carrying them by any
+  route; and `arm-on-url.sh` refuses them against a rehearsal plan, closing the
+  hand-invocation hole. `install-event-timer.sh` derives posture **once** and
+  exports `PLAN_POSTURE`, because it writes the unit from `argv` while
+  `ExecStart=` is built separately in bash — that duplication was a real bug
+  found during this change. Money policy in `src/risk.rs` is untouched; the
+  per-word study caps and event notional cap remain exactly as before. The
+  drill config now carries `rehearsal = true`, so drill inertness is
+  structural. `src/config.rs` gained one `#[serde(default)] rehearsal: bool`,
+  required only because `EventSection` is `deny_unknown_fields`.
 
 ## 5. Target operating model — the three skills
 

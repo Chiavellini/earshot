@@ -614,6 +614,112 @@ if box_install --run-dir "$PRELAUNCH_RUN" --dispatch-only \
 fi
 grep -q 'meaningless' "$TMP/dispatch-mutex2.log"
 
+# ── rehearsal posture (O6) ──────────────────────────────────────────────────
+# Both installers hardcoded --i-am-live --fillable into every webcast unit, so a
+# drill that exercised the detector was scheduled fillable by construction and
+# its inertness rested on per-word caps being right in config. A rehearsal plan
+# must produce a unit with NO fill permission, and the readback must enforce it.
+cat > "$REPO/configs/rehearsal-webcast.toml" <<EOF
+[event]
+id = "KXEARNINGSMENTIONSCHEDULER-TEST-REHEARSAL-WEBCAST"
+starts_at = "$START"
+rehearsal = true
+[[sources]]
+kind = "pipe"
+cmd = ["ffmpeg", "-i", "\$HOME/rehearsal-stream.url"]
+[[keywords]]
+market_ticker = "KXEARNINGSMENTIONSCHEDULER-TEST-FOO"
+phrase = "foo"
+EOF
+cat > "$REPO/configs/rehearsal-webcast.env" <<EOF
+CONFIG_PATH="configs/rehearsal-webcast.toml"
+EVENT_DATE="$DATE"
+ACCOUNT_ENV="\$HOME/.earshot/account.env"
+EOF
+eventctl init --config configs/rehearsal-webcast.toml \
+  --event-env configs/rehearsal-webcast.env --host-id "$HOST_ID" \
+  --account-fingerprint "$FP"
+REHEARSAL_RUN=$(find "$REPO/var/runs/KXEARNINGSMENTIONSCHEDULER-TEST-REHEARSAL-WEBCAST" \
+  -mindepth 1 -maxdepth 1 -type d -print -quit)
+for transition in prepared access_acquired study_completed preflight_passed; do
+  eventctl record --run-dir "$REHEARSAL_RUN" --transition "$transition"
+done
+EARSHOT_REPO="$REPO" python3 "$REPO/scripts/access-plan.py" bind \
+  --run-dir "$REHEARSAL_RUN" --access-mode public --resolver-kind external-command \
+  --resolver-argv-json '["scripts/test-resolver.sh"]' >/dev/null
+
+# A rehearsal plan is still execution_enabled (it has keywords) — that is the
+# whole point: it exercises the detector. Only the fill permission is withheld.
+[[ "$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["execution_enabled"])' \
+  "$REHEARSAL_RUN/control/run-plan.json")" == "True" ]]
+[[ "$(EARSHOT_REPO="$REPO" python3 "$REPO/scripts/schedule-proof.py" posture \
+  --run-dir "$REHEARSAL_RUN")" == "rehearsal" ]]
+[[ "$(EARSHOT_REPO="$REPO" python3 "$REPO/scripts/schedule-proof.py" posture \
+  --run-dir "$DISPATCH_WEB_RUN")" == "live" ]]
+
+cp "$REPO/configs/rehearsal-webcast.toml" "$REPO/configs/rehearsal-webcast.env" \
+  "$REMOTE_REPO/configs/"
+REHEARSAL_EVENT=KXEARNINGSMENTIONSCHEDULER-TEST-REHEARSAL-WEBCAST
+mkdir -p "$REMOTE_REPO/state/$REHEARSAL_EVENT"
+printf 'fixture binary\n' > "$REMOTE_REPO/state/$REHEARSAL_EVENT/earshot-pinned"
+chmod +x "$REMOTE_REPO/state/$REHEARSAL_EVENT/earshot-pinned"
+box_install --run-dir "$REHEARSAL_RUN" >/dev/null
+REHEARSAL_SHA=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["plan_sha256"])' \
+  "$REHEARSAL_RUN/control/run-plan.json")
+REHEARSAL_SERVICE="$REMOTE_SYSTEMD_USER_DIR/com.earshot.run.${REHEARSAL_SHA:0:20}.service"
+CANON_REHEARSAL_RUN=$(cd "$REMOTE_REPO/var/runs/$REHEARSAL_EVENT/$(basename "$REHEARSAL_RUN")" && pwd -P)
+grep -qF "ExecStart=$CANON_REMOTE_REPO/scripts/arm-on-url.sh --run-dir $CANON_REHEARSAL_RUN" \
+  "$REHEARSAL_SERVICE"
+# The bit that matters: no fill permission anywhere in the installed unit.
+if grep -q -- '--i-am-live\|--fillable' "$REHEARSAL_SERVICE"; then
+  echo "FAIL: rehearsal unit carries fill permission" >&2
+  exit 1
+fi
+# ...and the live unit still does, so this is a posture switch and not a
+# blanket removal that would silently disarm every real event.
+grep -q -- '--i-am-live --fillable' "$DISPATCH_SERVICE"
+
+# The readback rejects a rehearsal unit that was given fill flags by any means.
+python3 - "$REHEARSAL_SERVICE" <<'PY'
+import re, sys
+p = sys.argv[1]
+s = open(p).read()
+open(p, "w").write(re.sub(r"^(ExecStart=.*)$", r"\1 --i-am-live --fillable", s, count=1, flags=re.M))
+PY
+if EARSHOT_BOX_EXECUTION_HOST="$HOST_ID" EARSHOT_BOX=stub-box \
+    EARSHOT_BOX_KEY="$TMP/no-key" EARSHOT_BOX_REPO="$REMOTE_REPO" \
+    EARSHOT_SSH="$STUB/bin/ssh" EARSHOT_RSYNC="$STUB/bin/rsync" \
+    "$REPO/scripts/box-webcast-install.sh" --run-dir "$REHEARSAL_RUN" \
+      --verify-only > "$TMP/rehearsal-tamper.log" 2>&1; then
+  echo "FAIL: readback accepted a rehearsal unit carrying fill permission" >&2
+  exit 1
+fi
+
+# arm-on-url refuses the flags by hand, which is the last hole.
+if "$REPO/scripts/arm-on-url.sh" --run-dir "$REHEARSAL_RUN" --i-am-live --fillable \
+    > "$TMP/rehearsal-arm.log" 2>&1; then
+  echo "FAIL: arm-on-url accepted --fillable against a rehearsal plan" >&2
+  exit 1
+fi
+# Assert the REASON, not just the nonzero exit: arm-on-url would refuse this
+# fixture for half a dozen unrelated reasons (no stream, no pin, no board), so
+# a bare exit check here would pass even with the posture guard deleted.
+if ! grep -q 'declares \[event\] rehearsal = true' "$TMP/rehearsal-arm.log"; then
+  echo "FAIL: arm-on-url refused a rehearsal plan, but NOT for the posture —" >&2
+  echo "      the guard may be gone and this assertion passing by accident:" >&2
+  tail -3 "$TMP/rehearsal-arm.log" >&2
+  exit 1
+fi
+
+# Editing the config after compile must not flip the posture silently.
+printf '\n# drift\n' >> "$REPO/configs/rehearsal-webcast.toml"
+if EARSHOT_REPO="$REPO" python3 "$REPO/scripts/schedule-proof.py" posture \
+    --run-dir "$REHEARSAL_RUN" > "$TMP/posture-drift.log" 2>&1; then
+  echo "FAIL: posture derived from drifted config bytes" >&2
+  exit 1
+fi
+grep -q 'do not match the pinned plan digest' "$TMP/posture-drift.log"
+
 # Good launchd install and verify-only: exactly one bootstrap and one receipt.
 # A valid static-public AccessPlan is not schedulable until this boundary can
 # bind its embedded endpoint to a durable PCM proof. Refuse before launchctl
