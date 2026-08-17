@@ -344,6 +344,31 @@ the work orders reference them.
 
 ### Lifecycle / process
 
+- **L9 OPEN 2026-08-17 — the laptop webcast scheduler is dead right now, and it
+  is an interpreter catch-22.** Found while clearing stale launchd jobs, not by
+  a gate. Homebrew `python@3.14`'s `pyexpat` is linked against a newer expat
+  than `/usr/lib/libexpat.1.dylib` (`Symbol not found:
+  _XML_SetAllocTrackerActivationThreshold`), so **`import plistlib` fails**.
+  `install-t0-agents.sh` imports `plistlib` at `:276` (plist build) and `:337`
+  (loaded readback) under `$PYTHON` = `${EARSHOT_PYTHON:-python3}` = that same
+  Homebrew interpreter, so a laptop-hosted webcast event cannot be scheduled at
+  all. Measured: `python3 -c "import os, plistlib, sys"` exits 1.
+  | interpreter | `tomllib` | `plistlib` |
+  |---|---|---|
+  | Homebrew 3.14.6 (first on PATH, used by the scheduler) | ok | **broken** |
+  | Apple 3.9.6 | **missing** | ok |
+  Neither interpreter can do both, and both are required: L7 pins
+  `PATH=/opt/homebrew/bin:...` into the unit precisely because the fire path
+  imports `tomllib` unconditionally (that pin is what fixed AMAT 26AUG13), while
+  the plist build/readback needs `plistlib`. Swapping to Apple's python would
+  re-open L7.
+  Note `--selftest-readback` passes and always would: its block imports only
+  `re`, so the gate that exists over this file cannot see the breakage.
+  Fix is environmental first — rebuild Homebrew python against the current
+  expat (`brew reinstall python@3.14`) — and then a preflight assertion
+  (`import tomllib, plistlib` under the exact scheduler interpreter) so this is
+  caught the night before rather than at T-75. **The box lane is unaffected**:
+  systemd units are written by `install-event-timer.sh`, which uses no plist.
 - **L1** Preflight-thrash class: CBRS 2026-08-12 was missed — preflight went
   red at 20:42 through 21:16 and turned green at 21:20:41Z for a 21:00Z call;
   the launcher correctly refused to arm through red. Interrupted night-before
