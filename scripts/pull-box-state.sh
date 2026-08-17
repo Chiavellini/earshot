@@ -51,6 +51,15 @@ LOCAL_REPO="${_EARSHOT_PULL_REPO_ROOT:-$DEFAULT_REPO}"
 SOURCE_ROOT="${_EARSHOT_PULL_SOURCE_ROOT:-}"
 BOX_HOST="${EARSHOT_BOX:-ubuntu@3.212.174.94}"
 BOX_KEY="${EARSHOT_BOX_KEY:-$HOME/.ssh/earshot-useast1.pem}"
+
+# One rsync per run dir, twice (transfer + checksum stability), plus the two
+# enumerations — an event with several attempts opens ~20 SSH connections in a
+# few seconds and trips sshd's MaxStartups, which drops them at RANDOM. That
+# surfaced as "rsync failed for run <a different run each retry>", which reads
+# like evidence corruption rather than a connection limit. Multiplex them onto
+# one carried connection instead of retrying into the same wall.
+SSH_MUX_DIR=""
+SSH_OPTS=(-i "$BOX_KEY" -o BatchMode=yes -o ConnectTimeout=15)
 EVENTCTL="${LOCAL_REPO}/scripts/eventctl.py"
 BOUNDARY="${LOCAL_REPO}/scripts/run-host-boundary.py"
 
@@ -77,6 +86,7 @@ usage_error() {
 }
 
 cleanup_work() {
+  stop_ssh_mux
   if [[ -n "$WORK_ROOT" && -d "$WORK_ROOT" ]]; then
     case "$WORK_ROOT" in
       "$LOCAL_REPO"/var/.pull-box-state.*)
@@ -102,6 +112,25 @@ validate_run_id() {
 # Production uses read-only ssh/rsync. `_EARSHOT_PULL_SOURCE_ROOT` is an
 # intentionally private offline-test seam: --check points it at a temp tree,
 # and no network command runs in that mode.
+start_ssh_mux() {
+  [[ -z "$SOURCE_ROOT" ]] || return 0
+  # Unix socket paths are capped near 104 bytes and %C adds 40 hex chars, so
+  # this must NOT use TMPDIR: macOS sets it to a ~50-char per-user path and
+  # ssh refuses outright with "ControlPath too long". /tmp is the short base
+  # the limit forces; mktemp -d gives it 0700.
+  SSH_MUX_DIR=$(mktemp -d /tmp/ear-pull-mux.XXXXXX) || return 1
+  SSH_OPTS+=(-o ControlMaster=auto -o "ControlPath=$SSH_MUX_DIR/%C" -o ControlPersist=120)
+}
+
+stop_ssh_mux() {
+  [[ -n "$SSH_MUX_DIR" ]] || return 0
+  ssh "${SSH_OPTS[@]}" -O exit "$BOX_HOST" >/dev/null 2>&1 || true
+  rm -rf -- "$SSH_MUX_DIR"
+  SSH_MUX_DIR=""
+}
+
+box_ssh() { ssh "${SSH_OPTS[@]}" "$BOX_HOST" "$@"; }
+
 source_list_events() {
   local kind="$1"
   if [[ -n "$SOURCE_ROOT" ]]; then
@@ -110,7 +139,7 @@ source_list_events() {
       -name "$MATCH" -exec basename {} \; | LC_ALL=C sort -u
     return
   fi
-  ssh -i "$BOX_KEY" -o BatchMode=yes -o ConnectTimeout=15 "$BOX_HOST" \
+  box_ssh \
     "root=\"\$HOME/ear/$kind\"; [ -d \"\$root\" ] || exit 0; find \"\$root\" -mindepth 1 -maxdepth 1 -type d -name '$MATCH' -exec basename {} \\;" |
     LC_ALL=C sort -u
 }
@@ -123,7 +152,7 @@ source_list_runs() {
       -type d -exec basename {} \; | LC_ALL=C sort -u
     return
   fi
-  ssh -i "$BOX_KEY" -o BatchMode=yes -o ConnectTimeout=15 "$BOX_HOST" \
+  box_ssh \
     "root=\"\$HOME/ear/var/runs/$event_id\"; [ -d \"\$root\" ] || exit 0; find \"\$root\" -mindepth 1 -maxdepth 1 -type d -exec basename {} \\;" |
     LC_ALL=C sort -u
 }
@@ -158,7 +187,7 @@ rsync_snapshot() {
       refuse "stability check failed for $kind $event_id ${run_id:+/ $run_id}"
   else
     local remote_shell
-    remote_shell="ssh -i $BOX_KEY -o BatchMode=yes -o ConnectTimeout=15"
+    remote_shell="ssh ${SSH_OPTS[*]}"
     if [[ "$kind" == "state" ]]; then
       source_path="$BOX_HOST:~/ear/state/$event_id/"
     else
@@ -676,6 +705,8 @@ else
   SOURCE_ROOT="$(cd "$SOURCE_ROOT" && pwd -P)"
 fi
 
+start_ssh_mux || refuse "could not allocate the SSH multiplex directory"
+trap cleanup_work EXIT
 STATE_EVENTS=$(source_list_events state) || refuse "could not enumerate box state"
 RUN_EVENTS=$(source_list_events var/runs) || refuse "could not enumerate box runs"
 EVENTS=$(printf '%s\n%s\n' "$STATE_EVENTS" "$RUN_EVENTS" |

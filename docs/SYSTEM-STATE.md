@@ -220,6 +220,38 @@ the work orders reference them.
   yields byte-different `run-plan.json` because `created_utc` sits inside
   `plan_sha256` (measured: laptop `eb7371cf…` vs box `1e70343c…`, diff = that
   one field). So transport is mandatory, not a convenience.
+- **E12 OPEN 2026-08-16 — the failure alert destroys the run it warns about.**
+  `alertctl.py` records alert facts as `kind: compat` rows in the RunPlan's own
+  hash-chained ledger (its module docstring states this as the design). For a
+  run executing on ANOTHER host that is fatal: the laptop appends while the box
+  appends its own rows at the same indexes, so the chain forks permanently and
+  the attempt can never again be dispatched, pulled or recovered — a fresh
+  `eventctl init` is the only way forward. **Measured:** one failed
+  `opsctl.sh schedule --date` of a box run wrote **nine** `alertctl` rows into
+  the laptop copy (`schedule_preflight_missing` + its delivery receipts) while
+  the box held `preflight_passed`; both copies were then irreconcilable. So a
+  *transient* schedule failure — the SSH rate-limit below was enough —
+  permanently kills a prepared box attempt, and the notification path is what
+  kills it. Same root cause as E11 (a host writing to a ledger it does not
+  own), but system-caused rather than operator-caused, which makes it worse.
+  Fix direction: alerts about a run whose `execution_host_id` is not this host
+  belong in this host's standalone alert ledger (`alert_target` already has a
+  `standalone` kind), keyed by the run identity so nothing is lost. That
+  relocates evidence and so is a `platform.notify` contract change — deliberately
+  NOT made here; it needs its own change with the notify tests.
+- **E13 OPEN 2026-08-16 — the puller trips sshd's own rate limit.** Every run
+  dir costs two rsync invocations (transfer + checksum stability) plus the two
+  enumerations, each previously a fresh SSH connection, so an event with
+  several attempts opened ~20 connections in seconds and `MaxStartups` began
+  dropping them at random. It surfaced as `rsync failed for run <a DIFFERENT
+  run on each retry>`, which reads like evidence corruption rather than a
+  connection limit, and it cascaded into E12. Mitigated by multiplexing them
+  onto one carried connection (`ControlMaster=auto`, `ControlPersist=120`);
+  note the socket must live under `/tmp`, not `TMPDIR` — macOS sets TMPDIR to a
+  ~50-char path and `%C` adds 40 more, past the ~104-byte sockaddr limit, and
+  ssh then refuses outright. Left OPEN because the other SSH callers
+  (`box-webcast-install.sh`, `deploy-box.sh`, `box-ready.sh`) still open
+  unmultiplexed connections and can trip the same wall.
 - **E11 OPEN 2026-08-16 — ledger fork by mis-ordered close.** A box run's
   `scheduled` receipt is minted on the BOX. Recording anything on the laptop
   copy before pulling it back forks the chain *permanently*: both hosts then
