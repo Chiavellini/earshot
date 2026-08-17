@@ -76,7 +76,21 @@ scripts/pull-box-state.sh --event <EVENT_ID> --prelaunch   # after box preflight
 
 Never close that gap by re-recording the receipts locally: a hand-written
 `preflight_passed` is a fabricated proof of a build that happened on another
-host, which is the exact class the typed ledger exists to prevent.
+host, which is the exact class the typed ledger exists to prevent. The opposite
+direction — getting a RunPlan TO the box before its on-box preflight — is
+`box-webcast-install.sh --dispatch-only` (`control.supervise`), not this script.
+
+`--supersede-legacy` addresses the legacy `state/<EVENT_ID>/box/` tree, which
+has no typed identity and so is compared byte-for-byte. Re-running preflight on
+the box legitimately rewrites `detector-smoke.log`, `preflight-build.log` and
+`preflight-result.json`, which makes the next pull of that event refuse
+wholesale. The refusal stays — merging divergent evidence in place is the E3
+rule — but the flag turns the operator's hand-`mv` into a first-class step:
+the local tree is archived to `state/<EVENT_ID>/box.superseded-<UTC>`, the
+diverging filename is printed, and the box copy is then published. It never
+overwrites and never deletes, so superseded evidence stays readable; with
+nothing diverged it is a no-op. Without the flag the refusal now names it
+rather than dead-ending. Like every pull argument, `--check` refuses it.
 
 HIMS 26AUG10 needed all three defects at once to read clean. Its phone lane put
 **2 orders on the wire and spent 194¢**, and the day was reported as

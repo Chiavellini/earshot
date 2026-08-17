@@ -6,6 +6,7 @@
 #   scripts/pull-box-state.sh --event KXEARNINGSMENTIONHIMS-26AUG10-PHONE
 #   scripts/pull-box-state.sh --date 2026-08-10 --dry-run
 #   scripts/pull-box-state.sh --event <E> --prelaunch    # pre-launch receipts
+#   scripts/pull-box-state.sh --event <E> --supersede-legacy  # box re-preflighted
 #   scripts/pull-box-state.sh --check                    # offline fixtures
 #
 # Two trees cross the host boundary:
@@ -58,6 +59,7 @@ EVENT_FILTER=""
 DRY_RUN=0
 CHECK_ONLY=0
 PRELAUNCH=0
+SUPERSEDE_LEGACY=0
 WORK_ROOT=""
 
 usage() {
@@ -431,6 +433,44 @@ EOF
   must test -f "$local_repo/state/$legacy_event/box/launch.log"
   must_not test -e "$local_repo/var/runs/$legacy_event"
 
+  # An unchanged legacy tree re-pulls as a deliberate no-op, and --supersede-
+  # legacy must NOT invent a move when nothing diverged.
+  _EARSHOT_PULL_SOURCE_ROOT="$source_repo" \
+    _EARSHOT_PULL_REPO_ROOT="$local_repo" \
+    "$SCRIPT_PATH" --event "$legacy_event" --supersede-legacy >/dev/null
+  must_not eval 'compgen -G "$local_repo/state/$legacy_event/box.superseded-*" >/dev/null'
+
+  # The box re-runs preflight, rewriting a legacy artefact. Default: refuse,
+  # and say how to proceed. This is the E10 symptom, hit twice in one drill.
+  printf 'legacy v2\n' > "$source_repo/state/$legacy_event/launch.log"
+  # Capture to a file rather than a pipeline: `must` takes a command, and under
+  # pipefail a `| grep -q` would mask the refusal as SIGPIPE. And redirect the
+  # COMMAND, not the assertion helper — `must_not cmd > log 2>&1` sends
+  # selftest_fail's own message into the log too, so a broken assertion here
+  # would exit 1 with no output at all. (Cost me a bogus red proof.)
+  if env _EARSHOT_PULL_SOURCE_ROOT="$source_repo" \
+      _EARSHOT_PULL_REPO_ROOT="$local_repo" \
+      "$SCRIPT_PATH" --event "$legacy_event" \
+      > "$check_root/diverge.log" 2>&1; then
+    selftest_fail "divergent legacy state was published without --supersede-legacy"
+  fi
+  must grep -q -- '--supersede-legacy' "$check_root/diverge.log"
+  # The refusal must leave the local tree exactly as it was.
+  must grep -q '^legacy$' "$local_repo/state/$legacy_event/box/launch.log"
+
+  # With the flag: the box copy is published and the local tree is ARCHIVED,
+  # not overwritten and not deleted — its original bytes must still be readable.
+  _EARSHOT_PULL_SOURCE_ROOT="$source_repo" \
+    _EARSHOT_PULL_REPO_ROOT="$local_repo" \
+    "$SCRIPT_PATH" --event "$legacy_event" --supersede-legacy >/dev/null
+  must grep -q '^legacy v2$' "$local_repo/state/$legacy_event/box/launch.log"
+  legacy_archived=$(compgen -G "$local_repo/state/$legacy_event/box.superseded-*" | head -1)
+  must test -n "$legacy_archived"
+  must grep -q '^legacy$' "$legacy_archived/launch.log"
+
+  # --supersede-legacy is a pull argument, so --check must refuse it like the rest.
+  must_not "$SCRIPT_PATH" --check --supersede-legacy
+
   # A nonterminal RunPlan is inventoried and verified in private staging but
   # never published into the laptop's canonical run root BY DEFAULT. Growing
   # live files cannot become a second partial authority.
@@ -571,6 +611,10 @@ while [[ $# -gt 0 ]]; do
       PRELAUNCH=1
       shift
       ;;
+    --supersede-legacy)
+      SUPERSEDE_LEGACY=1
+      shift
+      ;;
     --check)
       CHECK_ONLY=1
       shift
@@ -586,7 +630,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ "$CHECK_ONLY" -eq 1 ]]; then
-  [[ -z "$DATE_FILTER" && -z "$EVENT_FILTER" && "$DRY_RUN" -eq 0 && "$PRELAUNCH" -eq 0 ]] ||
+  [[ -z "$DATE_FILTER" && -z "$EVENT_FILTER" && "$DRY_RUN" -eq 0 && "$PRELAUNCH" -eq 0 && "$SUPERSEDE_LEGACY" -eq 0 ]] ||
     usage_error "--check cannot be combined with pull arguments"
   run_self_check
   exit 0
@@ -753,8 +797,35 @@ while IFS= read -r event_id; do
   if [[ -e "$final" || -L "$final" ]]; then
     [[ -d "$final" && ! -L "$final" ]] ||
       refuse "local box-state target is not a real directory: $final"
-    assert_compatible_legacy_state "$staged" "$final" ||
-      refuse "existing local box state diverges from box: $event_id"
+    if ! DIVERGENCE=$(assert_compatible_legacy_state "$staged" "$final" 2>&1); then
+      # Divergence here is usually LEGITIMATE, not corruption: re-running
+      # preflight on the box rewrites detector-smoke.log, preflight-build.log
+      # and friends, so the next pull of that event refuses wholesale. Refusing
+      # to merge in place stays right (E3) — but the operator was left hand-
+      # moving the tree aside, at exactly the moment a red preflight is being
+      # re-run before an event. --supersede-legacy does that move as a
+      # first-class step: archive aside, never overwrite, never delete.
+      if [[ "$SUPERSEDE_LEGACY" -eq 1 ]]; then
+        archived="$final.superseded-$(date -u +%Y%m%dT%H%M%SZ)"
+        suffix=1
+        while [[ -e "$archived" || -L "$archived" ]]; do
+          archived="$final.superseded-$(date -u +%Y%m%dT%H%M%SZ)-$suffix"
+          suffix=$((suffix + 1))
+          [[ "$suffix" -le 50 ]] ||
+            refuse "cannot allocate an archive name for $final"
+        done
+        mv "$final" "$archived" ||
+          refuse "could not archive diverged local box state: $event_id"
+        echo "superseded local box state: $event_id -> $(basename "$archived")"
+        echo "  reason: $DIVERGENCE"
+      else
+        printf '%s\n' "$DIVERGENCE" >&2
+        echo "hint: if the box legitimately re-ran preflight, re-run with --supersede-legacy" >&2
+        echo "      (archives the local tree aside as state/$event_id/box.superseded-<UTC>;" >&2
+        echo "       it never overwrites and never deletes)" >&2
+        refuse "existing local box state diverges from box: $event_id"
+      fi
+    fi
   fi
 done < "$STATE_MANIFEST"
 

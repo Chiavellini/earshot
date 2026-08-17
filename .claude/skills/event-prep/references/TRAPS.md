@@ -226,9 +226,12 @@ terminal and use the ordinary pull.
   ever exist again. Recovery is to close the box copy directly over SSH.
 - **Re-preflighting on the box breaks the next pull.** The box rewrites
   `state/<E>/box/detector-smoke.log` and friends, so the puller sees a real
-  legacy-state divergence and refuses the whole event. Move the stale local
-  snapshot aside (`mv state/<E>/box state/<E>/box.superseded-<tag>`) — never
-  delete it, and never let the pull overwrite it.
+  legacy-state divergence and refuses the whole event. That refusal is correct
+  and must stay; the supported way through is
+  `scripts/pull-box-state.sh --supersede-legacy --event <E>`, which archives
+  the local tree to `state/<E>/box.superseded-<UTC>` and prints which file
+  diverged. It never overwrites and never deletes. Do not hand-`mv` it, and
+  never make the pull overwrite in place.
 
 **Never close the gap by re-recording the receipts locally**, and never fall
 back to a hand `rsync` now that the door exists. A hand-written

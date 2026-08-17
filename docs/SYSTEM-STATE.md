@@ -233,15 +233,23 @@ the work orders reference them.
   run whose `execution_host_id` is not this host without a fresh pull — that
   needs host-awareness in `eventctl`, which is a `control.operate` change.
   **Order of operations, always: schedule → pull → close → dispatch.**
-- **E10 OPEN 2026-08-16** Every re-preflight on the box makes the *next*
+- **E10 CLOSED 2026-08-16** Every re-preflight on the box makes the *next*
   `pull-box-state.sh` refuse the whole event: the box rewrites legacy
   `state/<E>/box/` artefacts (`detector-smoke.log` et al), the puller's
   `assert_compatible_legacy_state` sees genuine divergence, and refuses rather
   than merge in place (`:757`). The refusal itself is correct — it is the E3
   never-merge-unverified rule — but the operator is left hand-moving the stale
   snapshot aside, at exactly the moment (a red preflight being re-run before an
-  event) when hands are scarcest. Hit twice in one drill. Needs a first-class
-  supersession path for legacy box state, not a weaker check.
+  event) when hands are scarcest. Hit twice in one drill. Closed by
+  `pull-box-state.sh --supersede-legacy`: the check is **not** weakened — the
+  default still refuses, and now names the flag instead of dead-ending — but
+  the archive-aside becomes a first-class step. It moves the local tree to
+  `state/<E>/box.superseded-<UTC>` and prints the diverging file; it never
+  overwrites and never deletes, so the prior evidence stays readable. With
+  nothing diverged it is a no-op, and `--check` refuses it like every other
+  pull argument. Live-proven 08-16 (`reason: file bytes differ:
+  detector-smoke.log`); each selftest assertion proved red for its own named
+  reason — archive replaced by delete, refusal removed, no-op case forced.
 - **E8 CLOSED 2026-08-14** `tests/preresolved_arm.sh` was not load-proof **and**
   did not prove its own claim: case 2 asserted exit 3 for "a prior attempt's
   url-file is refused", but *absent* and *stale* also exit 3, and under load the
