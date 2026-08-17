@@ -217,6 +217,29 @@ publishes terminal runs only. Active/descoped runs remain inventory; they are
 not merged into the laptop authority. `evidence_pulled` is appended locally
 only after the stable snapshot is present.
 
+### Closing or re-recording a DISPATCHED run (E11)
+
+Once an installer has published a run's prefix on the box, the box mints the
+next receipts (`scheduled`, `launched`, …). The laptop copy records that as
+`ledger writes: REMOTE → <box>` in `eventctl status` and **refuses every
+append** (`REFUSED: E11 …`) until a pull returns authority — appending
+before the pull would fork the chain permanently. So, always:
+
+```bash
+scripts/eventctl.py authority --run-dir var/runs/<E>/<R> --show   # remote|local|unset
+scripts/pull-box-state.sh --prelaunch --event <E>                  # pull: authority returns
+scripts/eventctl.py record --run-dir var/runs/<E>/<R> --transition blocked   # now a clean extension
+scripts/box-webcast-install.sh --run-dir var/runs/<E>/<R> --dispatch-only    # carry the close back
+```
+
+`schedule → pull → close → dispatch`, never `schedule → close`. After a
+terminal run, `opsctl pull` returns authority the same way before it records
+`evidence_pulled`. If the box is gone for good (instance terminated), the only
+escape is `eventctl authority --run-dir … --reclaim --reason '…'`; it warns,
+records the reason in the sidecar, and a later dispatch/pull still surfaces
+any divergence the box had minted. Never hand-write `control/authority.json`,
+and never copy it between hosts — it is this host's private marker.
+
 Audit one retrieved run:
 
 ```bash

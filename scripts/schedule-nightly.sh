@@ -82,6 +82,22 @@ critical_alert() {  # <run-dir> <event-id> <code> <dedupe-key> <body> [<plan-exe
     }
 }
 
+# --check assertions. bash 3.2 (macOS, where this gate runs) does NOT trip
+# `set -e` on a failing bare `[[ ]]` or on `! cmd` — measured 2026-08-17: with
+# the E12 alert-target assertion below changed to an impossible value, --check
+# still printed PASS. Every assertion is therefore `[[ … ]] || fail $LINENO`
+# or `must_not cmd` (SYSTEM-STATE E14, the E9 class).
+fail() {  # fail <lineno>
+  echo "schedule-nightly --check: FAIL at line $1: $(sed -n "${1}p" "${BASH_SOURCE[0]}" | sed 's/^ *//')" >&2
+  exit 1
+}
+must_not() {  # must_not <cmd...>  — the command must fail
+  if "$@"; then
+    echo "schedule-nightly --check: FAIL: expected to fail: $*" >&2
+    exit 1
+  fi
+}
+
 run_self_check() {
   set -e
   local root repo date unknown_date event_phone event_web_local event_web_box
@@ -206,8 +222,8 @@ EOF
   grep -q "^box-web --run-dir .*$" "$repo/calls/invocations"
   grep -q "^phone --event-env configs/phone.env --run-dir " \
     "$repo/calls/invocations"
-  [[ $(wc -l < "$repo/calls/invocations" | tr -d ' ') == 3 ]]
-  [[ ! -s "$repo/calls/notifications" ]]
+  [[ $(wc -l < "$repo/calls/invocations" | tr -d ' ') == 3 ]] || fail $LINENO
+  [[ ! -s "$repo/calls/notifications" ]] || fail $LINENO
 
   # A definite installer failure raises exactly one RunPlan-bound request,
   # preserves the nonzero schedule verdict even when the injected alert
@@ -231,15 +247,15 @@ EOF
     _EARSHOT_SCHEDULE_NOTIFY="$repo/scripts/notify-stub.sh" \
     _EARSHOT_SCHEDULE_ALERTCTL="$repo/scripts/alert-stub.sh" \
     bash "$repo/scripts/schedule-nightly.sh" --date "$date" >/dev/null 2>&1 || failure_rc=$?
-  [[ "$failure_rc" == 1 ]]
+  [[ "$failure_rc" == 1 ]] || fail $LINENO
   grep -q '^phone ' "$repo/calls/invocations"
   grep -q '^local-web ' "$repo/calls/invocations"
   grep -q '^box-web ' "$repo/calls/invocations"
-  [[ $(wc -l < "$repo/calls/invocations" | tr -d ' ') == 3 ]]
+  [[ $(wc -l < "$repo/calls/invocations" | tr -d ' ') == 3 ]] || fail $LINENO
   grep -q 'run-alert raise .*--code schedule_dispatch_failed .*--dedupe-key nightly-schedule-dispatch' \
     "$repo/calls/notifications"
-  [[ $(grep -c '^run-alert ' "$repo/calls/notifications") == 1 ]]
-  ! grep -q '^legacy-page ' "$repo/calls/notifications"
+  [[ $(grep -c '^run-alert ' "$repo/calls/notifications") == 1 ]] || fail $LINENO
+  must_not grep -q '^legacy-page ' "$repo/calls/notifications"
   # E12: the phone fixture executes on the BOX, so this alert must NOT be
   # written into a ledger this host does not own. alertctl records alert facts
   # as rows in the RunPlan's own hash chain; appending from here forks it
@@ -249,7 +265,7 @@ EOF
   # happened — the pre-E12 code emitted an identical --code/--dedupe-key pair.
   grep -q 'run-alert raise --alert-dir .* --scope schedule:' \
     "$repo/calls/notifications"
-  ! grep -q 'run-alert raise --run-dir ' "$repo/calls/notifications"
+  must_not grep -q 'run-alert raise --run-dir ' "$repo/calls/notifications"
 
   # ...and a run this host DOES own keeps its RunPlan-bound alert, so the fix
   # is a routing decision rather than a blanket move off the run ledger.
@@ -278,10 +294,10 @@ EOF
     _EARSHOT_SCHEDULE_NOTIFY="$repo/scripts/notify-stub.sh" \
     _EARSHOT_SCHEDULE_ALERTCTL="$repo/scripts/alert-stub.sh" \
     bash "$repo/scripts/schedule-nightly.sh" --date "$date" >/dev/null 2>&1 || local_fail_rc=$?
-  [[ "$local_fail_rc" == 1 ]]
+  [[ "$local_fail_rc" == 1 ]] || fail $LINENO
   grep -q 'run-alert raise --run-dir .*--code schedule_install_failed' \
     "$repo/calls/notifications"
-  ! grep -q 'run-alert raise --alert-dir ' "$repo/calls/notifications"
+  must_not grep -q 'run-alert raise --alert-dir ' "$repo/calls/notifications"
 
   # Dry-run neither installs nor calls either notification adapter.
   : > "$repo/calls/invocations"
@@ -298,8 +314,8 @@ EOF
     _EARSHOT_SCHEDULE_NOTIFY="$repo/scripts/notify-stub.sh" \
     _EARSHOT_SCHEDULE_ALERTCTL="$repo/scripts/alert-stub.sh" \
     bash "$repo/scripts/schedule-nightly.sh" --date "$date" --dry-run >/dev/null
-  [[ ! -s "$repo/calls/invocations" ]]
-  [[ ! -s "$repo/calls/notifications" ]]
+  [[ ! -s "$repo/calls/invocations" ]] || fail $LINENO
+  [[ ! -s "$repo/calls/notifications" ]] || fail $LINENO
 
   # A webcast plan compiled for neither configured host is refused loudly and
   # never falls through to either installer.
@@ -317,8 +333,8 @@ EOF
     _EARSHOT_SCHEDULE_ALERTCTL="$repo/scripts/alert-stub.sh" \
     bash "$repo/scripts/schedule-nightly.sh" --date "$unknown_date" \
       > "$repo/calls/unknown-host.log" 2>&1 || unknown_rc=$?
-  [[ "$unknown_rc" == 1 ]]
-  [[ ! -s "$repo/calls/invocations" ]]
+  [[ "$unknown_rc" == 1 ]] || fail $LINENO
+  [[ ! -s "$repo/calls/invocations" ]] || fail $LINENO
   grep -q "host 'earshot-unknown-host' matches neither" "$repo/calls/unknown-host.log"
   grep -q 'run-alert raise .*--code schedule_host_unsupported' \
     "$repo/calls/notifications"

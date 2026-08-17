@@ -29,11 +29,28 @@ could not be audited and restarts kept overwriting fixed report paths.
   existing node entry points and records what they did; it is NOT a third
   runtime composer — it never launches an arm, places a call, or touches
   order policy. Commands: `init`, `record`, `compat`, `status`, `verify`,
-  `init-date`. The default RUN_ID is deterministic
+  `init-date`, `authority`. The default RUN_ID is deterministic
   (`<starts_at compact>-p<plan schema>-<sha256(config bytes)[:12]>`), so
   repeated identical `init` is idempotent, a config edit yields a NEW run
   identity, and a protocol upgrade cannot collide with or migrate an
   immutable older-schema attempt.
+  **Ledger write authority (E11, 2026-08-17).** `control/authority.json` is
+  this copy's host-private record of which host may currently extend the
+  chain: `{authority: local|remote, execution_host_id, since_utc, by,
+  receipts_count, receipts_sha256, reason}`. It is NOT a receipt (never in
+  the chain), NOT an artifact destination (the plan's field set is
+  exact-match), NOT transported (`run-host-boundary.py` ignores it on both
+  sides; every rsync excludes it), and written ONLY by `eventctl authority`:
+  `--transfer-to <execution host>` (installer door: the box now mints the
+  next receipts), `--returned-from <execution host>` (puller door: the box's
+  copy was just reconciled here), `--reclaim --reason …` (operator escape for
+  a host that is gone for good; a later dispatch/pull still surfaces any
+  divergence), `--show`. `Ledger.append` refuses a write while the sidecar
+  says `remote` — after the transition gate has said "append" and before the
+  first byte, so idempotent no-ops (nightly `init-date` re-compiles, a
+  `record` of an already-reached transition) stay green and only a real
+  write refuses. The refusal is one line naming the pull. `status` exposes
+  `authority.write_authority/transferred_to/since_utc/by` additively.
 - `scripts/opsctl.sh` — the public generic facade. `prepare-day` takes one UTC
   date and runs stage, canonical access checks, study, proof-bearing preflight,
   and typed scheduling in order. Each aggregate stage continues across sibling
@@ -55,8 +72,12 @@ could not be audited and restarts kept overwriting fixed report paths.
   before the exact receipt suffix is appended under `flock` + `fsync`.
   Divergent ledgers, symlinks, unexplained destination files, and changed
   immutable artifacts are refused before receipt mutation. It performs no
-  network operation. `tests/run_host_boundary.py` exercises laptop-prefix →
-  box-extension → laptop-tail round trips entirely in temporary repos.
+  network operation. The host-private `control/authority.json` (E11) is
+  invisible to it on BOTH sides — never published, never compared, never
+  "unexplained" — so a stray copy can neither cross nor block a reconcile.
+  `tests/run_host_boundary.py` exercises laptop-prefix →
+  box-extension → laptop-tail round trips entirely in temporary repos,
+  including the sidecar's non-transport.
 - `scripts/execution-profile.sh` — the one-time external account-profile
   provisioner and read-only plan-time resolver. `configure` requires an
   explicit stable target-host ID, sources only the named account env with
@@ -228,6 +249,21 @@ laptop-hosted terminal run instead records `evidence_consolidated` after the
 offline audit validates its in-place artifacts; `evidence_pulled` is the
 stronger remote-transfer form of that same grading prerequisite.
 
+**Invariant (E11): a run's chain may be extended by exactly one host at a
+time — the host that currently holds its ledger authority.** Authority
+transfers to the execution host at dispatch (both installers call
+`eventctl authority --transfer-to` after the box has verified and published
+the prefix; a CLOSED attempt is not transferred, its `archived` tail is
+laptop bookkeeping) and returns at pull (`pull-box-state.sh` calls
+`--returned-from` right after each successful publish/advance, before it
+records `evidence_pulled`). Between the two, `Ledger.append` refuses on this
+copy: appending would fork the chain permanently, because the box is minting
+receipts at the same indexes. Order of operations, always: schedule → pull →
+close → dispatch. Residual: after a `--prelaunch` pull the returned authority
+is a snapshot claim — if the box's timer is still armed the box may extend
+again; re-pull before closing if time has passed (the full fix is live
+read-through, M4).
+
 `state/<E>/journal.jsonl` and `state/<E>/DESCOPED.json` remain the
 de-facto legacy outputs, consumed by the missed-arm reconciliation
 (control.grade) and the day-after reconstruction; `journal.sh` bridges
@@ -241,8 +277,10 @@ each legacy line into the active run's ledger as a `compat` receipt.
   a uniquely named temp file + file fsync + rename + parent-directory fsync,
   receipts via exclusive `flock` on the receipts fd itself + `O_APPEND` + one
   write + fsync, and the status snapshot through the same durable temp/rename
-  publication under the receipts lock. Readers take a shared flock. Nothing
-  else may write those three files.
+  publication under the receipts lock; the host-private authority sidecar
+  `control/authority.json` through the same temp/rename publication under the
+  receipts lock. Readers take a shared flock. Nothing
+  else may write those four files.
 - `execution-profile.sh configure` is the sole deliberate external write in
   this slice: when the operator explicitly names an account env, it atomically
   replaces that one file while preserving its restrictive mode and all bytes
@@ -304,6 +342,19 @@ each legacy line into the active run's ledger as a `compat` receipt.
   accidental collision while leaving those directories byte-for-byte intact.
   The `journal.sh` compat bridge is wrapped so an eventctl failure can
   never break journal.sh's unconditional exit 0.
+- Ledger authority (E11): while `control/authority.json` says `remote`, every
+  write through `Ledger.append` — `record` (any outcome), `compat`, and
+  `init-date`'s supersede-close — is a one-line `REFUSED: E11 …` naming the
+  pull (`pull-box-state.sh --prelaunch --event <E>`, or `--date` after a
+  terminal run) and the `--reclaim` escape; nothing is modified. Idempotent
+  no-ops still exit 0 (the check runs after the gate has said "append"), so
+  `init-date`/`prepare-day` re-runs stay green; a dispatched attempt whose
+  pinned config drifted is a loud `supersede-close failed: E11 …` refusal,
+  not a fork. `authority` refuses a host other than the plan's
+  `execution_host_id`, an invalid `--by`, and `--reclaim` without `--reason`;
+  same-mode moves are no-ops. A sidecar that does not parse or belongs to
+  another plan fails writers closed (`FAILED: authority sidecar …`) while
+  `verify` and `status`/`--show` stay tolerant (`write_authority: invalid`).
 - Execution identity is all-or-nothing. An enabled `init` accepts both
   explicit recovery overrides (`--host-id` and `--account-fingerprint`) or
   resolves both from the event env's literal portable
@@ -358,11 +409,18 @@ spans both sides and must move in one change.
   tests/eventctl_lifecycle.py`; `python3 tests/eventctl_lifecycle.py`
   (isolated temp repos — replay, idempotency, join gates, mutation
   detection, truncated tail, cross-process concurrency, init-date
-  selection/ambiguity); `git check-ignore
+  selection/ambiguity, and `TestAuthority`: transfer refuses record/compat
+  with no row and one-line E11 stderr, idempotent no-ops still pass, return
+  and reclaim, foreign host refused, corrupt sidecar fails writers closed
+  while verify/status tolerate, `init-date` refuses to supersede-close a
+  dispatched run, plan/artifacts untouched — each proved red by disabling
+  the guard); `git check-ignore
   var/runs/TEST/RUN/control/run-plan.json`; `cargo test --test
   architecture_contract`; `scripts/doc-lint.sh`.
 - Host boundary: `python3 -m py_compile scripts/run-host-boundary.py
-  tests/run_host_boundary.py`; `python3 tests/run_host_boundary.py`. The suite
+  tests/run_host_boundary.py`; `python3 tests/run_host_boundary.py` (incl.
+  `test_authority_sidecar_never_crosses_the_boundary`, red with the
+  `HOST_PRIVATE` filter removed). The suite
   uses temporary local/remote repositories and invokes no ssh, rsync,
   systemctl, launchctl, dial, or market API.
 - Operations facade, RunPlan-only study date selection, pinned-config
@@ -370,7 +428,10 @@ spans both sides and must move in one change.
   `python3 tests/opsctl.py`; schedule success/failure/sibling/dry-run drill:
   `scripts/schedule-nightly.sh --check` (local webcast, box webcast, unchanged
   phone route, sibling continuation, dry-run non-mutation, and unknown-host
-  refusal); public-surface governance:
+  refusal — every assertion is `[[ … ]] || fail $LINENO` / `must_not`, because
+  macOS bash 3.2 does not trip `set -e` on a bare `[[ ]]`; measured
+  2026-08-17 that this gate printed PASS with its E12 assertion made
+  impossible, SYSTEM-STATE E14); public-surface governance:
   `python3 tests/ops_surface.py` and `scripts/doc-lint.sh`.
 - Execution identity: `bash -n scripts/execution-profile.sh
   tests/execution_profile.sh`; `tests/execution_profile.sh`; `cargo test --lib

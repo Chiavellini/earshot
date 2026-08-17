@@ -20,6 +20,11 @@ verified evidence beside the old valid ledger prefix, but can never advertise
 receipts whose named evidence was only partially copied.
 
 No network operation is implemented here.
+
+``control/authority.json`` — eventctl's host-private record of which host may
+currently extend the chain (E11) — is invisible to this tool on BOTH sides: it
+is never published, never compared, and never counted as unexplained bytes, so
+a stray copy can neither cross the boundary nor block a reconcile.
 """
 
 from __future__ import annotations
@@ -42,6 +47,12 @@ PLAN_SCHEMA = 3
 RECEIPTS = "control/receipts.jsonl"
 STATUS = "control/status.json"
 LOCAL_ONLY = {"grade/verdict.json"}
+# Host-private bookkeeping written only by `eventctl authority` (E11). Unlike
+# LOCAL_ONLY (tolerated when it exists only at the destination), these paths
+# are dropped from the inventory of BOTH trees: never published, never
+# compared, never "unexplained". Transports exclude them too; this filter is
+# the layer that holds even when one does not.
+HOST_PRIVATE = {"control/authority.json"}
 APPEND_ONLY_EVIDENCE = {
     "capture/audio.raw",
     "capture/audio.frames.jsonl",
@@ -143,6 +154,8 @@ def inventory(root: Path) -> Inventory:
                 raise BoundaryRefusal(f"symlink in run tree: {path}")
             if not stat.S_ISREG(mode):
                 raise BoundaryRefusal(f"non-regular entry in run tree: {path}")
+            if rel in HOST_PRIVATE:
+                continue  # safety checks above still apply; the bytes never cross
             files[rel] = path
     return Inventory(files, dirs)
 

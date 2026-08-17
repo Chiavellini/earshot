@@ -151,6 +151,41 @@ class BoundaryFixture(unittest.TestCase):
         self.assertIn("file bytes differ", proc.stderr)
         self.assertEqual((self.local_run / "control" / "receipts.jsonl").read_bytes(), before)
 
+    def test_authority_sidecar_never_crosses_the_boundary(self):
+        """E11: control/authority.json is host-private bookkeeping. Publish
+        must not carry it; a stray copy on the other side must neither be
+        compared ("file bytes differ") nor counted as unexplained bytes."""
+        sidecar = "control/authority.json"
+        self.cli(self.local, "authority", "--run-dir", str(self.local_run),
+                 "--transfer-to", HOST, "--by", "t")
+        local_bytes = (self.local_run / sidecar).read_bytes()
+        result = json.loads(self.boundary(self.remote, self.local_run, self.remote_run).stdout)
+        self.assertEqual(result["action"], "published")
+        self.assertFalse((self.remote_run / sidecar).exists())
+        # the box extends its copy and grows a DIFFERENT stray sidecar
+        self.record(self.remote, self.remote_run, "scheduled")
+        (self.remote_run / sidecar).write_text('{"stray": true}\n')
+        check = json.loads(self.boundary(
+            self.local, self.remote_run, self.local_run, check_only=True).stdout)
+        self.assertEqual(check["action"], "would-advance")
+        result = json.loads(self.boundary(self.local, self.remote_run, self.local_run).stdout)
+        self.assertEqual(result["relation"], "destination_prefix_incoming")
+        self.assertEqual(result["action"], "advanced")
+        self.assertEqual((self.local_run / sidecar).read_bytes(), local_bytes)
+        self.assertEqual(
+            (self.local_run / "control" / "receipts.jsonl").read_bytes(),
+            (self.remote_run / "control" / "receipts.jsonl").read_bytes(),
+        )
+        # a local tail past the box's copy: the stray must not read as
+        # "files absent from incoming" in the reverse direction either
+        self.cli(self.local, "authority", "--run-dir", str(self.local_run),
+                 "--returned-from", HOST, "--by", "t")
+        self.record(self.local, self.local_run, "blocked")
+        (self.remote_run / sidecar).unlink()
+        back = json.loads(self.boundary(self.remote, self.local_run, self.remote_run).stdout)
+        self.assertEqual(back["relation"], "destination_prefix_incoming")
+        self.assertFalse((self.remote_run / sidecar).exists())
+
     def test_wrong_host_and_symlink_refuse(self):
         wrong = subprocess.run(
             [

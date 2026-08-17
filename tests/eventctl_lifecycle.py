@@ -1254,5 +1254,227 @@ class TestInitDate(Base):
             (self.repo / "var" / "runs" / PHONE_EVENT).exists())
 
 
+class TestAuthority(Base):
+    """E11 (SYSTEM-STATE): a box run's post-dispatch receipts are minted on
+    the box. Any laptop-side append before pulling them back forks the chain
+    permanently. `eventctl authority` records which host may extend THIS
+    copy; `Ledger.append` refuses while it says remote."""
+
+    SIDECAR = "control/authority.json"
+
+    def _sidecar(self, run_dir):
+        p = run_dir / self.SIDECAR
+        return json.loads(p.read_text()) if p.is_file() else None
+
+    def _status_bytes(self, run_dir):
+        return (run_dir / "control" / "status.json").read_bytes()
+
+    def _dispatched_run(self):
+        """A box-host run advanced to preflight, then transferred."""
+        run = self.init_phone()
+        self.advance_to_preflight(PHONE_EVENT)
+        rc, out, err = self.cli("authority", "--run-dir", str(run),
+                                "--transfer-to", "test-host", "--by", "t")
+        self.assertEqual(rc, 0, err or out)
+        return run
+
+    def test_transfer_marks_remote_and_record_refuses_before_any_write(self):
+        run = self._dispatched_run()
+        doc = self._sidecar(run)
+        self.assertEqual(doc["authority"], "remote")
+        self.assertEqual(doc["execution_host_id"], "test-host")
+        self.assertEqual(doc["by"], "t")
+        self.assertEqual(doc["receipts_count"],
+                         len(self.receipts_of(run).splitlines()))
+        self.assertEqual(doc["receipts_sha256"],
+                         eventctl.sha_hex(self.receipts_of(run)))
+        before, status_before = self.receipts_of(run), self._status_bytes(run)
+        # a real write refuses ...
+        rc, out, err = self.cli("record", "--run-dir", str(run),
+                                "--transition", "scheduled")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("E11", err)
+        self.assertIn("pull-box-state.sh --prelaunch", err)
+        self.assertIn("--reclaim", err)
+        # ... in exactly one line (callers surface only the last stderr line)
+        self.assertEqual(len([l for l in err.strip().splitlines() if l]), 1)
+        # ... with any outcome, and for compat rows too
+        rc, _, err = self.cli("record", "--run-dir", str(run),
+                              "--transition", "scheduled", "--outcome", "fail")
+        self.assertEqual(rc, 1)
+        self.assertIn("E11", err)
+        rc, _, err = self.cli("compat", "--run-dir", str(run), "--actor", "x",
+                              "--action", "y", "--outcome", "ok")
+        self.assertEqual(rc, 1)
+        self.assertIn("E11", err)
+        # ... and nothing was touched
+        self.assertEqual(before, self.receipts_of(run))
+        self.assertEqual(status_before, self._status_bytes(run))
+
+    def test_idempotent_noops_pass_under_remote_authority(self):
+        """stage-nightly re-runs init-date every night; a dispatched attempt
+        must stay green for a no-op (a fork needs a WRITE)."""
+        cfg = self.write_phone_config()
+        env = self.write_env("configs/test-phone-arm.toml")
+        rc, out, _ = self.cli("init-date", "--date", DATE)
+        self.assertEqual(rc, 0, out)
+        run = self.run_dir_for(PHONE_EVENT)
+        self.advance_to_preflight(PHONE_EVENT)
+        rc, _, err = self.cli("authority", "--run-dir", str(run),
+                              "--transfer-to", "test-host", "--by", "t")
+        self.assertEqual(rc, 0, err)
+        before = self.receipts_of(run)
+        rc, out, err = self.cli("record", "--run-dir", str(run),
+                                "--transition", "prepared")
+        self.assertEqual(rc, 0, err)
+        self.assertIn("idempotent", out)
+        rc, out, err = self.cli("init", "--config", str(cfg),
+                                "--event-env", str(env))
+        self.assertEqual(rc, 0, err)
+        self.assertIn("already-initialized", out)
+        rc, out, _ = self.cli("init-date", "--date", DATE)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(before, self.receipts_of(run))
+        self.assertEqual(self._sidecar(run)["authority"], "remote")
+
+    def test_returned_restores_local_and_record_succeeds(self):
+        run = self._dispatched_run()
+        rc, out, err = self.cli("authority", "--run-dir", str(run),
+                                "--returned-from", "test-host", "--by", "puller")
+        self.assertEqual(rc, 0, err or out)
+        doc = self._sidecar(run)
+        self.assertEqual((doc["authority"], doc["by"]), ("local", "puller"))
+        rc, out, err = self.cli("record", "--run-dir", str(run),
+                                "--transition", "blocked")
+        self.assertEqual(rc, 0, err)
+        # same-mode is a no-op, not a rewrite
+        rc, out, _ = self.cli("authority", "--run-dir", str(run),
+                              "--returned-from", "test-host", "--by", "again")
+        self.assertEqual(rc, 0)
+        self.assertIn("already local", out)
+        self.assertEqual(self._sidecar(run)["by"], "puller")
+
+    def test_reclaim_requires_reason_warns_and_stores_it(self):
+        run = self._dispatched_run()
+        rc, _, err = self.cli("authority", "--run-dir", str(run), "--reclaim")
+        self.assertEqual(rc, 1)
+        self.assertIn("--reason", err)
+        self.assertEqual(self._sidecar(run)["authority"], "remote")
+        rc, out, err = self.cli("authority", "--run-dir", str(run),
+                                "--reclaim", "--reason", "box terminated 08-17")
+        self.assertEqual(rc, 0, err)
+        self.assertIn("WARNING", err)
+        self.assertIn("RECLAIMED", err)
+        doc = self._sidecar(run)
+        self.assertEqual(doc["authority"], "local")
+        self.assertEqual(doc["reason"], "box terminated 08-17")
+        rc, _, err = self.cli("record", "--run-dir", str(run),
+                              "--transition", "blocked")
+        self.assertEqual(rc, 0, err)
+
+    def test_transfer_refuses_a_foreign_host_and_writes_nothing(self):
+        run = self.init_phone()
+        rc, _, err = self.cli("authority", "--run-dir", str(run),
+                              "--transfer-to", "other-host")
+        self.assertEqual(rc, 1)
+        self.assertIn("execution host", err)
+        self.assertIsNone(self._sidecar(run))
+        rc, _, err = self.cli("authority", "--run-dir", str(run),
+                              "--transfer-to", "test-host", "--by", "bad by!")
+        self.assertEqual(rc, 1)
+        self.assertIsNone(self._sidecar(run))
+
+    def test_corrupt_sidecar_fails_writers_closed_but_verify_and_status_tolerate(self):
+        run = self.init_phone()
+        (run / self.SIDECAR).write_text('{"junk": 1}\n')
+        rc, _, err = self.cli("verify", "--run-dir", str(run))
+        self.assertEqual(rc, 0, err)
+        rc, out, _ = self.cli("status", "--run-dir", str(run), "--json")
+        self.assertEqual(rc, 0)
+        self.assertEqual(json.loads(out)["authority"]["write_authority"], "invalid")
+        before = self.receipts_of(run)
+        rc, _, err = self.cli("record", "--run-dir", str(run),
+                              "--transition", "prepared")
+        self.assertEqual(rc, 1)
+        self.assertIn("authority sidecar", err)
+        self.assertEqual(before, self.receipts_of(run))
+        # a sidecar for ANOTHER plan is refused the same way
+        other = dict(self._sidecar(self._dispatched_run_other()))
+        (run / self.SIDECAR).write_text(json.dumps(other))
+        rc, _, err = self.cli("record", "--run-dir", str(run),
+                              "--transition", "prepared")
+        self.assertEqual(rc, 1)
+        self.assertIn("another", err)
+
+    def _dispatched_run_other(self):
+        cfg = self.write_webcast_config()
+        rc, out, err = self.cli("init", "--config", str(cfg))
+        self.assertEqual(rc, 0, err)
+        run = Path(out.split(": ", 1)[1].strip())
+        rc, _, err = self.cli("authority", "--run-dir", str(run),
+                              "--transfer-to", "test-host")
+        self.assertEqual(rc, 0, err)
+        return run
+
+    def test_show_and_status_expose_authority(self):
+        run = self.init_phone()
+        rc, out, _ = self.cli("authority", "--run-dir", str(run), "--show")
+        self.assertEqual(rc, 0)
+        self.assertEqual(json.loads(out)["write_authority"], "unset")
+        rc, out, _ = self.cli("status", "--run-dir", str(run))
+        self.assertIn("never transferred", out)
+        self.cli("authority", "--run-dir", str(run), "--transfer-to",
+                 "test-host", "--by", "installer")
+        rc, out, _ = self.cli("authority", "--run-dir", str(run), "--show")
+        shown = json.loads(out)
+        self.assertEqual(shown["write_authority"], "remote")
+        self.assertEqual(shown["transferred_to"], "test-host")
+        rc, out, _ = self.cli("status", "--run-dir", str(run), "--json")
+        auth = json.loads(out)["authority"]
+        self.assertEqual(auth["write_authority"], "remote")
+        self.assertEqual(auth["by"], "installer")
+        # the receipt-derived keys keep their meaning
+        self.assertEqual(auth["location"], "local_prefix")
+        rc, out, _ = self.cli("status", "--run-dir", str(run))
+        self.assertIn("REMOTE → test-host", out)
+        # by --event too (resolves the active run like record/status)
+        rc, out, _ = self.cli("authority", "--event", PHONE_EVENT, "--show")
+        self.assertEqual(rc, 0)
+        self.assertEqual(json.loads(out)["write_authority"], "remote")
+
+    def test_init_date_refuses_to_close_a_dispatched_run_and_names_the_pull(self):
+        """The 08-16 incident shape from the nightly side: a dispatched
+        attempt whose config drifted must NOT be auto-closed on the laptop —
+        that receipt is exactly the fork. Loud refusal, new attempt still
+        compiled."""
+        cfg = self.write_phone_config()
+        self.write_env("configs/test-phone-arm.toml")
+        rc, out, _ = self.cli("init-date", "--date", DATE)
+        self.assertEqual(rc, 0, out)
+        run = self.run_dir_for(PHONE_EVENT)
+        self.advance_to_preflight(PHONE_EVENT)
+        rc, _, err = self.cli("authority", "--run-dir", str(run),
+                              "--transfer-to", "test-host", "--by", "installer")
+        self.assertEqual(rc, 0, err)
+        before = self.receipts_of(run)
+        cfg.write_text(cfg.read_text() + "\n# drift\n")
+        rc, out, _ = self.cli("init-date", "--date", DATE)
+        self.assertEqual(rc, 1, out)
+        self.assertIn("E11", out)
+        self.assertIn("pull-box-state.sh --prelaunch", out)
+        self.assertEqual(before, self.receipts_of(run))
+        base = self.repo / "var" / "runs" / PHONE_EVENT
+        self.assertEqual(len([d for d in base.iterdir() if d.is_dir()]), 2)
+
+    def test_plan_and_artifacts_untouched_by_sidecar(self):
+        run = self._dispatched_run()
+        plan = json.loads((run / "control" / "run-plan.json").read_text())
+        self.assertEqual(plan["plan_sha256"],
+                         eventctl.hash_of(plan, "plan_sha256"))
+        self.assertNotIn(self.SIDECAR, plan["artifacts"].values())
+        rc, _, err = self.cli("verify", "--run-dir", str(run))
+        self.assertEqual(rc, 0, err)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

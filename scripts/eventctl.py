@@ -15,10 +15,19 @@ events' dials. This tool records what the existing entry points did; it is
 NOT a third runtime composer — it never launches an arm, places a call, or
 touches order policy.
 
-Commands: init, record, compat, status, verify, init-date.
+Commands: init, record, compat, status, verify, init-date, authority.
 Exit codes: 0 success (including idempotent no-ops and a compat with no
 active run), 1 refusal or integrity failure, 2 usage, 3 recoverable
 truncated tail.
+
+Ledger write authority (E11): a run's chain may be extended by exactly one
+host at a time. When a laptop-compiled RunPlan is dispatched to its execution
+host, that host mints the next receipts (`scheduled`, `launched`, ...); any
+append to the laptop copy before those receipts are pulled back forks the
+chain permanently. `control/authority.json` is this copy's host-private record
+of who holds that authority — written only by `eventctl authority`, never a
+receipt, never in the chain, never transported by the boundary primitive —
+and `Ledger.append` refuses to write while it says "remote".
 
 Stdlib only. Receipts are appended under an exclusive flock on the receipts
 fd itself with O_APPEND and exactly one write; the chain is re-verified —
@@ -126,6 +135,17 @@ ARTIFACT_DESTINATIONS = {
     "runtime_report": "report/report.json",
     "grade": "grade/verdict.json",
 }
+
+# Ledger write authority (E11). This is deliberately NOT an artifact
+# destination: `_validate_plan_shape` is exact-match on the plan's field set
+# and artifact keys, so adding it there would invalidate every published plan.
+# It is not a receipt (it never enters the chain), and it is host-private:
+# run-host-boundary.py ignores it on both sides and every transport excludes
+# it, so it can only ever exist on the host that ran the transfer door.
+AUTHORITY_SIDECAR = "control/authority.json"
+AUTHORITY_SCHEMA = 1
+AUTHORITY_MODES = ("local", "remote")
+AUTHORITY_BY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 
 # Non-event and never-launched config shapes in configs/ (raw copies are
 # audit artifacts; rehearsal-* is gate-exempt by convention; the rest are
@@ -593,6 +613,134 @@ class Ledger:
         self.plan_path = self.control / "run-plan.json"
         self.receipts_path = self.control / "receipts.jsonl"
         self.status_path = self.control / "status.json"
+        self.authority_path = self.run_dir / AUTHORITY_SIDECAR
+
+    # -- ledger write authority (E11) --------------------------------------
+
+    def read_authority(self, plan):
+        """The host-private authority sidecar, or None when this copy has never
+        been transferred/returned. Writers fail closed on a sidecar that does
+        not parse or does not belong to this plan; `status`/`--show` wrap this
+        tolerantly."""
+        if not self.authority_path.is_file():
+            return None
+        try:
+            doc = json.loads(self.authority_path.read_text())
+        except (OSError, json.JSONDecodeError) as e:
+            raise IntegrityError(
+                f"authority sidecar {self.authority_path} does not parse: {e}"
+            )
+        if not isinstance(doc, dict) or doc.get("schema") != AUTHORITY_SCHEMA \
+                or doc.get("kind") != "run-authority":
+            raise IntegrityError(
+                f"authority sidecar {self.authority_path} has an unknown shape"
+            )
+        if doc.get("event") != plan["event_id"] or doc.get("run") != plan["run_id"] \
+                or doc.get("plan_sha256") != plan["plan_sha256"]:
+            raise IntegrityError(
+                f"authority sidecar {self.authority_path} belongs to another"
+                " run/plan"
+            )
+        if doc.get("authority") not in AUTHORITY_MODES:
+            raise IntegrityError(
+                f"authority sidecar {self.authority_path} names an unknown"
+                f" authority {doc.get('authority')!r}"
+            )
+        if doc.get("execution_host_id") != plan["execution_host_id"]:
+            raise IntegrityError(
+                f"authority sidecar {self.authority_path} names host"
+                f" {doc.get('execution_host_id')!r}; the plan executes on"
+                f" {plan['execution_host_id']!r}"
+            )
+        return doc
+
+    def _check_authority(self, plan):
+        """Refuse a write while another host holds this run's ledger authority.
+        ONE line: the callers that surface eventctl's stderr show only the
+        last line."""
+        doc = self.read_authority(plan)
+        if doc is None or doc["authority"] == "local":
+            return
+        raise Refusal(
+            f"E11: ledger authority for {plan['event_id']}/{plan['run_id']} was"
+            f" transferred to execution host {doc['execution_host_id']!r} at"
+            f" {doc['since_utc']} by {doc['by']} ({doc['receipts_count']}"
+            " receipts here at transfer); that host may have minted receipts"
+            " this copy does not have and appending here would fork the chain"
+            " permanently — pull first: scripts/pull-box-state.sh --prelaunch"
+            f" --event {plan['event_id']} (or --date <D> after a terminal run),"
+            " then record, then dispatch; if"
+            f" {doc['execution_host_id']!r} is unreachable for good:"
+            f" scripts/eventctl.py authority --run-dir {self.run_dir}"
+            " --reclaim --reason '...'"
+        )
+
+    def set_authority(self, plan, mode, host, by, reason=None, force=False):
+        """Move this copy's ledger write authority. Serialised against append
+        by the receipts flock; the receipts are re-verified first so a torn
+        tail is never papered over by a bookkeeping write. Returns
+        (doc, noop_message|None)."""
+        if mode not in AUTHORITY_MODES:
+            raise Refusal(f"authority mode {mode!r} not in {AUTHORITY_MODES}")
+        if host != plan["execution_host_id"]:
+            raise Refusal(
+                "authority moves only between this copy and the plan's"
+                f" execution host {plan['execution_host_id']!r}, not {host!r}"
+            )
+        if not AUTHORITY_BY_RE.match(by or ""):
+            raise Refusal(f"--by must match {AUTHORITY_BY_RE.pattern}")
+        self.control.mkdir(parents=True, exist_ok=True)
+        fd = os.open(
+            self.receipts_path, os.O_RDWR | os.O_APPEND | os.O_CREAT, 0o644
+        )
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            os.lseek(fd, 0, os.SEEK_SET)
+            chunks = []
+            while True:
+                chunk = os.read(fd, 1 << 20)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+            data = b"".join(chunks)
+            receipts, torn = self._parse(data, plan)
+            if torn is not None:
+                raise RecoverableTail(
+                    "refusing to move authority over a torn tail; repair:"
+                    f" truncate {self.receipts_path} to {torn['truncate_to']}"
+                    " bytes",
+                    torn["last_valid_sequence"],
+                    torn["truncate_to"],
+                )
+            try:
+                current = self.read_authority(plan)
+            except IntegrityError:
+                if not force:
+                    raise
+                current = None
+            if current is not None and current["authority"] == mode and not force:
+                return current, f"already {mode} (since {current['since_utc']} by {current['by']})"
+            doc = {
+                "schema": AUTHORITY_SCHEMA,
+                "kind": "run-authority",
+                "event": plan["event_id"],
+                "run": plan["run_id"],
+                "plan_sha256": plan["plan_sha256"],
+                "authority": mode,
+                "execution_host_id": host,
+                "since_utc": now_utc(),
+                "by": by,
+                "receipts_count": len(receipts),
+                "receipts_sha256": sha_hex(data),
+                "reason": reason,
+            }
+            atomic_write_durable(
+                self.authority_path,
+                (json.dumps(doc, indent=2, sort_keys=True) + "\n").encode(),
+            )
+            return doc, None
+        finally:
+            os.close(fd)
 
     # -- plan ---------------------------------------------------------------
 
@@ -925,6 +1073,11 @@ class Ledger:
             verdict = gate(plan, receipts)
             if verdict != "append":
                 return None, verdict, receipts
+            # E11: only a real write is refused — after the gate has said this
+            # would append, before the first byte. Idempotent no-ops (nightly
+            # init-date re-compiles, `record` of an already-reached transition)
+            # must stay green on a dispatched copy; a fork needs a write.
+            self._check_authority(plan)
             fields = build_fields()
             rec = dict(fields)
             rec["schema"] = RECEIPT_SCHEMA
@@ -1476,30 +1629,116 @@ def cmd_compat(args):
     return 0
 
 
+def cmd_authority(args):
+    """Show or move this copy's ledger write authority (E11).
+
+    --transfer-to H   the transfer door: an installer has published this run's
+                      prefix on execution host H, which will mint the next
+                      receipts. Writes here are refused until a pull returns.
+    --returned-from H the return door: the puller has just reconciled H's
+                      copy into this one; this copy may be written again.
+    --reclaim         operator escape for a host that is gone for good. Forces
+                      local and records the reason; a later dispatch or pull
+                      still surfaces any divergence the host had minted.
+    """
+    repo = repo_root()
+    run_dir = resolve_run_dir(args, repo, "authority")
+    ledger = Ledger(run_dir)
+    plan = ledger.load_plan()
+    if args.show:
+        summary = authority_summary(ledger, plan)
+        summary.update({
+            "schema": AUTHORITY_SCHEMA,
+            "kind": "run-authority",
+            "event": plan["event_id"],
+            "run": plan["run_id"],
+            "execution_host_id": plan["execution_host_id"],
+        })
+        print(json.dumps(summary, indent=2, sort_keys=True))
+        return 0
+    if args.reclaim:
+        if not (args.reason or "").strip():
+            raise Refusal(
+                "--reclaim needs --reason: say why the execution host will"
+                " never extend this run again (it is the audit trail for a"
+                " forced authority change)"
+            )
+        doc, noop = ledger.set_authority(
+            plan, "local", plan["execution_host_id"], args.by,
+            reason=args.reason.strip(), force=True,
+        )
+        print(
+            "WARNING: ledger authority RECLAIMED for"
+            f" {plan['event_id']}/{plan['run_id']} — if"
+            f" {plan['execution_host_id']!r} minted receipts after the last"
+            " pull, the next dispatch or pull will refuse as divergent",
+            file=sys.stderr,
+        )
+        print(f"authority: local (reclaimed by {args.by}: {args.reason.strip()})")
+        return 0
+    if args.transfer_to:
+        mode, host = "remote", args.transfer_to
+    else:
+        mode, host = "local", args.returned_from
+    doc, noop = ledger.set_authority(plan, mode, host, args.by)
+    if noop:
+        print(f"authority: {noop}")
+    else:
+        where = f"remote → {host}" if mode == "remote" else f"local (returned from {host})"
+        print(
+            f"authority: {where} for {plan['event_id']}/{plan['run_id']}"
+            f" by {args.by} at {doc['since_utc']} ({doc['receipts_count']}"
+            " receipts here)"
+        )
+    return 0
+
+
+def authority_summary(ledger, plan):
+    """Tolerant view of the E11 sidecar for status/--show: never raises."""
+    try:
+        doc = ledger.read_authority(plan)
+    except IntegrityError as e:
+        return {"write_authority": "invalid", "error": str(e)}
+    if doc is None:
+        return {"write_authority": "unset"}
+    return {
+        "write_authority": doc["authority"],
+        "transferred_to": (
+            doc["execution_host_id"] if doc["authority"] == "remote" else None
+        ),
+        "since_utc": doc["since_utc"],
+        "by": doc["by"],
+        "reason": doc.get("reason"),
+    }
+
+
 def status_payload(run_dir):
     ledger = Ledger(run_dir)
     plan = ledger.load_plan()
     receipts, torn = ledger.read_tolerant(plan)
     state = reduce_state(plan, receipts)
+    authority = {
+        "location": "execution_host" if "scheduled" in reached_set(receipts) else "local_prefix",
+        "execution_host_id": plan["execution_host_id"],
+        "as_of_sequence": receipts[-1]["sequence"] if receipts else 0,
+        "as_of_receipt_sha256": (
+            receipts[-1]["receipt_sha256"] if receipts else plan["plan_sha256"]
+        ),
+        "remote_read_through": False,
+        "remote_status": (
+            "stale_prefix_possible" if "scheduled" in reached_set(receipts)
+            and state["active"] else "not_required"
+        ),
+    }
+    # E11: additive; the receipt-derived keys above keep their meaning.
+    authority.update(authority_summary(ledger, plan))
     return {
         "schema": RECEIPT_SCHEMA,
         "event": plan["event_id"],
         "run": plan["run_id"],
         "lane": plan["lane"],
         "host": plan["execution_host_id"],
-        "authority": {
-            "location": "execution_host" if "scheduled" in reached_set(receipts) else "local_prefix",
-            "execution_host_id": plan["execution_host_id"],
-            "as_of_sequence": receipts[-1]["sequence"] if receipts else 0,
-            "as_of_receipt_sha256": (
-                receipts[-1]["receipt_sha256"] if receipts else plan["plan_sha256"]
-            ),
-            "remote_read_through": False,
-            "remote_status": (
-                "stale_prefix_possible" if "scheduled" in reached_set(receipts)
-                and state["active"] else "not_required"
-            ),
-        },
+        "authority": authority,
         "state": state,
         "integrity": {
             "ok": not torn,
@@ -1529,6 +1768,22 @@ def cmd_status(args):
         )
     else:
         print(f"   authority: {authority['location']}")
+    wa = authority.get("write_authority", "unset")
+    if wa == "remote":
+        print(
+            f"   ledger writes: REMOTE → {authority['transferred_to']} since"
+            f" {authority['since_utc']} by {authority['by']} — pull before"
+            " recording anything on this copy (E11)"
+        )
+    elif wa == "local":
+        print(
+            f"   ledger writes: local (returned by {authority['by']} at"
+            f" {authority['since_utc']})"
+        )
+    elif wa == "invalid":
+        print(f"   ledger writes: INVALID sidecar — {authority.get('error')}")
+    else:
+        print("   ledger writes: local (never transferred)")
     for r in st["reached"]:
         print(f"   ✓ {r['transition']:<20} seq {r['sequence']:<3} {r['ts']}")
     for gate, missing in st["pending"].items():
@@ -1926,6 +2181,28 @@ def build_parser():
     add_identity(sp)
     add_root(sp)
     sp.set_defaults(fn=cmd_init_date)
+
+    sp = sub.add_parser(
+        "authority",
+        help="show or move this copy's ledger write authority (E11)",
+    )
+    g = sp.add_mutually_exclusive_group(required=True)
+    g.add_argument("--run-dir", default=None)
+    g.add_argument("--event", default=None)
+    g = sp.add_mutually_exclusive_group(required=True)
+    g.add_argument("--show", action="store_true",
+                   help="print the sidecar as JSON (authority=unset if absent)")
+    g.add_argument("--transfer-to", metavar="HOST", default=None,
+                   help="the execution host now holds the chain (installer door)")
+    g.add_argument("--returned-from", metavar="HOST", default=None,
+                   help="the execution host's copy was just reconciled here (puller door)")
+    g.add_argument("--reclaim", action="store_true",
+                   help="operator escape: force local; requires --reason")
+    sp.add_argument("--by", default="operator",
+                    help="tool or person moving authority (recorded in the sidecar)")
+    sp.add_argument("--reason", default=None)
+    add_root(sp)
+    sp.set_defaults(fn=cmd_authority)
 
     return p
 

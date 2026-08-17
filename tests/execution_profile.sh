@@ -4,6 +4,13 @@
 # operator's real credential files and performs no network call.
 set -euo pipefail
 
+# bash 3.2 (macOS) does NOT trip `set -e` on a failing bare `[[ ]]`, so every
+# assertion here is `[[ … ]] || fail $LINENO` (SYSTEM-STATE E14, the E9 class).
+fail() {  # fail <lineno>
+  echo "FAIL: execution_profile.sh:$1: $(sed -n "${1}p" "${BASH_SOURCE[0]}" | sed 's/^ *//')" >&2
+  exit 1
+}
+
 REPO=$(cd "$(dirname "$0")/.." && pwd -P)
 SCRIPT="$REPO/scripts/execution-profile.sh"
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/execution-profile-test.XXXXXX")
@@ -26,7 +33,7 @@ if [[ "${1:-}" == --config ]]; then
   grep -q '^DIFFERENT=1$' "$2" && different=1
   shift 2
 fi
-[[ $# -eq 0 ]]
+[[ $# -eq 0 ]] || exit 67
 if [[ $different -eq 1 ]]; then
   printf 'sha256:%064d\n' 2
 elif [[ "${KALSHI_API_KEY_ID:-}" == rotated-key ]]; then
@@ -57,17 +64,17 @@ OUT=$(run_profile configure \
   --host-id earshot-useast1 \
   --config "$CONFIG" \
   --bin "$FAKE_BIN" 2>&1)
-[[ "$OUT" == *"configured execution profile"* ]]
-[[ "$OUT" != *"DO-NOT-PRINT-THIS"* ]]
-[[ "$OUT" != *"SOURCE-OUTPUT-MUST-BE-SUPPRESSED"* ]]
+[[ "$OUT" == *"configured execution profile"* ]] || fail $LINENO
+[[ "$OUT" != *"DO-NOT-PRINT-THIS"* ]] || fail $LINENO
+[[ "$OUT" != *"SOURCE-OUTPUT-MUST-BE-SUPPRESSED"* ]] || fail $LINENO
 [[ $(python3 - "$ACCOUNT" <<'PY'
 import os, stat, sys
 print(f"{stat.S_IMODE(os.stat(sys.argv[1]).st_mode):03o}")
 PY
-) == 600 ]]
+) == 600 ]] || fail $LINENO
 grep -q '^export KALSHI_API_KEY_ID="test-key"$' "$ACCOUNT"
 grep -q '^export TWILIO_AUTH_TOKEN="DO-NOT-PRINT-THIS"$' "$ACCOUNT"
-[[ $(grep -c '^# EARSHOT EXECUTION PROFILE BEGIN' "$ACCOUNT") -eq 1 ]]
+[[ $(grep -c '^# EARSHOT EXECUTION PROFILE BEGIN' "$ACCOUNT") -eq 1 ]] || fail $LINENO
 
 JSON=$(run_profile resolve \
   --account '$HOME/.earshot/ms.env' \
@@ -91,8 +98,8 @@ run_profile configure \
   --host-id earshot-useast1 \
   --bin "$FAKE_BIN" >/dev/null
 AFTER=$(shasum -a 256 "$ACCOUNT" | awk '{print $1}')
-[[ "$BEFORE" == "$AFTER" ]]
-[[ $(grep -c '^# EARSHOT EXECUTION PROFILE BEGIN' "$ACCOUNT") -eq 1 ]]
+[[ "$BEFORE" == "$AFTER" ]] || fail $LINENO
+[[ $(grep -c '^# EARSHOT EXECUTION PROFILE BEGIN' "$ACCOUNT") -eq 1 ]] || fail $LINENO
 
 # A config-bound signer that differs from ambient cannot poison a shared
 # account profile, and the refusal leaves the credential file untouched.
@@ -106,7 +113,7 @@ if run_profile configure \
   exit 1
 fi
 AFTER=$(shasum -a 256 "$ACCOUNT" | awk '{print $1}')
-[[ "$BEFORE" == "$AFTER" ]]
+[[ "$BEFORE" == "$AFTER" ]] || fail $LINENO
 grep -q 'different credential' "$TMP/mismatch.out"
 
 # Rotation is caught by resolve before a RunPlan can pin stale identity.
