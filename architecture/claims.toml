@@ -45,6 +45,9 @@ paths = [
   "docs/work/BOX-RESOLVE.md",
   "docs/work/BOX-HOST.md",
   "docs/work/BOX-SCHEDULE.md",
+  # 2026-08-17: how to read the ledger, for the agent picking up the
+  # reliability program next.
+  "docs/work/HANDOFF-RELIABILITY-26AUG17.md",
 ]
 verification = [
   "python3 scripts/doc-lint.py --self-test",

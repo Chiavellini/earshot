@@ -131,6 +131,7 @@ owns = [
   "docs/work/SOLUTION-CAPTURE.md",
   "docs/work/SOLUTION-EVIDENCE.md",
   "docs/work/SOLUTION-OBSERVABILITY.md",
+  "docs/work/HANDOFF-RELIABILITY-26AUG17.md",
   "scripts/doc-lint.py",
   "scripts/doc-lint.sh",
   "scripts/ops-surface-check.py",
