@@ -209,6 +209,22 @@ terminal pull, and it deliberately records **no** receipt of its own —
 A run that has already reached `launched` is still refused, by design; wait for
 terminal and use the ordinary pull.
 
+**Two things will bite you around this pull, both measured 2026-08-16:**
+
+- **Get the run dir onto the box BEFORE preflight, by hand.** Box preflight
+  refuses without the laptop-bound AccessPlan, `deploy-box.sh` excludes
+  `var/runs/`, and `box-webcast-install.sh` only dispatches *after* preflight
+  passes — so the one supported transport runs too late. Until a lane closes
+  it: `rsync -a <run-dir>/ <box>:~/ear/<run-dir>/`. Do **not** try to dodge it
+  by compiling the plan on the box instead: `created_utc` is inside
+  `plan_sha256`, so the two hosts produce different plans and the AccessPlan
+  then refuses to bind.
+- **Re-preflighting on the box breaks the next pull.** The box rewrites
+  `state/<E>/box/detector-smoke.log` and friends, so the puller sees a real
+  legacy-state divergence and refuses the whole event. Move the stale local
+  snapshot aside (`mv state/<E>/box state/<E>/box.superseded-<tag>`) — never
+  delete it, and never let the pull overwrite it.
+
 **Never close the gap by re-recording the receipts locally**, and never fall
 back to a hand `rsync` now that the door exists. A hand-written
 `preflight_passed` on the laptop would be a fabricated proof of a build that

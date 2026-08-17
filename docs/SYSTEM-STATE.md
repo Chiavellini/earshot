@@ -167,7 +167,8 @@ the work orders reference them.
   240+ commits ahead of `main` with no immutable release artifact. The owed
   acceptance chain: immutable commit → dry rehearsal → operator-approved
   deployment → real loaded-scheduler proof → capture-only production fire.
-- **E7 CLOSED 2026-08-14** Pre-launch receipt boundary: box and laptop each keep
+- **E7 PARTIAL 2026-08-16 (box→laptop closed, laptop→box OPEN)** Pre-launch
+  receipt boundary: box and laptop each keep
   their own hash-chained `control/receipts.jsonl`, and no supported transport
   moved a **pre-terminal** receipt between them — `pull-box-state.sh` published
   terminal runs only (`:619,633-635`). Measured three times in the §8 rehearsal:
@@ -185,6 +186,34 @@ the work orders reference them.
   (`eventctl.py:94-97`) and inventing a lifecycle transition is a schema change.
   With the prefix on the laptop, `schedule-nightly.sh` and
   `box-webcast-install.sh` pass unmodified; no gate was weakened.
+  **Proved end-to-end 2026-08-16** on a fresh drill attempt: box
+  `preflight_passed` → `pull-box-state.sh --prelaunch` (no rsync) →
+  `opsctl.sh schedule --date` dispatched, installed and read back a LOADED
+  systemd timer at the natural T-75.
+  **The other direction is still open and is NOT cosmetic — it blocks a
+  skill-navigated box webcast event.** Two measured refusals, both reproduced
+  on 08-16:
+  1. Box preflight hard-refuses without the laptop-bound AccessPlan
+     (`REFUSED: AccessPlan is not a regular non-symlink file`), so the run dir
+     must reach the box *before* preflight — but `deploy-box.sh` excludes
+     `var/runs/` (E3) and `box-webcast-install.sh` only dispatches *after*
+     preflight passes. Circular; today only hand `rsync` breaks it.
+  2. A laptop-side close does not travel, so the box still sees the superseded
+     attempt as active: `REFUSED: ambiguous: 2 active runs`.
+  **And the run dir genuinely cannot be re-derived on the box instead of
+  transported**: compiling the same config with the same identity on both hosts
+  yields byte-different `run-plan.json` because `created_utc` sits inside
+  `plan_sha256` (measured: laptop `eb7371cf…` vs box `1e70343c…`, diff = that
+  one field). So transport is mandatory, not a convenience.
+- **E10 OPEN 2026-08-16** Every re-preflight on the box makes the *next*
+  `pull-box-state.sh` refuse the whole event: the box rewrites legacy
+  `state/<E>/box/` artefacts (`detector-smoke.log` et al), the puller's
+  `assert_compatible_legacy_state` sees genuine divergence, and refuses rather
+  than merge in place (`:757`). The refusal itself is correct — it is the E3
+  never-merge-unverified rule — but the operator is left hand-moving the stale
+  snapshot aside, at exactly the moment (a red preflight being re-run before an
+  event) when hands are scarcest. Hit twice in one drill. Needs a first-class
+  supersession path for legacy box state, not a weaker check.
 - **E8 CLOSED 2026-08-14** `tests/preresolved_arm.sh` was not load-proof **and**
   did not prove its own claim: case 2 asserted exit 3 for "a prior attempt's
   url-file is refused", but *absent* and *stale* also exit 3, and under load the
