@@ -23,7 +23,7 @@
 
 [event]
 id        = "BOXDRILL-26AUG14-WEBCAST"
-starts_at = "2026-08-14T18:54:00Z"
+starts_at = "2026-08-30T20:00:00Z"
 
 [pipeline]
 chunk_ms       = 80
