@@ -1186,6 +1186,13 @@ paths = [
   # unauditable, blocked, or operationally failed.
   "scripts/audit-day.py",
   "tests/audit_day.py",
+  # 2026-08-18 E15: every money number this project has reported was
+  # self-reported. The account's own fills endpoint listed FIVE fills on our
+  # 26AUG18 boards while every earshot grader said three — the two extra were
+  # sweep-hft's on the shared account, one of them HD-INFL at 49c which settled
+  # NO. This asks the exchange and classifies each fill recorded / UNRECORDED
+  # (ours, receipt lost — the only condition that pages) / foreign.
+  "scripts/fill-reconcile.py",
   # the scheduled leg's notify wrapper. The launchd plist itself is owned and
   # claimed by platform.runtime (configs/launchd/**), like slate-daily's.
   "scripts/missed-arm-daily.sh",

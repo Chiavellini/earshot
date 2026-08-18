@@ -967,6 +967,13 @@ owns = [
   # siblings, and publishes a derived performance index bound to exact grade
   # and lifecycle-tail fingerprints.
   "scripts/audit-day.py",
+  # E15: the ONLY grader here that asks the exchange instead of reading what we
+  # wrote about ourselves. sweep-hft shares this Kalshi account, so a fill it
+  # places on one of our boards is exposure on a market we trade that no
+  # earshot artifact mentions (2026-08-18 HD-INFL 1x49c, settled NO). Owned
+  # here because it is a verdict about a run's money evidence; read-only, and
+  # it signs GET requests only.
+  "scripts/fill-reconcile.py",
   # the checker writes nothing and alerts nothing by design; the wrapper owns
   # the daily firing's notify path (PYPL/BA lesson: a check nobody hears is
   # not a check). Its launchd plist lives with the others under

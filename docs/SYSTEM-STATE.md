@@ -152,6 +152,39 @@ the work orders reference them.
   reader moved with it**: `missed-arm-check.py` reported 3 × ARMED-NO-RECORD and
   `settle-score.py` "no banked events" on a day that filled three orders, and
   the 23:30Z launchd job turns that into a critical page. See **M7**.
+- **E15 CLOSED 2026-08-18 — the money ledger was ACCOUNT-BLIND.** Every money
+  number this project has ever reported came from `report.json → orders[]`,
+  written by the arm process about its own sends; `settle-score.py`, the
+  trade-gap funnel and the day study all read those same records. Nothing had
+  ever asked the exchange. **Measured 26AUG18:** earshot filled 3 orders
+  (AS-TARI 96¢, KLAR-SWED 97¢, HD-INNO 92¢) and every grader reported "3 fills,
+  285¢"; the account's own `/portfolio/fills` for that UTC day lists **five**
+  fills on our own event markets. The two extras are `sweep-hft`'s — a separate
+  project sharing this Kalshi account (`cap_cents=70`, confirmed in its own log
+  at `logs/daily-20260818.log:2762,2864`) — `KLAR-PROF` 0.02×62¢ and
+  **`HD-INFL` 1×49¢, which settled NO**. Earshot had itself detected
+  `inflation` on that market and been refused by its own event-notional cap, so
+  the position is real, the loss is real, and no earshot artifact mentions it.
+  The system already knew the account was shared — `CLAUDE.md` warns the kill
+  switch must cancel only `OrderRegistry` ids, and `missed-arm-check.py` keeps
+  `-SWEEP` runs out of its numerator — but only ever in the defensive
+  direction; nothing looked at the account and asked whether our books explain
+  it. **FIX:** `scripts/fill-reconcile.py` (new, `control.grade`), wired as the
+  third leg of the same 23:30Z launchd firing. It classifies every account fill
+  on our boards as `recorded` / `unrecorded` (ours, receipt lost — the only
+  condition that pages) / `foreign`, and banks
+  `var/audits/fills-<DATE>.json`. **Proof by tampering:** re-keying it by lane
+  instead of by Kalshi board makes the laptop's own HD fill read `foreign` and
+  the self-test red; removing the `client_order_id` guard promotes an
+  unresolvable fill to `unrecorded` and the self-test goes red the other way.
+  Verified against the real 26AUG18 account: 3 recorded, 0 unrecorded, 2
+  foreign, and the wrapper still exits 0 with the credential file unset in the
+  environment (launchd's minimal env — the live run first failed there on an
+  unexpanded literal `$HOME` in the pem path, now expanded and pinned).
+  **RESIDUAL, and it is an operator question, not a grader one:** the HD board
+  carried 141¢ across both systems against each lane's 100¢
+  `max_event_notional_cents`. Earshot enforces that cap per-process; the
+  account is not bound by it. Filed as **O7**.
 - **E2** No growth-based tape liveness check exists anywhere in the tree; the
   "book-tape ran 2d21h past its deadline and went deaf with no close row"
   defect (casino143 §III.5) has a stronger close path in `examples/book-tape.rs`
@@ -646,6 +679,19 @@ the operator rules:
   ev_gate has no P(wrong) term and gates nothing (shadow only).
 - **O5** No pre-arm liquidity survey and no depth-aware sizing; on 08-11 most
   intents found `best_ask=None` or depth above the cap.
+- **O7 OPEN 2026-08-18 — two systems, one account, the same boards.** Earshot
+  and `sweep-hft` both trade earshot's own mention boards on one Kalshi
+  account, and each enforces its notional caps **per-process**. Measured
+  26AUG18 (`var/audits/fills-2026-08-18.json`, **E15**):
+  `KXEARNINGSMENTIONHD-26AUG18` carried 141¢ of account exposure — earshot's
+  92¢ fill plus sweep's 49¢ — against a 100¢ `max_event_notional_cents` in each
+  lane's config. Nothing was breached: neither process exceeded its own cap,
+  and no rule says the account total is bounded. That is precisely the ruling
+  owed. The reconciler reports the number and never enforces it. Adjacent to
+  **O2** (per-event vs cumulative) and **O5** (no depth-aware sizing); note
+  also that both systems buying the same side of the same market can trip
+  Kalshi self-trade prevention (`taker_at_cross`), which has never been
+  observed here but is now possible to detect.
 - **O6 CLOSED 2026-08-16 (was OPEN 08-14, corrected 08-16)** Every scheduled webcast run —
   **not just the box** — hardcodes `--i-am-live --fillable`:
   `install-event-timer.sh:201` (systemd/box) and `install-t0-agents.sh:193`
