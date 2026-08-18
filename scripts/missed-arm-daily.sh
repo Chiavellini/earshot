@@ -24,6 +24,8 @@ ALERT_DIR="${EARSHOT_ALERT_DIR:-state/alerts}"
 PYTHON="${EARSHOT_PYTHON:-python3}"
 CHECKER="${EARSHOT_MISSED_ARM_CHECK:-scripts/missed-arm-check.py}"
 AUDIT_DAY="${EARSHOT_AUDIT_DAY:-scripts/audit-day.py}"
+FILL_RECONCILE="${EARSHOT_FILL_RECONCILE:-scripts/fill-reconcile.py}"
+AUDIT_DIR="${EARSHOT_AUDIT_DIR:-var/audits}"
 DELIVERY_ARGS=(--phone-attempts 3)
 [[ -n "${EARSHOT_NOTIFY:-}" ]] && DELIVERY_ARGS+=(--notify-adapter "$EARSHOT_NOTIFY")
 [[ -n "${EARSHOT_ALERT_PHONE:-}" ]] && DELIVERY_ARGS+=(--phone-adapter "$EARSHOT_ALERT_PHONE")
@@ -67,7 +69,36 @@ if [[ "$AUDIT_CODE" -ne 0 ]]; then
     || echo "warn: proof-bearing audit-day page failed" >&2
 fi
 
+# E15: both checks above read only what WE wrote about ourselves. This third
+# leg asks the EXCHANGE what traded on our markets, because sweep-hft shares
+# this Kalshi account and a fill it places on one of our boards is invisible to
+# every earshot artifact (2026-08-18: HD-INFL 1×49¢, settled NO).
+#
+# Deliberately asymmetric alerting. Exit 1 means a fill is OURS and no run
+# recorded it — a lost trade, and it pages. A foreign fill is expected on a
+# shared account, so it is printed and banked in the JSON but never pages: a
+# nightly alarm for a known-legitimate condition trains the operator to ignore
+# the alarm that matters. Exit 2 (no credentials under launchd, or the account
+# unreachable) warns and does not fail the job, but it also never reads as
+# clean — the log line carries the exit code.
+FILL_JSON="$AUDIT_DIR/fills-$DATE_UTC.json"
+FILL_OUT="$("$PYTHON" "$FILL_RECONCILE" --date "$DATE_UTC" --json "$FILL_JSON" 2>&1)"
+FILL_CODE=$?
+echo "fill-reconcile-daily: $DATE_UTC exit=$FILL_CODE"
+echo "$FILL_OUT"
+case "$FILL_CODE" in
+  0) ;;
+  1) critical_alert ledger_unrecorded_fill \
+       "UNRECORDED FILL on $DATE_UTC — the account traded and our ledger did not record it" \
+       "$FILL_OUT" || echo "warn: proof-bearing unrecorded-fill page failed" >&2 ;;
+  *) echo "warn: fill-reconcile could not determine the account's side on $DATE_UTC (exit $FILL_CODE)" >&2 ;;
+esac
+
 if [[ "$CODE" -ne 0 ]]; then
   exit "$CODE"
 fi
-exit "$AUDIT_CODE"
+if [[ "$AUDIT_CODE" -ne 0 ]]; then
+  exit "$AUDIT_CODE"
+fi
+[[ "$FILL_CODE" -eq 1 ]] && exit 1
+exit 0

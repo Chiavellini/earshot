@@ -211,6 +211,23 @@ After that checker returns, the same scheduled wrapper always runs
 deterministic `audit_day_failed` critical alert; a missed-arm failure cannot
 skip or mask the typed index result.
 
+**The third leg — the exchange's side** (`scripts/fill-reconcile.py`, added
+2026-08-18 for **E15**). Both checks above read only what this system wrote
+about itself. `sweep-hft` shares this Kalshi account, so a fill it places on
+one of our own event's markets is real account exposure that no earshot
+artifact mentions: on 2026-08-18 the account's fills endpoint listed FIVE fills
+on our boards while every grader said three, and one of the extras
+(`KXEARNINGSMENTIONHD-26AUG18-INFL`, 1×49¢) settled NO. The same wrapper firing
+therefore also asks the exchange, per UTC day, for the markets of the events
+whose RunPlans declare that date. Alerting is deliberately asymmetric: only
+`UNRECORDED` — a fill whose order is ours by `client_order_id` while no run
+recorded it — raises the `ledger_unrecorded_fill` critical alert. A `foreign`
+fill is expected on a shared account, so it is always printed and always banked
+in the JSON but never pages, because a nightly alarm for a known-legitimate
+condition trains the operator to ignore the alarm that matters. Missing
+credentials or an unreachable account exit 2, warn, and do not fail the job —
+but the logged exit code means the leg never reads as clean.
+
 **Box pull gate.** Events launched on the us-east-1 box are not gradeable from
 the laptop until `pull-box-state.sh --date <D>` succeeds. Do not replace it with
 an ad-hoc rsync: that loses typed run evidence, immutable identity checks, and
@@ -357,6 +374,24 @@ red even when the evidence grade itself is valid, and the index records only
 the alert identity, class, delivery ambiguity, and acknowledgement state (not
 the potentially sensitive message body).
 
+`scripts/fill-reconcile.py --date YYYY-MM-DD` reconciles the ACCOUNT against
+this node's own records. Its unit is the Kalshi board (`market_event_ticker`),
+never the earshot event id: more than one lane can cover one board — 26AUG18's
+`KXEARNINGSMENTIONHD-26AUG18` carried both the laptop arm and the box 1¢
+observe — and keying by lane puts one lane's own fill in the other's bucket and
+calls it foreign. Attribution is by `order_id` against the UNION of every
+attempt of every lane, which also names the placing lane; a superseded attempt
+can still have reached the wire. A fill with no matching order id is resolved
+by fetching the ORDER, whose `client_order_id` is the only field that can say
+"ours" — the fill payload carries none — and a lookup that fails leaves the
+fill `foreign`, never silently promoted. `var/audits/fills-<DATE>.json` records
+per board: our notional, the foreign notional, the account total, and each
+lane's configured `max_event_notional_cents`. Those caps are REPORTED beside
+the account total, never enforced: earshot applies them per-process, the
+account is not bound by them, and event caps are the operator's
+(`SYSTEM-STATE.md` §4). The tool signs GET requests only and can neither place
+nor cancel an order.
+
 Above the attempt rows, the index collapses lane suffixes into one market
 event and emits exactly one `COVERED`, `DESCOPED`, or `MISSED` classification.
 Any valid grade with positive audio frames makes the event `COVERED`; a typed
@@ -404,6 +439,16 @@ notification delivery remains platform-owned.
 Run `scripts/run-verdict.sh --check`, `python3 tests/score_precision.py`, and
 focused fixture runs for `scripts/validate-from-log.py`. Deeper model miss autopsy belongs to
 `evidence.benchmark`.
+
+`python3 scripts/fill-reconcile.py --check` runs offline with a fake fetcher —
+no network, no credentials, no writes. It pins the 26AUG18 shapes directly: two
+earshot lanes on one board (the regression — lane-keying reported the laptop's
+own fill as foreign), a foreign fill counted on our board while a fill on
+someone else's board is out of scope, the same unmatched fill flipping to
+`unrecorded` when the order's client id is ours, a failed order lookup leaving
+it `foreign` rather than promoting it, a superseded attempt still contributing
+its order ids, and a credential file whose value is written for a shell to
+expand (`$HOME/...`) being expanded here too.
 
 `python3 scripts/missed-arm-check.py --check` runs offline on temp fixtures. Its
 2026-08-11 block reconstructs HIMS 26AUG10 exactly — a webcast lane whose report
