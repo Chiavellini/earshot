@@ -394,19 +394,25 @@ class Fixture:
             + (b"\n" if self.order_events else b"")
         )
 
-    def snapshot_raw(self, available: bool) -> str:
+    def snapshot_raw(self, available: bool, omit=(), null_sides=()) -> str:
+        """One orderbook_snapshot frame.
+
+        `omit` DROPS a side key entirely, which is what Kalshi does when that
+        side holds zero levels (Q-XTAPE addendum, 2026-08-18). `null_sides`
+        sets it to JSON null, which is malformed and must still be refused.
+        """
         no = [[dollars(3), "1.00"]] if available else []
+        msg = {
+            "market_ticker": MARKET,
+            "yes_dollars_fp": [],
+            "no_dollars_fp": no,
+        }
+        for key in omit:
+            msg.pop(key, None)
+        for key in null_sides:
+            msg[key] = None
         return json.dumps(
-            {
-                "type": "orderbook_snapshot",
-                "sid": 1,
-                "seq": 1,
-                "msg": {
-                    "market_ticker": MARKET,
-                    "yes_dollars_fp": [],
-                    "no_dollars_fp": no,
-                },
-            },
+            {"type": "orderbook_snapshot", "sid": 1, "seq": 1, "msg": msg},
             separators=(",", ":"),
         )
 
@@ -454,13 +460,21 @@ class Fixture:
             "commit_receipt": self.remote(ARTIFACTS["book_tape"] + ".commit.json"),
         }
         available = mode != "empty"
+        omit = ()
+        null_sides = ()
+        if mode == "omit_yes_side":
+            omit = ("yes_dollars_fp",)
+        elif mode == "omit_both_sides":
+            omit = ("yes_dollars_fp", "no_dollars_fp")
+        elif mode == "null_yes_side":
+            null_sides = ("yes_dollars_fp",)
         rows = [
             session,
             {
                 "t": "frame",
                 "wall_ns": 1_800_000_000_100_000_000,
                 "mono_ns": SNAPSHOT_MONO,
-                "raw": self.snapshot_raw(available),
+                "raw": self.snapshot_raw(available, omit, null_sides),
             },
         ]
         if mode == "exhaustion":
@@ -1032,6 +1046,54 @@ class RunAuditTests(unittest.TestCase):
         self.assertEqual(observation["detection_to_exhaustion_ms"], 350.0)
         self.assertEqual(observation["wire_to_exhaustion_ms"], 200.0)
         self.assertEqual(observation["exhaustion_receive_mono_ns"], EXHAUST_MONO)
+
+    def test_omitted_snapshot_side_is_an_empty_ladder_not_a_broken_tape(self):
+        """Kalshi DROPS a side key when that side holds zero levels.
+
+        Live 2026-08-18: 2 of 12 tickers on the AS board (PICK, WIMB) had no
+        YES resting orders, so their snapshots carried only `no_dollars_fp`.
+        The auditor required both keys, so those tickers never earned a
+        snapshot proof, the re-derived readiness set disagreed with the
+        runtime's on all 4,021 heartbeats, and the WHOLE run was refused — the
+        one run that day which filled at 96c. An omitted side must read exactly
+        like an explicitly empty one.
+        """
+        omitted = self.assert_ok(
+            self.fixture(order_mode="fill", book_mode="omit_yes_side"))
+        explicit = self.assert_ok(
+            self.fixture(order_mode="fill", book_mode="available"))
+        self.assertEqual(
+            omitted["orders"][0]["book_observation"],
+            explicit["orders"][0]["book_observation"],
+        )
+        self.assertEqual(
+            omitted["book_evidence"]["frame_rows"],
+            explicit["book_evidence"]["frame_rows"],
+        )
+
+    def test_both_snapshot_sides_omitted_is_a_valid_empty_book(self):
+        """A board with no resting orders at all serializes with neither key.
+
+        Already pinned for the whole-board case (AMD 26AUG04 pre-call); this
+        keeps the auditor agreeing with it rather than calling it malformed.
+        """
+        grade = self.assert_ok(
+            self.fixture(order_mode="fill", book_mode="omit_both_sides"))
+        self.assertEqual(
+            grade["orders"][0]["book_observation"]["causality"], "not_resolvable")
+
+    def test_null_snapshot_side_is_still_refused(self):
+        """Absent means empty; PRESENT-but-not-an-array stays malformed.
+
+        The fail-closed half must survive the fix — this is the exact pairing
+        src/kalshi/book.rs::side_levels makes, pinned there by
+        `omitted_snapshot_side_is_an_explicit_empty_ladder`. Without this test,
+        widening `parse_snapshot` to accept an absent key could be quietly
+        widened again to accept any junk.
+        """
+        result = self.assert_failure_without_mutation(
+            self.fixture(order_mode="fill", book_mode="null_yes_side"))
+        self.assertIn("readiness is not proven", result.stdout + result.stderr)
 
     def test_available_depth_without_exhaustion_stays_explicit(self):
         fixture = self.fixture(order_mode="fill", book_mode="available")

@@ -136,9 +136,36 @@ def candidate_runs(root: Path, date: str) -> list[tuple[Path, dict[str, Any] | N
     return selected
 
 
-def expected_events(slate_path: Path, date: str) -> tuple[dict[str, dict[str, Any]], dict[str, Any] | None]:
+def declared_run_date(runs_root: Path, ticker: str) -> str | None:
+    """The UTC date this market event's RunPlans actually declare.
+
+    The slate dates an event from its Kalshi ticker suffix, which is minted
+    once and never moves. A call CAN move: KXEARNINGSMENTIONTOL-26AUG18
+    carries a typed date correction to 2026-08-19T12:30Z. Graded against the
+    slate alone, 08-18 reported TOL MISSED for a call that had not happened.
+
+    A RunPlan is immutable and authoritative about its own start, so it wins.
+    Returns None when no plan declares a date, so a missing plan can never
+    shrink the denominator — only a plan that positively says otherwise can.
+    """
+    if not runs_root.is_dir():
+        return None
+    declared: set[str] = set()
+    for plan_path in sorted(runs_root.glob(f"{ticker}*/*/control/run-plan.json")):
+        try:
+            declared.add(run_date(strict_json(plan_path, "RunPlan")))
+        except (OSError, DayAuditError):
+            continue
+    # Unanimity required: if any attempt claims the graded date, the event
+    # belongs to it and nothing is deferred.
+    return declared.pop() if len(declared) == 1 else None
+
+
+def expected_events(
+    slate_path: Path, date: str, runs_root: Path | None = None
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any] | None, dict[str, dict[str, Any]]]:
     if not slate_path.exists():
-        return {}, None
+        return {}, None, {}
     if slate_path.is_symlink() or not slate_path.is_file():
         raise DayAuditError(f"slate path is unsafe: {slate_path}")
     slate = strict_json(slate_path, "slate")
@@ -158,7 +185,13 @@ def expected_events(slate_path: Path, date: str) -> tuple[dict[str, dict[str, An
             "call_time_utc": item.get("call_time_utc"),
             "call_date_evidence": item.get("call_date_evidence"),
         }
-    return selected, fingerprint(slate_path)
+    deferred: dict[str, dict[str, Any]] = {}
+    if runs_root is not None:
+        for ticker in sorted(selected):
+            declared = declared_run_date(runs_root, ticker)
+            if declared is not None and declared != date:
+                deferred[ticker] = {**selected.pop(ticker), "declared_date": declared}
+    return selected, fingerprint(slate_path), deferred
 
 
 def market_event(event_id: str) -> str:
@@ -439,10 +472,32 @@ def audit_one(
         "ledger_fingerprint": fingerprint(run_dir / "control" / "receipts.jsonl"),
     }
     base["reached"] = sorted(transitions)
+    # An ARCHIVED attempt is closed evidence: eventctl refuses any further
+    # receipt on it ("run is archived — no further receipts"), so its alerts can
+    # never be acknowledged by anyone. Counting them as a day problem therefore
+    # fails that date PERMANENTLY, with no action available to the operator.
+    # They stay visible in this row's `alerts` block and in the day's
+    # `unacknowledged_alerts` total — they are excluded from the pass/fail
+    # verdict only, never hidden.
+    archived = "archived" in transitions
+    open_alert_problem = alert_problem and not archived
     if "descope" in transitions:
-        return {**base, "status": "descoped", "problem": alert_problem}
+        return {**base, "status": "descoped", "problem": open_alert_problem}
     if "blocked" in transitions:
-        return {**base, "status": "blocked", "problem": True}
+        # M7: a blocked attempt that NEVER LAUNCHED is prep-time churn — a plan
+        # superseded by a later attempt (config drift after dispatch, a preflight
+        # that failed and was re-staged). It stays visible in its own row, but it
+        # must not fail the whole date: on 2026-08-18 six such attempts outlived
+        # four runs that captured and three that filled, and the date graded FAIL
+        # while every board was covered. A blocked attempt that DID launch is a
+        # real operational failure and still fails the date. Unacknowledged
+        # alerts always count, so a superseded attempt cannot silence its own
+        # warnings — it only stops them from being counted twice.
+        return {
+            **base,
+            "status": "blocked",
+            "problem": "launched" in transitions or open_alert_problem,
+        }
     if not (transitions & TERMINAL_FOR_AUDIT):
         return {**base, "status": "active", "problem": True}
 
@@ -628,7 +683,8 @@ def main(argv: list[str] | None = None) -> int:
                 )
         rows.sort(key=lambda row: (str(row.get("event_id")), str(row.get("run_id"))))
         summary = aggregate(rows)
-        expected, slate_fingerprint = expected_events(slate_path, date)
+        expected, slate_fingerprint, deferred_events = expected_events(
+            slate_path, date, runs_root=run_root)
         events = classify_events(rows, expected, repo=repo, slate_path=slate_path)
         classifications: dict[str, int] = {}
         for event in events:
@@ -638,6 +694,9 @@ def main(argv: list[str] | None = None) -> int:
         summary["events"] = len(events)
         summary["event_problems"] = event_problems
         summary["classifications"] = dict(sorted(classifications.items()))
+        # A deferred event is REPORTED, never silently dropped: a grader whose
+        # denominator quietly shrinks cannot report a total failure.
+        summary["deferred"] = len(deferred_events)
         no_runs = not rows
         no_events = not events
         payload = {
@@ -657,13 +716,15 @@ def main(argv: list[str] | None = None) -> int:
             "events": events,
             "summary": {**summary, "no_runs": no_runs, "no_events": no_events},
             "runs": rows,
+            "deferred_events": deferred_events,
         }
         destination = output_root / f"{date}.json"
         publish(destination, canonical_bytes(payload))
         print(
             f"AUDIT-DAY {payload['overall'].upper()}: {date} — "
             f"{summary['events']} event(s), {summary['event_problems']} missed/problem event(s), "
-            f"{summary['attempts']} attempt(s), {summary['problems']} attempt problem(s); {destination}"
+            + (f"{summary['deferred']} deferred, " if summary.get("deferred") else "")
+            + f"{summary['attempts']} attempt(s), {summary['problems']} attempt problem(s); {destination}"
         )
         return 1 if payload["overall"] == "fail" else 0
     except (OSError, subprocess.SubprocessError, DayAuditError) as exc:

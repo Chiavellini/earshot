@@ -1599,8 +1599,13 @@ def parse_snapshot(message: Any) -> tuple[str, dict[int, int], dict[int, int]] |
     body = message.get("msg")
     if not isinstance(body, dict) or not isinstance(body.get("market_ticker"), str):
         return None
-    yes = body.get("yes_dollars_fp")
-    no = body.get("no_dollars_fp")
+    # Kalshi OMITS a side key entirely when that side holds zero levels; an
+    # absent key is an empty ladder, not a malformed snapshot. A key that is
+    # PRESENT but not an array (including an explicit null) is still refused.
+    # Mirrors src/kalshi/book.rs::side_levels, pinned by Q-XTAPE addendum
+    # (2026-08-18: AS PICK/WIMB, 2 of 12 tickers, voided the whole run).
+    yes = body.get("yes_dollars_fp", [])
+    no = body.get("no_dollars_fp", [])
     if not isinstance(yes, list) or not isinstance(no, list) or type(message.get("seq")) is not int:
         return None
     bids: dict[int, int] = {}

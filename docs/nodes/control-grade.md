@@ -266,6 +266,15 @@ an alert channel itself.
 ## Input contracts
 
 Operational grading consumes a terminal `report.json` and per-leg data.
+
+That report is located CANONICALLY first: the attempt's own RunPlan names it at
+`artifacts.runtime_report` under `var/runs/<EVENT_ID>/<RUN_ID>/`, and legacy
+`state/<E>/box/report.json` then `state/<E>/report.json` remain the fallback so
+older and box-pulled runs keep grading unchanged. Selection among several
+attempts is by ARTIFACT EXISTENCE, never by run-id ordering and never by receipt
+depth — on 26AUG18 the report-bearing AS attempt was neither last by name nor
+deepest by receipts, and reading only the legacy path reported 3 x
+ARMED-NO-RECORD on a day that filled three orders (M7).
 Detection validation consumes the arm log, exact event config, public
 transcript, and optional aligned word timestamps. The precision scorer derives
 the recorder-to-detector offset from a global cross-keyword hypothesis search;
@@ -308,7 +317,12 @@ identity, input-fingerprint, score-hash, count/ratio, and alignment validator
 for the EVIDENCE join.
 
 `missed-arm-check.py` emits `MISSED-ARM` per issuer, ranked by contracts
-missed, and exits 1 when any survive. A board lookup that fails is reported
+missed, and exits 1 when any survive. A lane is dated by its config's own
+`[event].starts_at`, not by the Kalshi ticker suffix, so a call that moved after
+its ticker was minted is reported `deferred` to the date it declares rather than
+missed on the date it does not. Only a parseable, non-placeholder start may move
+a lane, and every deferral is printed: a denominator that shrinks silently
+cannot report a total failure. A board lookup that fails is reported
 `UNDETERMINED` and exits 2, never silently clean. Each finding names artifact-bound armed
 lanes separately from unarmed commitments.
 

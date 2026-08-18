@@ -376,6 +376,52 @@ class AuditDayTest(unittest.TestCase):
         self.assertEqual(row["status"], "invalid")
         self.assertIn("invalid JSON", row["detail"])
 
+    def test_superseded_attempt_does_not_fail_the_date(self) -> None:
+        """M7: a blocked attempt that NEVER LAUNCHED is prep churn, not a failure.
+
+        Superseding a plan (config drift after dispatch, a preflight that failed
+        and was re-staged) closes the old attempt `blocked`. Counting that as a
+        day problem fails the date FOREVER, and on 2026-08-18 six such attempts
+        made a day that captured four calls and filled three orders grade FAIL.
+        """
+        self.add_run("A", "aaaaaaaaaaaa", ["completed"])
+        self.add_run("A", "bbbbbbbbbbbb", ["blocked"])
+        result = self.run_day()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        rows = {row["run_id"].split("-")[-1]: row for row in self.index()["runs"]}
+        self.assertEqual(rows["bbbbbbbbbbbb"]["status"], "blocked")
+        self.assertFalse(rows["bbbbbbbbbbbb"]["problem"])
+
+    def test_blocked_after_launch_still_fails_the_date(self) -> None:
+        """The exemption is narrow: a run that STARTED and was then blocked is a
+        real operational failure and must still fail the date."""
+        self.add_run("A", "aaaaaaaaaaaa", ["completed"])
+        self.add_run("A", "cccccccccccc", ["launched", "blocked"])
+        result = self.run_day()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        rows = {row["run_id"].split("-")[-1]: row for row in self.index()["runs"]}
+        self.assertTrue(rows["cccccccccccc"]["problem"])
+
+    def test_event_whose_plan_declares_another_date_is_deferred_not_missed(self) -> None:
+        """A call can move after its Kalshi ticker is minted.
+
+        KXEARNINGSMENTIONTOL-26AUG18 carries a typed correction to 08-19, so
+        grading it against the slate's ticker date reported MISSED for a call
+        that had not happened yet — on a board whose volume was pre-positioning.
+        The RunPlan is immutable and authoritative about its own start.
+        """
+        self.add_run("TOMORROW", "dddddddddddd", ["plan_compiled"], date="2026-08-15")
+        self.write_slate("TOMORROW")
+        result = self.run_day()
+        index = self.index()
+        self.assertIn("TOMORROW", index["deferred_events"])
+        self.assertEqual(
+            index["deferred_events"]["TOMORROW"]["declared_date"], "2026-08-15")
+        self.assertNotIn(
+            "TOMORROW", {e["event_ticker"] for e in index["events"]})
+        self.assertEqual(index["summary"]["deferred"], 1)
+        del result
+
     def test_other_dates_are_excluded(self) -> None:
         self.add_run("OTHER", "aaaaaaaaaaaa", ["completed"], date="2026-08-13")
         result = self.run_day()

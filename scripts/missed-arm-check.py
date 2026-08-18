@@ -83,6 +83,9 @@ NON_MENTION_SUFFIX = re.compile(r"-SWEEP$")
 # Keeping them in the denominator turns infrastructure QA into a fictitious
 # KXEARNINGSMENTION issuer and, on network failure, an irrelevant undetermined.
 NON_EVENT_PROBE_ISSUERS = {"TTSREHEARSAL", "Q4CHIME"}
+# Mirrors scripts/eventctl.py:58. A config still carrying the placeholder
+# start has NOT declared a call time, so it may never move a lane's date.
+PLACEHOLDER_STARTS_AT = "2026-07-15T00:00:00Z"
 BAD_VERDICTS = {"MISSED-ARM", "ARMED-DIED", "ARMED-NO-FILL", "ARMED-NO-RECORD"}
 
 
@@ -114,6 +117,72 @@ def _artifact(d, name):
         return box
     p = os.path.join(d, name)
     return p if os.path.isfile(p) else None
+
+
+def _runs_dir_for(state_dir):
+    """The canonical run root that pairs with `state_dir`.
+
+    DERIVED, never passed: a self-test that isolates `state_dir` into a tempdir
+    isolates the canonical tree with it, so `--check` can never silently read
+    the real repo (the failure mode that already exists at `reconcile`).
+    `state/` and `var/runs/` are siblings under one repo root by construction.
+    """
+    parent = os.path.dirname(os.path.abspath(state_dir))
+    return os.path.join(parent, "var", "runs")
+
+
+def _report(d):
+    """THE terminal report for event dir `d` — canonical tree first, then legacy.
+
+    E1 closed and INVERTED the problem: an armed run now writes its report into
+    the immutable `var/runs/<EVENT_ID>/<RUN_ID>/report/` tree named by its own
+    RunPlan, and writes NOTHING to `state/<E>/report.json`. On 2026-08-18 all
+    four runs did exactly that, and this grader reported 3 x ARMED-NO-RECORD on
+    a day that put three orders on the wire and filled all three — then paged
+    the operator for it. An alarm that cries wolf on a good day is training the
+    operator to ignore it on a bad one, which is the exact 26AUG04 failure this
+    check exists to prevent.
+
+    Selection is by ARTIFACT EXISTENCE, never by run-id ordering and never by
+    receipt depth: AS-26AUG18 has four attempts, and the report-bearing one is
+    neither last by name nor deepest by receipts.
+
+    The report path comes from the plan's own `artifacts.runtime_report`, not a
+    hardcoded constant — a published plan is immutable and authoritative. Legacy
+    `state/<E>/{box/,}report.json` remains the fallback so older events, and
+    box-pulled runs, keep grading exactly as before.
+
+    Returns at most ONE path, like `_artifact`, so nothing is double-counted.
+    """
+    d = os.path.normpath(d)
+    event_id = os.path.basename(d)
+    state_dir = os.path.dirname(d) or "state"
+    runs_dir = _runs_dir_for(state_dir)
+    found = []
+    for plan_path in sorted(glob.glob(os.path.join(
+            runs_dir, event_id, "*", "control", "run-plan.json"))):
+        try:
+            plan = json.load(open(plan_path))
+        except (OSError, ValueError):
+            continue
+        artifacts = plan.get("artifacts")
+        if not isinstance(artifacts, dict):
+            continue
+        rel = artifacts.get("runtime_report")
+        # Containment: a plan may not point outside its own run dir.
+        if not isinstance(rel, str) or not rel or os.path.isabs(rel):
+            continue
+        if ".." in os.path.normpath(rel).split(os.sep):
+            continue
+        run_dir = os.path.dirname(os.path.dirname(plan_path))
+        candidate = os.path.join(run_dir, rel)
+        if os.path.isfile(candidate):
+            found.append(candidate)
+    if found:
+        # Deterministic when several attempts each banked a report; RUN_ID
+        # carries the UTC start prefix, so the last is the latest attempt.
+        return found[-1]
+    return _artifact(d, "report.json")
 
 
 def _artifacts(d, name):
@@ -241,7 +310,7 @@ def captures_for(date, probe_dir="corpus/bridge-probes", state_dir="state"):
     # discover-events.py learned at 52-of-57).
     suffix = _ticker_suffix(date)
     for d in _event_dirs(state_dir):
-        p = _artifact(d, "report.json")
+        p = _report(d)
         if not p:
             continue
         try:
@@ -299,7 +368,8 @@ def captures_for(date, probe_dir="corpus/bridge-probes", state_dir="state"):
     return out
 
 
-def staged_for(date, config_dir="configs", state_dir="state", runs_dir="var/runs"):
+def staged_for(date, config_dir="configs", state_dir="state", runs_dir="var/runs",
+               deferred=None):
     """issuer -> {'config','event_id','fill_posture','run_dir'} for the day's arm configs.
 
     THE DENOMINATOR (2026-08-07). Before this, `reconcile` iterated over
@@ -340,6 +410,35 @@ def staged_for(date, config_dir="configs", state_dir="state", runs_dir="var/runs
             m = re.match(r"KXEARNINGSMENTION([A-Z0-9]+?)-", ev)
             if not m:
                 continue
+            # THE CONFIG'S OWN START DATES THE COMMITMENT, not the Kalshi ticker
+            # suffix. A call can move after the ticker is minted:
+            # KXEARNINGSMENTIONTOL-26AUG18 carries a typed date_correction to
+            # 2026-08-19T12:30Z, so on 08-18 this grader reported a MISSED-ARM
+            # for a call that had not happened yet, on a board whose 10,428
+            # contracts were pre-positioning.
+            #
+            # Only a PARSEABLE, non-placeholder start may move a lane. Missing,
+            # malformed or placeholder keeps the filename date — a denominator
+            # that shrinks on bad input is exactly the failure this function's
+            # docstring exists to prevent, so deferral must fail visible.
+            starts_at = (cfg.get("event") or {}).get("starts_at")
+            if isinstance(starts_at, str) and starts_at != PLACEHOLDER_STARTS_AT:
+                try:
+                    when = dt.datetime.fromisoformat(
+                        starts_at.replace("Z", "+00:00"))
+                except ValueError:
+                    when = None
+                if when is not None:
+                    declared = when.astimezone(dt.timezone.utc).date().isoformat()
+                    if declared != date:
+                        if deferred is not None:
+                            deferred.append({
+                                "issuer": m.group(1),
+                                "event_id": ev,
+                                "config": os.path.relpath(p),
+                                "declared_date": declared,
+                            })
+                        continue
             kws = cfg.get("keywords") or []
             # POSTURE FROM THE CONFIG, never assumed. The old code justified an
             # ARMED-OBSERVING verdict with "1¢ non-crossing posture" wording
@@ -455,7 +554,7 @@ def wire_evidence(event_id, state_dir="state"):
     stem = LANE_SUFFIX.sub("", event_id)
     has_report, crossable = False, 0
     for d in _event_dirs(state_dir, stem):
-        rp = _artifact(d, "report.json")
+        rp = _report(d)
         if not rp:
             continue
         try:
@@ -482,7 +581,7 @@ def run_health(event_id, state_dir="state"):
     d = os.path.join(state_dir, event_id)
     if not os.path.isdir(d):
         return ("never-armed", "no state dir")
-    rp = _artifact(d, "report.json")
+    rp = _report(d)
     if not rp:
         return ("unknown", "armed, no report.json")
     try:
@@ -531,7 +630,7 @@ def orders_by_issuer(state_dir="state"):
     """
     out = {}
     for d in _event_dirs(state_dir):
-        p = _artifact(d, "report.json")
+        p = _report(d)
         if not p:
             continue
         try:
@@ -928,7 +1027,8 @@ def main():
         ap.error("--date required (or --check)")
 
     caps = captures_for(a.date)
-    staged = staged_for(a.date)
+    deferred = []
+    staged = staged_for(a.date, deferred=deferred)
     # No captures is NOT the same as nothing to grade. If configs were staged
     # for the date, a day with zero capture evidence is the loudest possible
     # finding, not an early return — that early return is how 2026-08-06's
@@ -960,7 +1060,11 @@ def main():
           f"{len(missed)} MISSED-ARM, {len(died)} ARMED-DIED, "
           f"{len(nofill)} ARMED-NO-FILL, {len(norec)} ARMED-NO-RECORD, "
           f"{len(observing)} ARMED-OBSERVING, "
-          f"{len(desc)} DESCOPED, {len(undet)} undetermined")
+          f"{len(desc)} DESCOPED, {len(undet)} undetermined"
+          + (f", {len(deferred)} deferred" if deferred else ""))
+    for d in deferred:
+        print(f"   deferred: {d['issuer']} — {d['config']} declares "
+              f"{d['declared_date']}, graded on that date, not {a.date}")
 
     # An issuer that reached the wire produces NO finding (reconcile skips it),
     # so without this a fully successful day is indistinguishable from a day
