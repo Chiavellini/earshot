@@ -144,10 +144,14 @@ the work orders reference them.
 
 ### Evidence / storage (tape is banked) — `SOLUTION-EVIDENCE.md`
 
-- **E1** The canonical `var/runs/` evidence tree has **never been populated by
-  a live run** — COHR's run dir holds only `control/`; all real evidence
-  landed in legacy `state/<E>/` paths (`docs/STATUS.md` calls it explicitly
-  non-canonical).
+- **E1 CLOSED 2026-08-18 — and it INVERTED into M7.** The canonical `var/runs/`
+  tree is now populated by live runs: all four 26AUG18 webcast runs (AS box,
+  KLAR, HD, HD-observe box) wrote `report/`, `orders/`, `book/`, `capture/` and
+  `control/` in full — 219 detections, 1,584,366 audio frames, 3 wire orders, 3
+  fills. Nothing landed at `state/<E>/report.json`. **The evidence moved and no
+  reader moved with it**: `missed-arm-check.py` reported 3 × ARMED-NO-RECORD and
+  `settle-score.py` "no banked events" on a day that filled three orders, and
+  the 23:30Z launchd job turns that into a critical page. See **M7**.
 - **E2** No growth-based tape liveness check exists anywhere in the tree; the
   "book-tape ran 2d21h past its deadline and went deaf with no close row"
   defect (casino143 §III.5) has a stronger close path in `examples/book-tape.rs`
@@ -444,6 +448,40 @@ the work orders reference them.
   contracts, graded MISSED-ARM the wrong way).
 - **M6** No date-level audit index until single-run grade (incl. FIX
   fingerprint) is complete.
+- **M7 CLOSED 2026-08-18 — the day's graders were blind, and two of them paged
+  for it.** Three independent faults made 26AUG18 — four calls captured, three
+  orders filled — grade as a total miss. (1) Every grader resolved the report at
+  legacy `state/<E>/report.json`, which E1's closure left empty;
+  `missed-arm-check.py` therefore reported 3 × ARMED-NO-RECORD, and
+  `scripts/missed-arm-daily.sh:43-68` escalates that to a **critical,
+  phone-delivering** alert — the alarm written after the 26AUG04 335k-contract
+  miss now crying wolf on a good day. (2) `run-audit.py:parse_snapshot` required
+  both book side keys, but Kalshi omits an empty side (Q-XTAPE addendum), so
+  AS — the one run that filled at 96¢ — failed audit on 4,021/4,021 heartbeats
+  and the whole date graded FAIL. (3) `audit-day.py` marked every `blocked`
+  attempt a day problem, but supersession closes an attempt `blocked`, so six
+  prep-time abandonments outvoted four successful runs; worse, an **archived**
+  attempt's alerts can never be acknowledged (eventctl refuses further receipts),
+  so those failed the date permanently with no operator action available.
+  Fixes: the report is located in the canonical tree by ARTIFACT EXISTENCE (not
+  run-id order — AS's report-bearing attempt is neither last by name nor deepest
+  by receipts); an absent book side reads as an empty ladder while a present
+  non-array is still refused; a `blocked` attempt that never `launched` is prep
+  churn, and an archived run's un-ackable alerts are excluded from the verdict
+  while staying visible in the counts. A lane is also now dated by its config's
+  own `[event].starts_at`, not the Kalshi ticker suffix, so TOL's typed
+  correction to 08-19 reads as **deferred** rather than MISSED — and the deferral
+  is printed, never a silent shrink of the denominator. Proof by tampering:
+  reverting the two `parse_snapshot` defaults turns
+  `test_omitted_snapshot_side_is_an_empty_ladder_not_a_broken_tape` and
+  `test_both_snapshot_sides_omitted_is_a_valid_empty_book` red while
+  `test_null_snapshot_side_is_still_refused` stays green. Measured end to end:
+  `missed-arm-check --date 2026-08-18` 1 → 0 with all five other sampled dates
+  byte-identical, and `audit-day --date 2026-08-18` FAIL (8 attempt problems,
+  AS DESCOPED, TOL MISSED) → **PASS** (0 attempt problems, 4/4 COVERED, TOL
+  deferred). Residual: `settle-score.py`, `race-postmortem.py`, `run-verdict.sh`
+  and `score-precision.py` read the legacy path too — they are operator-invoked,
+  not on the 23:30Z automatic path, and are the follow-up.
 
 ### Lifecycle / process
 
