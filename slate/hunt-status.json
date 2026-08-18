@@ -1,5 +1,5 @@
 {
- "generated_utc": "2026-08-13T02:30:40+00:00",
+ "generated_utc": "2026-08-17T21:23:48+00:00",
  "issuers": {
   "AAOI": {
    "evidence": "no dial-in in 2 scanned 8-K filing(s) (None..None) \u2014 webcast-only in this window; a bridge may still exist unpublished",
@@ -233,7 +233,7 @@
    "filings_scanned": 2,
    "found": false,
    "key": "HD",
-   "last_hunted": "2026-08-12",
+   "last_hunted": "2026-08-17",
    "number_src": null,
    "tier": "bridge_unpublished",
    "verdict": "no dial-in in 2 scanned 8-K filing(s) (2026-02-24..2026-05-19) \u2014 webcast-only in this window; a bridge may still exist unpublished"

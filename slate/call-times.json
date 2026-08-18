@@ -1,52 +1,80 @@
 {
-  "KXEARNINGSMENTIONUBER-26AUG05": {
-    "call_time_utc": "2026-08-05T12:00:00Z",
-    "source": "IR release 2026-07-13 (investor.uber.com + Business Wire): 8:00 a.m. ET Aug 5; webcast-only, q4inc",
-    "recorded_utc": "2026-08-05T04:20:00Z"
-  },
-  "KXEARNINGSMENTIONYOU-26AUG05": {
-    "call_time_utc": "2026-08-05T12:00:00Z",
-    "source": "PR Newswire 2026-07-22 via ir.clearme.com: 8:00 a.m. ET Aug 5; dial-in 877-407-3089 published; Chorus Call webcastid NTtHOW8v",
-    "recorded_utc": "2026-08-05T04:20:00Z"
-  },
-  "KXEARNINGSMENTIONSHOP-26AUG05": {
-    "call_time_utc": "2026-08-05T12:30:00Z",
-    "source": "IR release 2026-07-08 (shopify.com/investors + GlobeNewswire): 8:30 a.m. ET Aug 5; proprietary webcast page",
-    "recorded_utc": "2026-08-05T04:20:00Z"
-  },
-  "KXEARNINGSMENTIONDIS-26AUG05": {
-    "call_time_utc": "2026-08-05T12:30:00Z",
-    "source": "Business Wire 20260714700177 + investors.thewaltdisneycompany.com: 8:30 a.m. ET / 5:30 a.m. PT Aug 5; public q4inc player, no registration",
-    "recorded_utc": "2026-08-05T04:20:00Z"
-  },
-  "KXEARNINGSMENTIONDASH-26AUG05": {
-    "call_time_utc": "2026-08-05T20:30:00Z",
-    "source": "Business Wire 2026-07-06 (3 verbatim carriers) + Q1'26 8-K EX-99.1 confirming the NEW 1:30 p.m. PT slot (moved from 2:00 p.m. PT; NOT the historical 21:00Z)",
-    "recorded_utc": "2026-08-05T04:20:00Z"
-  },
-  "KXEARNINGSMENTIONTLN-26AUG05": {
-    "call_time_utc": "2026-08-05T20:30:00Z",
-    "source": "GlobeNewswire 2026-07-15 raw HTML: 4:30 p.m. ET Aug 5 AFTER close (10:00 AM hypothesis REFUTED); Notified/edge.media-server.com gw6i8r4e; phone dial-in via registration",
-    "recorded_utc": "2026-08-05T04:20:00Z"
-  },
-  "KXEARNINGSMENTIONDUOL-26AUG05": {
-    "call_time_utc": "2026-08-05T21:00:00Z",
-    "source": "GlobeNewswire 2026-07-08 + investors.duolingo.com events: 5:00 p.m. ET Aug 5; open-exchange video webcast",
-    "recorded_utc": "2026-08-05T04:20:00Z"
-  },
-  "KXEARNINGSMENTIONFIG-26AUG05": {
-    "call_time_utc": "2026-08-05T21:00:00Z",
-    "source": "Business Wire 2026-07-15: 5:00 p.m. ET Aug 5; q4inc (NOT zoom), registration required; investor.figma.com Cloudflare-walled from this box",
-    "recorded_utc": "2026-08-05T04:20:00Z"
-  },
-  "KXEARNINGSMENTIONMELI-26AUG05": {
-    "call_time_utc": "2026-08-05T21:00:00Z",
-    "source": "IR PDF (http2.mlstatic.com) 2026-07-29: 5:00 p.m. ET Aug 5; Chorus Call webcastid xr1sGkCu; dial-in 833-821-3654 operator-assisted 'ask to join'",
-    "recorded_utc": "2026-08-05T04:20:00Z"
-  },
-  "KXEARNINGSMENTIONEBAY-26AUG05": {
-    "call_time_utc": "2026-08-05T21:30:00Z",
-    "source": "eBay IR event-details + events index: 2:30 p.m. PT Aug 5; open-exchange.net webcast (ebay-q2-2026-earnings-call-wamsana4.open-exchange.net)",
-    "recorded_utc": "2026-08-05T04:20:00Z"
-  }
+    "KXEARNINGSMENTIONTGT-26AUG19": {
+        "call_time_utc": "2026-08-19T12:00:00Z",
+        "source": "ISSUER IR, read 2026-08-17T21:20Z: corporate.target.com/investors/events-presentations lists the Q2 2026 earnings conference call as 'Wednesday, August 19, 2026, 8:00 - 9:00 a.m. EDT' with webcast https://app.webinar.net/0aXzjGkjGb9 ('Register now'). Corroborated independently by TipRanks/MarketBeat coverage stating the Q2 release is before market open Wed Aug 19 with the call at 8 AM EDT. The IR page states EDT explicitly (not the ET/EST ambiguity class), so 8:00 a.m. EDT = UTC-4 => 12:00:00Z. Call date 2026-08-19 matches the Kalshi -26AUG19 suffix and sub_title; no date correction needed. NOTE: recorded to unblock the date-scoped study gate for 2026-08-19; TGT itself is NOT otherwise prepped by this session and its webinar.net venue is unbound.",
+        "recorded_utc": "2026-08-17T21:20:00Z"
+    },
+    "KXEARNINGSMENTIONHD-26AUG18": {
+        "call_time_utc": "2026-08-18T13:00:00Z",
+        "source": "Two independent non-Kalshi sources agree. (1) VENUE, read live 2026-08-17T21:10Z: event.choruscall.com/mediaframe/webcast.html?webcastid=tvsYzfmo serves webcastConfig.eventDate = new Date(\"Tue Aug 18 09:00:00 EDT 2026\") with explicit webcastConfig.eventDateTimezone = \"America/New_York\", eventTitle \"Q2 2026 Earnings Conference Call\", accountName \"Home Depot\", frameId/streamId 29107. Per VERIFICATIONS Q-CC this venue renders a NAMED US zone and does not carry the EST-for-EDT misprint of the PYPL/META/CVNA IR widgets. (2) ISSUER IR: ir.homedepot.com/events-and-presentations lists 'Q2 2026 THE HOME DEPOT, INC. EARNINGS RELEASE' as 'Tuesday, August 18, 2026 9:00 am ET'. 9:00 a.m. ET in August = EDT = UTC-4 => 13:00:00Z. Call date 2026-08-18 matches the Kalshi -26AUG18 suffix and sub_title 'On Aug 18, 2026'; no date correction needed.",
+        "recorded_utc": "2026-08-17T21:12:00Z"
+    },
+    "KXEARNINGSMENTIONTOL-26AUG18": {
+        "call_time_utc": "2026-08-19T12:30:00Z",
+        "source": "GlobeNewswire 2026-07-29 'Toll Brothers to Webcast Its Third Quarter 2026 Earnings Conference Call Live on August 19, 2026 at 8:30 a.m. (ET)' (globenewswire.com/news-release/2026/07/29/3335627), independently carried verbatim by Manila Times 2026-07-30 and StockTitan; corroborated by investors.tollbrothers.com/news-and-events/events-and-presentations listing 'Toll Brothers Q3 FY 2026 Earnings Call, August 19, 2026, 08:30 AM ET'. 8:30 a.m. ET in August = EDT = UTC-4 => 12:30:00Z.",
+        "recorded_utc": "2026-08-17T21:10:00Z",
+        "date_correction": {
+            "schema": 1,
+            "kind": "call-date-correction",
+            "from": "2026-08-18",
+            "to": "2026-08-19",
+            "source": "GlobeNewswire 2026-07-29 release + Toll Brothers IR events page both state results are announced AFTER MARKET CLOSE on Tuesday 2026-08-18 and the conference call is held the NEXT MORNING, Wednesday 2026-08-19 at 8:30 a.m. ET. The Kalshi -26AUG18 suffix and sub_title 'On Aug 18, 2026' name the earnings RELEASE date, not the call date; the mention markets resolve on the Aug 19 call.",
+            "recorded_utc": "2026-08-17T21:10:00Z"
+        }
+    },
+    "KXEARNINGSMENTIONUBER-26AUG05": {
+        "call_time_utc": "2026-08-05T12:00:00Z",
+        "source": "IR release 2026-07-13 (investor.uber.com + Business Wire): 8:00 a.m. ET Aug 5; webcast-only, q4inc",
+        "recorded_utc": "2026-08-05T04:20:00Z"
+    },
+    "KXEARNINGSMENTIONYOU-26AUG05": {
+        "call_time_utc": "2026-08-05T12:00:00Z",
+        "source": "PR Newswire 2026-07-22 via ir.clearme.com: 8:00 a.m. ET Aug 5; dial-in 877-407-3089 published; Chorus Call webcastid NTtHOW8v",
+        "recorded_utc": "2026-08-05T04:20:00Z"
+    },
+    "KXEARNINGSMENTIONSHOP-26AUG05": {
+        "call_time_utc": "2026-08-05T12:30:00Z",
+        "source": "IR release 2026-07-08 (shopify.com/investors + GlobeNewswire): 8:30 a.m. ET Aug 5; proprietary webcast page",
+        "recorded_utc": "2026-08-05T04:20:00Z"
+    },
+    "KXEARNINGSMENTIONDIS-26AUG05": {
+        "call_time_utc": "2026-08-05T12:30:00Z",
+        "source": "Business Wire 20260714700177 + investors.thewaltdisneycompany.com: 8:30 a.m. ET / 5:30 a.m. PT Aug 5; public q4inc player, no registration",
+        "recorded_utc": "2026-08-05T04:20:00Z"
+    },
+    "KXEARNINGSMENTIONDASH-26AUG05": {
+        "call_time_utc": "2026-08-05T20:30:00Z",
+        "source": "Business Wire 2026-07-06 (3 verbatim carriers) + Q1'26 8-K EX-99.1 confirming the NEW 1:30 p.m. PT slot (moved from 2:00 p.m. PT; NOT the historical 21:00Z)",
+        "recorded_utc": "2026-08-05T04:20:00Z"
+    },
+    "KXEARNINGSMENTIONTLN-26AUG05": {
+        "call_time_utc": "2026-08-05T20:30:00Z",
+        "source": "GlobeNewswire 2026-07-15 raw HTML: 4:30 p.m. ET Aug 5 AFTER close (10:00 AM hypothesis REFUTED); Notified/edge.media-server.com gw6i8r4e; phone dial-in via registration",
+        "recorded_utc": "2026-08-05T04:20:00Z"
+    },
+    "KXEARNINGSMENTIONDUOL-26AUG05": {
+        "call_time_utc": "2026-08-05T21:00:00Z",
+        "source": "GlobeNewswire 2026-07-08 + investors.duolingo.com events: 5:00 p.m. ET Aug 5; open-exchange video webcast",
+        "recorded_utc": "2026-08-05T04:20:00Z"
+    },
+    "KXEARNINGSMENTIONFIG-26AUG05": {
+        "call_time_utc": "2026-08-05T21:00:00Z",
+        "source": "Business Wire 2026-07-15: 5:00 p.m. ET Aug 5; q4inc (NOT zoom), registration required; investor.figma.com Cloudflare-walled from this box",
+        "recorded_utc": "2026-08-05T04:20:00Z"
+    },
+    "KXEARNINGSMENTIONMELI-26AUG05": {
+        "call_time_utc": "2026-08-05T21:00:00Z",
+        "source": "IR PDF (http2.mlstatic.com) 2026-07-29: 5:00 p.m. ET Aug 5; Chorus Call webcastid xr1sGkCu; dial-in 833-821-3654 operator-assisted 'ask to join'",
+        "recorded_utc": "2026-08-05T04:20:00Z"
+    },
+    "KXEARNINGSMENTIONEBAY-26AUG05": {
+        "call_time_utc": "2026-08-05T21:30:00Z",
+        "source": "eBay IR event-details + events index: 2:30 p.m. PT Aug 5; open-exchange.net webcast (ebay-q2-2026-earnings-call-wamsana4.open-exchange.net)",
+        "recorded_utc": "2026-08-05T04:20:00Z"
+    },
+    "KXEARNINGSMENTIONKLAR-26AUG18": {
+        "call_time_utc": "2026-08-18T12:30:00Z",
+        "source": "Two independent non-Kalshi sources agree. (1) ISSUER RELEASE: Business Wire 2026-07-13 'Klarna to Publish Q2 2026 Earnings on August 18, 2026' \u2014 earnings webcast at 8:30 a.m. ET Aug 18 (= 12:30Z, EDT=UTC-4); carried verbatim by Nasdaq/Yahoo/StockTitan. (2) VENUE, read live 2026-08-17T21:05Z: klarna.events.inderes.com/q2-report-2026 registration payload publishingDate=2026-08-18T12:30:00.000Z, timezone UTC offset 0, and rendered DialInAreaBlock text 'The event starts on 18 August 2026 at 08:30 ET'. Platform = Inderes/VideoSync (engagestream, bitmovin-8 player, signedHlsPlayback=false); estimatedDuration 3600s.",
+        "recorded_utc": "2026-08-17T21:16:40Z"
+    }
 }
