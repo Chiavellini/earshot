@@ -22,6 +22,7 @@ usage:
   scripts/opsctl.sh pull (--date YYYY-MM-DD | --event EVENT_ID) [--dry-run]
   scripts/opsctl.sh audit --run-dir var/runs/EVENT_ID/RUN_ID
   scripts/opsctl.sh audit-day --date YYYY-MM-DD
+  scripts/opsctl.sh fills --date YYYY-MM-DD
   scripts/opsctl.sh alerts --run-dir var/runs/EVENT_ID/RUN_ID
   scripts/opsctl.sh ack-alert --run-dir PATH --alert-id 64HEX --by ID [--note text]
   scripts/opsctl.sh descope EVENT_TICKER "reason" [--fallbacks "..."]
@@ -138,6 +139,12 @@ case "$command" in
   audit-day)
     date_args "$@"; [[ "$OPS_DRY" == 0 && "$OPS_NO_MAIL" == 0 ]] || refuse "audit-day accepts only --date"
     exec python3 scripts/audit-day.py --date "$OPS_DATE"
+    ;;
+  fills)
+    # E15: the account's side of the ledger. Read-only, signed GETs only.
+    date_args "$@"; [[ "$OPS_DRY" == 0 && "$OPS_NO_MAIL" == 0 ]] || refuse "fills accepts only --date"
+    exec python3 scripts/fill-reconcile.py --date "$OPS_DATE" \
+      --json "var/audits/fills-$OPS_DATE.json"
     ;;
   alerts)
     [[ "${1:-}" == "--run-dir" && $# -eq 2 ]] || refuse "alerts needs --run-dir PATH"
