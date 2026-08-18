@@ -2492,3 +2492,48 @@ market endpoints. `missed-arm-check.py` therefore treats any missing,
 malformed, truncated, or transport-failed event history as `UNDETERMINED`; it
 must never infer zero activity. Re-verify if Kalshi changes the event endpoint,
 candlestick volume field, valid intervals, aggregation limit, or cutoff split.
+
+## Q-XTAPE addendum — Kalshi omits an EMPTY book side, not just an empty board (2026-08-18, live)
+
+**Why this needed pinning.** `src/kalshi/book.rs:293-296` already states this
+fact in a comment and cites Q-XTAPE for it — but Q-XTAPE never said it. Q-XTAPE
+pins only the *whole-board* case ("a mention board with no resting orders sends
+snapshots whose `msg` carries only `market_id`/`market_ticker` — no
+`yes_dollars_fp`/`no_dollars_fp` keys at all"). The producer was written against
+the general rule; the Python auditor was written against the documented one, and
+they disagreed for eleven days before a live run made it matter.
+
+**Claim:** `orderbook_snapshot` omits **either side key individually** when that
+side holds zero levels. A market with resting NO orders and no resting YES
+orders sends `msg` carrying `market_ticker`, `market_id` and `no_dollars_fp`
+only — `yes_dollars_fp` is **absent**, not `null` and not `[]`.
+
+**Evidence:** live 2026-08-18, `KXEARNINGSMENTIONAS-26AUG18` book tape
+(`20260818T120000Z-p3-boxq4-r3`, 87,955 rows, 12 `orderbook_snapshot` / 83,919
+`orderbook_delta`, 0 dropped). Two of twelve tickers arrived one-sided:
+`…-PICK` (`seq 6`, `market_id 66ce3fc3-933b-4cc1-809a-7b12f5ef59dd`, 12 NO
+levels) and `…-WIMB` (`seq 12`, `market_id 50b76e31-96ac-43f3-8c69-5f052cdd5d90`,
+14 NO levels). The remaining ten carried both keys.
+
+**Implication:** `scripts/run-audit.py:parse_snapshot` required both keys to be
+lists, so those two tickers never earned a snapshot proof; the auditor's
+re-derived readiness set then disagreed with the runtime's on **all 4,021
+heartbeats** and refused the entire run — the only run that day which reached
+the wire and filled (tariff @ 96¢). Measured: 10/12 proofs and 4,021/4,021
+mismatching heartbeats before the fix; 12/12 and 0/4,021 after, with the day's
+other three runs bit-identical either way. An absent side now reads as an empty
+ladder, exactly as `src/kalshi/book.rs::side_levels` already did.
+
+**Does NOT establish:** how often this occurs (observed on 2 of 12 tickers in
+one event, 0 of 46 across the day's other three events), nor what triggers it
+beyond "that side had no resting orders", nor anything about `orderbook_delta`,
+which always names its `side` explicitly.
+
+**Boundary — the fail-closed half is unchanged.** Absent means empty; a side key
+that is PRESENT but not an array (including an explicit `null`) is still refused
+by both implementations, and is regression-pinned on each side:
+`omitted_snapshot_side_is_an_explicit_empty_ladder` (`src/kalshi/book.rs`) and
+`test_null_snapshot_side_is_still_refused` (`tests/run_audit.py`).
+
+**Confidence:** high (observed on production bytes, both sides of the
+implementation now agree, and each direction is regression-tested).
