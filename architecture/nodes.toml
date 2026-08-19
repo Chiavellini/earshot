@@ -198,6 +198,7 @@ inputs = [
   "runtime.source.pipe.frames",
   "runtime.source.arbiter.frames",
   "platform.runtime.profile",
+  "runtime.verifier.verdicts",
 ]
 outputs = [
   "runtime.audio.frames",
@@ -366,6 +367,7 @@ inputs = [
   "runtime.detector.keyword_compiler",
   "runtime.detector.sherpa_engine",
   "runtime.detector.streaming_ctc_engine",
+  "runtime.detector.online_asr_engine",
 ]
 outputs = ["runtime.detections"]
 
@@ -416,6 +418,44 @@ inputs = [
   "runtime.detector.keyword_compiler",
 ]
 outputs = ["runtime.detector.streaming_ctc_engine"]
+
+[[node]]
+id = "runtime.detector.online_asr"
+job = "Drive any sherpa-onnx streaming ASR model through OnlineRecognizer and match keyword variants on the emitted complete-word stream, with optional hotword biasing."
+status = "active"
+doc = "docs/nodes/detector-online-asr.md"
+doc_style = "node"
+owns = [
+  "src/detector/online_asr.rs",
+  "src/detector/sherpa_files.rs",
+  "src/detector/text_match.rs",
+  "tests/online_asr.rs",
+]
+inputs = [
+  "runtime.core",
+  "runtime.detector.keyword_compiler",
+]
+outputs = ["runtime.detector.online_asr_engine"]
+
+[[node]]
+id = "runtime.verifier"
+job = "Re-decode the firing leg's last seconds with an offline recognizer and publish a per-(keyword,tier) verdict the executor may hold a FILL intent on; record every verdict as run evidence."
+status = "active"
+doc = "docs/nodes/verifier.md"
+doc_style = "node"
+owns = [
+  "scripts/verify-join.py",
+  "src/verifier/mod.rs",
+  "src/verifier/report.rs",
+  "src/verifier/tail.rs",
+  "src/verifier/transcriber.rs",
+]
+inputs = [
+  "runtime.core",
+  "runtime.config.loaded",
+  "runtime.detector.online_asr_engine",
+]
+outputs = ["runtime.verifier.verdicts"]
 
 [[node]]
 id = "runtime.decision"
@@ -548,6 +588,7 @@ owns = [
 inputs = [
   "runtime.core",
   "runtime.execution.intents",
+  "runtime.verifier.verdicts",
   "runtime.market.books",
   "runtime.market.plan",
   "runtime.order.api",
@@ -983,6 +1024,8 @@ owns = [
   "scripts/validate-from-log.py",
   "scripts/post-event-report.sh",
   "scripts/score-precision.py",
+  "scripts/detection-score.py",
+  "scripts/detection-score-pool.py",
   "tests/run_audit.py",
   "tests/audit_day.py",
   "tests/score_precision.py",
@@ -1106,6 +1149,8 @@ owns = [
   "scripts/section-label.py",
   "scripts/structure-analyze.py",
   "scripts/transcript-fetch.py",
+  "scripts/run-transcribe.py",
+  "scripts/corpus-from-run.py",
 ]
 inputs = ["evidence.capture.raw"]
 outputs = ["evidence.corpus.dataset"]
@@ -1234,6 +1279,8 @@ consumers = [
   "runtime.detector.keyword_compile",
   "runtime.detector.sherpa",
   "runtime.detector.streaming_ctc",
+  "runtime.detector.online_asr",
+  "runtime.verifier",
   "runtime.decision",
   "runtime.market_validation",
   "runtime.order_transport",
@@ -1263,6 +1310,7 @@ consumers = [
   "runtime.market_validation",
   "runtime.kalshi.auth",
   "runtime.risk",
+  "runtime.verifier",
   "control.launch",
 ]
 
@@ -1401,6 +1449,7 @@ consumers = [
   "runtime.detector.port",
   "runtime.detector.sherpa",
   "runtime.detector.streaming_ctc",
+  "runtime.detector.online_asr",
 ]
 
 [[contract]]
@@ -1418,6 +1467,22 @@ maturity = "implemented"
 door = "StreamingCtcDetector constructor and start-anytime Viterbi CTC scoring capability"
 producer = "runtime.detector.streaming_ctc"
 consumers = ["runtime.detector.port"]
+
+[[contract]]
+id = "runtime.detector.online_asr_engine"
+kind = "capability"
+maturity = "implemented"
+door = "OnlineAsrDetector constructor: sherpa OnlineRecognizer + complete-word VariantMatcher behind the Detector capability; VariantMatcher/sherpa_files are shared with runtime.verifier"
+producer = "runtime.detector.online_asr"
+consumers = ["runtime.detector.port", "runtime.verifier"]
+
+[[contract]]
+id = "runtime.verifier.verdicts"
+kind = "capability"
+maturity = "implemented"
+door = "VerifierClient (request/wants/await_verdict/shutdown) + VerifierReport rows; StageHooks.verifier into the pipeline composer, ExecCtx.verifier into the executor hold"
+producer = "runtime.verifier"
+consumers = ["runtime.assembly", "runtime.kalshi.executor"]
 
 [[contract]]
 id = "runtime.detections"

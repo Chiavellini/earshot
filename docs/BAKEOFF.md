@@ -1391,3 +1391,125 @@ we'd have taken was already priced at 94¢. A threshold change must be validated
 against **false alarms on real audio**, not just recall on TTS: the banked
 2026-07-29 capture is a natural precision set, because 8 strikes settled NO and
 any in-window detection of those words is a measured false alarm.
+
+## D1 — `online_asr` (sherpa OnlineRecognizer + complete-word matcher) vs the armed `streaming_ctc` — PRE-REGISTERED 2026-08-18 23:15Z, before any corpus run
+
+Why: the 26AUG18 scored baseline (`state/_day/DETECTION-SCORE-26AUG18.md`,
+7 legs / 8.8 h, large-v3-turbo reference) put utterance precision at 79.5 %
+(92 % ex-`a i`), recall at 68 %, and showed every false fire to be a
+morphological/phonetic neighbour (`innovative`, `inflationary`, `storage`,
+`Arc'teryx`) at the SAME confidence as the true fires — the piece-level scorer
+cannot separate them; a word-level matcher on a real ASR rejects them by
+construction. `online_asr` (`docs/nodes/detector-online-asr.md`) is that
+matcher on any sherpa streaming model, with hotword biasing on transducers.
+
+Corpus: wideband dev split = AXP / INTC / LMT / VZ + `dwnews-negctl` (FA
+control), 41-phrase webcast keyword set (`configs/bakeoff-online-asr.toml`,
+identical keywords/thresholds to `bakeoff-webcast.toml`); holdout = AAL, run
+ONCE with the frozen config. Chunk 160 ms, lossless (speed=0). Cells:
+
+- C0 `streaming_ctc` ctc-small-2024-03-18 int8 t=0.15 — the ARMED operating point (incumbent)
+- C1 `online_asr` zipformer-en-2023-06-26 int8, modified_beam_search, hotwords ON (score 1.5)
+- C2 `online_asr` same model, hotwords OFF (greedy) — isolates the biasing term
+- (C3+ NeMo cache-aware 80/480 ms and other candidates as they land; same protocol)
+
+Bars (Confirmed tier, per cell vs C0 in the same run or an audio-domain-only
+comparison, which the interleaving rule permits for accuracy columns):
+
+| bar | rule |
+|---|---|
+| A. false alarms | FA/h ≤ **50 %** of C0's, excluding `panther lake` (degenerate at C0's threshold; reported separately) |
+| B. recall | ≥ C0 recall − **0.02** on the same manifests (same denominators) |
+| C. latency | `consumed_lag` p50 and p95 ≤ C0 + **100 ms** (a null is expected; the transducer's decode floor is the same ~320 ms quantum + right context) |
+| D. hotwords | C1 vs C2: no FA/h above bar A while recall on the proper-noun/brand phrases rises |
+| E. box paced | on the event box, `chunk→detect` p95 < chunk_ms and RSS growth < 50 MB/h over a 90-min replay (a separate `--paced` run) |
+
+Promotion = A ∧ B ∧ C on dev, then E, then the holdout once. A miss on any bar is
+reported as such; the pre-declared consequence is the next candidate model or the
+verifier (D2), not a bar adjustment. All cells are reported, including losers.
+
+### D1 RESULT — run 2026-08-19 00:12–00:45Z on the us-east-1 box (`~/ear-bench`, release build of the D1 tree), dev split 4 event calls (AXP/INTC/LMT/VZ, 5.15 h), lossless, chunk 160
+
+**⚠ Correction to the keyword set, found by this run.** `bakeoff-webcast.toml`'s
+`panther lake` entry carried variants `["panther lake", "a", "as"]` — the word
+"a" as a variant — so every engine "fired" on every "a" (~every 8 s in every
+call, min gap = the 2 s refractory). That is the "degenerate at threshold /
+2,354 FA" panther-lake reading of the P1 table above, and it was never the
+phrase. `europe` carried `["europe","europes","european","europeans"]`;
+`european` does not settle a `europe` market under Q4 semantics and the manifests
+do not count it. `configs/bakeoff-online-asr*.toml` carry the corrected entries;
+`bakeoff-webcast.toml` / `-ctc16.toml` (evidence.benchmark) still carry the old
+ones and any FA/h quoted from them for `panther lake` or `europe` is inflated.
+With the corrected entries `panther lake` is **2/20** on every engine (P1's
+"16/4 TP" were `a`-fires landing inside match windows).
+
+Cells (Confirmed tier, all 41 phrases, same corrected keyword file):
+
+| cell | engine / knobs | TP | miss | FA | recall | FA/h | consumed_lag p50 / p95 |
+|---|---|---|---|---|---|---|---|
+| **C0** | `streaming_ctc` ctc-small int8 t=0.15 (ARMED) | 50 | 27 | 73 | **0.649** | **14.18** | **570 / 714 ms** |
+| C1 | `online_asr` zipformer-en-2023-06-26 int8, mbs beam 4, hotwords 1.5 | 43 | 34 | 42 | 0.558 | 8.16 | 954 / 1218 ms |
+| C2 | C1 with greedy, hotwords OFF | 33 | 44 | 27 | 0.429 | 5.25 | 967 / 1137 ms |
+| C3 | C1 with hotwords 3.0, beam 8 | 44 | 33 | 80 | 0.571 | 15.54 | 936 / 1184 ms |
+
+Per phrase (TP/miss/FA), the ones that moved: `government` C0 13/0/11 → C1
+11/2/2; `record` 5/0/15 → 4/1/4; `security` 7/0/7 → 7/0/1; `dividend` 1/0/7 →
+0/1/3; `sikorsky` 2/0/0 → **0/2/0**; `golden dome` 2/0/0 → 1/1/1; `foundry`
+13/6/2 → 14/5/2; `morfius` 0/3/0 on every engine; `europe` FA 14 → 18 (the
+hotword bias pulls "European" toward "EUROPE" — C2 without hotwords has 9).
+
+**Verdict against the pre-registered bars: C1 FAILS.** A: FA/h −42 % (needs
+−50 %). B: recall −9.1 pts (needs ≥ −2). C: `consumed_lag` +384 ms p50 (needs
+≤ +100). D: hotwords are worth **+13 pts recall for +2.9 FA/h** (C2→C1);
+pushing the score to 3.0 (C3) buys +1.3 pts for +7.4 FA/h — the knob is spent
+at ~1.5. The off-the-shelf LibriSpeech transducer, driven as a text matcher,
+does NOT beat the armed CTC spotter on this corpus: it is cleaner on the generic
+words that false-fire (`government`, `record`, `security`) but loses proper
+nouns (`sikorsky`, `golden dome`, `dividend`) — the same out-of-domain wall,
+one model family over. Do not promote.
+
+**What survives:** the engine + harness (`--engines online_asr --model-dir a,b`
+now sweeps any sherpa online model in ~15 min per cell on the box), and the
+direction: text-level matching removes the morphological false fires. The
+pre-declared next rungs are (1) a streaming model trained on conversational
+English — NeMo cache-aware FastConformer 80/480 ms (no hotwords) — through the
+same engine, and (2) the fill-path verifier (D2), which attacks precision
+without touching recall. **The `dwnews-negctl` (8 h zero-keyword) cells were
+still running at the time of writing; the FA-control column lands with them.**
+
+## D2 — fill-path verifier, V0 retrospective — 2026-08-19 00:36Z
+
+`earshot verify-report` re-decoded the last 3.5 s before every Confirmed
+detection of two banked 26AUG18 runs with
+`sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8` (box, 4 threads) and
+`scripts/verify-join.py` joined the verdicts to `detection-score.py`'s TP/FP
+labels (large-v3-turbo reference):
+
+| run | detections | FP rejected | FP confirmed (missed veto) | TP rejected (false veto) | decode p50 / p95 |
+|---|---|---|---|---|---|
+| AS (box, 2 legs) | 44 | **2/2** (`A terrorist`→tariff — the 96¢ FILL, both legs) | 0 | 4 (Wimbledon→"Winburton", Foot Locker→"Foot Walker", ×2 legs) | 365 / 397 ms |
+| HD-box (2 legs) | 80 | **6/6** (`innovative`, `inflationary`×2, `storage`×2, `in-store`) | 0 | 2 empty decodes (now `Error`, not a veto) + 1 dup | 298 / 361 ms |
+
+Read: every false fire that a text-level second look could catch, it caught;
+the cost is proper nouns the offline model mishears — which is why gating is
+per-ticker opt-in (`[verifier].tickers`) and starts with generic fill words.
+Bars for promotion stay as pre-registered (V1 dev, V2 ≥3 shadow events, V3 one
+gated event); the hold budget (500 ms) holds on the box at p95 < 400 ms.
+
+**D1 negctl column (landed 01:10Z):** `dwnews-negctl` 8.00 h — C0 159 FA
+(19.9/h), C1 119 (14.9/h), C2 92 (11.5/h). Read with care: DW News genuinely
+SAYS europe/government/security/iran/trump, so for the generic words this
+"control" counts true utterances as FA by construction; it is a control only
+for the issuer-specific phrases (all engines: ≤ 3 FA in 8 h on those). The
+cross-cell ordering (C0 > C1 > C2) matches the event calls.
+
+**D2 addendum (01:20Z) — right-context pad.** On HD-laptop the verifier
+initially vetoed a TRUE `weather` (conf 0.83): the spotter fires ~200 ms after
+the word ends, so the word sat at the very end of the tail and Parakeet-TDT
+never flushed it ("…given the softer start."). Appending 400 ms of silence to
+the decode window (`TAIL_PAD_MS`, zero wall-clock cost) fixes it: HD-laptop
+re-run = FP rejected 3/3, TP rejected 0/27 (one duplicate variant fire
+rejected, never an intent). Three runs pooled (AS, HD-box, HD-laptop, 167
+detections): **false fires vetoed 11/11, true intents falsely vetoed 0, true
+non-intent detections falsely vetoed 4 (all proper nouns) + 2 empty decodes
+(now `Error`).**

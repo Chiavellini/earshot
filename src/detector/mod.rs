@@ -8,9 +8,12 @@
 pub mod ctc_scorer;
 pub mod factory;
 pub mod kws_compile;
+pub mod online_asr;
+pub mod sherpa_files;
 pub mod sherpa_kws;
 pub mod streaming_ctc;
 pub mod stub;
+pub mod text_match;
 
 use smallvec::SmallVec;
 

@@ -275,6 +275,7 @@ async fn perf_executor_fire_path() {
         decision_plan_sha1: "0".repeat(40),
         keyword_text: HashMap::new(),
         rest_endpoint_id: rest.endpoint_id(),
+        verifier: None,
     });
     let (tx, rx) = tokio::sync::mpsc::channel(8);
     for kw in 0..6u16 {
@@ -395,6 +396,7 @@ async fn perf_full_chain_paced() {
         decision_plan_sha1: "0".repeat(40),
         keyword_text: HashMap::new(),
         rest_endpoint_id: rest.endpoint_id(),
+        verifier: None,
     });
 
     let dir = tempfile::tempdir().unwrap();
@@ -565,6 +567,7 @@ async fn perf_cold_first_fire() {
             decision_plan_sha1: "0".repeat(40),
             keyword_text: HashMap::new(),
             rest_endpoint_id: rest.endpoint_id(),
+            verifier: None,
         });
 
         // One intent at a time with a gap, so fire #1 is genuinely first and

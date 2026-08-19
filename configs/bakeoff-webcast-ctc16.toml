@@ -151,7 +151,7 @@ policy           = "confirmed_only"
 [[keywords]]
 market_ticker    = "KX-BENCH-EUROPE"
 phrase           = "europe"
-variants         = ["europe", "europes", "european", "europeans"]
+variants         = ["europe", "europes"]   # 2026-08-19: "european" does not settle a europe market (Q4) — see docs/BAKEOFF.md §D1
 max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"
@@ -255,7 +255,7 @@ policy           = "confirmed_only"
 [[keywords]]
 market_ticker    = "KX-BENCH-PANTHERLAKE"
 phrase           = "panther lake"
-variants         = ["panther lake", "a", "as"]
+variants         = ["panther lake"]   # 2026-08-19: was ["panther lake","a","as"] — fired on every "a" (docs/BAKEOFF.md §D1)
 max_price_cents  = 97
 budget_contracts = 1
 policy           = "confirmed_only"

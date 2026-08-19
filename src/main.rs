@@ -46,10 +46,10 @@ use earshot::kalshi::validator::{
 use earshot::kalshi::KalshiEnv;
 use earshot::pipeline::preproc::PreprocCfg;
 use earshot::pipeline::{
-    prepare_decision_state, run_pipeline, run_pipeline_admitted, run_pipeline_admitted_with_audio,
-    run_pipeline_fanout, run_pipeline_fanout_admitted, run_pipeline_fanout_admitted_with_audio,
+    prepare_decision_state, require_audio_evidence_outcome, run_pipeline,
+    run_pipeline_admitted_with_hooks, run_pipeline_fanout, run_pipeline_fanout_admitted_with_hooks,
     AudioEvidenceForwardReport, DecisionAdmission, PipelineFailure, PipelineFailureKind,
-    PipelineWithAudioFailure, PipelineWithAudioReport,
+    PipelineWithAudioFailure, PipelineWithAudioReport, StageHooks,
 };
 use earshot::risk::{
     spawn_coordinated_kill_watcher, spawn_kill_watcher, CoordinatedKill, KillTrigger, RiskConfig,
@@ -271,6 +271,32 @@ enum Command {
     ///                  unreachable by ANY threshold, because confidence is a
     ///                  geometric mean over the pieces
     /// Read-only diagnosis: it cannot change what fires.
+    /// Retrospective fill-path verifier over a BANKED run (D2 V0): re-decode
+    /// the last --tail-ms of the leg's banked audio before every Confirmed
+    /// detection with an OFFLINE recognizer and say whether the keyword is in
+    /// the text. Zero risk, no live wiring; join the rows with
+    /// scripts/detection-score.py by (keyword, audio_pos_ms) for precision-per-verdict.
+    VerifyReport {
+        #[arg(long)]
+        run_dir: PathBuf,
+        /// sherpa-onnx OFFLINE model dir (Parakeet-TDT: encoder/decoder/joiner + tokens.txt).
+        #[arg(long)]
+        model_dir: PathBuf,
+        /// nemo_transducer | nemo_ctc | transducer
+        #[arg(long, default_value = "nemo_transducer")]
+        model_type: String,
+        #[arg(long, default_value_t = 2)]
+        num_threads: u32,
+        #[arg(long, default_value_t = 3500)]
+        tail_ms: u32,
+        /// Write the JSON report here (default: stdout summary only).
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Override the RunPlan's config (e.g. a copy whose obsolete keys were
+        /// stripped after a schema change); only the keyword list is read.
+        #[arg(long)]
+        config: Option<PathBuf>,
+    },
     DetectExplain {
         #[arg(long)]
         config: PathBuf,
@@ -517,8 +543,9 @@ fn run(command: Command) -> Result<(), AnyErr> {
                     "stub" => Ok(earshot::config::EngineKind::Stub),
                     "sherpa_kws" => Ok(earshot::config::EngineKind::SherpaKws),
                     "streaming_ctc" => Ok(earshot::config::EngineKind::StreamingCtc),
+                    "online_asr" => Ok(earshot::config::EngineKind::OnlineAsr),
                     other => Err(format!(
-                        "unknown engine {other:?} (stub | sherpa_kws | streaming_ctc)"
+                        "unknown engine {other:?} (stub | sherpa_kws | streaming_ctc | online_asr)"
                     )),
                 })
                 .collect::<Result<Vec<_>, _>>()?;
@@ -644,6 +671,50 @@ fn run(command: Command) -> Result<(), AnyErr> {
                 t0.elapsed().as_millis()
             );
             Ok(())
+        }
+        Command::VerifyReport {
+            run_dir,
+            model_dir,
+            model_type,
+            num_threads,
+            tail_ms,
+            out,
+            config,
+        } => {
+            let rep = earshot::verifier::report::run(
+                &run_dir,
+                &model_dir,
+                &model_type,
+                num_threads,
+                tail_ms,
+                config.as_deref(),
+            )?;
+            let n = rep.rows.len();
+            let confirmed = rep.rows.iter().filter(|r| r.verdict == "confirmed").count();
+            println!(
+                "verify-report: {n} Confirmed detections re-decoded — confirmed {confirmed}, rejected {}, decode p50 {} ms p95 {} ms",
+                n - confirmed,
+                rep.decode_p50_us / 1000,
+                rep.decode_p95_us / 1000
+            );
+            for r in &rep.rows {
+                println!(
+                    "  kw{:<3} {:<18} {:<10} @{:>8} ms conf {:.2} intent={} -> {:<9} | {}",
+                    r.keyword,
+                    r.phrase,
+                    r.leg,
+                    r.audio_pos_ms,
+                    r.confidence,
+                    r.intent as u8,
+                    r.verdict,
+                    r.transcript.chars().take(90).collect::<String>()
+                );
+            }
+            if let Some(out) = out {
+                std::fs::write(&out, serde_json::to_string_pretty(&rep)?)?;
+                println!("-> {}", out.display());
+            }
+            return Ok(());
         }
         Command::DetectExplain {
             config,
@@ -3718,6 +3789,32 @@ async fn arm(
         .map(|(index, keyword)| (index as u16, keyword.phrase.clone()))
         .collect();
     let rest_endpoint_id = rest.endpoint_id();
+    // Fill-path verifier (D2): built here so a dead verifier refuses the arm
+    // before any wire; `mode = "off"`/absent = no client anywhere.
+    let mut verifier_build = match cfg.verifier.as_ref() {
+        Some(v) if v.mode != config::VerifierMode::Off => {
+            match earshot::verifier::build_verifier(v, &cfg.keywords) {
+                Ok(b) => Some(b),
+                // GATE: a dead verifier must refuse the arm (it would gate nothing
+                // and the posture would silently be "ungated"). SHADOW: it gates
+                // nothing by design, so a missing model on this host must not cost
+                // the event — warn loudly and run without it.
+                Err(e) if v.mode == config::VerifierMode::Gate => {
+                    return Err(format!("verifier (mode = gate): {e}").into())
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "verifier (mode = shadow) unavailable on this host — running WITHOUT it");
+                    None
+                }
+            }
+        }
+        _ => None,
+    };
+    let verifier_client = verifier_build.as_ref().map(|b| b.client.clone());
+    if let Some(v) = cfg.verifier.as_ref() {
+        tracing::info!(mode = ?v.mode, model_dir = %v.model_dir.display(), tail_ms = v.tail_ms,
+            budget_ms = v.budget_ms, tickers = ?v.tickers, "verifier configured");
+    }
     let ctx = Arc::new(ExecCtx {
         transport,
         rest: rest.clone(),
@@ -3731,6 +3828,7 @@ async fn arm(
         decision_plan_sha1,
         keyword_text,
         rest_endpoint_id,
+        verifier: verifier_client.clone(),
     });
     // Executor on its own OS thread + current-thread runtime: the mpsc send
     // from the detect thread wakes THIS parked thread directly instead of
@@ -3789,6 +3887,7 @@ async fn arm(
     let preproc_cfg = PreprocCfg {
         resample_to_hz: cfg.pipeline.resample_to_hz,
     };
+    let pipeline_verifier = verifier_client.clone();
     // One-shot pre-warm at t=0 of listening: wait_for_books may have burned up
     // to 15 s, so guarantee a hot connection at the instant the pipeline starts.
     rest.warm().await;
@@ -3827,59 +3926,40 @@ async fn arm(
                 ))))
             }
         }
-        match (built, audio_evidence_tap) {
-            (BuiltPipeline::Single { source, detector }, Some(tap)) => {
-                RuntimePipelineResult::audio(run_pipeline_admitted_with_audio(
-                    &event_id,
-                    chunk_ms,
-                    preproc_cfg,
-                    source,
-                    detector,
-                    table,
-                    Some(intent_tx),
-                    perf,
-                    admission,
-                    tap,
-                ))
-            }
-            (BuiltPipeline::Fanout { legs }, Some(tap)) => {
-                RuntimePipelineResult::audio(run_pipeline_fanout_admitted_with_audio(
-                    &event_id,
-                    chunk_ms,
-                    preproc_cfg,
-                    legs,
-                    table,
-                    Some(intent_tx),
-                    perf,
-                    admission,
-                    tap,
-                ))
-            }
-            (BuiltPipeline::Single { source, detector }, None) => {
-                RuntimePipelineResult::plain(run_pipeline_admitted(
-                    &event_id,
-                    chunk_ms,
-                    preproc_cfg,
-                    source,
-                    detector,
-                    table,
-                    Some(intent_tx),
-                    perf,
-                    admission,
-                ))
-            }
-            (BuiltPipeline::Fanout { legs }, None) => {
-                RuntimePipelineResult::plain(run_pipeline_fanout_admitted(
-                    &event_id,
-                    chunk_ms,
-                    preproc_cfg,
-                    legs,
-                    table,
-                    Some(intent_tx),
-                    perf,
-                    admission,
-                ))
-            }
+        let with_audio = audio_evidence_tap.is_some();
+        let hooks = StageHooks {
+            audio_evidence_tap,
+            verifier: pipeline_verifier,
+        };
+        let outcome = match built {
+            BuiltPipeline::Single { source, detector } => run_pipeline_admitted_with_hooks(
+                &event_id,
+                chunk_ms,
+                preproc_cfg,
+                source,
+                detector,
+                table,
+                Some(intent_tx),
+                perf,
+                admission,
+                hooks,
+            ),
+            BuiltPipeline::Fanout { legs } => run_pipeline_fanout_admitted_with_hooks(
+                &event_id,
+                chunk_ms,
+                preproc_cfg,
+                legs,
+                table,
+                Some(intent_tx),
+                perf,
+                admission,
+                hooks,
+            ),
+        };
+        if with_audio {
+            RuntimePipelineResult::audio(require_audio_evidence_outcome(outcome))
+        } else {
+            RuntimePipelineResult::plain(outcome.result)
         }
     });
     // Readiness token (phone lane's dial gate): written ONLY here — after
@@ -4737,6 +4817,21 @@ async fn arm(
     } else {
         (exit, failure)
     };
+    // Verifier teardown: the pipeline and executor are done, so nothing can
+    // request again; drain, join, and carry the per-verdict rows into the report.
+    let verifier_report = verifier_build.take().map(|b| {
+        b.client.shutdown();
+        b.handle.join()
+    });
+    if let Some(v) = verifier_report.as_ref() {
+        tracing::info!(
+            rows = v.rows.len(),
+            dropped = v.dropped,
+            decode_p50_ms = v.decode_p50_us / 1000,
+            decode_p95_ms = v.decode_p95_us / 1000,
+            "verifier finished"
+        );
+    }
     let report_result = finish_run(
         &report_path,
         &state_dir.join(SOURCE_ATTACHED_FILE),
@@ -4744,6 +4839,7 @@ async fn arm(
         report,
         exec_report,
         exit,
+        verifier_report.as_ref(),
         verified_run_plan.as_ref(),
         order_evidence_health_after_select.as_ref(),
         book_tape_summary.as_ref(),
@@ -4823,6 +4919,7 @@ fn terminal_runtime_health(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn finish_run(
     report_path: &Path,
     source_attached_path: &Path,
@@ -4830,6 +4927,7 @@ fn finish_run(
     report: Option<PipelineReport>,
     exec: Option<&ExecReport>,
     exit: ExitRecord,
+    verifier: Option<&earshot::verifier::VerifierReport>,
     run_plan: Option<&VerifiedRunPlan>,
     order_evidence_health: Option<&earshot::kalshi::order_evidence::OrderEvidenceHealth>,
     book_tape_summary: Option<&BookTapeSummary>,
@@ -4901,6 +4999,9 @@ fn finish_run(
     }
 
     let mut json = telemetry::build_run_json(event_id, report.as_ref(), exec, &exit)?;
+    if let Some(v) = verifier {
+        json["verifier"] = serde_json::to_value(v)?;
+    }
     if let Some(run_plan) = run_plan {
         json["run_plan_schema"] = run_plan.plan.schema.into();
         json["run_id"] = run_plan.plan.run_id.clone().into();

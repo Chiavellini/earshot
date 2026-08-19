@@ -75,6 +75,8 @@ support nodes.
 | `runtime.detector.keyword_compile` | [detector-keyword-compile](nodes/detector-keyword-compile.md) |
 | `runtime.detector.sherpa` | [detector-sherpa](nodes/detector-sherpa.md) |
 | `runtime.detector.streaming_ctc` | [detector-streaming-ctc](nodes/detector-streaming-ctc.md) |
+| `runtime.detector.online_asr` | [detector-online-asr](nodes/detector-online-asr.md) |
+| `runtime.verifier` | [verifier](nodes/verifier.md) |
 | `runtime.decision` | [existing decision contract](layers/decision.md) |
 | `runtime.market_validation` | [runtime-market-validation](nodes/runtime-market-validation.md) |
 | `runtime.kalshi.auth` | [existing auth contract](layers/auth.md) |

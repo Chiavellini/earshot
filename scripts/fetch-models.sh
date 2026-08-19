@@ -108,4 +108,20 @@ fetch_ctc_standin() {
 }
 [ "${FETCH_CTC_STANDIN:-0}" = "1" ] && fetch_ctc_standin
 
+# --- online_asr candidates + the fill-path verifier (detection-accuracy program, 2026-08-18) ---
+# `online_asr` engine: any sherpa streaming transducer/CTC. First candidate
+# benched (D1, docs/BAKEOFF.md): LibriSpeech zipformer-en 2023-06-26 — FAILED
+# the bars vs the armed CTC; kept as the engine's integration-test model.
+fetch \
+  "sherpa-onnx-streaming-zipformer-en-2023-06-26" \
+  "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-en-2023-06-26.tar.bz2" \
+  "639e25b578e9e997131402199419c13a941f8e4e198e2da1ce57dbf5cf401282"
+# Verifier (D2): OFFLINE Parakeet-TDT-0.6b-v2 int8 — the unbiased second decode
+# of the last 3.5 s before a fill; p95 < 400 ms on the c6a box (4 threads).
+fetch \
+  "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8" \
+  "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8.tar.bz2" \
+  "157c157bc51155e03e37d2466522a3a737dd9c72bb25f36eb18912964161e1ad"
+
+
 echo "done."

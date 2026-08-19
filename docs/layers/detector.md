@@ -179,6 +179,18 @@ KWS C API does not expose. Two wins over sherpa_kws: real per-hit `confidence`
   lazily on first Session) — sherpa_kws-only runs are unaffected. `scripts/
   fetch-models.sh` fetches the dylib and prints the `export ORT_DYLIB_PATH=…`.
 
+## Engine: online_asr (`online_asr.rs` + `text_match.rs` + `sherpa_files.rs`)
+Any sherpa-onnx streaming ASR model (zipformer transducer, NeMo cache-aware
+conformer, zipformer2-CTC) through sherpa's `OnlineRecognizer`; keywords are
+matched on the emitted **complete-word** stream (`VariantMatcher`), with
+hotword biasing on transducers under `modified_beam_search`. Confirmed tier
+only; `fast_prefixes`/`fast_only` are refused by config validation. Position =
+fed-sample counter (== `audio_consumed_ms`); confidence = 1.0 sentinel (the
+safe crate exposes no posteriors). Contract: `docs/nodes/detector-online-asr.md`.
+Bench verdict D1 (2026-08-19, `docs/BAKEOFF.md`): the off-the-shelf
+zipformer-en-2023-06-26 transducer FAILS the bars vs the armed CTC (recall
+−9 pts, FA/h −42 %, lag +384 ms) — the engine is a sweep harness, not an arm.
+
 ## How to test in isolation
 - **Inspect keyword token-cuts** with `earshot compile-keywords --config <cfg>
   [--model-dir <dir>]`: prints each keyword's Confirmed tokens per variant and,

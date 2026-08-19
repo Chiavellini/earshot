@@ -1,0 +1,116 @@
+[call]
+id    = "as-26aug18"
+audio = "wideband/as-26aug18.wav"
+split = "dev"
+
+# generated {"run_id": "20260818T120000Z-p3-boxq4-r3", "event_id": "KXEARNINGSMENTIONAS-26AUG18-WEBCAST", "leg": "pipe_tuned", "reference": "deepdml/faster-whisper-large-v3-turbo-ct2"}
+
+[[occurrences]]
+phrase   = "olympic"
+onset_ms = 312720
+end_ms   = 313120
+
+[[occurrences]]
+phrase   = "wimbledon"
+onset_ms = 792140
+end_ms   = 792920
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 920500
+end_ms   = 920920
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 928860
+end_ms   = 929220
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 945940
+end_ms   = 946400
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 989820
+end_ms   = 990300
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1056960
+end_ms   = 1057360
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1264860
+end_ms   = 1265280
+
+[[occurrences]]
+phrase   = "foot locker"
+onset_ms = 1460920
+end_ms   = 1461580
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1581860
+end_ms   = 1582220
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1735360
+end_ms   = 1735740
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1840560
+end_ms   = 1841000
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1847540
+end_ms   = 1848020
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1929560
+end_ms   = 1929960
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1953500
+end_ms   = 1953940
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1970340
+end_ms   = 1970740
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1985680
+end_ms   = 1986220
+
+[[occurrences]]
+phrase   = "foot locker"
+onset_ms = 2405280
+end_ms   = 2406140
+
+[[occurrences]]
+phrase   = "foot locker"
+onset_ms = 2480820
+end_ms   = 2481380
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 3190520
+end_ms   = 3190840
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 3204840
+end_ms   = 3205840
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 3215620
+end_ms   = 3216100

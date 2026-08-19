@@ -180,6 +180,7 @@ async fn rig(fix: Arc<FixTransport>, signer: Arc<Signer>, rest_base: String, cap
             decision_plan_sha1: "0".repeat(40),
             keyword_text: HashMap::new(),
             rest_endpoint_id: rest.endpoint_id(),
+            verifier: None,
         }),
         _state: state,
     }

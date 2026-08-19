@@ -1,0 +1,76 @@
+[call]
+id    = "klar-26aug18"
+audio = "wideband/klar-26aug18.wav"
+split = "holdout"
+
+# generated {"run_id": "20260818T123000Z-p3-c4e6eb2f7a23", "event_id": "KXEARNINGSMENTIONKLAR-26AUG18-WEBCAST", "leg": "pipe_tuned", "reference": "deepdml/faster-whisper-large-v3-turbo-ct2"}
+
+[[occurrences]]
+phrase   = "sweden"
+onset_ms = 369160
+end_ms   = 369540
+
+[[occurrences]]
+phrase   = "jp morgan payment"
+onset_ms = 500300
+end_ms   = 501340
+
+[[occurrences]]
+phrase   = "jp morgan payment"
+onset_ms = 506780
+end_ms   = 507720
+
+[[occurrences]]
+phrase   = "profitability"
+onset_ms = 546920
+end_ms   = 547400
+
+[[occurrences]]
+phrase   = "delinquency"
+onset_ms = 552080
+end_ms   = 552560
+
+[[occurrences]]
+phrase   = "tailwind"
+onset_ms = 783040
+end_ms   = 783560
+
+[[occurrences]]
+phrase   = "delinquency"
+onset_ms = 1061440
+end_ms   = 1062040
+
+[[occurrences]]
+phrase   = "delinquency"
+onset_ms = 1066240
+end_ms   = 1066720
+
+[[occurrences]]
+phrase   = "delinquency"
+onset_ms = 1080780
+end_ms   = 1081280
+
+[[occurrences]]
+phrase   = "headwind"
+onset_ms = 1645000
+end_ms   = 1646000
+
+[[occurrences]]
+phrase   = "tailwind"
+onset_ms = 2369600
+end_ms   = 2370200
+
+[[occurrences]]
+phrase   = "walmart"
+onset_ms = 2371200
+end_ms   = 2371700
+
+[[occurrences]]
+phrase   = "walmart"
+onset_ms = 2862860
+end_ms   = 2863240
+
+[[occurrences]]
+phrase   = "sweden"
+onset_ms = 3307920
+end_ms   = 3308540

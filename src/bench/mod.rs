@@ -180,6 +180,14 @@ fn apply_model_dir(cfg: &mut EventConfig, engine: EngineKind, dir: &Path) -> Res
                     .into())
             }
         },
+        EngineKind::OnlineAsr => match cfg.detector.online_asr.as_mut() {
+            Some(s) => s.model_dir = dir.to_path_buf(),
+            None => {
+                return Err("--model-dir with engine=online_asr needs a \
+                            [detector.online_asr] section to override"
+                    .into())
+            }
+        },
         EngineKind::Stub => {
             return Err(
                 "engine=stub loads no model — --model-dir would be ignored, \

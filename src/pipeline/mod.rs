@@ -510,6 +510,7 @@ fn spawn_stages(
     perf: crate::perf::PerfSection,
     leg_label: String,
     audio_evidence_tap: Option<AudioEvidenceTap>,
+    verifier: Option<crate::verifier::VerifierClient>,
 ) -> (ring::RingSender<AudioFrame>, StageHandles) {
     let (src_tx, mut preproc_rx) = ring::ring::<AudioFrame>(FRAME_RING_CAP);
     let (preproc_tx, post_preproc_rx) = ring::ring::<AudioFrame>(FRAME_RING_CAP);
@@ -569,7 +570,9 @@ fn spawn_stages(
         .name(format!("detect{suffix}"))
         .spawn(move || {
             crate::perf::apply_to_current_thread("detect", perf.core_detect, perf.fifo_priority());
-            detect_loop(detect_rx, detector, admission, decide, intent_tx, leg_label)
+            detect_loop(
+                detect_rx, detector, admission, decide, intent_tx, leg_label, verifier,
+            )
         })
         .expect("spawn detect");
 
@@ -594,6 +597,7 @@ fn spawn_stages(
 /// transition. A journal failure is terminal for decisions: the stage keeps
 /// draining so upstream threads cannot deadlock, but performs no more detector
 /// or decision work and the pipeline returns a structured failure.
+#[allow(clippy::too_many_arguments)]
 fn detect_loop(
     mut detect_rx: ring::RingReceiver<AudioChunk>,
     mut detector: Box<dyn Detector>,
@@ -601,12 +605,16 @@ fn detect_loop(
     mut decide: impl FnMut(&Detection) -> Result<Option<DecisionIntent>, DecisionJournalError>,
     intent_tx: Option<tokio::sync::mpsc::Sender<DecisionIntent>>,
     leg_label: String,
+    verifier: Option<crate::verifier::VerifierClient>,
 ) -> DetectOut {
     let mut recorder = LatencyRecorder::new();
     let mut records: Vec<DetectionRecord> = Vec::new();
     let mut chunks = 0u64;
     let mut first_capture_ts = None;
     let mut decision_failed = false;
+    // Verifier tail: the last `tail_ms` of this leg's PCM, snapshotted per
+    // request. Sized on the first chunk (sample rate known then).
+    let mut tail: Option<crate::verifier::PcmTail> = None;
     while let Some(chunk) = detect_rx.recv() {
         if chunk.seq == 0 {
             first_capture_ts = Some(chunk.first_capture_ts);
@@ -686,6 +694,45 @@ fn detect_loop(
                 dropped = tx.try_send(sent).is_err();
             }
             decided.push((det, intent, decision_ts, dropped, false, None));
+        }
+
+        // Verifier (D2): AFTER every intent of this chunk has left the thread.
+        // The tail INCLUDES this chunk (the word just completed in it).
+        if let Some(v) = verifier.as_ref() {
+            let t = tail.get_or_insert_with(|| {
+                crate::verifier::PcmTail::new(v.tail_ms(), chunk.sample_rate_hz)
+            });
+            t.push(&chunk.pcm);
+            for (det, intent, decision_ts, _dropped, journal_failed, suppression) in decided.iter()
+            {
+                if *journal_failed || suppression.is_some() {
+                    continue;
+                }
+                let intent_bearing = intent.is_some();
+                if !v.wants(det.tier, intent_bearing) {
+                    continue;
+                }
+                let posted = v.request(crate::verifier::VerifyRequest {
+                    keyword: det.keyword,
+                    tier: det.tier,
+                    intent_bearing,
+                    source: chunk.source,
+                    leg: leg_label.clone(),
+                    audio_pos_ms: det.audio_pos_ms,
+                    audio_consumed_ms: det.audio_consumed_ms,
+                    pcm: t.snapshot(),
+                    sample_rate_hz: chunk.sample_rate_hz,
+                    decision_ts: intent.as_ref().map(|_| *decision_ts),
+                });
+                if posted.is_err() {
+                    tracing::warn!(
+                        keyword = det.keyword.0,
+                        leg = %leg_label,
+                        intent_bearing,
+                        "verifier queue full — request dropped (executor will not wait)"
+                    );
+                }
+            }
         }
 
         // Off the critical span: per-chunk edges, then per-detection
@@ -808,9 +855,9 @@ fn consolidate_audio_evidence(per_leg: Vec<AudioEvidenceLegReport>) -> AudioEvid
     }
 }
 
-struct PipelineAssemblyOutcome {
-    result: Result<PipelineReport, PipelineFailure>,
-    audio_evidence: Option<AudioEvidenceForwardReport>,
+pub struct PipelineAssemblyOutcome {
+    pub result: Result<PipelineReport, PipelineFailure>,
+    pub audio_evidence: Option<AudioEvidenceForwardReport>,
 }
 
 fn require_audio_evidence(
@@ -901,6 +948,7 @@ pub fn run_pipeline_admitted(
         perf,
         admission,
         None,
+        None,
     )
     .result
 }
@@ -936,7 +984,85 @@ pub fn run_pipeline_admitted_with_audio(
         perf,
         admission,
         Some(audio_evidence_tap),
+        None,
     ))
+}
+
+/// Optional stage hooks for the live arm composer: the durable audio-evidence
+/// tap and the fill-path verifier client (detection-accuracy program D2). Bench
+/// and replay callers use the plain entry points, which pass none.
+#[derive(Default)]
+pub struct StageHooks {
+    pub audio_evidence_tap: Option<AudioEvidenceTap>,
+    pub verifier: Option<crate::verifier::VerifierClient>,
+}
+
+/// Single-source composer with hooks. With an audio tap the outcome is the
+/// audio-evidence-checked shape (`require_audio_evidence`); without one it is
+/// the plain result. Callers that need the typed audio report should keep
+/// using `run_pipeline_admitted_with_audio` unless they also need a verifier.
+#[allow(clippy::too_many_arguments)]
+pub fn run_pipeline_admitted_with_hooks(
+    event_id: &str,
+    chunk_ms: u32,
+    preproc_cfg: preproc::PreprocCfg,
+    source: Box<dyn AudioSource>,
+    detector: Box<dyn Detector>,
+    table: DecisionTable,
+    intent_tx: Option<tokio::sync::mpsc::Sender<crate::types::DecisionIntent>>,
+    perf: crate::perf::PerfSection,
+    admission: DecisionAdmission,
+    hooks: StageHooks,
+) -> PipelineAssemblyOutcome {
+    run_pipeline_admitted_inner(
+        event_id,
+        chunk_ms,
+        preproc_cfg,
+        source,
+        detector,
+        table,
+        intent_tx,
+        perf,
+        admission,
+        hooks.audio_evidence_tap,
+        hooks.verifier,
+    )
+}
+
+/// Fanout composer with hooks (see `run_pipeline_admitted_with_hooks`).
+#[allow(clippy::too_many_arguments)]
+pub fn run_pipeline_fanout_admitted_with_hooks(
+    event_id: &str,
+    chunk_ms: u32,
+    preproc_cfg: preproc::PreprocCfg,
+    legs: Vec<PipelineLeg>,
+    table: DecisionTable,
+    intent_tx: Option<tokio::sync::mpsc::Sender<DecisionIntent>>,
+    perf: crate::perf::PerfSection,
+    admission: DecisionAdmission,
+    hooks: StageHooks,
+) -> PipelineAssemblyOutcome {
+    run_pipeline_fanout_admitted_inner(
+        event_id,
+        chunk_ms,
+        preproc_cfg,
+        legs,
+        table,
+        intent_tx,
+        perf,
+        admission,
+        hooks.audio_evidence_tap,
+        hooks.verifier,
+    )
+}
+
+/// The audio-evidence-checked view of a hooks outcome — same contract as
+/// `run_pipeline_admitted_with_audio` (`published_frames` is the exact count
+/// for `AudioEvidenceBank::finish`).
+pub fn require_audio_evidence_outcome(
+    outcome: PipelineAssemblyOutcome,
+) -> Result<PipelineWithAudioReport, PipelineWithAudioFailure> {
+    require_audio_evidence(outcome)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -951,6 +1077,7 @@ fn run_pipeline_admitted_inner(
     perf: crate::perf::PerfSection,
     admission: DecisionAdmission,
     audio_evidence_tap: Option<AudioEvidenceTap>,
+    verifier: Option<crate::verifier::VerifierClient>,
 ) -> PipelineAssemblyOutcome {
     // Read before the detector is moved into its thread.
     let engine = detector.engine_name();
@@ -966,6 +1093,7 @@ fn run_pipeline_admitted_inner(
         perf,
         String::new(), // single-source records carry no leg label
         audio_evidence_tap,
+        verifier,
     );
 
     // Drive the source on a current-thread runtime. IO is enabled because
@@ -1078,6 +1206,7 @@ pub fn run_pipeline_fanout_admitted(
         perf,
         admission,
         None,
+        None,
     )
     .result
 }
@@ -1109,6 +1238,7 @@ pub fn run_pipeline_fanout_admitted_with_audio(
         perf,
         admission,
         Some(audio_evidence_tap),
+        None,
     ))
 }
 
@@ -1123,6 +1253,7 @@ fn run_pipeline_fanout_admitted_inner(
     perf: crate::perf::PerfSection,
     admission: DecisionAdmission,
     audio_evidence_tap: Option<AudioEvidenceTap>,
+    verifier: Option<crate::verifier::VerifierClient>,
 ) -> PipelineAssemblyOutcome {
     assert!(
         legs.len() >= 2,
@@ -1168,6 +1299,7 @@ fn run_pipeline_fanout_admitted_inner(
             perf,
             leg.label.clone(),
             leg_audio_evidence_tap,
+            verifier.clone(),
         );
         let source = leg.source;
         let label = leg.label.clone();
@@ -1198,6 +1330,9 @@ fn run_pipeline_fanout_admitted_inner(
     // leg; this explicit drop is what lets a clean bank later prove producer
     // quiescence after all forwarding threads join.
     drop(audio_evidence_tap);
+    // Same for the verifier client: legs hold clones; ours must not keep the
+    // verifier's request queue open past the last detect thread.
+    drop(verifier);
     // The per-leg clones own the channel now; drop ours so the executor sees
     // all senders gone once every leg's detect thread ends.
     drop(intent_tx);
@@ -1741,5 +1876,94 @@ mod tests {
             verify_audio_evidence(&paths.manifest, &paths.commit).unwrap(),
             commit
         );
+    }
+
+    /// Verifier hook (D2): two fanout legs, one shared one-shot table ⇒ exactly
+    /// ONE intent-bearing request per keyword (the winning leg's tail), and
+    /// under `sample = all_confirmed` every other Confirmed detection is a
+    /// non-intent request. The tail delivered to the verifier ends at the
+    /// firing chunk and is at most `tail_ms` long. Nothing gates (shadow).
+    #[test]
+    fn fanout_verifier_requests_once_per_keyword_with_the_leg_tail() {
+        use crate::verifier::{build_with_transcriber, transcriber::MockTranscriber};
+        let dir = tempfile::tempdir().unwrap();
+        let wav = dir.path().join("verify.wav");
+        FixtureSpec {
+            sample_rate_hz: 8_000,
+            total_ms: 800,
+            tone_hz: 440.0,
+            amplitude: 0.4,
+            bursts: vec![Burst {
+                onset_ms: 0,
+                dur_ms: 800,
+            }],
+        }
+        .write_wav(&wav)
+        .unwrap();
+        let mut kw = audio_keyword("KX-VERIFY");
+        kw.policy = Policy::ConfirmedOnly;
+        let kws = [kw];
+        let section: crate::config::VerifierSection = toml::from_str(
+            "mode = \"shadow\"\nmodel_dir = \"/nonexistent\"\nsample = \"all_confirmed\"\ntail_ms = 1000\n",
+        )
+        .unwrap();
+        let build = build_with_transcriber(
+            &section,
+            &kws,
+            Box::new(MockTranscriber(Box::new(
+                |_| Ok("nothing said here".into()),
+            ))),
+        );
+        let legs = vec![
+            PipelineLeg {
+                label: "phone".into(),
+                source: Box::new(ReplaySource::from_wav(&wav, 0.0, SourceId(1)).unwrap()),
+                detector: Box::new(TwoHitDetector { hits: 0 }),
+            },
+            PipelineLeg {
+                label: "webcast".into(),
+                source: Box::new(ReplaySource::from_wav(&wav, 0.0, SourceId(2)).unwrap()),
+                detector: Box::new(TwoHitDetector { hits: 0 }),
+            },
+        ];
+        let table = DecisionTable::from_keywords(&kws);
+        let outcome = run_pipeline_fanout_admitted_with_hooks(
+            "VERIFY-FANOUT",
+            160,
+            preproc::PreprocCfg::default(),
+            legs,
+            table,
+            None,
+            Default::default(),
+            DecisionAdmission::always_open(),
+            StageHooks {
+                audio_evidence_tap: None,
+                verifier: Some(build.client.clone()),
+            },
+        );
+        let report = outcome.result.unwrap();
+        // 2 legs × 2 detections = 4 Confirmed detections, exactly one became an intent
+        assert_eq!(report.detections.len(), 4);
+        assert_eq!(
+            report
+                .detections
+                .iter()
+                .filter(|d| d.intent.is_some())
+                .count(),
+            1
+        );
+        build.client.shutdown();
+        let vr = build.handle.join();
+        assert_eq!(
+            vr.rows.len(),
+            4,
+            "all_confirmed ⇒ every Confirmed detection was verified: {vr:?}"
+        );
+        assert_eq!(vr.rows.iter().filter(|r| r.intent_bearing).count(), 1);
+        for r in &vr.rows {
+            assert!(r.tail_ms > 0 && r.tail_ms <= 1000, "{r:?}");
+            assert_eq!(r.verdict, crate::verifier::Verdict::Rejected);
+        }
+        assert_eq!(vr.dropped, 0);
     }
 }

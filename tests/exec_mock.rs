@@ -146,6 +146,7 @@ async fn rig_kws(
             decision_plan_sha1: "0".repeat(40),
             keyword_text: HashMap::new(),
             rest_endpoint_id: rest.endpoint_id(),
+            verifier: None,
         }),
         _state: state,
     }
@@ -888,4 +889,209 @@ async fn kill_switch_stop_file_cancels_and_disarms() {
         gate.check_order(TICKER, 1, 1, 0, 0),
         Err(earshot::risk::Refusal::Killed)
     );
+}
+
+// ---------------------------------------------------------------------------
+// Fill-path verifier (detection-accuracy program D2, 2026-08-18)
+// ---------------------------------------------------------------------------
+
+mod verifier_gate {
+    use super::*;
+    use earshot::config::VerifierSection;
+    use earshot::verifier::{
+        build_with_transcriber, transcriber::MockTranscriber, VerifierBuild, VerifyRequest,
+    };
+
+    fn section(mode: &str, on_timeout: &str, budget_ms: u32) -> VerifierSection {
+        toml::from_str(&format!(
+            "mode = {mode:?}\nmodel_dir = \"/nonexistent\"\nbudget_ms = {budget_ms}\non_timeout = {on_timeout:?}\ntickers = [\"{TICKER}\"]\n"
+        ))
+        .unwrap()
+    }
+
+    fn verifier(
+        section: &VerifierSection,
+        kws: &[KeywordConfig],
+        text: &'static str,
+        delay_ms: u64,
+    ) -> VerifierBuild {
+        build_with_transcriber(
+            section,
+            kws,
+            Box::new(MockTranscriber(Box::new(move |_| {
+                std::thread::sleep(Duration::from_millis(delay_ms));
+                Ok(text.to_string())
+            }))),
+        )
+    }
+
+    fn post(v: &VerifierBuild, kw: u16, i: &DecisionIntent) {
+        v.client
+            .request(VerifyRequest {
+                keyword: KeywordId(kw),
+                tier: Tier::Confirmed,
+                intent_bearing: true,
+                source: earshot::types::SourceId(0),
+                leg: "t".into(),
+                audio_pos_ms: 1000,
+                audio_consumed_ms: 1000,
+                pcm: Arc::from(vec![0i16; 16_000]),
+                sample_rate_hz: 16_000,
+                decision_ts: Some(i.decision_ts),
+            })
+            .unwrap();
+    }
+
+    /// gate + Rejected ⇒ refusal `verifier_veto`, nothing sent, ledger untouched.
+    #[tokio::test]
+    async fn gate_veto_sends_nothing() {
+        let server = MockServer::start().await; // no POST mock: a send would 404
+        let mut rig = rig(&server, 90, 1, false, Duration::from_secs(5)).await;
+        let kws = vec![keyword(90, 1)];
+        let v = verifier(
+            &section("gate", "send", 500),
+            &kws,
+            "totally unrelated words",
+            0,
+        );
+        Arc::get_mut(&mut rig.ctx).unwrap().verifier = Some(v.client.clone());
+        let i = intent_for(0, 90, 1, Tier::Confirmed);
+        post(&v, 0, &i);
+        let (tx, rx) = tokio::sync::mpsc::channel(8);
+        tx.send(i).await.unwrap();
+        drop(tx);
+        let report = run_executor(rx, rig.ctx.clone()).await;
+        let o = &report.orders[0];
+        assert_eq!(o.refusal.as_deref(), Some("verifier_veto"), "{o:?}");
+        assert_eq!(o.verify_verdict.as_deref(), Some("rejected"));
+        assert_eq!(o.verify_gated, Some(true));
+        assert!(o.send_ts.is_none());
+        assert_eq!(rig.ctx.gate.ledger_spent_cents(), 0);
+        v.client.shutdown();
+        assert_eq!(v.handle.join().rows.len(), 1);
+    }
+
+    /// gate + Confirmed ⇒ proceeds to the wire (dry_run here so no server needed).
+    #[tokio::test]
+    async fn gate_confirmed_proceeds() {
+        let server = MockServer::start().await;
+        let mut rig = rig(&server, 90, 1, true, Duration::from_secs(5)).await;
+        let kws = vec![keyword(90, 1)];
+        let v = verifier(
+            &section("gate", "send", 500),
+            &kws,
+            "the test word was said",
+            0,
+        );
+        Arc::get_mut(&mut rig.ctx).unwrap().verifier = Some(v.client.clone());
+        let i = intent_for(0, 90, 1, Tier::Confirmed);
+        post(&v, 0, &i);
+        let (tx, rx) = tokio::sync::mpsc::channel(8);
+        tx.send(i).await.unwrap();
+        drop(tx);
+        let report = run_executor(rx, rig.ctx.clone()).await;
+        let o = &report.orders[0];
+        assert_eq!(o.verify_verdict.as_deref(), Some("confirmed"), "{o:?}");
+        assert_eq!(
+            o.refusal.as_deref(),
+            Some("dry_run"),
+            "reached the dry-run stop, i.e. past the hold"
+        );
+        v.client.shutdown();
+    }
+
+    /// gate + slow verifier: `on_timeout = send` proceeds with verdict `timeout`;
+    /// `on_timeout = hold` refuses as `verifier_timeout`. Both bounded by budget.
+    #[tokio::test]
+    async fn gate_timeout_policy() {
+        for (policy, want_refusal) in [("send", "dry_run"), ("hold", "verifier_timeout")] {
+            let server = MockServer::start().await;
+            let mut rig = rig(&server, 90, 1, true, Duration::from_secs(5)).await;
+            let kws = vec![keyword(90, 1)];
+            let v = verifier(&section("gate", policy, 150), &kws, "test", 2000);
+            Arc::get_mut(&mut rig.ctx).unwrap().verifier = Some(v.client.clone());
+            let i = intent_for(0, 90, 1, Tier::Confirmed);
+            post(&v, 0, &i);
+            let (tx, rx) = tokio::sync::mpsc::channel(8);
+            tx.send(i).await.unwrap();
+            drop(tx);
+            let t0 = std::time::Instant::now();
+            let report = run_executor(rx, rig.ctx.clone()).await;
+            let waited = t0.elapsed();
+            let o = &report.orders[0];
+            assert_eq!(
+                o.verify_verdict.as_deref(),
+                Some("timeout"),
+                "{policy}: {o:?}"
+            );
+            assert_eq!(o.refusal.as_deref(), Some(want_refusal), "{policy}: {o:?}");
+            assert!(
+                waited < Duration::from_millis(1500),
+                "{policy}: hold must be bounded by budget, took {waited:?}"
+            );
+            assert!(o.verify_wait_ns.unwrap() >= 100_000_000, "{policy}: {o:?}");
+            v.client.shutdown();
+            v.handle.join();
+        }
+    }
+
+    /// shadow mode never waits: the intent proceeds immediately even though the
+    /// verifier is slow; the row is still produced for the study.
+    #[tokio::test]
+    async fn shadow_never_waits() {
+        let server = MockServer::start().await;
+        let mut rig = rig(&server, 90, 1, true, Duration::from_secs(5)).await;
+        let kws = vec![keyword(90, 1)];
+        let v = verifier(&section("shadow", "send", 500), &kws, "test", 700);
+        Arc::get_mut(&mut rig.ctx).unwrap().verifier = Some(v.client.clone());
+        let i = intent_for(0, 90, 1, Tier::Confirmed);
+        post(&v, 0, &i);
+        let (tx, rx) = tokio::sync::mpsc::channel(8);
+        tx.send(i).await.unwrap();
+        drop(tx);
+        let t0 = std::time::Instant::now();
+        let report = run_executor(rx, rig.ctx.clone()).await;
+        assert!(
+            t0.elapsed() < Duration::from_millis(400),
+            "shadow must not hold: {:?}",
+            t0.elapsed()
+        );
+        let o = &report.orders[0];
+        assert_eq!(o.verify_gated, Some(false));
+        assert!(o.verify_wait_ns.is_none());
+        assert_eq!(o.refusal.as_deref(), Some("dry_run"));
+        v.client.shutdown();
+        assert_eq!(
+            v.handle.join().rows.len(),
+            1,
+            "shadow still records the verdict"
+        );
+    }
+
+    /// A 1¢ observe intent never waits, even in gate mode with an opted-in ticker.
+    #[tokio::test]
+    async fn observe_never_waits_in_gate_mode() {
+        let server = MockServer::start().await;
+        let mut rig = rig(&server, 1, 1, false, Duration::from_secs(5)).await;
+        let kws = vec![keyword(1, 1)];
+        let v = verifier(&section("gate", "hold", 500), &kws, "nothing", 700);
+        Arc::get_mut(&mut rig.ctx).unwrap().verifier = Some(v.client.clone());
+        let i = intent_for(0, 1, 1, Tier::Confirmed);
+        post(&v, 0, &i);
+        let (tx, rx) = tokio::sync::mpsc::channel(8);
+        tx.send(i).await.unwrap();
+        drop(tx);
+        let t0 = std::time::Instant::now();
+        let report = run_executor(rx, rig.ctx.clone()).await;
+        assert!(
+            t0.elapsed() < Duration::from_millis(400),
+            "{:?}",
+            t0.elapsed()
+        );
+        let o = &report.orders[0];
+        assert_eq!(o.verify_gated, Some(false));
+        assert_eq!(report.observe_noncross, 1);
+        assert!(o.refusal.is_none(), "{o:?}");
+        v.client.shutdown();
+    }
 }

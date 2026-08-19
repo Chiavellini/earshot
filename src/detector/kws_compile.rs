@@ -89,6 +89,12 @@ impl TokenTable {
         Ok(TokenTable { scores })
     }
 
+    /// Every (piece, unigram log-prob) pair, unordered. Used to synthesize a
+    /// `bpe.vocab` for sherpa's hotword machinery (`sherpa_files::ensure_bpe_vocab`).
+    pub fn pieces(&self) -> impl Iterator<Item = (&str, f32)> {
+        self.scores.iter().map(|(p, s)| (p.as_str(), *s))
+    }
+
     /// SentencePiece unigram encode: per word (with the `▁` marker glued to
     /// its front), Viterbi over piece boundaries maximizing summed piece
     /// log-probs. Matches spm's own segmentation (pinned vectors below).

@@ -1,0 +1,283 @@
+# WEBCAST FANOUT ARM TEMPLATE — direct-m3u8 events (IR players, FOMC).
+# The production armed posture from the 07-22 race findings (docs/RACE-STRATEGY.md §5):
+#   leg 1 "streamlink"  — edge-join primary: the measured ladder winner
+#                         (−11.7..−13.65 s vs default join, RUNBOOK 07-17 + 07-20)
+#   leg 2 "pipe_tuned"  — tuned-ffmpeg backstop (-live_start_index -1 = the only
+#                         flag that moves the join point; −10.6..−11.65 s vs default)
+# Both legs run FULL detect chains OR-ed at the one-shot decision table
+# ([arbiter] mode = "fanout") — different legs hear different audio (07-22 TARI).
+#
+# Instantiate per event with scripts/stage-webcast-arm.sh, then:
+#   1. paste the `earshot prepare` keyword/risk sections over the placeholders,
+#   2. on call morning write the m3u8:  echo "<m3u8>" > ~/<lc>-stream.url
+#   3. launch attended: scripts/launch-webcast.sh --config <this> --account <env> \
+#        --wait-live ~/<lc>-stream.url --wait-kind hls
+# The live gate lives in launch-webcast.sh (NEVER inside a source cmd —
+# 07-22 post-mortems #1/#2). YouTube events: do NOT use this template; keep
+# the frozen yt-dlp leg (configs/webcast-tsla.toml) until a streamlink-vs-
+# YouTube ladder number exists (capture first).
+# Posture: mention-probe observe (1¢ non-crossing) — fill posture is gated on
+# the Phase-4 precision verdict (docs/RACE-STRATEGY.md).
+
+[event]
+id        = "KXEARNINGSMENTIONDE-26AUG20-WEBCAST"
+starts_at = "2026-08-20T00:00:00Z"  # TODO: set the real call time (UTC) — slate had none
+
+[pipeline]
+chunk_ms       = 80
+resample_to_hz = 16000
+
+[detector]
+engine = "streaming_ctc"
+
+[detector.streaming_ctc]
+model_dir         = "models/sherpa-onnx-streaming-zipformer-ctc-small-2024-03-18"
+num_threads       = 1
+default_threshold = 0.15
+refractory_ms     = 2000
+
+# sherpa_kws block kept so the engine reverts with a one-line change above.
+
+[detector.sherpa_kws]
+model_dir         = "models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
+num_threads       = 1
+max_active_paths  = 4
+default_threshold = 0.20
+default_boost     = 2.0
+refractory_ms     = 2000
+fp32              = true
+
+[arbiter]
+mode = "fanout"
+
+[[sources]]
+kind = "pipe"
+label = "streamlink"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "streamlink --stdout --hls-live-edge 1 --hls-segment-stream-data --hls-playlist-reload-time segment \"$(cat $HOME/de-stream.url)\" best | ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 2000000 -analyzeduration 5000000 -i - -vn -f s16le -ac 1 -ar 16000 -",
+]
+
+[[sources]]
+kind = "pipe"
+label = "pipe_tuned"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 2000000 -analyzeduration 5000000 -live_start_index -1 -http_persistent 1 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2 -i \"$(cat $HOME/de-stream.url)\" -vn -f s16le -ac 1 -ar 16000 -",
+]
+
+# NOTE (SUPERSEDED 2026-07-24 night — kept as the evidence trail): this file
+# used to say the edge-fetcher leg delivers "+0 ms" and that "the gap is decode,
+# not acquisition". BOTH clauses are now refuted (docs/LATENCY-PROOF.md parts
+# 1-3): the AXP NFL race decomposed to 1.241 s FEED + 0.289 s OURS, so the gap
+# is NOT decode; and the +0 ms reading came from an instrument that compared two
+# ffmpeg legs to each other and was structurally blind to a cost they shared.
+# Measured against the encoder instead, a speculative fetcher runs 4.5 s fresher
+# than this template's legs with ~5x less run-to-run variance.
+#
+# THIS TEMPLATE IS DELIBERATELY UNCHANGED — it is the proven stack, and FOMC
+# 2026-07-29 runs it. The speculative posture lives in
+# configs/webcast-fanout-arm-spec.toml (staged with
+# `stage-webcast-arm.sh --speculative`) and is gated on off-FOMC validation,
+# because its probing could get the box's IP rate-limited and that would take
+# every leg down, not just one.
+
+[kalshi]
+series = "KXEARNINGSMENTIONDE"
+env = "prod"
+
+# ── Placeholders below: replace with the `earshot prepare` output ──────────
+[risk]
+max_order_notional_cents = 100
+book_stale_ms            = 2000
+audio_stale_ms           = 2000
+allowlist_tickers = [
+  "KXEARNINGSMENTIONDE-26AUG20-AI",
+  "KXEARNINGSMENTIONDE-26AUG20-AUTO",
+  "KXEARNINGSMENTIONDE-26AUG20-DIVI",
+  "KXEARNINGSMENTIONDE-26AUG20-EFFI",
+  "KXEARNINGSMENTIONDE-26AUG20-EXCA",
+  "KXEARNINGSMENTIONDE-26AUG20-FERT",
+  "KXEARNINGSMENTIONDE-26AUG20-HEAD",
+  "KXEARNINGSMENTIONDE-26AUG20-IRAN",
+  "KXEARNINGSMENTIONDE-26AUG20-MANU",
+  "KXEARNINGSMENTIONDE-26AUG20-MIDD",
+  "KXEARNINGSMENTIONDE-26AUG20-OIL",
+  "KXEARNINGSMENTIONDE-26AUG20-REPA",
+  "KXEARNINGSMENTIONDE-26AUG20-TAIL",
+  "KXEARNINGSMENTIONDE-26AUG20-TARI",
+  "KXEARNINGSMENTIONDE-26AUG20-WARR",
+  "KXEARNINGSMENTIONDE-26AUG20-WEAT",
+]
+
+# AI / Artificial Intelligence (KXEARNINGSMENTIONDE-26AUG20-AI) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+# DROPPED ultra-short variant "ai" — <3 chars matches a syllable, not a word (measured: 38 FA in one event set). Re-add deliberately if this phrasing matters, and own the precision cost.
+# DROPPED ultra-short variant "ais" — <3 chars matches a syllable, not a word (measured: 38 FA in one event set). Re-add deliberately if this phrasing matters, and own the precision cost.
+# Fill-path verifier — SHADOW (detection-accuracy program D2, 2026-08-19).
+# Records a second-opinion verdict for EVERY Confirmed detection (offline
+# Parakeet-TDT-0.6b re-decode of the last 3.5 s of the firing leg) into
+# report.json["verifier"]; gates NOTHING. If the model dir is missing on the
+# host, shadow mode warns and the arm runs without it. Flip to mode = "gate" +
+# tickers = [<generic fill words>] only after >= 3 shadow events
+# (docs/BAKEOFF.md §D2, docs/nodes/verifier.md).
+[verifier]
+mode        = "shadow"
+model_dir   = "models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8"
+model_type  = "nemo_transducer"
+num_threads = 2
+tail_ms     = 3500
+budget_ms   = 500
+on_timeout  = "send"
+sample      = "all_confirmed"
+tickers     = []
+
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONDE-26AUG20-AI"
+phrase           = "a i"
+variants         = ["a i", "artificial intelligence"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Automation (KXEARNINGSMENTIONDE-26AUG20-AUTO) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONDE-26AUG20-AUTO"
+phrase           = "automation"
+variants         = ["automation", "automations"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Dividend (KXEARNINGSMENTIONDE-26AUG20-DIVI) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONDE-26AUG20-DIVI"
+phrase           = "dividend"
+variants         = ["dividend", "dividends"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Efficiency (KXEARNINGSMENTIONDE-26AUG20-EFFI) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONDE-26AUG20-EFFI"
+phrase           = "efficiency"
+variants         = ["efficiency", "efficiencys"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Excavator (KXEARNINGSMENTIONDE-26AUG20-EXCA) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONDE-26AUG20-EXCA"
+phrase           = "excavator"
+variants         = ["excavator", "excavators"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Fertilizer (KXEARNINGSMENTIONDE-26AUG20-FERT) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONDE-26AUG20-FERT"
+phrase           = "fertilizer"
+variants         = ["fertilizer", "fertilizers"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Headwind (KXEARNINGSMENTIONDE-26AUG20-HEAD) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONDE-26AUG20-HEAD"
+phrase           = "headwind"
+variants         = ["headwind", "headwinds"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Iran / Middle East (KXEARNINGSMENTIONDE-26AUG20-IRAN) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONDE-26AUG20-IRAN"
+phrase           = "iran"
+variants         = ["iran", "irans", "middle east"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Manufacturing (KXEARNINGSMENTIONDE-26AUG20-MANU) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONDE-26AUG20-MANU"
+phrase           = "manufacturing"
+variants         = ["manufacturing", "manufacturings"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Middle East (KXEARNINGSMENTIONDE-26AUG20-MIDD) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONDE-26AUG20-MIDD"
+phrase           = "middle east"
+variants         = ["middle east"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Oil / Gas / Gasoline (KXEARNINGSMENTIONDE-26AUG20-OIL) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONDE-26AUG20-OIL"
+phrase           = "oil"
+variants         = ["oil", "oils", "gas", "gasoline", "gasolines"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Repair (KXEARNINGSMENTIONDE-26AUG20-REPA) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONDE-26AUG20-REPA"
+phrase           = "repair"
+variants         = ["repair", "repairs"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Tailwind (KXEARNINGSMENTIONDE-26AUG20-TAIL) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONDE-26AUG20-TAIL"
+phrase           = "tailwind"
+variants         = ["tailwind", "tailwinds"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Tariff (KXEARNINGSMENTIONDE-26AUG20-TARI) — corpus-tuned; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONDE-26AUG20-TARI"
+phrase           = "tariff"
+variants         = ["tariff", "tariffs"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+confirmed_threshold = 0.1
+boost            = 3.0
+
+# Warranty (KXEARNINGSMENTIONDE-26AUG20-WARR) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONDE-26AUG20-WARR"
+phrase           = "warranty"
+variants         = ["warranty", "warrantys"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Weather (KXEARNINGSMENTIONDE-26AUG20-WEAT) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+# ⚠⚠ HIGH-RISK KEYWORD — collides with "whether": a TRUE HOMOPHONE — no acoustic model separates these, ever.
+                 # This is a property of English, not of one corpus: it recurs on EVERY call where this keyword is armed. Kept here on purpose (dropping it forfeits the market) — decide deliberately before arming, and expect fires that settle NO. See docs/BAKEOFF.md §Keyword arming blocklist.
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONDE-26AUG20-WEAT"
+phrase           = "weather"
+variants         = ["weather", "weathers"]
+max_price_cents  = 1
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# --- prepare summary: 16 tradeable, 0 skipped (said-N-times), 0 skipped (unencodable), 0 variants dropped of 16 markets ---

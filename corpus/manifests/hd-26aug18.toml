@@ -1,0 +1,211 @@
+[call]
+id    = "hd-26aug18"
+audio = "wideband/hd-26aug18.wav"
+split = "dev"
+
+# generated {"run_id": "20260818T130000Z-p3-82e3f1275417-r2", "event_id": "KXEARNINGSMENTIONHD-26AUG18-BOX-WEBCAST", "leg": "streamlink", "reference": "deepdml/faster-whisper-large-v3-turbo-ct2"}
+
+[[occurrences]]
+phrase   = "mexico"
+onset_ms = 884680
+end_ms   = 885140
+
+[[occurrences]]
+phrase   = "lumber"
+onset_ms = 1224120
+end_ms   = 1224520
+
+[[occurrences]]
+phrase   = "innovation"
+onset_ms = 1311100
+end_ms   = 1311700
+
+[[occurrences]]
+phrase   = "innovation"
+onset_ms = 1412620
+end_ms   = 1413300
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1520360
+end_ms   = 1520940
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 1556000
+end_ms   = 1556420
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 2002000
+end_ms   = 2002380
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 2034200
+end_ms   = 2034560
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 2045640
+end_ms   = 2046080
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 2158520
+end_ms   = 2159000
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 2186920
+end_ms   = 2187300
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 2215620
+end_ms   = 2215900
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 2246960
+end_ms   = 2248100
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 2283900
+end_ms   = 2285260
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 2364580
+end_ms   = 2365440
+
+[[occurrences]]
+phrase   = "volatility"
+onset_ms = 2442920
+end_ms   = 2443480
+
+[[occurrences]]
+phrase   = "mexico"
+onset_ms = 2518140
+end_ms   = 2518620
+
+[[occurrences]]
+phrase   = "mexico"
+onset_ms = 2537680
+end_ms   = 2538060
+
+[[occurrences]]
+phrase   = "mexico"
+onset_ms = 2555620
+end_ms   = 2555940
+
+[[occurrences]]
+phrase   = "volatility"
+onset_ms = 2628200
+end_ms   = 2629020
+
+[[occurrences]]
+phrase   = "innovation"
+onset_ms = 2846440
+end_ms   = 2847380
+
+[[occurrences]]
+phrase   = "innovation"
+onset_ms = 2853800
+end_ms   = 2854800
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 3100180
+end_ms   = 3100580
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 3112500
+end_ms   = 3112860
+
+[[occurrences]]
+phrase   = "volatility"
+onset_ms = 3172980
+end_ms   = 3173720
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 3179520
+end_ms   = 3180080
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 3195100
+end_ms   = 3195400
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 3243560
+end_ms   = 3244000
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 3268180
+end_ms   = 3268600
+
+[[occurrences]]
+phrase   = "inflation"
+onset_ms = 3314200
+end_ms   = 3314800
+
+[[occurrences]]
+phrase   = "volatility"
+onset_ms = 3408880
+end_ms   = 3409380
+
+[[occurrences]]
+phrase   = "weather"
+onset_ms = 3439060
+end_ms   = 3439360
+
+[[occurrences]]
+phrase   = "weather"
+onset_ms = 3445640
+end_ms   = 3446060
+
+[[occurrences]]
+phrase   = "weather"
+onset_ms = 3492340
+end_ms   = 3492520
+
+[[occurrences]]
+phrase   = "weather"
+onset_ms = 3539640
+end_ms   = 3540020
+
+[[occurrences]]
+phrase   = "storm"
+onset_ms = 3577280
+end_ms   = 3577520
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 3751780
+end_ms   = 3752180
+
+[[occurrences]]
+phrase   = "headwind"
+onset_ms = 3766940
+end_ms   = 3767340
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 3890100
+end_ms   = 3890400
+
+[[occurrences]]
+phrase   = "headwind"
+onset_ms = 3895100
+end_ms   = 3895640
+
+[[occurrences]]
+phrase   = "tariff"
+onset_ms = 4213780
+end_ms   = 4214120

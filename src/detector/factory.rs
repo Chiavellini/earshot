@@ -15,6 +15,8 @@ pub enum DetectorBuildError {
     SherpaKws(String),
     #[error("streaming_ctc: {0}")]
     StreamingCtc(String),
+    #[error("online_asr: {0}")]
+    OnlineAsr(String),
 }
 
 /// Refuse-to-arm on any failure (P3: never start a session with a dead or
@@ -47,6 +49,17 @@ pub fn build_detector(cfg: &EventConfig) -> Result<Box<dyn Detector>, DetectorBu
             }
             Ok(Box::new(
                 crate::detector::streaming_ctc::StreamingCtcDetector::new(sc, &cfg.keywords)?,
+            ))
+        }
+        EngineKind::OnlineAsr => {
+            let oa = cfg.detector.online_asr.as_ref().expect("validated config");
+            if cfg.pipeline.resample_to_hz != Some(16_000) {
+                tracing::warn!(
+                    "online_asr without pipeline.resample_to_hz = 16000: only valid if every source is 16 kHz-native"
+                );
+            }
+            Ok(Box::new(
+                crate::detector::online_asr::OnlineAsrDetector::new(oa, &cfg.keywords)?,
             ))
         }
     }

@@ -85,3 +85,34 @@ M1 holdout: confirmed recall ≥ 0.90; confirmed FA ≤ 1/h; fast p95 onset→em
 scored per channel, never blended (`scripts/prefix-gate-score.py`). Holdout
 runs ONCE with a frozen config; all grid cells reported; a missed bar's
 consequence was pre-declared (build the next thing, not adjust the bar).
+
+
+## D1 — `online_asr` zipformer-en-2023-06-26 (2026-08-19): FAIL, closed at this model
+
+Off-the-shelf LibriSpeech streaming transducer via sherpa `OnlineRecognizer`
++ complete-word matcher + hotwords 1.5, vs the armed `streaming_ctc` on the
+corrected 41-phrase dev set (5.15 h): recall 0.558 vs 0.649, FA/h 8.16 vs
+14.18, consumed_lag +384 ms. Hotwords are worth +13 pts recall for +2.9 FA/h;
+score 3.0 / beam 8 buys +1.3 pts for +7.4 FA/h — spent at 1.5. Cleaner on
+generic false-firers (`government`, `record`, `security`), loses proper nouns
+(`sikorsky` 0/2). Do not arm this model. The ENGINE stays: any sherpa online
+model benches in ~15 min/cell on the box. Next rungs: NeMo cache-aware
+FastConformer 80/480 ms; the fill-path verifier (D2).
+
+## Correction (2026-08-19): the "degenerate `panther lake`" was the variant `"a"`
+
+`bakeoff-webcast.toml` / `-ctc16.toml` list `panther lake` variants
+`["panther lake","a","as"]`; every engine fired on every "a" (~every 8 s, in
+every call). P1's "2,354 FA / 16 TP" for the phrase were `a`-fires; the real
+phrase is 2/20 on every engine. `europe`'s `european` variant likewise inflates
+its FA. Any FA/h quoted from those two files for those phrases is wrong;
+`configs/bakeoff-online-asr*.toml` carry the corrected entries.
+
+## D2 — verifier V0 retrospective (2026-08-19): 8/8 false fires vetoed, 0 missed
+
+Parakeet-TDT-0.6b-v2 int8 on the last 3.5 s of AS + HD-box 26AUG18 (124
+detections): rejected `A terrorist`→tariff (the AS fill), `innovative`,
+`inflationary`×2, `storage`/`in-store`×3; confirmed all 83 true fires except
+proper nouns it misheard (`Winburton`, `Foot Walker`) and 2 empty decodes (now
+`Error`, not a veto). Decode p50 ~300–365 ms, p95 < 400 ms on the box (4
+threads). Gate per-ticker opt-in, generic words first.

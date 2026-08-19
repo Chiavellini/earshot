@@ -20,4 +20,5 @@ pub mod risk;
 pub mod source;
 pub mod telemetry;
 pub mod types;
+pub mod verifier;
 pub mod xcorr;

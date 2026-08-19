@@ -40,7 +40,89 @@ pub struct EventConfig {
     /// gate), never by the binary's audio path.
     #[serde(default)]
     pub operator_handler: Option<OperatorHandlerSection>,
+    /// `[verifier]` — second-stage fill-path verifier (detection-accuracy
+    /// program D2, 2026-08-18): an offline ASR re-decodes the last `tail_ms`
+    /// of the leg that fired and the FILL intent is held until the keyword
+    /// appears in that text; the 1¢ observe path never waits. Absent = off.
+    #[serde(default)]
+    pub verifier: Option<VerifierSection>,
     pub keywords: Vec<KeywordConfig>,
+}
+
+/// `[verifier]` (`crate::verifier`). `mode = "shadow"` verifies and records
+/// but gates nothing — the first deployment posture; `"gate"` holds fill
+/// intents up to `budget_ms` past `decision_ts` and refuses on `Rejected`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VerifierSection {
+    #[serde(default)]
+    pub mode: VerifierMode,
+    /// Offline model directory (sherpa-onnx offline export: Parakeet-TDT
+    /// transducer `encoder/decoder/joiner*.onnx`, or a NeMo CTC `model*.onnx`)
+    /// + `tokens.txt`.
+    pub model_dir: std::path::PathBuf,
+    /// `nemo_transducer` (Parakeet-TDT / NeMo RNN-T) | `nemo_ctc` | `transducer`
+    /// (icefall zipformer). Passed to sherpa as `model_type` for transducers.
+    #[serde(default = "default_verifier_model_type")]
+    pub model_type: String,
+    #[serde(default = "default_verifier_threads")]
+    pub num_threads: u32,
+    /// Audio window ending at the firing chunk (ms).
+    #[serde(default = "default_verifier_tail_ms")]
+    pub tail_ms: u32,
+    /// Hold budget measured from the intent's `decision_ts` (ms).
+    #[serde(default = "default_verifier_budget_ms")]
+    pub budget_ms: u32,
+    /// `send` (default): a verdict that misses the budget lets the order go;
+    /// `hold`: it is refused as `verifier_timeout`.
+    #[serde(default)]
+    pub on_timeout: VerifierOnTimeout,
+    /// `intents` (default): verify only intent-bearing detections; `all_confirmed`:
+    /// every Confirmed detection (shadow studies — grows the per-verdict sample).
+    #[serde(default)]
+    pub sample: VerifierSample,
+    /// Market tickers whose FILL intents the verifier gates; `["*"]` = all.
+    /// Shadow rows are written for every request regardless.
+    #[serde(default)]
+    pub tickers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VerifierMode {
+    #[default]
+    Off,
+    Shadow,
+    Gate,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VerifierOnTimeout {
+    #[default]
+    Send,
+    Hold,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VerifierSample {
+    #[default]
+    Intents,
+    AllConfirmed,
+}
+
+fn default_verifier_model_type() -> String {
+    "nemo_transducer".into()
+}
+fn default_verifier_threads() -> u32 {
+    2
+}
+fn default_verifier_tail_ms() -> u32 {
+    3500
+}
+fn default_verifier_budget_ms() -> u32 {
+    500
 }
 
 #[derive(Debug, Deserialize)]
@@ -97,6 +179,8 @@ pub struct DetectorSection {
     pub sherpa_kws: Option<SherpaKwsConfig>,
     /// Required iff `engine = "streaming_ctc"`.
     pub streaming_ctc: Option<StreamingCtcConfig>,
+    /// Required iff `engine = "online_asr"`.
+    pub online_asr: Option<OnlineAsrConfig>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
@@ -110,6 +194,12 @@ pub enum EngineKind {
     /// Custom low-lookahead streaming-CTC spotter (own prefix-firing on frame
     /// posteriors via `ort`); the latency-milestone engine.
     StreamingCtc,
+    /// Any sherpa-onnx streaming ASR model (zipformer transducer, NeMo
+    /// cache-aware conformer, zipformer2-CTC) driven through sherpa's
+    /// `OnlineRecognizer`, with keyword matching on the emitted word stream and
+    /// optional hotword biasing (`detector::online_asr`). The bench-many-models
+    /// engine of the detection-accuracy program (2026-08-18).
+    OnlineAsr,
 }
 
 #[derive(Debug, Deserialize)]
@@ -193,6 +283,78 @@ fn default_ctc_threshold() -> f32 {
 
 fn default_ctc_precision() -> String {
     "int8".into()
+}
+
+/// `[detector.online_asr]` — sherpa-onnx `OnlineRecognizer` behind the
+/// `Detector` trait (`detector::online_asr`). One config drives every sherpa
+/// streaming model family; the directory layout selects the family.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OnlineAsrConfig {
+    /// Model directory: `encoder/decoder/joiner*.onnx` (transducer) or
+    /// `ctc-*.onnx` (zipformer2 CTC) or `model*.onnx` (NeMo CTC), plus
+    /// `tokens.txt` (+ `bpe.model`/`bpe.vocab` for hotwords).
+    pub model_dir: std::path::PathBuf,
+    /// `auto` (classify by filenames) | `transducer` | `zipformer2_ctc` | `nemo_ctc`.
+    #[serde(default = "default_online_asr_model_type")]
+    pub model_type: String,
+    /// `int8` (prefer int8 exports; fall back to fp32 when none ships) or
+    /// `fp32` (require fp32; refuse when only int8 exists).
+    #[serde(default = "default_ctc_precision")]
+    pub precision: String,
+    #[serde(default = "default_num_threads")]
+    pub num_threads: u32,
+    /// `modified_beam_search` (required for hotwords) | `greedy_search`.
+    #[serde(default = "default_online_asr_decoding")]
+    pub decoding_method: String,
+    #[serde(default = "default_max_active_paths")]
+    pub max_active_paths: u32,
+    /// Bias the beam toward the configured keyword variants (transducer +
+    /// modified_beam_search only; silently impossible on CTC/NeMo, where the
+    /// engine logs `hotwords_active=false` at build).
+    #[serde(default = "default_true")]
+    pub hotwords: bool,
+    /// Default per-phrase hotword score (sherpa ContextGraph scale — the same
+    /// scale as `sherpa_kws` boost); a keyword's `boost` overrides it.
+    #[serde(default = "default_hotwords_score")]
+    pub hotwords_score: f32,
+    /// Transducer blank penalty (emit-eagerness); 0.0 = model default.
+    #[serde(default)]
+    pub blank_penalty: f32,
+    /// Endpointing: trailing silence after speech (rule1) / after any decode
+    /// (rule2) and max utterance length (rule3). An endpoint completes the
+    /// trailing word, then the stream is reset (encoder state kept).
+    #[serde(default = "default_ep_rule1_ms")]
+    pub endpoint_rule1_ms: u32,
+    #[serde(default = "default_ep_rule2_ms")]
+    pub endpoint_rule2_ms: u32,
+    #[serde(default = "default_ep_rule3_ms")]
+    pub endpoint_rule3_ms: u32,
+    /// Duplicate suppression per keyword, in stream-time ms.
+    #[serde(default = "default_refractory_ms")]
+    pub refractory_ms: u64,
+}
+
+fn default_online_asr_model_type() -> String {
+    "auto".into()
+}
+fn default_online_asr_decoding() -> String {
+    "modified_beam_search".into()
+}
+fn default_true() -> bool {
+    true
+}
+fn default_hotwords_score() -> f32 {
+    1.5
+}
+fn default_ep_rule1_ms() -> u32 {
+    2400
+}
+fn default_ep_rule2_ms() -> u32 {
+    1200
+}
+fn default_ep_rule3_ms() -> u32 {
+    600_000
 }
 
 #[derive(Debug, Deserialize)]
@@ -931,6 +1093,126 @@ fn validate(cfg: &EventConfig) -> Result<(), ConfigError> {
                 "detector.streaming_ctc.precision must be \"int8\" or \"fp32\", got {:?}",
                 sc.precision
             ));
+        }
+    }
+    if cfg.detector.engine == EngineKind::OnlineAsr && cfg.detector.online_asr.is_none() {
+        return fail(
+            "detector.engine = \"online_asr\" requires a [detector.online_asr] section".into(),
+        );
+    }
+    if let Some(oa) = &cfg.detector.online_asr {
+        if oa.num_threads == 0 {
+            return fail("detector.online_asr.num_threads must be > 0".into());
+        }
+        if oa.precision != "int8" && oa.precision != "fp32" {
+            return fail(format!(
+                "detector.online_asr.precision must be \"int8\" or \"fp32\", got {:?}",
+                oa.precision
+            ));
+        }
+        if !matches!(
+            oa.model_type.as_str(),
+            "auto" | "transducer" | "zipformer2_ctc" | "nemo_ctc"
+        ) {
+            return fail(format!(
+                "detector.online_asr.model_type must be auto|transducer|zipformer2_ctc|nemo_ctc, got {:?}",
+                oa.model_type
+            ));
+        }
+        if oa.decoding_method != "modified_beam_search" && oa.decoding_method != "greedy_search" {
+            return fail(format!(
+                "detector.online_asr.decoding_method must be modified_beam_search|greedy_search, got {:?}",
+                oa.decoding_method
+            ));
+        }
+        if oa.hotwords && oa.decoding_method != "modified_beam_search" {
+            return fail(
+                "detector.online_asr.hotwords = true requires decoding_method = \"modified_beam_search\" \
+                 (sherpa consults hotwords only in the beam search)"
+                    .into(),
+            );
+        }
+        if oa.max_active_paths == 0 {
+            return fail("detector.online_asr.max_active_paths must be > 0".into());
+        }
+        if oa.endpoint_rule1_ms == 0 || oa.endpoint_rule2_ms == 0 || oa.endpoint_rule3_ms == 0 {
+            return fail("detector.online_asr.endpoint_rule*_ms must be > 0 (sherpa maps 0 to its own defaults)".into());
+        }
+    }
+    if cfg.detector.engine == EngineKind::OnlineAsr {
+        // Fast prefixes have no meaning on a full-word text matcher; refusing is
+        // louder than a WARN (which rides stdout into plan compile — see the
+        // execution-profile.sh capture hazard) and prevents a silently missing tier.
+        let with_prefixes: Vec<&str> = cfg
+            .keywords
+            .iter()
+            .filter(|k| !k.fast_prefixes.is_empty())
+            .map(|k| k.phrase.as_str())
+            .collect();
+        if !with_prefixes.is_empty() {
+            return fail(format!(
+                "detector.engine = \"online_asr\" matches complete words only and emits no Fast tier; \
+                 remove fast_prefixes from {:?}",
+                with_prefixes
+            ));
+        }
+        let fast_only: Vec<&str> = cfg
+            .keywords
+            .iter()
+            .filter(|k| k.policy == Policy::FastOnly)
+            .map(|k| k.phrase.as_str())
+            .collect();
+        if !fast_only.is_empty() {
+            return fail(format!(
+                "detector.engine = \"online_asr\" never emits Tier::Fast, so policy = \"fast_only\" \
+                 can never fire: {:?}",
+                fast_only
+            ));
+        }
+    }
+    if let Some(v) = &cfg.verifier {
+        if v.num_threads == 0 {
+            return fail("verifier.num_threads must be > 0".into());
+        }
+        if !(1000..=10_000).contains(&v.tail_ms) {
+            return fail(format!(
+                "verifier.tail_ms must be in 1000..=10000, got {}",
+                v.tail_ms
+            ));
+        }
+        if !(100..=5000).contains(&v.budget_ms) {
+            return fail(format!(
+                "verifier.budget_ms must be in 100..=5000, got {}",
+                v.budget_ms
+            ));
+        }
+        if !matches!(
+            v.model_type.as_str(),
+            "nemo_transducer" | "nemo_ctc" | "transducer"
+        ) {
+            return fail(format!(
+                "verifier.model_type must be nemo_transducer|nemo_ctc|transducer, got {:?}",
+                v.model_type
+            ));
+        }
+        let known: std::collections::HashSet<&str> = cfg
+            .keywords
+            .iter()
+            .map(|k| k.market_ticker.as_str())
+            .collect();
+        for t in &v.tickers {
+            if t != "*" && !known.contains(t.as_str()) {
+                return fail(format!(
+                    "verifier.tickers names unknown market_ticker {t:?}"
+                ));
+            }
+        }
+        if v.mode == VerifierMode::Gate && v.tickers.is_empty() {
+            return fail(
+                "verifier.mode = \"gate\" with no verifier.tickers gates nothing — list the fill \
+                 words to gate (or [\"*\"]) or use mode = \"shadow\""
+                    .into(),
+            );
         }
     }
     if let Some(msg) = ctc_ignored_boost_warning(cfg) {

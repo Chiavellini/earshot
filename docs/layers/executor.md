@@ -201,3 +201,17 @@ layer), or the wire itself (transport seam — see
   the recovered-after-ambiguous-send case;
   `run_json_counts_intents_sent_and_acked_separately` pins the report counters.
 - Live: `earshot probe-order` (1¢/1-contract, non-mention, $1 ledger).
+
+## Fill-path verifier hold (D2, 2026-08-18)
+
+`ExecCtx.verifier: Option<VerifierClient>` (`docs/nodes/verifier.md`). In
+`handle_intent`, BEFORE the book read: for a Confirmed intent whose staged
+price is above `OBSERVE_PRICE_CENTS` and whose ticker is opted in under
+`[verifier].mode = "gate"`, the executor `await_verdict`s until
+`decision_ts + budget_ms`; `Rejected` ⇒ `refusal = "verifier_veto"` (durable
+`not_attempted`, nothing sent); `Timeout` ⇒ proceeds (`on_timeout = send`) or
+`refusal = "verifier_timeout"` (`hold`); `Error`/`Dropped`/`NotRequested` ⇒
+proceeds. In `shadow` mode nothing waits; an already-available verdict is
+recorded. 1¢ observe intents never wait in any mode. `OrderRecord` gains
+`verify_verdict` / `verify_wait_ns` / `verify_gated` (omitted when no verifier).
+Tests: `tests/exec_mock.rs::verifier_gate::*`.

@@ -125,6 +125,7 @@ async fn audio_in_order_out_with_all_edges_recorded() {
         decision_plan_sha1: "0".repeat(40),
         keyword_text: HashMap::new(),
         rest_endpoint_id: rest.endpoint_id(),
+        verifier: None,
     });
 
     // Audio side: 2 s fixture, one burst at 1 s, real-time pacing — the

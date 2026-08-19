@@ -115,22 +115,7 @@ impl TierEngine {
     fn create(cfg: &SherpaKwsConfig, keywords_buf: &str) -> Result<TierEngine, DetectorBuildError> {
         let dir = &cfg.model_dir;
         let find_model = |stem: &str, int8: bool| -> Result<String, DetectorBuildError> {
-            let entries = std::fs::read_dir(dir).map_err(|e| {
-                DetectorBuildError::SherpaKws(format!("read {}: {e}", dir.display()))
-            })?;
-            for f in entries.flatten() {
-                let name = f.file_name().to_string_lossy().into_owned();
-                if name.starts_with(stem)
-                    && name.ends_with(".onnx")
-                    && (name.contains(".int8.") == int8)
-                {
-                    return Ok(f.path().display().to_string());
-                }
-            }
-            Err(DetectorBuildError::SherpaKws(format!(
-                "no {stem}*.onnx (int8={int8}) in {} — run scripts/fetch-models.sh",
-                dir.display()
-            )))
+            super::sherpa_files::find_model(dir, stem, int8).map_err(DetectorBuildError::SherpaKws)
         };
 
         let mut sc = KeywordSpotterConfig::default();
