@@ -64,13 +64,30 @@ MAX_ID_LEN = 64
 TYPED_OUTCOMES = ("ok", "fail", "skipped")
 COMPAT_OUTCOMES = ("ok", "fail", "warn", "info", "refused", "skipped")
 
+# The pinned config's BYTES, kept inside the run. A plan pins
+# `config_sha256`, but every verifier re-read the file from the WORKTREE — so a
+# finished run's proof depended on a mutable path forever. Found 2026-08-18:
+# removing `max_event_notional_cents` from every config (operator ruling O8)
+# retroactively refused all four already-graded 26AUG18 runs. The snapshot is
+# SELF-PROVING and cannot launder anything: it is accepted only when its
+# sha256 equals the plan's pinned value, so a forged file is indistinguishable
+# from a corrupt one and both are refused.
+PINNED_CONFIG_SNAPSHOT = "pinned-config.toml"
+
 TERMINALS = ("descope", "blocked", "aborted", "failed")
 # Transitions that may be recorded on a run whose pinned config/env has
 # DRIFTED: closing a run must never require restoring superseded bytes. The
 # pinned-input check exists to stop work advancing on stale inputs; nothing
 # here advances work. (2026-08-13: the refusal demanded the very terminal
 # receipt it was refusing — three restore-the-bytes dances in one day.)
-PINNED_EXEMPT_TRANSITIONS = frozenset(TERMINALS) | {"archived"}
+# `graded` joins them for the same stated reason (2026-08-18): it is a
+# POST-HOC verdict on a run that already finished, so it advances no work
+# either. Without it a graded run could never be re-audited after any config
+# edit — run-audit records `graded` on every pass, and that record was the last
+# thing still demanding the worktree bytes. Work-advancing transitions
+# (`prepared`, `launched`, ...) stay hard, which is what
+# tests/eventctl_lifecycle.py::test_config_mutation_blocks_typed_record pins.
+PINNED_EXEMPT_TRANSITIONS = frozenset(TERMINALS) | {"archived", "graded"}
 # Post-mortem tail stays legal after aborted/failed — a failed run must still
 # be auditable. descope/blocked never ran, so only archived may follow.
 POST_TERMINAL_ALLOWED = {
@@ -1102,6 +1119,13 @@ class Ledger:
             os.close(fd)
 
     def _check_pinned_inputs(self, plan, repo):
+        # Deliberately does NOT consult control/pinned-config.toml. On an ACTIVE
+        # run this check is a TRIPWIRE — "you edited a file a live run depends
+        # on" — and a snapshot that let work advance quietly on superseded bytes
+        # would disarm it (pinned by
+        # tests/eventctl_lifecycle.py::test_config_mutation_blocks_typed_record).
+        # The snapshot serves the FINISHED path only: see verify_one, and
+        # run-audit, which needs the true bytes to re-derive a grade.
         cfg = repo / plan["config_path"]
         if not cfg.is_file():
             raise Refusal(f"pinned config {plan['config_path']} is missing")
@@ -1155,6 +1179,27 @@ class Ledger:
 
 # ---------------------------------------------------------------------------
 # typed-state reducer (pure; consumes kind=="transition" outcome=="ok" only)
+
+
+def pinned_config_bytes(run_dir, plan, repo):
+    """The exact bytes this run was planned from, or None.
+
+    Prefers the run's own snapshot; falls back to the worktree file. Either
+    source must hash to `plan["config_sha256"]` — an unverified byte is never
+    returned, so a caller that needs the CONTENT (run-audit derives the
+    execution transport from it) can trust what it gets."""
+    want = plan.get("config_sha256")
+    snap = Path(run_dir) / "control" / PINNED_CONFIG_SNAPSHOT
+    if snap.is_file():
+        raw = snap.read_bytes()
+        if hashlib.sha256(raw).hexdigest() == want:
+            return raw
+    live = Path(repo) / plan["config_path"]
+    if live.is_file():
+        raw = live.read_bytes()
+        if hashlib.sha256(raw).hexdigest() == want:
+            return raw
+    return None
 
 
 def reduce_state(plan, receipts):
@@ -1515,6 +1560,11 @@ def init_one(repo, config, event_env, event, host_id, account_fingerprint,
                 ledger.plan_path,
                 (json.dumps(plan, indent=2, sort_keys=True) + "\n").encode(),
             )
+            # The pinned bytes become evidence at compile time, so this run's
+            # proof never depends on the worktree copy again.
+            atomic_write_durable(
+                ledger.control / PINNED_CONFIG_SNAPSHOT, cfg_abs.read_bytes()
+            )
             fresh = True
     finally:
         os.close(fd)
@@ -1805,7 +1855,16 @@ def verify_one(run_dir, repo):
     plan = ledger.load_plan()
     receipts = ledger.read(plan)  # raises RecoverableTail / IntegrityError
     state = reduce_state(plan, receipts)
-    if state["active"]:
+    # A GRADED run is finished, but `TERMINALS` names only FAILURE transitions
+    # and `closed` requires `archived` — so a SUCCESSFUL run stays `active`
+    # forever and its verification depended on mutable worktree bytes for good.
+    # Found 2026-08-18: removing `max_event_notional_cents` from every config
+    # (operator ruling O8) retroactively refused all four already-graded
+    # 26AUG18 runs. Softened only when the run's own snapshot still carries the
+    # pinned bytes, so this reports "recoverable", never "assume fine".
+    if state["active"] and not any(
+        r["transition"] == "graded" for r in state["reached"]
+    ):
         ledger._check_pinned_inputs(plan, repo)
         return len(receipts), None
     # A closed (terminal or archived) run legitimately outlives its pinned
@@ -1817,11 +1876,22 @@ def verify_one(run_dir, repo):
         ledger._check_pinned_inputs(plan, repo)
         return len(receipts), None
     except Refusal:
-        which = (
-            "archived"
-            if state["archived"]
-            else state["terminal"]["transition"]
-        )
+        if state["active"]:
+            # The graded-but-not-closed path (new 2026-08-18). Unlike a closed
+            # attempt, nothing has SUPERSEDED these bytes — the run simply
+            # finished and the worktree moved on — so softening is only honest
+            # while the run's own snapshot still carries the pinned bytes. With
+            # no snapshot the grade genuinely cannot be re-derived, and the
+            # refusal stands.
+            if pinned_config_bytes(ledger.run_dir, plan, repo) is None:
+                raise
+            which = "graded"
+        else:
+            which = (
+                "archived"
+                if state["archived"]
+                else state["terminal"]["transition"]
+            )
         return len(receipts), f"pinned inputs superseded (run is {which})"
 
 

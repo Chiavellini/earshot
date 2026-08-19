@@ -454,9 +454,25 @@ def execution_transport(run_dir: Path, plan: dict[str, Any]) -> dict[str, Any]:
         config_path.relative_to(repo)
     except ValueError:
         fail("RunPlan config_path escapes the repository")
-    regular_file(config_path, "pinned event config")
-    if sha256_bytes(config_path.read_bytes()) != plan.get("config_sha256"):
-        fail("pinned event config SHA-256 differs from RunPlan")
+    # This function needs the config's CONTENT (it derives the execution
+    # transport), so a drifted file cannot be waved through — auditing against
+    # the wrong bytes is worse than refusing. The run's own verified snapshot
+    # IS the right bytes: accepted only when it hashes to the plan's pin, which
+    # makes a forged snapshot indistinguishable from a corrupt one. Added
+    # 2026-08-18 after removing `max_event_notional_cents` from every config
+    # (O8) retroactively refused four already-graded runs.
+    snapshot = run_dir / "control" / "pinned-config.toml"
+    if snapshot.is_file() and sha256_bytes(
+        snapshot.read_bytes()
+    ) == plan.get("config_sha256"):
+        config_path = snapshot
+    else:
+        regular_file(config_path, "pinned event config")
+        if sha256_bytes(config_path.read_bytes()) != plan.get("config_sha256"):
+            fail(
+                "pinned event config SHA-256 differs from RunPlan and this run "
+                "has no verified control/pinned-config.toml"
+            )
     try:
         config = tomllib.loads(config_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:

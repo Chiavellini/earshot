@@ -241,7 +241,13 @@ runtime report, independently replays the version-4 order-evidence envelope and
 transition reducer, verifies the protocol-2 raw book tape and byte-bound commit,
 checks the audio manifest/commit, raw/sidecar fingerprints, and derived WAV
 fingerprints, and derives the configured execution transport from the pinned
-config bytes. A FIX run additionally receives an independent protocol-1
+config bytes. Those bytes come from the run's own `control/pinned-config.toml`
+when it hashes to `plan.config_sha256`, and from the worktree config otherwise
+(2026-08-18, **O8**). The order matters: this step needs the config's CONTENT,
+not just a matching hash, so a drifted worktree file is never waved through —
+auditing against the wrong bytes is worse than refusing. A run with neither a
+verified snapshot nor a matching worktree file fails loud and its grade cannot
+be re-derived, which is the honest outcome once the pinned bytes are gone. A FIX run additionally receives an independent protocol-1
 observation-tape replay: exact JSON shape, immutable identity and endpoint,
 tape/source sequencing, cross-process hash chain, raw FIX framing and typed
 projection, duplicate pointers, session-close accounting, and every
@@ -385,12 +391,11 @@ can still have reached the wire. A fill with no matching order id is resolved
 by fetching the ORDER, whose `client_order_id` is the only field that can say
 "ours" — the fill payload carries none — and a lookup that fails leaves the
 fill `foreign`, never silently promoted. `var/audits/fills-<DATE>.json` records
-per board: our notional, the foreign notional, the account total, and each
-lane's configured `max_event_notional_cents`. Those caps are REPORTED beside
-the account total, never enforced: earshot applies them per-process, the
-account is not bound by them, and event caps are the operator's
-(`SYSTEM-STATE.md` §4). The tool signs GET requests only and can neither place
-nor cancel an order.
+per board: our notional, the foreign notional, the account total, and the
+lanes that covered it. It reports; it never enforces — spend policy is the
+operator's (`SYSTEM-STATE.md` §4). It no longer reads a per-event notional
+cap, because there is none: that cap was removed on 2026-08-18 (**O8**). The
+tool signs GET requests only and can neither place nor cancel an order.
 
 Above the attempt rows, the index collapses lane suffixes into one market
 event and emits exactly one `COVERED`, `DESCOPED`, or `MISSED` classification.

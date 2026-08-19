@@ -323,11 +323,25 @@ each legacy line into the active run's ledger as a `compat` receipt.
   terminal/archived run legitimately outlives its pinned bytes (its successor
   owns the current ones) and verifies OK with a labeled
   `pinned inputs superseded` note — chain integrity stays hard for closed
-  runs. Symmetrically, `record` exempts closing transitions
-  (`descope|blocked|aborted|failed|archived`) and the post-terminal audit
-  tail from the pinned-input check: closing a superseded run must never
-  require restoring old bytes, and the exemption cannot legalize an illegal
-  transition (the typed gate still runs). `init-date` terminal-closes
+  runs. **A GRADED run is also exempt (2026-08-18), but conditionally.**
+  `TERMINALS` names only failure transitions and `closed` requires `archived`,
+  so a SUCCESSFUL run stays `active` forever and its verification kept
+  re-reading mutable worktree bytes — removing `max_event_notional_cents` from
+  every config (operator ruling **O8**) retroactively refused all four
+  already-graded 26AUG18 runs. `init` now banks the pinned bytes as
+  `control/pinned-config.toml`, and a graded run softens to
+  `pinned inputs superseded (run is graded)` **only while that snapshot still
+  hashes to `plan.config_sha256`**; with no snapshot the bytes are genuinely
+  gone and the refusal stands. The snapshot is self-proving — accepted only on
+  a hash match, so a forged one is indistinguishable from a corrupt one and
+  both are refused — and `_check_pinned_inputs` deliberately does NOT consult
+  it, keeping the active-run tripwire hard. Symmetrically, `record` exempts
+  closing transitions (`descope|blocked|aborted|failed|archived`), the
+  post-hoc `graded` verdict, and the post-terminal audit tail from the
+  pinned-input check: closing or grading a run must never require restoring
+  old bytes, work-advancing transitions (`prepared`, `launched`, …) stay hard,
+  and the exemption cannot legalize an illegal transition (the typed gate
+  still runs). `init-date` terminal-closes
   never-launched predecessor attempts whose pinned config drifted
   (`blocked`+`archived`, actor `stage`, idempotent); a LAUNCHED predecessor is
   an explicit refusal a human resolves, and aborted/failed predecessors keep

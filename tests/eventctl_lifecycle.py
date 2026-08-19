@@ -13,6 +13,7 @@ Run: python3 tests/eventctl_lifecycle.py
 import contextlib
 import importlib.util
 import io
+import hashlib
 import json
 import os
 import re
@@ -346,6 +347,68 @@ class TestIllegalTransitions(Base):
                               "--transition", "not_a_transition")
         self.assertEqual(rc, 1)
         self.assertEqual(before, self.receipts_of(run_dir))
+
+
+class TestPinnedConfigSnapshot(Base):
+    """2026-08-18 (O8). Removing `max_event_notional_cents` from every config
+    retroactively refused all four already-GRADED 26AUG18 runs: `TERMINALS`
+    names only failure transitions and `closed` needs `archived`, so a
+    successful run stays `active` forever and its verification kept re-reading
+    MUTABLE worktree bytes. `init` now snapshots the pinned bytes into the run,
+    and the snapshot is self-proving — accepted only when it hashes to the
+    plan's pin."""
+
+    def _run_dir(self):
+        return self.repo / "var" / "runs" / PHONE_EVENT
+
+    def test_init_snapshots_the_pinned_config_bytes(self):
+        cfg = self.write_phone_config()
+        self.cli("init", "--config", str(cfg))
+        run_dir = next(self._run_dir().iterdir())
+        snap = run_dir / "control" / "pinned-config.toml"
+        self.assertTrue(snap.is_file(), "init must bank the pinned bytes")
+        plan = json.loads((run_dir / "control" / "run-plan.json").read_text())
+        self.assertEqual(
+            hashlib.sha256(snap.read_bytes()).hexdigest(), plan["config_sha256"]
+        )
+
+    def test_graded_run_survives_a_later_config_edit(self):
+        cfg = self.write_phone_config()
+        self.cli("init", "--config", str(cfg))
+        for t in ("prepared", "aborted", "evidence_consolidated", "graded"):
+            rc, _, err = self.cli("record", "--event", PHONE_EVENT,
+                                  "--transition", t)
+            self.assertEqual(rc, 0, f"{t}: {err}")
+        cfg.write_text(cfg.read_text() + "\n# an unrelated later edit\n")
+        rc, out, err = self.cli("verify", "--event", PHONE_EVENT)
+        self.assertEqual(rc, 0, err)
+        self.assertIn("superseded", out + err)
+
+    def test_no_snapshot_and_a_drifted_worktree_means_the_bytes_are_gone(self):
+        """The guard the graded-path softening depends on. `verify_one` only
+        softens while `pinned_config_bytes` can still produce the pinned bytes;
+        with no snapshot and a drifted file it returns None and the refusal
+        stands, because grading against whatever the worktree happens to hold
+        would be worse than failing."""
+        cfg = self.write_phone_config()
+        self.cli("init", "--config", str(cfg))
+        run_dir = next(self._run_dir().iterdir())
+        plan = json.loads((run_dir / "control" / "run-plan.json").read_text())
+        ec = eventctl
+        self.assertIsNotNone(
+            ec.pinned_config_bytes(run_dir, plan, self.repo),
+            "the snapshot alone must satisfy the pin",
+        )
+        (run_dir / "control" / "pinned-config.toml").unlink()
+        self.assertIsNotNone(
+            ec.pinned_config_bytes(run_dir, plan, self.repo),
+            "the untouched worktree file must still satisfy the pin",
+        )
+        cfg.write_text(cfg.read_text() + "\n# drift with no snapshot\n")
+        self.assertIsNone(
+            ec.pinned_config_bytes(run_dir, plan, self.repo),
+            "neither source carries the pinned bytes — nothing may be returned",
+        )
 
 
 class TestMutationDetection(Base):
