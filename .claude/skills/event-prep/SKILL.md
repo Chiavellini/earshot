@@ -165,7 +165,7 @@ resolver from the venue:
 | unknown venue page, no wall | `browser-network` → `scripts/browser-resolve.py` (headless, watches for the master m3u8; never logs in or passes walls — exit **5** + immediate page when a wall appears) |
 | a stable public m3u8 | `static-public` |
 | **webinar.net** (`app.webinar.net/<id>`, "Register now" / "Attend") | ⛔ **WebRTC — no HLS/DASH manifest is ever served** (TGT 2026-08-19: registered, Attend clicked, watched 12:00–12:17Z, nothing manifest-shaped). Not capturable by the pipe legs on any host → **descope on the record** unless a browser-audio capture leg exists. The registration "remembered" state needs `--click-text Attend` to reach `/live`. |
-| **Notified MMC** (`edge.media-server.com/mmc/p/<hash>`) | registration wall → profile; pre-call the player serves a **15-min holding VOD master** and at call time a **tokenized live master that the pipe legs may not be able to ingest** (TOL 2026-08-19: resolved at 12:31Z, 0 frames, both legs dead at 12:46Z). Resolve with `--reject-endlist --reject-substr <holding-hash>` and ONLY publish a URL that passed `pcm-gate.sh` on the executing host (`url-push-job.sh` does this). |
+| **Notified MMC** (`edge.media-server.com/mmc/p/<hash>`) | registration wall → profile; pre-call the player serves a **15-min holding VOD master** and at call time a **tokenized live master that the pipe legs may not be able to ingest** (TOL 2026-08-19: resolved at 12:31Z, 0 frames, both legs dead at 12:46Z). Resolve with `--reject-endlist --reject-substr <holding-hash> --linger-secs 20` (the `metafile…` master itself yields 0 frames; the `media.main.pro2.mas…` MEDIA playlists the player fetches next ingest fine — 6 s → 192 000 B PCM measured 2026-08-19 — and `--linger-secs` is what gets them printed as `MANIFEST-SEEN`) and ONLY publish a URL that passed `pcm-gate.sh` on the executing host (`url-push-job.sh` tries every seen manifest and ships the first that yields audio). |
 
 **THE AMAT RULE (2026-08-13, a full call lost):** if the player page shows or
 can show a registration/login form, the binding is `registered-session` with a
@@ -395,7 +395,15 @@ scripts/assert-ready.sh configs/<each-event-config>.toml
   <start+5> --leg <E-BOX>:<R_BOX>:ubuntu@<box> --leg <E>:<R>:local` and again at
   `<start+35>`. Session-scheduled wakeups only fire while the session is idle
   and are worthless as a monitor (2026-08-19: four of them fired at 17:46Z,
-  five hours after the calls).
+  five hours after the calls). The reason is not only idleness: the 2026-08-19
+  session was killed at 05:38Z by a model-safeguards flag on an ordinary
+  ops turn and stayed dead 12 h with no human to `/model`-switch it — the
+  failover install was the pending "next action" and never happened, and
+  the pages that DID go out (10 mails, all delivered) had no receiver.
+  **Before the agent goes unattended: every push / failover / watchdog is a
+  LOADED OS job with a readback; nothing event-critical is left pending on
+  the agent's next turn (finish the install before reporting the self-test);
+  and the operator has named who receives the pages.**
 - Snapshot the green SET so night-before edits cannot strand the event red:
   `mkdir -p state/<E>/green-snapshot && cp configs/<cfg>.toml state/<E>/green-snapshot/config.toml && cp configs/.readiness/<base>.json state/<E>/green-snapshot/readiness.json && cp state/<E>/preflight-result.json state/<E>/green-snapshot/` —
   then `scripts/green-guardian.sh --event <E> --config <cfg>` is the T-90

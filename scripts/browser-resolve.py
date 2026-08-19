@@ -149,6 +149,13 @@ def main():
     ap.add_argument("--reject-endlist", action="store_true",
                     help="ignore manifests whose body carries #EXT-X-ENDLIST (a VOD — Notified MMC "
                          "serves a 15-min holding VOD master before the call; TOL 2026-08-19)")
+    ap.add_argument("--linger-secs", type=int, default=0,
+                    help="after the first master is seen, keep the page open this long so the "
+                         "sibling MEDIA playlists the player fetches next are printed as "
+                         "MANIFEST-SEEN too (TOL 2026-08-19: the Notified 'metafile' master "
+                         "yielded zero frames while the media playlists under "
+                         "media.main.pro2.mas ingest fine; url-push-job.sh gates every "
+                         "candidate through pcm-gate and ships the first that yields audio)")
     ap.add_argument("--check", action="store_true", help="offline self-test")
     a = ap.parse_args()
 
@@ -257,6 +264,9 @@ def main():
                       flush=True)
                 last_beat = now
 
+        if found and a.linger_secs > 0:
+            print(f"LINGER {a.linger_secs}s for sibling manifests", flush=True)
+            pg.wait_for_timeout(a.linger_secs * 1000)
         try:
             (browser or ctx).close()
         except Exception:

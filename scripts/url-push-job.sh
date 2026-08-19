@@ -110,11 +110,28 @@ RESOLVE_ARGV=(); while IFS= read -r part; do RESOLVE_ARGV+=("$part"); done < <(
 log "=== url-push-job slug=$SLUG until=${UNTIL}Z targets=$(for i in "${!RUNS[@]}"; do printf '%s@%s ' "${EVENTS[$i]}" "${HOSTS[$i]}"; done) leg=${RESOLVE_ARGV[0]} ${RESOLVE_ARGV[1]:-}"
 until [[ "$(date -u +%H:%M)" > "$UNTIL" ]]; do
   rm -f "$HOME/$BASE"
-  if ! "${RESOLVE_ARGV[@]}" >> "state/${EVENTS[0]}/push.log" 2>&1; then log "resolve leg exited $? — retrying"; sleep 10; continue; fi
-  [[ -s "$HOME/$BASE" ]] || { log "resolve leg wrote nothing — retrying"; sleep 10; continue; }
-  if ! scripts/pcm-gate.sh --kind hls --url-file "$HOME/$BASE" --secs "$PCM_SECS" --label "$SLUG-push" >> "state/${EVENTS[0]}/push.log" 2>&1; then
-    log "PCM-GATE FAIL on the minted URL (holding VOD / empty master / walled media) — re-resolving"; sleep 15; continue
-  fi
+  LEGLOG="$(mktemp "${TMPDIR:-/tmp}/url-push-leg.XXXXXX")"
+  "${RESOLVE_ARGV[@]}" > "$LEGLOG" 2>&1; RC=$?
+  cat "$LEGLOG" >> "state/${EVENTS[0]}/push.log"
+  # Candidates: the minted url-file first, then every other manifest the leg SAW
+  # (MANIFEST-SEEN lines), masters before variants. TOL 2026-08-19 minted a
+  # "metafile" master that yielded zero frames while sibling media playlists
+  # existed — the PCM gate, not the resolver's preference, decides what ships.
+  CANDS=()
+  [[ $RC -eq 0 && -s "$HOME/$BASE" ]] && CANDS+=("$(cat "$HOME/$BASE")")
+  while IFS= read -r u; do [[ -n "$u" ]] && CANDS+=("$u"); done < <(grep -o 'MANIFEST-SEEN master \[200\] [^ ]*' "$LEGLOG" | awk '{print $4}')
+  while IFS= read -r u; do [[ -n "$u" ]] && CANDS+=("$u"); done < <(grep -o 'MANIFEST-SEEN variant \[200\] [^ ]*' "$LEGLOG" | awk '{print $4}')
+  rm -f "$LEGLOG"
+  if [[ ${#CANDS[@]} -eq 0 ]]; then log "resolve leg exit=$RC, no manifest candidates — retrying"; sleep 10; continue; fi
+  PASSED=""
+  for u in "${CANDS[@]}"; do
+    printf '%s' "$u" > "$HOME/.${BASE}.cand"
+    if scripts/pcm-gate.sh --kind hls --url-file "$HOME/.${BASE}.cand" --secs "$PCM_SECS" --label "$SLUG-push" >> "state/${EVENTS[0]}/push.log" 2>&1; then PASSED="$u"; break; fi
+    log "PCM-GATE FAIL on candidate ${u:0:60}… — next"
+  done
+  rm -f "$HOME/.${BASE}.cand"
+  if [[ -z "$PASSED" ]]; then log "no candidate passed the PCM gate (holding VOD / empty master / walled media) — re-resolving"; sleep 15; continue; fi
+  printf '%s' "$PASSED" > "$HOME/$BASE"
   log "PCM-GATE PASS — publishing"
   OK=1; for i in "${!RUNS[@]}"; do
     if scripts/push-url-file.sh --run-dir "${RUNS[$i]}" --from-file "$HOME/$BASE" --host "${HOSTS[$i]}" >> "state/${EVENTS[$i]}/push.log" 2>&1; then log "PUSHED ${EVENTS[$i]} @ ${HOSTS[$i]}"; else log "PUSH FAILED ${EVENTS[$i]} @ ${HOSTS[$i]}"; OK=0; fi
