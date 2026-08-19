@@ -3,7 +3,7 @@
 //! killed? → armed? → staleness → caps → ledger.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
@@ -12,7 +12,6 @@ use crate::clock::MonotonicNs;
 
 /// Hard ceilings (cents). Not user-overridable upward at runtime (spec §11).
 pub const HARD_MAX_ORDER_NOTIONAL_CENTS: u64 = 50_000; // $500
-pub const HARD_MAX_EVENT_NOTIONAL_CENTS: u64 = 200_000; // $2,000
 pub const HARD_DAILY_LOSS_CENTS: u64 = 100_000; // $1,000
 /// M2 posture: cumulative real-money spend across ALL live drills/sessions,
 /// enforced here and persisted across runs.
@@ -29,9 +28,10 @@ pub const HARD_DAILY_LOSS_CENTS: u64 = 100_000; // $1,000
 ///
 /// 2000 is the smallest round number above that (1862¢ needed). It is still a
 /// real backstop — it is NOT the M4 "remove the clamps" step. Per-order price
-/// stays bound by `MENTION_FILL_CAP_CENTS`, and per-event spend by the
-/// config's `max_event_notional_cents`; this constant only stops the CUMULATIVE
-/// total from silently becoming the binding cap on a multi-market board.
+/// stays bound by `MENTION_FILL_CAP_CENTS`; this constant only stops the
+/// CUMULATIVE total from silently becoming the binding cap on a multi-market
+/// board. There is NO per-event notional cap any more (operator ruling
+/// 2026-08-18) — this ledger and the per-order bounds are what remain.
 ///
 /// RAISED 2000 → 7000 → 13000 on 2026-08-11 (two operator rulings the same
 /// day). The first sized FILL words by study ratio; the second replaced that
@@ -67,7 +67,7 @@ pub const PROBE_LEDGER_CAP_CENTS: u64 = 13_000;
 /// Fillable mention posture (the deliberate step past the 1¢ no-fill probe):
 /// a single order's price may cross a real ask up to this ceiling so the
 /// executor can actually fill. This is a per-order PRICE bound only — real
-/// spend stays clamped by the config notional caps AND the $1 probe ledger
+/// spend stays clamped by the per-order notional cap AND the probe ledger
 /// (`PROBE_LEDGER_CAP_CENTS`), which remain the money backstops. Gated behind
 /// `arm --i-am-live --allow-mention --fillable`; never reached by the default
 /// probe posture.
@@ -87,7 +87,10 @@ pub const PROBE_LEDGER_CAP_CENTS: u64 = 13_000;
 ///
 /// Still a per-order PRICE bound only. At 97¢ with `max_order_notional_cents`
 /// = 100, `budget_contracts` MUST be 1 (97×2 = 194¢ → `Refusal::OrderNotional`),
-/// so this buys ONE ~97¢ contract per event, not a larger position.
+/// so each ORDER buys one ~97¢ contract. It no longer implies one order per
+/// event: the per-event notional cap was removed on 2026-08-18, so an event
+/// may place one order per FILL-posture keyword (the one-shot table is the
+/// per-keyword bound).
 pub const MENTION_FILL_CAP_CENTS: u64 = 97;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -95,8 +98,6 @@ pub const MENTION_FILL_CAP_CENTS: u64 = 97;
 pub struct RiskConfig {
     #[serde(default = "d_order")]
     pub max_order_notional_cents: u64,
-    #[serde(default = "d_event")]
-    pub max_event_notional_cents: u64,
     #[serde(default = "d_loss")]
     pub daily_loss_cap_cents: u64,
     #[serde(default = "d_book_stale")]
@@ -133,9 +134,6 @@ pub struct RiskConfig {
 fn d_order() -> u64 {
     100
 }
-fn d_event() -> u64 {
-    100
-}
 fn d_loss() -> u64 {
     100
 }
@@ -153,7 +151,6 @@ impl Default for RiskConfig {
     fn default() -> Self {
         RiskConfig {
             max_order_notional_cents: d_order(),
-            max_event_notional_cents: d_event(),
             daily_loss_cap_cents: d_loss(),
             book_stale_ms: d_book_stale(),
             book_stale_enforce: false,
@@ -171,9 +168,6 @@ impl RiskConfig {
         self.max_order_notional_cents = self
             .max_order_notional_cents
             .min(HARD_MAX_ORDER_NOTIONAL_CENTS);
-        self.max_event_notional_cents = self
-            .max_event_notional_cents
-            .min(HARD_MAX_EVENT_NOTIONAL_CENTS);
         self.daily_loss_cap_cents = self.daily_loss_cap_cents.min(HARD_DAILY_LOSS_CENTS);
         self
     }
@@ -193,8 +187,6 @@ pub enum Refusal {
     AudioStale { age_ms: u64, limit_ms: u64 },
     #[error("order notional {notional}¢ exceeds cap {cap}¢")]
     OrderNotional { notional: u64, cap: u64 },
-    #[error("event notional would reach {would}¢, cap {cap}¢")]
-    EventNotional { would: u64, cap: u64 },
     #[error("probe ledger would reach {would}¢, hard cap {cap}¢")]
     ProbeLedger { would: u64, cap: u64 },
 }
@@ -250,7 +242,6 @@ pub struct RiskGate {
     cfg: RiskConfig,
     armed: AtomicBool,
     killed: AtomicBool,
-    event_spent_cents: AtomicU64,
     store: Arc<LedgerStore>,
 }
 
@@ -279,7 +270,6 @@ impl RiskGate {
             cfg: cfg.clamped(),
             armed: AtomicBool::new(false),
             killed: AtomicBool::new(false),
-            event_spent_cents: AtomicU64::new(0),
             store: Arc::new(LedgerStore {
                 path: ledger_path,
                 ledger: Mutex::new(ledger),
@@ -370,13 +360,6 @@ impl RiskGate {
                 cap: self.cfg.max_order_notional_cents,
             });
         }
-        let would_event = self.event_spent_cents.load(Ordering::SeqCst) + notional;
-        if would_event > self.cfg.max_event_notional_cents {
-            return Err(Refusal::EventNotional {
-                would: would_event,
-                cap: self.cfg.max_event_notional_cents,
-            });
-        }
         let ledger = self.store.ledger.lock().unwrap();
         let would_ledger = ledger.spent_cents + notional;
         if would_ledger > PROBE_LEDGER_CAP_CENTS {
@@ -395,7 +378,6 @@ impl RiskGate {
     /// path.
     pub fn record_send(&self, price_cents: u32, count: u32) {
         let notional = price_cents as u64 * count as u64;
-        self.event_spent_cents.fetch_add(notional, Ordering::SeqCst);
         {
             let mut ledger = self.store.ledger.lock().unwrap();
             ledger.spent_cents += notional;
@@ -723,17 +705,46 @@ mod tests {
         }
     }
 
+    /// 2026-08-18 operator ruling: there is NO per-event notional cap. Before
+    /// this, `max_event_notional_cents = 100` against a 97¢ fill price let
+    /// exactly ONE order per event reach the wire, and it went to whichever
+    /// keyword fired FIRST. Measured on 26AUG18: the cheap, genuinely winnable
+    /// entries (weather 34¢, profitability 56¢, tailwind 60¢, wimbledon 85¢)
+    /// were all refused after an already-repriced 92–97¢ market consumed the
+    /// event's whole allowance. Per-ORDER bounds and the probe ledger remain.
+    #[test]
+    fn many_orders_in_one_event_are_not_capped_by_the_event() {
+        let g = gate(RiskConfig {
+            allowlist_tickers: vec!["T".into()],
+            ..Default::default()
+        });
+        g.arm();
+        // Ten separate 97¢ orders in ONE event: 970¢ cumulative, which the old
+        // 100¢ event cap refused at the second one.
+        for i in 0..10 {
+            assert_eq!(
+                g.check_order("T", 97, 1, 0, 0),
+                Ok(()),
+                "order {i} must not be refused for a per-event reason"
+            );
+            g.record_send(97, 1);
+        }
+        // The per-ORDER cap is untouched and still binds.
+        assert!(matches!(
+            g.check_order("T", 97, 2, 0, 0),
+            Err(Refusal::OrderNotional { .. })
+        ));
+    }
+
     #[test]
     fn config_cannot_exceed_hard_caps() {
         let cfg = RiskConfig {
             max_order_notional_cents: u64::MAX,
-            max_event_notional_cents: u64::MAX,
             daily_loss_cap_cents: u64::MAX,
             ..Default::default()
         }
         .clamped();
         assert_eq!(cfg.max_order_notional_cents, HARD_MAX_ORDER_NOTIONAL_CENTS);
-        assert_eq!(cfg.max_event_notional_cents, HARD_MAX_EVENT_NOTIONAL_CENTS);
         assert_eq!(cfg.daily_loss_cap_cents, HARD_DAILY_LOSS_CENTS);
     }
 
@@ -766,7 +777,8 @@ mod tests {
 
     #[test]
     fn probe_ledger_caps_cumulative_spend() {
-        // Event cap loosened so the LEDGER is the binding constraint here.
+        // With the per-event cap removed (2026-08-18) the LEDGER is the only
+        // cumulative bound left, so nothing has to be loosened for it to bind.
         // Both bounds are derived from PROBE_LEDGER_CAP_CENTS rather than
         // written as literals: this test hardcoded 99/100 until 2026-08-10,
         // so raising the constant broke it for no behavioural reason. What is
@@ -774,7 +786,6 @@ mod tests {
         // that cap currently is.
         let cap = PROBE_LEDGER_CAP_CENTS;
         let g = gate(RiskConfig {
-            max_event_notional_cents: cap * 10,
             allowlist_tickers: vec!["T".into()],
             ..Default::default()
         });

@@ -10,7 +10,10 @@ for: EV/fee economics (executor) or market validation (validator).
   - `RiskGate::check_order(ticker, price_cents, count, book_age_ns,
     audio_age_ns) -> Result<(), Refusal>` — check order, in order:
     killed? → armed? → allowlist → book stale → audio stale → order notional
-    → event notional → probe ledger.
+    → probe ledger. There is no per-event notional step: `EventNotional`,
+    `max_event_notional_cents`, `HARD_MAX_EVENT_NOTIONAL_CENTS` and the
+    `event_spent_cents` accumulator were REMOVED on 2026-08-18 by operator
+    ruling (see `SYSTEM-STATE.md` §4 O8).
   - `RiskGate::record_send(price_cents, count)` — worst-case in-memory debit,
     called BEFORE every send (disk write is off-path — see Obligations).
   - `RiskGate::spawn_persister(handle)` — background ledger writer;
@@ -56,8 +59,9 @@ for: EV/fee economics (executor) or market validation (validator).
   introduction until 2026-08-07 the executor passed
   `BookCache::feed_age_ns()` — socket-wide liveness, held under ~500 ms by the
   ping loop — so `Refusal::BookStale` never fired once. Proof from the record:
-  DASH-UBER on a 96,774 ms snapshot was refused for `EventNotional`, checked
-  twelve lines later.
+  DASH-UBER on a 96,774 ms snapshot was refused by the then-existing
+  per-event notional cap, checked twelve lines later. (That cap no longer
+  exists; the proof stands as a dated record.)
 - **Known-but-old is recorded, not refused, unless `book_stale_enforce`.**
   Enforcement is opt-in (default `false`) because the evidence does not support
   refusing: over 56 banked intents carrying a book age, the configured 2000 ms
@@ -93,9 +97,10 @@ for: EV/fee economics (executor) or market validation (validator).
 ## How to replace or edit this layer
 - Everything is `src/risk.rs`. Contract: check order shown above, hard-const
   non-overridability, ledger-before-send, session-scoped kill.
-- M2→M4 evolution: the `PROBE_LEDGER_CAP` posture is expected to be replaced
-  by real per-event notional budgets — that is a reviewed code change here
-  plus an update to this doc and the executor doc.
+- M2→M4 evolution: `PROBE_LEDGER_CAP_CENTS` is now the ONLY cumulative bound
+  in this layer — the per-event notional budget it was expected to hand off to
+  was removed instead (2026-08-18, O8). Replacing it is a reviewed code change
+  here plus an update to this doc and the executor doc.
 
 ## Live postures (category gates live in `src/kalshi/validator.rs`)
 The RiskGate envelope is identical in both; only the market-category gate
@@ -107,11 +112,13 @@ selected by `arm`/`probe-order` differs:
   best ask (`assert_non_crossing`) so the drill provably cannot fill.
 - **Mention-FILL (`--i-am-live --allow-mention --fillable`):** `mention_fill_gate`
   — Mentions permitted AND a per-order price cap up to
-  `MENTION_FILL_CAP_CENTS` (= 50, `src/risk.rs`), so an order may cross a real
+  `MENTION_FILL_CAP_CENTS` (= 97, `src/risk.rs`), so an order may cross a real
   ask and actually fill. This is the deliberate step past the no-fill probe.
-  It relaxes ONLY the per-order price ceiling; real spend stays bounded by the
-  config notional caps and the unchanged $1 `PROBE_LEDGER_CAP_CENTS` (both
-  enforced in `check_order`). `--fillable` requires both `--i-am-live` and
+  It relaxes ONLY the per-order price ceiling; real spend stays bounded by
+  `max_order_notional_cents` and the unchanged `PROBE_LEDGER_CAP_CENTS` (both
+  enforced in `check_order`). Since 2026-08-18 those are the only two money
+  bounds in this layer — an event may place one order per FILL-posture
+  keyword, bounded per keyword by the one-shot table. `--fillable` requires both `--i-am-live` and
   `--allow-mention` (guarded in `main.rs::arm`). Raising the ceiling itself is
   a code change with review, never per-run. Event-prep (`earshot prepare
   --fillable`) sets each keyword's `max_price_cents = min(live ask, ceiling)`

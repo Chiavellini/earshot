@@ -240,6 +240,16 @@ pub struct OrderRecord {
     /// does not yet carry. At n=64 no band clears its own confidence interval,
     /// which is why this ships as evidence and gates nothing.
     pub ev_at_ask_cents: Option<i64>,
+    /// Fill-path verifier (D2): what the second-stage decode said about this
+    /// intent's keyword — `confirmed` / `rejected` / `timeout` / `dropped` /
+    /// `not_requested` — and whether the verdict GATED the send (`verify_gated`,
+    /// mode = gate on an opted-in fill word). Absent when no verifier ran.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub verify_verdict: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub verify_wait_ns: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub verify_gated: Option<bool>,
 }
 
 impl OrderRecord {
@@ -291,6 +301,11 @@ pub struct ExecCtx {
     pub decision_plan_sha1: String,
     pub keyword_text: HashMap<u16, String>,
     pub rest_endpoint_id: String,
+    /// Fill-path verifier client (D2). `None` = no verifier configured. In
+    /// `gate` mode a FILL-priced Confirmed intent on an opted-in ticker is held
+    /// (≤ `budget_ms` past `decision_ts`) for the second-stage verdict before
+    /// the book is read; 1¢ observe intents never wait.
+    pub verifier: Option<crate::verifier::VerifierClient>,
 }
 
 impl ExecCtx {
@@ -834,6 +849,9 @@ async fn handle_intent(
         book_as_of_ts: None,
         book_age_ns: None,
         ev_at_ask_cents: None,
+        verify_verdict: None,
+        verify_wait_ns: None,
+        verify_gated: None,
     };
 
     let Some(staged) = staged else {
@@ -848,6 +866,72 @@ async fn handle_intent(
         pending.flush(recorder);
         return record;
     };
+
+    // Fill-path verifier hold (D2). Only a FILL-priced Confirmed intent on an
+    // opted-in ticker in gate mode ever waits; everything else proceeds and, if
+    // a verdict is already there, records it as shadow evidence.
+    if let Some(v) = ctx.verifier.as_ref() {
+        let fill_priced = staged.price_cents > OBSERVE_PRICE_CENTS;
+        let gated =
+            fill_priced && intent.tier == Tier::Confirmed && v.gated_keyword(intent.keyword);
+        record.verify_gated = Some(gated);
+        if gated {
+            let budget = std::time::Duration::from_millis(v.budget_ms() as u64);
+            let already =
+                std::time::Duration::from_nanos(exec_ts.saturating_since(intent.decision_ts));
+            let deadline = tokio::time::Instant::now() + budget.saturating_sub(already);
+            let wait_start = MonotonicNs::now();
+            let outcome = v.await_verdict(intent.keyword, intent.tier, deadline).await;
+            let waited = MonotonicNs::now().saturating_since(wait_start);
+            record.verify_wait_ns = Some(waited);
+            use crate::verifier::{Await, Verdict};
+            let (label, veto) = match &outcome {
+                Await::Ready(Verdict::Confirmed { .. }) => ("confirmed", false),
+                Await::Ready(Verdict::Rejected) => ("rejected", true),
+                Await::Ready(Verdict::Error { .. }) => ("error", false),
+                Await::Timeout => (
+                    "timeout",
+                    v.on_timeout() == crate::config::VerifierOnTimeout::Hold,
+                ),
+                Await::Dropped => ("dropped", false),
+                Await::NotRequested => ("not_requested", false),
+            };
+            record.verify_verdict = Some(label.into());
+            tracing::info!(ticker = %staged.ticker, verdict = label, waited_ms = waited / 1_000_000,
+                veto, "verifier hold resolved");
+            if veto {
+                let reason = if label == "timeout" {
+                    "verifier_timeout"
+                } else {
+                    "verifier_veto"
+                };
+                record.refusal = Some(reason.into());
+                if let Err(error) = durable_not_attempted(
+                    ctx.order_evidence.as_ref(),
+                    &staged,
+                    "second-stage verifier refused the fill intent",
+                )
+                .await
+                {
+                    record.transport_error = Some(format!(
+                        "order evidence verifier-veto termination failed: {error}"
+                    ));
+                }
+                pending.flush(recorder);
+                return record;
+            }
+        } else if let crate::verifier::Await::Ready(verdict) = v
+            .await_verdict(intent.keyword, intent.tier, tokio::time::Instant::now())
+            .await
+        {
+            // shadow evidence: a verdict that already exists is recorded, never waited for
+            record.verify_verdict = Some(match verdict {
+                crate::verifier::Verdict::Confirmed { .. } => "confirmed".into(),
+                crate::verifier::Verdict::Rejected => "rejected".into(),
+                crate::verifier::Verdict::Error { .. } => "error".into(),
+            });
+        }
+    }
 
     // Local book read — never a blocking REST fetch (spec §5.6).
     let book = ctx.cache.read(&staged.ticker);
@@ -974,7 +1058,8 @@ async fn handle_intent(
     // gate's introduction until 2026-08-07: feed age is socket-wide liveness,
     // held under ~500 ms by the ping loop, so `Refusal::BookStale` could never
     // fire no matter how old the quote was. DASH-UBER on a 96.8 s snapshot was
-    // refused twelve lines later for EventNotional, which proves BookStale had
+    // refused twelve lines later by the then-existing per-event notional cap
+    // (removed 2026-08-18), which proves BookStale had
     // not fired. Unknown age stays u64::MAX — unknown is stale (P3).
     let audio_age = MonotonicNs::now().saturating_since(intent.audio_ts);
     if let Err(refusal) = ctx.gate.check_order(
@@ -1449,6 +1534,9 @@ mod tests {
             book_as_of_ts: None,
             book_age_ns: None,
             ev_at_ask_cents: None,
+            verify_verdict: None,
+            verify_wait_ns: None,
+            verify_gated: None,
         }
     }
 

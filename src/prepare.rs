@@ -376,7 +376,7 @@ pub async fn run_prepare(
 
     // Risk: allowlist = tradeable tickers; keep notional caps tight.
     body.push_str(
-        "[risk]\nmax_order_notional_cents = 100\nmax_event_notional_cents = 100\n\
+        "[risk]\nmax_order_notional_cents = 100\n\
                    book_stale_ms            = 2000\naudio_stale_ms           = 2000\n\
                    allowlist_tickers = [\n",
     );

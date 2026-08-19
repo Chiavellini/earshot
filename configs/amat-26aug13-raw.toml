@@ -31,7 +31,6 @@ series = "KXEARNINGSMENTIONAMAT"
 
 [risk]
 max_order_notional_cents = 100
-max_event_notional_cents = 100
 book_stale_ms            = 2000
 audio_stale_ms           = 2000
 allowlist_tickers = [

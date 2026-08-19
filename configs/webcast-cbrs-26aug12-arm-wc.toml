@@ -116,11 +116,12 @@ max_order_notional_cents = 970
 # non-crossing and took no position at all. Four words that previously could not
 # trade now can: amd 0.59, aws 0.56, openai 0.44, kimi 0.11.
 #
-# The old 100c cap admitted exactly ONE order per event against a 97c fill cap
-# (MEASURED 26AUG06 CELH: 5 Confirmed detections, 1 filled, 2 refused on
-# EventNotional) — the cap, not detection, was binding, and it failed SILENTLY
-# as a refusal rather than loudly as a misconfiguration.
-max_event_notional_cents = 10476
+# The old 100c per-event cap admitted exactly ONE order per event against a 97c
+# fill cap (MEASURED 26AUG06 CELH: 5 Confirmed detections, 1 filled, 2 refused;
+# reproduced on all three 26AUG18 boards) — the cap, not detection, was binding,
+# and it failed SILENTLY as a refusal rather than loudly as a misconfiguration.
+# That cap was REMOVED on 2026-08-18 (operator ruling O8); this file no longer
+# carries a max_event_notional_cents key and would refuse to load if it did.
 book_stale_ms            = 2000
 audio_stale_ms           = 2000
 allowlist_tickers = [

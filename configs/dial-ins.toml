@@ -1139,3 +1139,18 @@ number_src    = "operator-supplied 2026-08-10; the US toll-free is a SHARED conf
 confidence    = "high"
 last_verified = "2026-08-10"
 notes         = "REPLACES a stale Q1 line (from the May 11 bridge) that was still sitting in state/hunt/numbers.env; it would have dialled a dead conference silently rather than failing loudly. NOTE the repo's T-90..T-30 probe window is WRONG for this venue: the bridge does not provision until T-30, exactly when admission-window-probe.sh stops allowing a probe, so an in-window probe here has to run at T-30..T-0."
+
+[KLAR]
+tier          = "published"
+qa_mechanism  = "unknown"
+listen_access = "yes"
+admission        = "untested"
+admission_detail = "NEVER PROBED. The registry previously had no KLAR entry at all, so slate-stage read the issuer as no-entry and staged KLAR webcast-only; that was ABSENCE OF A RECORD, not a tested verdict. Do not treat this block as permission to skip the probe (the MSFT rule)."
+admission_probed = ""
+probe_artifact   = ""
+evidence      = "Participant teleconference dial-ins for two dozen countries (United States, United Kingdom, Sweden, Denmark, Finland, Norway, Germany, Austria, Australia, Belgium, Bulgaria, China, Czech Republic, Estonia, France, Hong Kong, Ireland, Italy, Japan, Malaysia, Netherlands, Singapore, Spain, Switzerland) plus a single TurboBridge conference id, read live from the event payload on the public registration page on 2026-08-17 (no registration needed to see them; digits in number_src). The venue's own configured IVR prompts establish an AUTOMATED bridge, not a live human screener: the introduction states participants are in listen-only mode for the first part of the call and asks anyone wanting the Q&A queue to dial pound-key-five, with a matching withdraw prompt. That is a strong prior for a keyed credential, but scripts/dial-in-intake.py returns AMBIGUOUS (exit four) because NO GOVERNING VERB is published anywhere for the conference id — nothing says whether it is entered on the keypad or spoken to an attendant. Per the intake tool's own rule, an absent verb is prepared as SPOKEN, because that failure mode is recoverable and a silent leg is not."
+evidence_src  = "https://klarna.events.inderes.com/q2-report-2026/register"
+number_src    = "https://klarna.events.inderes.com/q2-report-2026/register"
+confidence    = "medium"
+last_verified = "2026-08-17"
+notes         = "NEW VENUE CLASS: Inderes / VideoSync (videosync.events, api.videosync.fi), white-labelling the same engagestream stack Euronext ships as Company Webcast; player is bitmovin-8 and the account has signedHlsPlayback disabled. The webcast lane is a REGISTRATION WALL (name + email + company, invite-only disabled, email-authentication disabled) so it binds registered-session, never public. Q2 2026 call staged webcast-only for 2026-08-18T12:30:00Z; the phone lane is UNPROVEN and was not armed. To use the phone lane on a future call, probe inside the venue window (default T-90..T-30) with scripts/bridge-probe.sh and let only a `held` verdict promote, then scripts/slate-stage.sh --issuer KLAR to restage same-day."

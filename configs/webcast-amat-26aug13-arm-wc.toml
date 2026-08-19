@@ -100,7 +100,6 @@ env = "prod"
 # Order cap carries one 10-contract high-band order; event cap = the posture's
 # printed floor; both under PROBE_LEDGER_CAP_CENTS 13000 and the code hard cap.
 max_order_notional_cents = 970
-max_event_notional_cents = 10864
 book_stale_ms            = 2000
 audio_stale_ms           = 2000
 allowlist_tickers = [
