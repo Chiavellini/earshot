@@ -448,6 +448,9 @@ branch = "webcast-lane"
 state = "active"
 contract_change = true
 paths = [
+  # 2026-08-19: box-primary / laptop-failover wrapper and the live-event watchdog.
+  "scripts/laptop-failover.sh",
+  "scripts/event-watchdog.sh",
   "docs/MULTI-EVENT.md",
   "docs/nodes/control-launch.md",
   "scripts/launch-event.sh",
@@ -837,6 +840,10 @@ contract_change = true
 # immutable RunPlans by starts_at_utc before preflight. Focused tests are green;
 # this shared claim remains active for the pre-existing resolver migration.
 paths = [
+  # 2026-08-19 (TGT+TOL missed): the push must name EVERY executing host, be
+  # SCHEDULED (launchd), and be PCM-PROVEN before publishing; browser-resolve
+  # gains --click-text / --reject-substr / --reject-endlist (both already listed).
+  "scripts/url-push-job.sh",
   "docs/nodes/control-acquire.md",
   "scripts/access-plan.py",
   "tests/access_plan.py",

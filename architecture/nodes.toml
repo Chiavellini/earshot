@@ -860,6 +860,7 @@ owns = [
   # venues the executing host cannot resolve itself.
   "scripts/urlfile-wait.sh",
   "scripts/push-url-file.sh",
+  "scripts/url-push-job.sh",
   "tests/access_plan.py",
   "tests/preresolved_arm.sh",
 ]
@@ -878,6 +879,8 @@ status = "active"
 doc = "docs/nodes/control-launch.md"
 doc_style = "node"
 owns = [
+  "scripts/laptop-failover.sh",
+  "scripts/event-watchdog.sh",
   "docs/MULTI-EVENT.md",
   "scripts/arm-on-url.sh",
   "scripts/capture-ready.py",

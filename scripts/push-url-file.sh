@@ -5,6 +5,7 @@
 #
 #   scripts/push-url-file.sh --run-dir var/runs/<EVENT>/<RUN> --resolve
 #   scripts/push-url-file.sh --run-dir var/runs/<EVENT>/<RUN> --from-file <path>
+#   scripts/push-url-file.sh --run-dir <laptop-hosted run> --from-file <path> --host local   # this host IS the executing host
 #   scripts/push-url-file.sh --check          # offline self-test, stubbed ssh
 #
 # WHY THIS EXISTS (2026-08-13, the box-webcast migration): browser-class venues
@@ -77,6 +78,20 @@ push_payload() {
     || { echo "PUSH-REFUSED: unsafe remote basename: $base" >&2; return 1; }
   [[ -f "$local_file" ]] || { echo "PUSH-REFUSED: no local payload: $local_file" >&2; return 1; }
   want=$(sha_of "$local_file")
+  # --host local: THIS host is the executing host (a laptop-hosted preresolved
+  # plan, or the laptop leg of a box-primary/laptop-failover pair). Same
+  # atomic publish, no ssh. 2026-08-19: the TGT/TOL box legs waited 75 min on a
+  # url-file that had only ever been published on the laptop — a push must be
+  # able to name EVERY executing host, and "local" must not need an ssh shim.
+  if [[ "$BOX" == "local" ]]; then
+    local T="$HOME/.${base}.$$.tmp"
+    ( umask 077; cat "$local_file" > "$T" ) && chmod 644 "$T" && mv "$T" "$HOME/$base" \
+      || { echo "PUSH-REFUSED: local publish failed for $base" >&2; return 1; }
+    got=$(sha_of "$HOME/$base")
+    [[ "$got" == "$want" ]] || { echo "PUSH-REFUSED: $base landed as $got, expected $want" >&2; return 1; }
+    echo "URL-VERIFIED $base sha=${want:0:12} (local)"
+    return 0
+  fi
   # \$HOME and \$\$ stay literal so the REMOTE shell expands them: the executing
   # host's home is the only correct destination, and the tmp file must be born
   # in the target's own directory for the rename to be atomic.

@@ -265,3 +265,36 @@ not where preflight is looking. Push the closed ledger to the box before
 re-preflighting; `scripts/deploy-box.sh` excludes `var/runs/` both directions
 (E3), so a laptop-side close does not travel on a deploy. This direction has no
 one-command door yet — only box→laptop does (`--prelaunch`, above).
+
+## 2026-08-19 — TGT + TOL: two events, two hosts, zero audio (the whole-day miss)
+
+- **The push named one host.** Box-primary legs were staged (correctly) as
+  `-BOX-WEBCAST` twins and waited in `urlfile-wait` from T-75; the url pushes
+  were published LOCALLY only. Nothing in the chain refused that — the box
+  legs logged `URLFILE-WAIT ABSENT` for 75 minutes and the laptop failover then
+  stopped them. Fix: `url-push-job.sh` takes every (run-dir, host) pair of the
+  event in ONE job; a push job that does not name the box is a missed box event.
+- **A minted URL is not a stream.** TOL's resolver rejected the holding VOD
+  as designed and pushed a live Notified "metafile" master; the arm launched,
+  got 0 frames on both legs, died at +11 min. Fix: `url-push-job.sh` runs
+  `pcm-gate.sh` on the minted URL BEFORE publishing and re-resolves on FAIL.
+  Never publish a URL that has not produced PCM on the host that will use it.
+- **webinar.net is WebRTC.** Registration + Attend works; no HLS/DASH manifest
+  ever appears (watched 12:00–12:17Z). The pipe legs cannot ingest it on any
+  host. Descope this venue class on the record unless a browser-audio leg exists.
+- **Session wakeups are not monitoring.** Four CronCreate observers (10:52,
+  11:58, 12:33, 14:05Z) all fired at 17:46Z — they only run while the session
+  is idle. The launchd watchdog installed the same night DID run and paged;
+  that is the only supervision that counts (`event-watchdog.sh`).
+- **"Registered" ≠ "in the room".** webinar.net keeps the registration in
+  localStorage but a fresh context bounces `/live` to the registration page
+  until "Attend" is clicked — `browser-resolve --click-text Attend`. Proving a
+  profile passes the wall is necessary, not sufficient; prove PCM.
+- **Re-binding on each config edit.** Posture write → new attempt → rebind →
+  preflight → schedule; each cycle is ~8 min and leaves stale launchd jobs for
+  superseded attempts LOADED (two fired at the same minute). Always `launchctl
+  list | grep com.earshot.run` and bootout the superseded ones; do posture and
+  verifier edits BEFORE the first bind.
+- **Laptop load gates.** preflight FAILS above 2×cores load; your own
+  transcription/bench job (load 30–130 on this laptop) trips it and, worse,
+  degrades capture (C5). Nothing heavy on the laptop on event days.

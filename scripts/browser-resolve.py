@@ -111,9 +111,12 @@ def probe_wall(pg):
     return total
 
 
-def try_click_play(pg):
-    for sel in ["text=/listen|play|launch|join|webcast|audio/i",
-                "button[aria-label*='lay' i]", ".vjs-big-play-button", "video"]:
+def try_click_play(pg, extra_text_re=""):
+    sels = ["text=/listen|play|launch|join|webcast|audio/i",
+            "button[aria-label*='lay' i]", ".vjs-big-play-button", "video"]
+    if extra_text_re:
+        sels.insert(0, f"text=/{extra_text_re}/i")
+    for sel in sels:
         try:
             el = pg.locator(sel).first
             if el.count() and el.is_visible():
@@ -137,6 +140,15 @@ def main():
                     help="persistent browser profile dir (for venues the operator logged into once)")
     ap.add_argument("--headed", action="store_true")
     ap.add_argument("--no-notify", action="store_true")
+    ap.add_argument("--click-text", default="",
+                    help="extra regex of button/link text to click (e.g. 'Attend' — webinar.net "
+                         "2026-08-19: the remembered-registration page needs Attend clicked to "
+                         "enter /live, and the default play regex does not match it)")
+    ap.add_argument("--reject-substr", default="",
+                    help="ignore any manifest whose URL contains this (a known holding-VOD hash)")
+    ap.add_argument("--reject-endlist", action="store_true",
+                    help="ignore manifests whose body carries #EXT-X-ENDLIST (a VOD — Notified MMC "
+                         "serves a 15-min holding VOD master before the call; TOL 2026-08-19)")
     ap.add_argument("--check", action="store_true", help="offline self-test")
     a = ap.parse_args()
 
@@ -180,12 +192,20 @@ def main():
             u = resp.url
             if not MANIFEST_RE.search(u) or u in found:
                 return
+            if a.reject_substr and a.reject_substr in u:
+                print(f"MANIFEST-IGNORED reject-substr {u[:160]}", flush=True)
+                return
             body = ""
+            full = ""
             try:
                 if resp.status == 200 and len(u) < 2000:
-                    body = resp.text()[:4000]
+                    full = resp.text()[:1_000_000]   # ENDLIST sits at the END of a VOD playlist
+                    body = full[:4000]
             except Exception:
                 pass
+            if a.reject_endlist and "#EXT-X-ENDLIST" in full:
+                print(f"MANIFEST-IGNORED vod(ENDLIST) {u[:160]}", flush=True)
+                return
             found[u] = looks_master(u, body)
             print(f"MANIFEST-SEEN {'master' if found[u] else 'variant'} "
                   f"[{resp.status}] {u[:180]}", flush=True)
@@ -202,8 +222,10 @@ def main():
                      f"{a.url} — {type(e).__name__}. Manual paste needed: printf '%s' '<m3u8>' > {out}")
             return 4
 
-        if a.click_play:
-            try_click_play(pg)
+        if a.click_play or a.click_text:
+            if a.click_text:
+                pg.wait_for_timeout(4000)   # the Attend-style button renders after the page's own JS
+            try_click_play(pg, a.click_text)
 
         wall_hit = False
         started = time.time()
@@ -227,9 +249,9 @@ def main():
                 if is_wall(probe_wall(pg)):
                     wall_hit = True
                     break
-            if a.click_play and now - last_click >= 30:
+            if (a.click_play or a.click_text) and now - last_click >= 30:
                 last_click = now
-                try_click_play(pg)
+                try_click_play(pg, a.click_text)
             if now - last_beat >= 300:
                 print(f"WAITING {int(now - started)}/{a.wait_secs}s — no manifest yet",
                       flush=True)

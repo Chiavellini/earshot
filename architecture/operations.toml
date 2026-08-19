@@ -146,6 +146,20 @@ owner = "control.supervise"
 path = "scripts/install-t0-agents.sh"
 owner = "control.operate"
 
+# 2026-08-19 (TGT+TOL missed): the scheduled, PCM-proven, multi-host url push
+# (closes S5), the box-primary/laptop-failover wrapper, and the live watchdog.
+[[internal_adapter]]
+path = "scripts/url-push-job.sh"
+owner = "control.acquire"
+
+[[internal_adapter]]
+path = "scripts/laptop-failover.sh"
+owner = "control.launch"
+
+[[internal_adapter]]
+path = "scripts/event-watchdog.sh"
+owner = "control.launch"
+
 [[internal_adapter]]
 path = "scripts/install-tls-ingress.sh"
 owner = "platform.deploy"

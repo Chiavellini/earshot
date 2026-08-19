@@ -25,6 +25,14 @@ until a probe failed. 2026-08-12: CBRS was missed on preflight thrash — red at
 20:42, green at 21:20:41Z for a 21:00Z call. **The failure is almost always the
 timing of discovery, not the choice.** So: resolve times, bind access, and probe
 admission EARLY; verify the LOADED job, never the file you wrote.
+2026-08-19: TGT and TOL were BOTH lost with zero audio on two hosts. The box
+legs waited 75 min on a url-file that had only ever been published on the
+laptop (the push named one host); the laptop TOL leg armed on a "master" that
+yielded zero frames (no PCM proof before publishing); TGT's venue (webinar.net)
+never serves an HLS manifest at all (WebRTC) and nothing had proven it would;
+and the only live supervision was a session wakeup that never fired. **A binding
+is not "done" until PCM has been proven from that URL on every executing host,
+the push is a LOADED launchd job naming every host, and a watchdog is loaded.**
 
 ## Scope guard — run this before anything else
 
@@ -156,6 +164,8 @@ resolver from the venue:
 | **REGISTRATION WALL** (media-server MMC `edge.media-server.com/mmc/p/<hash>`, or ANY player asking name/email/company) | `browser-network` + **`registered-session`** — see the mandatory prep step below; NEVER bind these `public` |
 | unknown venue page, no wall | `browser-network` → `scripts/browser-resolve.py` (headless, watches for the master m3u8; never logs in or passes walls — exit **5** + immediate page when a wall appears) |
 | a stable public m3u8 | `static-public` |
+| **webinar.net** (`app.webinar.net/<id>`, "Register now" / "Attend") | ⛔ **WebRTC — no HLS/DASH manifest is ever served** (TGT 2026-08-19: registered, Attend clicked, watched 12:00–12:17Z, nothing manifest-shaped). Not capturable by the pipe legs on any host → **descope on the record** unless a browser-audio capture leg exists. The registration "remembered" state needs `--click-text Attend` to reach `/live`. |
+| **Notified MMC** (`edge.media-server.com/mmc/p/<hash>`) | registration wall → profile; pre-call the player serves a **15-min holding VOD master** and at call time a **tokenized live master that the pipe legs may not be able to ingest** (TOL 2026-08-19: resolved at 12:31Z, 0 frames, both legs dead at 12:46Z). Resolve with `--reject-endlist --reject-substr <holding-hash>` and ONLY publish a URL that passed `pcm-gate.sh` on the executing host (`url-push-job.sh` does this). |
 
 **THE AMAT RULE (2026-08-13, a full call lost):** if the player page shows or
 can show a registration/login form, the binding is `registered-session` with a
@@ -231,8 +241,30 @@ mode 0644, with a hash readback. It refuses once the run reaches
 `capture_ready`, because the config `cat`s the url-file at runtime and a late
 push would swap what the detector hears under a running arm.
 
-**S5 is open: this push is MANUAL.** No scheduled job does it yet, so a
-`preresolved` box event needs a human (or this skill) inside the window.
+**S5 is CLOSED (2026-08-19): the push is a SCHEDULED, PCM-PROVEN, MULTI-HOST job.**
+Never push by hand and never rely on a session wakeup. For every preresolved
+event install one job that (1) runs the plan's recorded preresolve leg, (2)
+proves the minted URL yields PCM on this host (`scripts/pcm-gate.sh`, 6 s —
+a holding VOD, an empty "metafile" master or a bot-walled manifest FAILS here
+and is re-resolved), (3) publishes to EVERY executing host (box over ssh,
+laptop natively with `--host local`), (4) pages on success and on final failure:
+
+```sh
+scripts/url-push-job.sh --install --slug <lc> --at-utc <start-2min or start+1min> --until-utc <start+14>   --run-dir var/runs/<E-BOX>/<R_BOX>   --run-dir var/runs/<E>/<R_LAPTOP> --host local
+# prints INSTALLED + the LOADED launchd readback; disarm line included
+```
+
+Choose `--at-utc`: start−2 min when the venue mints the manifest at/just before
+start (Q4, webinar-class), start+1 min when it only exists after the call
+begins (Notified MMC, holding-VOD venues). `--until-utc` must be ≤ the
+AccessPlan `deadline_utc` (start+15). Legs of one event on several hosts go in
+ONE job (same url-file basename); different events get different jobs.
+
+**Test the minting leg BEFORE the day** with the same flags the plan records
+(e.g. `browser-resolve.py --click-text Attend`, `--reject-endlist
+--reject-substr <hash>`): the wall-pass alone is NOT proof; a venue is proven
+only when PCM came out of the URL it mints (a past replay on the same player
+suffices for the ingest half: `pcm-gate.sh --kind hls --url <replay master>`).
 
 ## Phase 6 — ADMISSION (phone lane, Q-ADMIT)
 
@@ -333,6 +365,37 @@ scripts/assert-ready.sh configs/<each-event-config>.toml
   fires in the FUTURE: `launchctl print gui/$(id -u)/<LABEL>` (laptop) or
   `systemctl --user list-timers` (box). A date with zero RunPlans is REFUSED,
   not a green no-op.
+- **Box-primary / laptop-failover (operator ruling 2026-08-19: "priority is
+  capturing in the box with orders sent from the box; if the box cannot ingest,
+  capture and work from the laptop — one or the other sends actual trades,
+  never both").** Stage the box leg as its own event id
+  (`<EVENT>-BOX-WEBCAST`, config twin with `num_threads = 2` /
+  `budget_ms = 500` under `[verifier]`, readiness JSON cloned — `keywords_sha256`
+  identical so the study carries over; the HD 26AUG18 pattern), compile it with
+  the box identity (`eventctl init --config <box cfg> --event-env <box env>
+  --host-id earshot-useast1 --account-fingerprint <the box account sha>`), bind
+  it `preresolved` with `--vantage us-east1/<lc>`, dispatch it
+  (`box-webcast-install.sh --run-dir <box run> --dispatch-only`), **preflight ON
+  the box** (`ssh box 'cd ~/ear && scripts/preflight-event.sh --config configs/<box cfg>
+  --account ~/.earshot/<acct>.env --run-dir var/runs/<E-BOX>/<R>'`), pull
+  authority back (`pull-box-state.sh --prelaunch --event <E-BOX>`), then
+  `box-webcast-install.sh --run-dir <box run>` and read `systemctl --user
+  list-timers` on the box. Then wrap the LAPTOP leg's loaded launchd job so it
+  arms only if the box is not capturing by start+2:
+  `ProgramArguments = ['/bin/bash', 'scripts/laptop-failover.sh', '--event', E,
+  '--box-event', E_BOX, '--box-run', R_BOX, '--start-utc', 'HH:MM', '--', <original argv>]`
+  (bootout/bootstrap, read back). It stops the box leg (STOP file + unit) before
+  the laptop arms. `schedule-nightly` may silently drop a run that sorts after a
+  box dispatch — **run `opsctl schedule` again, or `box-webcast-install.sh` the
+  second box run directly, and read the timers back** (memory: ssh eats the
+  manifest).
+- **Live supervision is a LOADED job, never a session wakeup.** Install two
+  watchdogs per event day that page when any leg on any host is not
+  `capture_ready`: `scripts/event-watchdog.sh --install --slug <lc> --at-utc
+  <start+5> --leg <E-BOX>:<R_BOX>:ubuntu@<box> --leg <E>:<R>:local` and again at
+  `<start+35>`. Session-scheduled wakeups only fire while the session is idle
+  and are worthless as a monitor (2026-08-19: four of them fired at 17:46Z,
+  five hours after the calls).
 - Snapshot the green SET so night-before edits cannot strand the event red:
   `mkdir -p state/<E>/green-snapshot && cp configs/<cfg>.toml state/<E>/green-snapshot/config.toml && cp configs/.readiness/<base>.json state/<E>/green-snapshot/readiness.json && cp state/<E>/preflight-result.json state/<E>/green-snapshot/` —
   then `scripts/green-guardian.sh --event <E> --config <cfg>` is the T-90
@@ -357,7 +420,11 @@ every gate and what it defends against.
 
 One table, one line per event: `READY | NEEDS-TIME | NEEDS-ACCESS |
 NEEDS-ADMISSION | NEEDS-POSTURE | DESCOPED(reason)` with the exact next command
-for every non-READY row. Journal what you did per event
+for every non-READY row. **READY means, and says, all of:** study green, posture
+written, preflight PASS on every executing host, launch job(s) LOADED and read
+back per host, push job LOADED naming every host, watchdog LOADED, and the
+venue's URL→PCM path proven (live or on a replay of the same player) — anything
+less is NEEDS-ACCESS with the missing proof named. Journal what you did per event
 (`scripts/journal.sh --event <E> --actor event-prep --action stage|study|readiness|preflight|timer-install|note --outcome ok|fail|warn|refused --detail "..." || true`).
 Descopes go on the record: `scripts/opsctl.sh descope <EVENT_TICKER> "<reason>"`.
 **Fix, descope on the record, or leave the date command nonzero — silence is
