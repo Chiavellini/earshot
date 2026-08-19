@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
-"""verify-join.py — join `earshot verify-report` rows with detection-score.py labels
-→ precision-per-verdict (D2 V0). usage: verify-join.py <verify.json> <detection-score.json>"""
+"""verify-join.py — join verifier verdict rows with detection-score.py labels
+→ precision-per-verdict (D2). Accepts either an `earshot verify-report` JSON or a
+run report.json carrying live SHADOW rows (report["verifier"]["rows"]).
+usage: verify-join.py <verify.json|report.json> <detection-score.json>"""
 import json, sys
 from collections import Counter
 v = json.load(open(sys.argv[1])); d = json.load(open(sys.argv[2]))
+if "verifier" in v and "rows" not in v:            # a run report with live shadow rows
+    v = v["verifier"]
+    for r in v["rows"]:                              # normalise the live row shape
+        r["verdict"] = r["verdict"]["kind"] if isinstance(r["verdict"], dict) else r["verdict"]
+        r.setdefault("confidence", 0.0)
 raw = d
 tp_pos = {}; fp_pos = {}; dup_pos = {}
 for kw in raw["keywords"]:

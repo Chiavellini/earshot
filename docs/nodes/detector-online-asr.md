@@ -108,7 +108,10 @@ against the pre-registered bars in `docs/BAKEOFF.md`.
 ## Migration status
 
 Built 2026-08-18 (detection-accuracy program D1) and green on the zipformer-en
-2023-06-26 test_wavs. Not yet armed anywhere; not yet benched on the corpus.
+2023-06-26 test_wavs. Benched 2026-08-19 (`docs/BAKEOFF.md` §D1): that model
+FAILS the bars vs the armed CTC (recall −9 pts, FA/h −42 %, lag +384 ms;
+hotwords +13 pts recall, spent at score 1.5); the NeMo cache-aware 80 ms
+transducer is the next cell (C4). Not armed anywhere.
 Open increments: (v1.1) raw sherpa result JSON (`ys_probs`, `context_scores`)
 for a real per-word confidence + `boost_share`; a sherpa-timestamp
 promotion study for `audio_pos_ms`; NeMo cache-aware 80 ms candidates on the

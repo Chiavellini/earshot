@@ -95,6 +95,13 @@ Built 2026-08-18 (detection-accuracy program D2). V0 retrospective on the
 `innovative`, `inflationary`, `storage`/`in-store`), 0 missed vetoes; false
 vetoes only on proper nouns the offline model misheard (`Winburton`,
 `Foot Walker`) plus 2 empty decodes (now `Error`) — the reason gating is
-per-ticker opt-in and generic words go first. Not yet armed; next: shadow on
-≥3 events (`mode = shadow`, `sample = all_confirmed`), then gate on opted-in
-generic fill words. Config → `docs/BAKEOFF.md` §D2 bars.
+per-ticker opt-in and generic words go first. `TAIL_PAD_MS = 400` of silence is appended to every decode (the offline TDT
+never flushed a word sitting at the window's end — a true `weather` at 0.83
+was vetoed without it). **SHADOW-ARMED** 2026-08-19 in
+`configs/webcast-{tgt-26aug19,de-26aug20,futu-26aug20,wmt-26aug20}-arm-wc.toml`
+(`mode = shadow`, `sample = all_confirmed`, gates nothing; a missing model on a
+host warns and the arm runs without it); the box binary was rebuilt from
+35b5601 (`box-ready --repair`, GO). Score shadow rows with
+`scripts/detection-score-day.sh --date <D>` (joins `report.json["verifier"]`).
+Next: after one clean shadow event, `mode = gate` with `tickers` = the generic
+fill words (never proper nouns). Config → `docs/BAKEOFF.md` §D2 bars.

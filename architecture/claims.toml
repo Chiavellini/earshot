@@ -1162,6 +1162,10 @@ paths = [
   # numbers quoted from these files before this date are inflated for those two.
   "configs/bakeoff-webcast.toml",
   "configs/bakeoff-webcast-ctc16.toml",
+  # 2026-08-19 (D3): prior-call readiness study — bench the ARMED config on a
+  # prior call of the same issuer (real voices) → .readiness/<base>.prior.json.
+  # Advisory until posture-from-study.py reads it (separate interlock change).
+  "scripts/prior-call-study.py",
   "docs/BAKEOFF.md",
   "docs/nodes/evidence-benchmark.md",
   "benches/hot_path.rs",
@@ -1207,6 +1211,9 @@ paths = [
   # with engine confidence) — the precision baseline every model change must beat.
   "scripts/detection-score.py",
   "scripts/detection-score-pool.py",
+  # 2026-08-19: the day driver — transcribe (box or local), score every run,
+  # join live verifier shadow rows, pool. Runs after every event day.
+  "scripts/detection-score-day.sh",
   # 2026-08-11: the grader could not see a BOX-HOSTED run at all. HIMS 26AUG10's
   # phone lane put 2 orders on the wire and the day was graded "1 staged, 0
   # orders, 1c observing posture" off the laptop's webcast twin. Three defects

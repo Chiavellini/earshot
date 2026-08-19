@@ -1026,6 +1026,7 @@ owns = [
   "scripts/score-precision.py",
   "scripts/detection-score.py",
   "scripts/detection-score-pool.py",
+  "scripts/detection-score-day.sh",
   "tests/run_audit.py",
   "tests/audit_day.py",
   "tests/score_precision.py",
@@ -1173,6 +1174,7 @@ owns = [
   "scripts/variant-audit.py",
   "scripts/variant-study.sh",
   "scripts/variant-widen.py",
+  "scripts/prior-call-study.py",
   "scripts/verify-occurrences.py",
   "tests/bench_fixture.rs",
 ]
