@@ -1,0 +1,135 @@
+{
+ "config": "webcast-as-26aug18-arm-wc",
+ "keywords_sha256": "6b080dd744811374b8c7b8c59b936633476ec07f8c3600669845f5128a3b63a6",
+ "date": "2026-08-18",
+ "engine": "streaming_ctc",
+ "voices": [
+  "Samantha",
+  "Daniel",
+  "Paulina"
+ ],
+ "carriers": 2,
+ "keywords": [
+  {
+   "ticker": "KXEARNINGSMENTIONAS-26AUG18-FOOT",
+   "phrase": "foot locker",
+   "variants": [
+    "foot locker"
+   ],
+   "clips": 9,
+   "confirmed": 10
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAS-26AUG18-IRAN",
+   "phrase": "iran",
+   "variants": [
+    "iran",
+    "irans",
+    "middle east"
+   ],
+   "clips": 27,
+   "confirmed": 28
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAS-26AUG18-NORV",
+   "phrase": "norvan",
+   "variants": [
+    "norvan",
+    "norvans"
+   ],
+   "clips": 18,
+   "confirmed": 22
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAS-26AUG18-OIL",
+   "phrase": "oil",
+   "variants": [
+    "oil",
+    "oils"
+   ],
+   "clips": 18,
+   "confirmed": 32
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAS-26AUG18-OLYM",
+   "phrase": "olympic",
+   "variants": [
+    "olympic",
+    "olympics"
+   ],
+   "clips": 18,
+   "confirmed": 52
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAS-26AUG18-PICK",
+   "phrase": "pickleball",
+   "variants": [
+    "pickleball",
+    "pickleballs"
+   ],
+   "clips": 18,
+   "confirmed": 36
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAS-26AUG18-REI",
+   "phrase": "rei",
+   "variants": [
+    "rei",
+    "reis",
+    "r e i",
+    "ar ee eye"
+   ],
+   "clips": 36,
+   "confirmed": 2
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAS-26AUG18-SABA",
+   "phrase": "sabalenka",
+   "variants": [
+    "sabalenka",
+    "sabalenkas"
+   ],
+   "clips": 18,
+   "confirmed": 6
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAS-26AUG18-SUPR",
+   "phrase": "supreme court",
+   "variants": [
+    "supreme court"
+   ],
+   "clips": 9,
+   "confirmed": 20
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAS-26AUG18-TARI",
+   "phrase": "tariff",
+   "variants": [
+    "tariff",
+    "tariffs"
+   ],
+   "clips": 18,
+   "confirmed": 34
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAS-26AUG18-WATE",
+   "phrase": "waterproof",
+   "variants": [
+    "waterproof",
+    "waterproofs"
+   ],
+   "clips": 18,
+   "confirmed": 46
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONAS-26AUG18-WIMB",
+   "phrase": "wimbledon",
+   "variants": [
+    "wimbledon",
+    "wimbledons"
+   ],
+   "clips": 18,
+   "confirmed": 40
+  }
+ ]
+}

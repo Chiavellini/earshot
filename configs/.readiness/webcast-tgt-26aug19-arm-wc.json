@@ -1,0 +1,143 @@
+{
+ "config": "webcast-tgt-26aug19-arm-wc",
+ "keywords_sha256": "1b1a7547887b487c157ed1d9e703739d096a2651b8889e277de8a1e21944aae6",
+ "date": "2026-08-18",
+ "engine": "streaming_ctc",
+ "voices": [
+  "Samantha",
+  "Daniel",
+  "Paulina"
+ ],
+ "carriers": 2,
+ "keywords": [
+  {
+   "ticker": "KXEARNINGSMENTIONTGT-26AUG19-AUTO",
+   "phrase": "autonomous",
+   "variants": [
+    "autonomous",
+    "automation",
+    "automations"
+   ],
+   "clips": 27,
+   "confirmed": 46
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTGT-26AUG19-BACK",
+   "phrase": "back to school",
+   "variants": [
+    "back to school"
+   ],
+   "clips": 9,
+   "confirmed": 20
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTGT-26AUG19-BEAU",
+   "phrase": "beauty",
+   "variants": [
+    "beauty",
+    "beautys"
+   ],
+   "clips": 18,
+   "confirmed": 42
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTGT-26AUG19-COMP",
+   "phrase": "competition",
+   "variants": [
+    "competition",
+    "competitions"
+   ],
+   "clips": 18,
+   "confirmed": 38
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTGT-26AUG19-INFL",
+   "phrase": "inflation",
+   "variants": [
+    "inflation",
+    "inflations"
+   ],
+   "clips": 18,
+   "confirmed": 60
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTGT-26AUG19-NINT",
+   "phrase": "nintendo switch",
+   "variants": [
+    "nintendo switch"
+   ],
+   "clips": 9,
+   "confirmed": 8
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTGT-26AUG19-PLUS",
+   "phrase": "target plus",
+   "variants": [
+    "target plus"
+   ],
+   "clips": 9,
+   "confirmed": 8
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTGT-26AUG19-REMO",
+   "phrase": "remodel",
+   "variants": [
+    "remodel",
+    "remodels"
+   ],
+   "clips": 18,
+   "confirmed": 52
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTGT-26AUG19-REVE",
+   "phrase": "revenue",
+   "variants": [
+    "revenue",
+    "revenues"
+   ],
+   "clips": 18,
+   "confirmed": 62
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTGT-26AUG19-ROUN",
+   "phrase": "roundel",
+   "variants": [
+    "roundel",
+    "roundels"
+   ],
+   "clips": 18,
+   "confirmed": 10
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTGT-26AUG19-SNAP",
+   "phrase": "snap",
+   "variants": [
+    "snap",
+    "snaps",
+    "s n a p",
+    "food stamp"
+   ],
+   "clips": 36,
+   "confirmed": 80
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTGT-26AUG19-SYNT",
+   "phrase": "synthetic color",
+   "variants": [
+    "synthetic color"
+   ],
+   "clips": 9,
+   "confirmed": 18
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTGT-26AUG19-TARI",
+   "phrase": "tariff",
+   "variants": [
+    "tariff",
+    "tariffs"
+   ],
+   "clips": 18,
+   "confirmed": 34
+  }
+ ]
+}

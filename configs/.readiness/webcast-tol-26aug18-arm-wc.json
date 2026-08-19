@@ -1,0 +1,157 @@
+{
+ "config": "webcast-tol-26aug18-arm-wc",
+ "keywords_sha256": "fd61c43748d2669eac2a3b74cab0bb5bffb89597e5f65a35a67551eb79b21407",
+ "date": "2026-08-18",
+ "engine": "streaming_ctc",
+ "voices": [
+  "Samantha",
+  "Daniel",
+  "Paulina"
+ ],
+ "carriers": 2,
+ "keywords": [
+  {
+   "ticker": "KXEARNINGSMENTIONTOL-26AUG18-APAR",
+   "phrase": "apartment",
+   "variants": [
+    "apartment",
+    "apartments"
+   ],
+   "clips": 18,
+   "confirmed": 78
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTOL-26AUG18-BUFF",
+   "phrase": "buffington",
+   "variants": [
+    "buffington",
+    "buffingtons",
+    "arkansas"
+   ],
+   "clips": 27,
+   "confirmed": 26
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTOL-26AUG18-BUYB",
+   "phrase": "buyback",
+   "variants": [
+    "buyback",
+    "buybacks",
+    "buy back",
+    "buybak"
+   ],
+   "clips": 36,
+   "confirmed": 6
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTOL-26AUG18-CALI",
+   "phrase": "california",
+   "variants": [
+    "california",
+    "californias"
+   ],
+   "clips": 18,
+   "confirmed": 54
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTOL-26AUG18-CASH",
+   "phrase": "cash buyer",
+   "variants": [
+    "cash buyer",
+    "all cash"
+   ],
+   "clips": 18,
+   "confirmed": 12
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTOL-26AUG18-CUST",
+   "phrase": "customize",
+   "variants": [
+    "customize",
+    "customizes",
+    "customization",
+    "customizations"
+   ],
+   "clips": 36,
+   "confirmed": 134
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTOL-26AUG18-FLOR",
+   "phrase": "florida",
+   "variants": [
+    "florida",
+    "floridas"
+   ],
+   "clips": 18,
+   "confirmed": 46
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTOL-26AUG18-INCE",
+   "phrase": "incentive",
+   "variants": [
+    "incentive",
+    "incentives"
+   ],
+   "clips": 18,
+   "confirmed": 58
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTOL-26AUG18-LAND",
+   "phrase": "land bank",
+   "variants": [
+    "land bank",
+    "land banking"
+   ],
+   "clips": 18,
+   "confirmed": 54
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTOL-26AUG18-LUMB",
+   "phrase": "lumber",
+   "variants": [
+    "lumber",
+    "lumbers"
+   ],
+   "clips": 18,
+   "confirmed": 56
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTOL-26AUG18-MORT",
+   "phrase": "mortgage",
+   "variants": [
+    "mortgage",
+    "mortgages"
+   ],
+   "clips": 18,
+   "confirmed": 46
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTOL-26AUG18-MOVE",
+   "phrase": "move up buyer",
+   "variants": [
+    "move up buyer"
+   ],
+   "clips": 9,
+   "confirmed": 4
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTOL-26AUG18-SPEC",
+   "phrase": "spec home",
+   "variants": [
+    "spec home"
+   ],
+   "clips": 9,
+   "confirmed": 12
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONTOL-26AUG18-TARI",
+   "phrase": "tariff",
+   "variants": [
+    "tariff",
+    "tariffs"
+   ],
+   "clips": 18,
+   "confirmed": 34
+  }
+ ]
+}

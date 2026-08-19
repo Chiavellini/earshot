@@ -1,0 +1,172 @@
+{
+ "config": "webcast-klar-26aug18-arm-wc",
+ "keywords_sha256": "8e8ae29c2930c3258ae7fe63f0ed7b0df426f820239bad094bd70fad3f4b4245",
+ "date": "2026-08-17",
+ "engine": "streaming_ctc",
+ "voices": [
+  "Samantha",
+  "Daniel",
+  "Paulina"
+ ],
+ "carriers": 2,
+ "keywords": [
+  {
+   "ticker": "KXEARNINGSMENTIONKLAR-26AUG18-AI",
+   "phrase": "a i",
+   "variants": [
+    "a i",
+    "artificial intelligence"
+   ],
+   "clips": 18,
+   "confirmed": 20
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONKLAR-26AUG18-APPL",
+   "phrase": "apple pay",
+   "variants": [
+    "apple pay"
+   ],
+   "clips": 9,
+   "confirmed": 10
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONKLAR-26AUG18-BANK",
+   "phrase": "banking license",
+   "variants": [
+    "banking license"
+   ],
+   "clips": 9,
+   "confirmed": 16
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONKLAR-26AUG18-CRED",
+   "phrase": "credit quality",
+   "variants": [
+    "credit quality"
+   ],
+   "clips": 9,
+   "confirmed": 16
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONKLAR-26AUG18-DELI",
+   "phrase": "delinquency",
+   "variants": [
+    "delinquency",
+    "delinquencys"
+   ],
+   "clips": 18,
+   "confirmed": 58
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONKLAR-26AUG18-GEMI",
+   "phrase": "gemini",
+   "variants": [
+    "gemini",
+    "geminis"
+   ],
+   "clips": 18,
+   "confirmed": 20
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONKLAR-26AUG18-HEAD",
+   "phrase": "headwind",
+   "variants": [
+    "headwind",
+    "headwinds"
+   ],
+   "clips": 18,
+   "confirmed": 8
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONKLAR-26AUG18-HEADC",
+   "phrase": "headcount",
+   "variants": [
+    "headcount",
+    "headcounts"
+   ],
+   "clips": 18,
+   "confirmed": 20
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONKLAR-26AUG18-INFL",
+   "phrase": "inflation",
+   "variants": [
+    "inflation",
+    "inflations"
+   ],
+   "clips": 18,
+   "confirmed": 60
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONKLAR-26AUG18-JP",
+   "phrase": "jp morgan payment",
+   "variants": [
+    "jp morgan payment"
+   ],
+   "clips": 9,
+   "confirmed": 16
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONKLAR-26AUG18-PRIC",
+   "phrase": "pricerunner",
+   "variants": [
+    "pricerunner",
+    "pricerunners",
+    "price runner"
+   ],
+   "clips": 27,
+   "confirmed": 16
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONKLAR-26AUG18-PROF",
+   "phrase": "profitability",
+   "variants": [
+    "profitability",
+    "profitabilitys"
+   ],
+   "clips": 18,
+   "confirmed": 34
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONKLAR-26AUG18-SOUT",
+   "phrase": "southwest airlines",
+   "variants": [
+    "southwest airlines"
+   ],
+   "clips": 9,
+   "confirmed": 12
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONKLAR-26AUG18-SWED",
+   "phrase": "sweden",
+   "variants": [
+    "sweden",
+    "swedens"
+   ],
+   "clips": 18,
+   "confirmed": 48
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONKLAR-26AUG18-TAIL",
+   "phrase": "tailwind",
+   "variants": [
+    "tailwind",
+    "tailwinds",
+    "tail wind",
+    "tail winds"
+   ],
+   "clips": 36,
+   "confirmed": 66
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONKLAR-26AUG18-WALM",
+   "phrase": "walmart",
+   "variants": [
+    "walmart",
+    "walmarts"
+   ],
+   "clips": 18,
+   "confirmed": 20
+  }
+ ]
+}

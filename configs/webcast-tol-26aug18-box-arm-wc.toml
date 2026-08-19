@@ -1,0 +1,280 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# TOL-26AUG18 — BOX LEG (PRIMARY, MONEY). Derived 2026-08-19 05:40Z from configs/webcast-tol-26aug18-arm-wc.toml
+# by /event-prep on the operator ruling "priority is capturing in the box with orders
+# sent from the box; if the box cannot ingest, capture and work from the laptop —
+# one or the other sends actual trades, never both".
+#   KXEARNINGSMENTIONTOL-26AUG18-BOX-WEBCAST   box (execution_host earshot-useast1), full posture  <- THIS, MONEY
+#   KXEARNINGSMENTIONTOL-26AUG18-WEBCAST       laptop, same posture, launchd job wrapped by
+#                      state/_day/tools/laptop-failover.sh: it arms ONLY if the box run has
+#                      not reached capture_ready by start+2 min (and then stops the box unit).
+# Distinct event id because execution_host_id is inside plan_sha256 and eventctl refuses two
+# active runs for one event id. keywords_sha256 identical -> the study carries over
+# (readiness cloned). Verifier: gate, 2 threads / 500 ms (box decode p95 < 400 ms).
+# WEBCAST FANOUT ARM TEMPLATE — direct-m3u8 events (IR players, FOMC).
+# The production armed posture from the 07-22 race findings (docs/RACE-STRATEGY.md §5):
+#   leg 1 "streamlink"  — edge-join primary: the measured ladder winner
+#                         (−11.7..−13.65 s vs default join, RUNBOOK 07-17 + 07-20)
+#   leg 2 "pipe_tuned"  — tuned-ffmpeg backstop (-live_start_index -1 = the only
+#                         flag that moves the join point; −10.6..−11.65 s vs default)
+# Both legs run FULL detect chains OR-ed at the one-shot decision table
+# ([arbiter] mode = "fanout") — different legs hear different audio (07-22 TARI).
+#
+# Instantiate per event with scripts/stage-webcast-arm.sh, then:
+#   1. paste the `earshot prepare` keyword/risk sections over the placeholders,
+#   2. on call morning write the m3u8:  echo "<m3u8>" > ~/<lc>-stream.url
+#   3. launch attended: scripts/launch-webcast.sh --config <this> --account <env> \
+#        --wait-live ~/<lc>-stream.url --wait-kind hls
+# The live gate lives in launch-webcast.sh (NEVER inside a source cmd —
+# 07-22 post-mortems #1/#2). YouTube events: do NOT use this template; keep
+# the frozen yt-dlp leg (configs/webcast-tsla.toml) until a streamlink-vs-
+# YouTube ladder number exists (capture first).
+# Posture: mention-probe observe (1¢ non-crossing) — fill posture is gated on
+# the Phase-4 precision verdict (docs/RACE-STRATEGY.md).
+
+[event]
+id        = "KXEARNINGSMENTIONTOL-26AUG18-BOX-WEBCAST"
+starts_at = "2026-08-19T12:30:00Z"
+
+[pipeline]
+chunk_ms       = 80
+resample_to_hz = 16000
+
+[detector]
+engine = "streaming_ctc"
+
+[detector.streaming_ctc]
+model_dir         = "models/sherpa-onnx-streaming-zipformer-ctc-small-2024-03-18"
+num_threads       = 1
+default_threshold = 0.15
+refractory_ms     = 2000
+
+# sherpa_kws block kept so the engine reverts with a one-line change above.
+
+[detector.sherpa_kws]
+model_dir         = "models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
+num_threads       = 1
+max_active_paths  = 4
+default_threshold = 0.20
+default_boost     = 2.0
+refractory_ms     = 2000
+fp32              = true
+
+[arbiter]
+mode = "fanout"
+
+[[sources]]
+kind = "pipe"
+label = "streamlink"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "streamlink --stdout --hls-live-edge 1 --hls-segment-stream-data --hls-playlist-reload-time segment \"$(cat $HOME/tol-stream.url)\" best | ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 2000000 -analyzeduration 5000000 -i - -vn -f s16le -ac 1 -ar 16000 -",
+]
+
+[[sources]]
+kind = "pipe"
+label = "pipe_tuned"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 2000000 -analyzeduration 5000000 -live_start_index -1 -http_persistent 1 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2 -i \"$(cat $HOME/tol-stream.url)\" -vn -f s16le -ac 1 -ar 16000 -",
+]
+
+# NOTE (SUPERSEDED 2026-07-24 night — kept as the evidence trail): this file
+# used to say the edge-fetcher leg delivers "+0 ms" and that "the gap is decode,
+# not acquisition". BOTH clauses are now refuted (docs/LATENCY-PROOF.md parts
+# 1-3): the AXP NFL race decomposed to 1.241 s FEED + 0.289 s OURS, so the gap
+# is NOT decode; and the +0 ms reading came from an instrument that compared two
+# ffmpeg legs to each other and was structurally blind to a cost they shared.
+# Measured against the encoder instead, a speculative fetcher runs 4.5 s fresher
+# than this template's legs with ~5x less run-to-run variance.
+#
+# THIS TEMPLATE IS DELIBERATELY UNCHANGED — it is the proven stack, and FOMC
+# 2026-07-29 runs it. The speculative posture lives in
+# configs/webcast-fanout-arm-spec.toml (staged with
+# `stage-webcast-arm.sh --speculative`) and is gated on off-FOMC validation,
+# because its probing could get the box's IP rate-limited and that would take
+# every leg down, not just one.
+
+[kalshi]
+series = "KXEARNINGSMENTIONTOL"
+env = "prod"
+
+# ── Placeholders below: replace with the `earshot prepare` output ──────────
+[risk]
+max_order_notional_cents = 1940   # 2026-08-19 operator ruling: per-WORD cap = 20 contracts x 97c (doubled size tiers); no event cap
+book_stale_ms            = 2000
+audio_stale_ms           = 2000
+allowlist_tickers = [
+  "KXEARNINGSMENTIONTOL-26AUG18-APAR",
+  "KXEARNINGSMENTIONTOL-26AUG18-BUFF",
+  "KXEARNINGSMENTIONTOL-26AUG18-BUYB",
+  "KXEARNINGSMENTIONTOL-26AUG18-CALI",
+  "KXEARNINGSMENTIONTOL-26AUG18-CASH",
+  "KXEARNINGSMENTIONTOL-26AUG18-CUST",
+  "KXEARNINGSMENTIONTOL-26AUG18-FLOR",
+  "KXEARNINGSMENTIONTOL-26AUG18-INCE",
+  "KXEARNINGSMENTIONTOL-26AUG18-LAND",
+  "KXEARNINGSMENTIONTOL-26AUG18-LUMB",
+  "KXEARNINGSMENTIONTOL-26AUG18-MORT",
+  "KXEARNINGSMENTIONTOL-26AUG18-MOVE",
+  "KXEARNINGSMENTIONTOL-26AUG18-SPEC",
+  "KXEARNINGSMENTIONTOL-26AUG18-TARI",
+]
+
+# Apartment (KXEARNINGSMENTIONTOL-26AUG18-APAR) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+# Fill-path verifier — GATE (detection-accuracy program D2; enabled 2026-08-19
+# for the doubled-size ruling). Every FILL-priced Confirmed intent is held until
+# an offline Parakeet-TDT re-decode of the last 3.5 s of the firing leg either
+# contains the word (send) or does not (refusal "verifier_veto"); a verdict that
+# misses the budget SENDS (on_timeout = send), so a slow decode can only cost
+# latency, never the trade. 1c observes never wait. Rehearsed 2026-08-19 04:45Z
+# with the exact arm binary on the AS 26AUG18 tape: the "Arc'teryx"->tariff
+# false fire that filled 96c on Monday was vetoed (decode 818 ms on this laptop
+# with 4 threads; hence budget 1500 here, 500 on the box). At 20 contracts x 97c
+# a false fire costs $19.40 and a true fire earns $0.60, so a false veto is cheap
+# and a false fire is not. Rows land in report.json["verifier"].
+[verifier]
+mode        = "gate"
+model_dir   = "models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8"
+model_type  = "nemo_transducer"
+num_threads = 2
+tail_ms     = 3500
+budget_ms   = 500
+on_timeout  = "send"
+sample      = "all_confirmed"
+tickers     = ["*"]
+
+
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONTOL-26AUG18-APAR"
+phrase           = "apartment"
+variants         = ["apartment", "apartments"]
+max_price_cents  = 97  # posture: HIGH — study 78/18 ratio 4.33 >= floor 1.00
+budget_contracts = 20  # posture: size 20 — ratio 4.33 tier, max 1940¢
+policy           = "confirmed_only"
+
+# Buffington / Arkansas (KXEARNINGSMENTIONTOL-26AUG18-BUFF) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONTOL-26AUG18-BUFF"
+phrase           = "buffington"
+variants         = ["buffington", "buffingtons", "arkansas"]
+max_price_cents  = 97  # posture: LOW BAND — study 26/27 ratio 0.96 < floor 1.00
+budget_contracts = 2  # posture: size 2 — LOW BAND, max 194¢ of REAL money (this word CAN fill; it is not the old 1¢ non-crossing observe)
+policy           = "confirmed_only"
+
+# Buyback (KXEARNINGSMENTIONTOL-26AUG18-BUYB) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONTOL-26AUG18-BUYB"
+phrase           = "buyback"
+variants         = ["buyback", "buybacks", "buy back", "buybak"]  # widened 2026-08-18 by variant-widen.py (rules; study confirmed:0) — UNSTUDIED until variant-study.sh re-scores it
+max_price_cents  = 97  # posture: LOW BAND — study 6/36 ratio 0.17 < floor 1.00
+budget_contracts = 2  # posture: size 2 — LOW BAND, max 194¢ of REAL money (this word CAN fill; it is not the old 1¢ non-crossing observe)
+policy           = "confirmed_only"
+
+# California (KXEARNINGSMENTIONTOL-26AUG18-CALI) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONTOL-26AUG18-CALI"
+phrase           = "california"
+variants         = ["california", "californias"]
+max_price_cents  = 97  # posture: HIGH — study 54/18 ratio 3.00 >= floor 1.00
+budget_contracts = 20  # posture: size 20 — ratio 3.00 tier, max 1940¢
+policy           = "confirmed_only"
+
+# Cash Buyer / All Cash (KXEARNINGSMENTIONTOL-26AUG18-CASH) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONTOL-26AUG18-CASH"
+phrase           = "cash buyer"
+variants         = ["cash buyer", "all cash"]
+max_price_cents  = 97  # posture: LOW BAND — study 12/18 ratio 0.67 < floor 1.00
+budget_contracts = 2  # posture: size 2 — LOW BAND, max 194¢ of REAL money (this word CAN fill; it is not the old 1¢ non-crossing observe)
+policy           = "confirmed_only"
+
+# Customize / Customization (KXEARNINGSMENTIONTOL-26AUG18-CUST) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONTOL-26AUG18-CUST"
+phrase           = "customize"
+variants         = ["customize", "customizes", "customization", "customizations"]
+max_price_cents  = 97  # posture: HIGH — study 134/36 ratio 3.72 >= floor 1.00
+budget_contracts = 20  # posture: size 20 — ratio 3.72 tier, max 1940¢
+policy           = "confirmed_only"
+
+# Florida (KXEARNINGSMENTIONTOL-26AUG18-FLOR) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONTOL-26AUG18-FLOR"
+phrase           = "florida"
+variants         = ["florida", "floridas"]
+max_price_cents  = 97  # posture: HIGH — study 46/18 ratio 2.56 >= floor 1.00
+budget_contracts = 10  # posture: size 10 — ratio 2.56 tier, max 970¢
+policy           = "confirmed_only"
+
+# Incentive (KXEARNINGSMENTIONTOL-26AUG18-INCE) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONTOL-26AUG18-INCE"
+phrase           = "incentive"
+variants         = ["incentive", "incentives"]
+max_price_cents  = 97  # posture: HIGH — study 58/18 ratio 3.22 >= floor 1.00
+budget_contracts = 20  # posture: size 20 — ratio 3.22 tier, max 1940¢
+policy           = "confirmed_only"
+
+# Land Bank / Land Banking (KXEARNINGSMENTIONTOL-26AUG18-LAND) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONTOL-26AUG18-LAND"
+phrase           = "land bank"
+variants         = ["land bank", "land banking"]
+max_price_cents  = 97  # posture: HIGH — study 54/18 ratio 3.00 >= floor 1.00
+budget_contracts = 20  # posture: size 20 — ratio 3.00 tier, max 1940¢
+policy           = "confirmed_only"
+
+# Lumber (KXEARNINGSMENTIONTOL-26AUG18-LUMB) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONTOL-26AUG18-LUMB"
+phrase           = "lumber"
+variants         = ["lumber", "lumbers"]
+max_price_cents  = 97  # posture: HIGH — study 56/18 ratio 3.11 >= floor 1.00
+budget_contracts = 20  # posture: size 20 — ratio 3.11 tier, max 1940¢
+policy           = "confirmed_only"
+
+# Mortgage (KXEARNINGSMENTIONTOL-26AUG18-MORT) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONTOL-26AUG18-MORT"
+phrase           = "mortgage"
+variants         = ["mortgage", "mortgages"]
+max_price_cents  = 97  # posture: HIGH — study 46/18 ratio 2.56 >= floor 1.00
+budget_contracts = 10  # posture: size 10 — ratio 2.56 tier, max 970¢
+policy           = "confirmed_only"
+
+# Move-Up Buyer (KXEARNINGSMENTIONTOL-26AUG18-MOVE) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONTOL-26AUG18-MOVE"
+phrase           = "move up buyer"
+variants         = ["move up buyer"]
+max_price_cents  = 97  # posture: LOW BAND — study 4/9 ratio 0.44 < floor 1.00
+budget_contracts = 2  # posture: size 2 — LOW BAND, max 194¢ of REAL money (this word CAN fill; it is not the old 1¢ non-crossing observe)
+policy           = "confirmed_only"
+
+# Spec Home (KXEARNINGSMENTIONTOL-26AUG18-SPEC) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONTOL-26AUG18-SPEC"
+phrase           = "spec home"
+variants         = ["spec home"]
+max_price_cents  = 97  # posture: HIGH — study 12/9 ratio 1.33 >= floor 1.00
+budget_contracts = 4  # posture: size 4 — ratio 1.33 tier, max 388¢
+policy           = "confirmed_only"
+
+# Tariff (KXEARNINGSMENTIONTOL-26AUG18-TARI) — corpus-tuned; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONTOL-26AUG18-TARI"
+phrase           = "tariff"
+variants         = ["tariff", "tariffs"]
+max_price_cents  = 97  # posture: HIGH — study 34/18 ratio 1.89 >= floor 1.00
+budget_contracts = 4  # posture: size 4 — ratio 1.89 tier, max 388¢
+policy           = "confirmed_only"
+confirmed_threshold = 0.1
+# `boost` dropped: prepare emits it from the sherpa_kws tuned_library, but this
+# lane runs streaming_ctc, which does not implement it (the binary warns and
+# ignores it). Carrying it here is a no-op that also breaks
+# execution-profile.sh resolve — the WARN lands on STDOUT and pollutes the
+# captured account fingerprint. Tune confirmed_threshold on this engine.
+
+# --- prepare summary: 14 tradeable, 0 skipped (said-N-times), 0 skipped (unencodable), 0 variants dropped of 14 markets ---

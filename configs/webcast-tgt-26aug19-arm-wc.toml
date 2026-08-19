@@ -19,6 +19,13 @@
 # Posture: mention-probe observe (1¢ non-crossing) — fill posture is gated on
 # the Phase-4 precision verdict (docs/RACE-STRATEGY.md).
 
+# 2026-08-19 04:55Z (event-prep): ACCESS is preresolved. webinar.net keeps the
+# registration "remembered" in the browser profile but /live bounces to the
+# registration page in a fresh context until "Attend" is clicked, and
+# browser-resolve's play-regex does not match "Attend" — so a T-75
+# browser-network resolve would see a wall (exit 5) all the way to the
+# deadline. The laptop resolves at ~T-4 with a resolver that clicks Attend and
+# watches for the manifest, then pushes $HOME/tgt-stream.url; the arm waits on it.
 [event]
 id        = "KXEARNINGSMENTIONTGT-26AUG19-WEBCAST"
 starts_at = "2026-08-19T12:00:00Z"
@@ -90,14 +97,13 @@ env = "prod"
 
 # ── Placeholders below: replace with the `earshot prepare` output ──────────
 [risk]
-max_order_notional_cents = 100
+max_order_notional_cents = 1940   # 2026-08-19 operator ruling: per-WORD cap = 20 contracts x 97c (doubled size tiers); no event cap
 book_stale_ms            = 2000
 audio_stale_ms           = 2000
 allowlist_tickers = [
   "KXEARNINGSMENTIONTGT-26AUG19-AUTO",
   "KXEARNINGSMENTIONTGT-26AUG19-BACK",
   "KXEARNINGSMENTIONTGT-26AUG19-BEAU",
-  "KXEARNINGSMENTIONTGT-26AUG19-CIRC",
   "KXEARNINGSMENTIONTGT-26AUG19-COMP",
   "KXEARNINGSMENTIONTGT-26AUG19-INFL",
   "KXEARNINGSMENTIONTGT-26AUG19-NINT",
@@ -111,30 +117,34 @@ allowlist_tickers = [
 ]
 
 # Autonomous / Automation (KXEARNINGSMENTIONTGT-26AUG19-AUTO) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
-# Fill-path verifier — SHADOW (detection-accuracy program D2, 2026-08-19).
-# Records a second-opinion verdict for EVERY Confirmed detection (offline
-# Parakeet-TDT-0.6b re-decode of the last 3.5 s of the firing leg) into
-# report.json["verifier"]; gates NOTHING. If the model dir is missing on the
-# host, shadow mode warns and the arm runs without it. Flip to mode = "gate" +
-# tickers = [<generic fill words>] only after >= 3 shadow events
-# (docs/BAKEOFF.md §D2, docs/nodes/verifier.md).
+# Fill-path verifier — GATE (detection-accuracy program D2; enabled 2026-08-19
+# for the doubled-size ruling). Every FILL-priced Confirmed intent is held until
+# an offline Parakeet-TDT re-decode of the last 3.5 s of the firing leg either
+# contains the word (send) or does not (refusal "verifier_veto"); a verdict that
+# misses the budget SENDS (on_timeout = send), so a slow decode can only cost
+# latency, never the trade. 1c observes never wait. Rehearsed 2026-08-19 04:45Z
+# with the exact arm binary on the AS 26AUG18 tape: the "Arc'teryx"->tariff
+# false fire that filled 96c on Monday was vetoed (decode 818 ms on this laptop
+# with 4 threads; hence budget 1500 here, 500 on the box). At 20 contracts x 97c
+# a false fire costs $19.40 and a true fire earns $0.60, so a false veto is cheap
+# and a false fire is not. Rows land in report.json["verifier"].
 [verifier]
-mode        = "shadow"
+mode        = "gate"
 model_dir   = "models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8"
 model_type  = "nemo_transducer"
-num_threads = 2
+num_threads = 4
 tail_ms     = 3500
-budget_ms   = 500
+budget_ms   = 1500
 on_timeout  = "send"
 sample      = "all_confirmed"
-tickers     = []
+tickers     = ["*"]
 
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONTGT-26AUG19-AUTO"
 phrase           = "autonomous"
 variants         = ["autonomous", "automation", "automations"]
-max_price_cents  = 1
-budget_contracts = 1
+max_price_cents  = 97  # posture: HIGH — study 46/27 ratio 1.70 >= floor 1.00
+budget_contracts = 4  # posture: size 4 — ratio 1.70 tier, max 388¢
 policy           = "confirmed_only"
 
 # Back to School (KXEARNINGSMENTIONTGT-26AUG19-BACK) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
@@ -142,8 +152,8 @@ policy           = "confirmed_only"
 market_ticker    = "KXEARNINGSMENTIONTGT-26AUG19-BACK"
 phrase           = "back to school"
 variants         = ["back to school"]
-max_price_cents  = 1
-budget_contracts = 1
+max_price_cents  = 97  # posture: HIGH — study 20/9 ratio 2.22 >= floor 1.00
+budget_contracts = 10  # posture: size 10 — ratio 2.22 tier, max 970¢
 policy           = "confirmed_only"
 
 # Beauty (KXEARNINGSMENTIONTGT-26AUG19-BEAU) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
@@ -151,26 +161,25 @@ policy           = "confirmed_only"
 market_ticker    = "KXEARNINGSMENTIONTGT-26AUG19-BEAU"
 phrase           = "beauty"
 variants         = ["beauty", "beautys"]
-max_price_cents  = 1
-budget_contracts = 1
+max_price_cents  = 97  # posture: HIGH — study 42/18 ratio 2.33 >= floor 1.00
+budget_contracts = 10  # posture: size 10 — ratio 2.33 tier, max 970¢
 policy           = "confirmed_only"
 
-# Circle 360 (KXEARNINGSMENTIONTGT-26AUG19-CIRC) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
-[[keywords]]
-market_ticker    = "KXEARNINGSMENTIONTGT-26AUG19-CIRC"
-phrase           = "circle"
-variants         = ["circle", "circles"]
-max_price_cents  = 1
-budget_contracts = 1
-policy           = "confirmed_only"
+# Circle 360 (KXEARNINGSMENTIONTGT-26AUG19-CIRC) — DESCOPED 2026-08-19 (event-prep):
+# the market resolves on "Circle 360"; `prepare` strips digits so the armed
+# variant was bare "circle" (fires on "Target Circle" without resolving —
+# false positive by construction, the AAPL "iPhone 18"/DUOL "100 million"
+# class), and the LibriSpeech BPE cannot encode "360" (compile-keywords:
+# symbol "360" not in vocab), so no variant satisfies both the phrase screen
+# and the model. Removed rather than acked; 13 markets remain armed.
 
 # Competition (KXEARNINGSMENTIONTGT-26AUG19-COMP) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONTGT-26AUG19-COMP"
 phrase           = "competition"
 variants         = ["competition", "competitions"]
-max_price_cents  = 1
-budget_contracts = 1
+max_price_cents  = 97  # posture: HIGH — study 38/18 ratio 2.11 >= floor 1.00
+budget_contracts = 10  # posture: size 10 — ratio 2.11 tier, max 970¢
 policy           = "confirmed_only"
 
 # Inflation (KXEARNINGSMENTIONTGT-26AUG19-INFL) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
@@ -178,8 +187,8 @@ policy           = "confirmed_only"
 market_ticker    = "KXEARNINGSMENTIONTGT-26AUG19-INFL"
 phrase           = "inflation"
 variants         = ["inflation", "inflations"]
-max_price_cents  = 1
-budget_contracts = 1
+max_price_cents  = 97  # posture: HIGH — study 60/18 ratio 3.33 >= floor 1.00
+budget_contracts = 20  # posture: size 20 — ratio 3.33 tier, max 1940¢
 policy           = "confirmed_only"
 
 # Nintendo Switch (KXEARNINGSMENTIONTGT-26AUG19-NINT) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
@@ -187,8 +196,8 @@ policy           = "confirmed_only"
 market_ticker    = "KXEARNINGSMENTIONTGT-26AUG19-NINT"
 phrase           = "nintendo switch"
 variants         = ["nintendo switch"]
-max_price_cents  = 1
-budget_contracts = 1
+max_price_cents  = 97  # posture: LOW BAND — study 8/9 ratio 0.89 < floor 1.00
+budget_contracts = 2  # posture: size 2 — LOW BAND, max 194¢ of REAL money (this word CAN fill; it is not the old 1¢ non-crossing observe)
 policy           = "confirmed_only"
 
 # Target Plus (KXEARNINGSMENTIONTGT-26AUG19-PLUS) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
@@ -196,8 +205,8 @@ policy           = "confirmed_only"
 market_ticker    = "KXEARNINGSMENTIONTGT-26AUG19-PLUS"
 phrase           = "target plus"
 variants         = ["target plus"]
-max_price_cents  = 1
-budget_contracts = 1
+max_price_cents  = 97  # posture: LOW BAND — study 8/9 ratio 0.89 < floor 1.00
+budget_contracts = 2  # posture: size 2 — LOW BAND, max 194¢ of REAL money (this word CAN fill; it is not the old 1¢ non-crossing observe)
 policy           = "confirmed_only"
 
 # Remodel (KXEARNINGSMENTIONTGT-26AUG19-REMO) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
@@ -205,8 +214,8 @@ policy           = "confirmed_only"
 market_ticker    = "KXEARNINGSMENTIONTGT-26AUG19-REMO"
 phrase           = "remodel"
 variants         = ["remodel", "remodels"]
-max_price_cents  = 1
-budget_contracts = 1
+max_price_cents  = 97  # posture: HIGH — study 52/18 ratio 2.89 >= floor 1.00
+budget_contracts = 10  # posture: size 10 — ratio 2.89 tier, max 970¢
 policy           = "confirmed_only"
 
 # Revenue (KXEARNINGSMENTIONTGT-26AUG19-REVE) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
@@ -214,8 +223,8 @@ policy           = "confirmed_only"
 market_ticker    = "KXEARNINGSMENTIONTGT-26AUG19-REVE"
 phrase           = "revenue"
 variants         = ["revenue", "revenues"]
-max_price_cents  = 1
-budget_contracts = 1
+max_price_cents  = 97  # posture: HIGH — study 62/18 ratio 3.44 >= floor 1.00
+budget_contracts = 20  # posture: size 20 — ratio 3.44 tier, max 1940¢
 policy           = "confirmed_only"
 
 # Roundel (KXEARNINGSMENTIONTGT-26AUG19-ROUN) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
@@ -223,8 +232,8 @@ policy           = "confirmed_only"
 market_ticker    = "KXEARNINGSMENTIONTGT-26AUG19-ROUN"
 phrase           = "roundel"
 variants         = ["roundel", "roundels"]
-max_price_cents  = 1
-budget_contracts = 1
+max_price_cents  = 97  # posture: LOW BAND — study 10/18 ratio 0.56 < floor 1.00
+budget_contracts = 2  # posture: size 2 — LOW BAND, max 194¢ of REAL money (this word CAN fill; it is not the old 1¢ non-crossing observe)
 policy           = "confirmed_only"
 
 # SNAP / Food Stamp (KXEARNINGSMENTIONTGT-26AUG19-SNAP) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
@@ -232,8 +241,8 @@ policy           = "confirmed_only"
 market_ticker    = "KXEARNINGSMENTIONTGT-26AUG19-SNAP"
 phrase           = "snap"
 variants         = ["snap", "snaps", "s n a p", "food stamp"]
-max_price_cents  = 1
-budget_contracts = 1
+max_price_cents  = 97  # posture: HIGH — study 80/36 ratio 2.22 >= floor 1.00
+budget_contracts = 10  # posture: size 10 — ratio 2.22 tier, max 970¢
 policy           = "confirmed_only"
 
 # Synthetic Color (KXEARNINGSMENTIONTGT-26AUG19-SYNT) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
@@ -241,8 +250,8 @@ policy           = "confirmed_only"
 market_ticker    = "KXEARNINGSMENTIONTGT-26AUG19-SYNT"
 phrase           = "synthetic color"
 variants         = ["synthetic color"]
-max_price_cents  = 1
-budget_contracts = 1
+max_price_cents  = 97  # posture: HIGH — study 18/9 ratio 2.00 >= floor 1.00
+budget_contracts = 10  # posture: size 10 — ratio 2.00 tier, max 970¢
 policy           = "confirmed_only"
 
 # Tariff (KXEARNINGSMENTIONTGT-26AUG19-TARI) — corpus-tuned; cap: probe (non-crossing, no fill)
@@ -250,8 +259,8 @@ policy           = "confirmed_only"
 market_ticker    = "KXEARNINGSMENTIONTGT-26AUG19-TARI"
 phrase           = "tariff"
 variants         = ["tariff", "tariffs"]
-max_price_cents  = 1
-budget_contracts = 1
+max_price_cents  = 97  # posture: HIGH — study 34/18 ratio 1.89 >= floor 1.00
+budget_contracts = 4  # posture: size 4 — ratio 1.89 tier, max 388¢
 policy           = "confirmed_only"
 confirmed_threshold = 0.1
 # `boost` dropped: prepare emits it from the sherpa_kws tuned_library, but this

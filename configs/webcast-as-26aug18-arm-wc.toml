@@ -1,0 +1,232 @@
+# WEBCAST FANOUT ARM TEMPLATE — direct-m3u8 events (IR players, FOMC).
+# The production armed posture from the 07-22 race findings (docs/RACE-STRATEGY.md §5):
+#   leg 1 "streamlink"  — edge-join primary: the measured ladder winner
+#                         (−11.7..−13.65 s vs default join, RUNBOOK 07-17 + 07-20)
+#   leg 2 "pipe_tuned"  — tuned-ffmpeg backstop (-live_start_index -1 = the only
+#                         flag that moves the join point; −10.6..−11.65 s vs default)
+# Both legs run FULL detect chains OR-ed at the one-shot decision table
+# ([arbiter] mode = "fanout") — different legs hear different audio (07-22 TARI).
+#
+# Instantiate per event with scripts/stage-webcast-arm.sh, then:
+#   1. paste the `earshot prepare` keyword/risk sections over the placeholders,
+#   2. on call morning write the m3u8:  echo "<m3u8>" > ~/<lc>-stream.url
+#   3. launch attended: scripts/launch-webcast.sh --config <this> --account <env> \
+#        --wait-live ~/<lc>-stream.url --wait-kind hls
+# The live gate lives in launch-webcast.sh (NEVER inside a source cmd —
+# 07-22 post-mortems #1/#2). YouTube events: do NOT use this template; keep
+# the frozen yt-dlp leg (configs/webcast-tsla.toml) until a streamlink-vs-
+# YouTube ladder number exists (capture first).
+# Posture: mention-probe observe (1¢ non-crossing) — fill posture is gated on
+# the Phase-4 precision verdict (docs/RACE-STRATEGY.md).
+
+[event]
+id        = "KXEARNINGSMENTIONAS-26AUG18-WEBCAST"
+starts_at = "2026-08-18T12:00:00Z"
+
+[pipeline]
+chunk_ms       = 80
+resample_to_hz = 16000
+
+[detector]
+engine = "streaming_ctc"
+
+[detector.streaming_ctc]
+model_dir         = "models/sherpa-onnx-streaming-zipformer-ctc-small-2024-03-18"
+num_threads       = 1
+default_threshold = 0.15
+refractory_ms     = 2000
+
+# sherpa_kws block kept so the engine reverts with a one-line change above.
+
+[detector.sherpa_kws]
+model_dir         = "models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
+num_threads       = 1
+max_active_paths  = 4
+default_threshold = 0.20
+default_boost     = 2.0
+refractory_ms     = 2000
+fp32              = true
+
+[arbiter]
+mode = "fanout"
+
+[[sources]]
+kind = "pipe"
+label = "streamlink"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "streamlink --stdout --hls-live-edge 1 --hls-segment-stream-data --hls-playlist-reload-time segment \"$(cat $HOME/as-stream.url)\" best | ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 2000000 -analyzeduration 5000000 -i - -vn -f s16le -ac 1 -ar 16000 -",
+]
+
+[[sources]]
+kind = "pipe"
+label = "pipe_tuned"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 2000000 -analyzeduration 5000000 -live_start_index -1 -http_persistent 1 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2 -i \"$(cat $HOME/as-stream.url)\" -vn -f s16le -ac 1 -ar 16000 -",
+]
+
+# NOTE (SUPERSEDED 2026-07-24 night — kept as the evidence trail): this file
+# used to say the edge-fetcher leg delivers "+0 ms" and that "the gap is decode,
+# not acquisition". BOTH clauses are now refuted (docs/LATENCY-PROOF.md parts
+# 1-3): the AXP NFL race decomposed to 1.241 s FEED + 0.289 s OURS, so the gap
+# is NOT decode; and the +0 ms reading came from an instrument that compared two
+# ffmpeg legs to each other and was structurally blind to a cost they shared.
+# Measured against the encoder instead, a speculative fetcher runs 4.5 s fresher
+# than this template's legs with ~5x less run-to-run variance.
+#
+# THIS TEMPLATE IS DELIBERATELY UNCHANGED — it is the proven stack, and FOMC
+# 2026-07-29 runs it. The speculative posture lives in
+# configs/webcast-fanout-arm-spec.toml (staged with
+# `stage-webcast-arm.sh --speculative`) and is gated on off-FOMC validation,
+# because its probing could get the box's IP rate-limited and that would take
+# every leg down, not just one.
+
+[kalshi]
+series = "KXEARNINGSMENTIONAS"
+env = "prod"
+
+# ── Placeholders below: replace with the `earshot prepare` output ──────────
+[risk]
+max_order_notional_cents = 100
+book_stale_ms            = 2000
+audio_stale_ms           = 2000
+allowlist_tickers = [
+  "KXEARNINGSMENTIONAS-26AUG18-FOOT",
+  "KXEARNINGSMENTIONAS-26AUG18-IRAN",
+  "KXEARNINGSMENTIONAS-26AUG18-NORV",
+  "KXEARNINGSMENTIONAS-26AUG18-OIL",
+  "KXEARNINGSMENTIONAS-26AUG18-OLYM",
+  "KXEARNINGSMENTIONAS-26AUG18-PICK",
+  "KXEARNINGSMENTIONAS-26AUG18-REI",
+  "KXEARNINGSMENTIONAS-26AUG18-SABA",
+  "KXEARNINGSMENTIONAS-26AUG18-SUPR",
+  "KXEARNINGSMENTIONAS-26AUG18-TARI",
+  "KXEARNINGSMENTIONAS-26AUG18-WATE",
+  "KXEARNINGSMENTIONAS-26AUG18-WIMB",
+]
+
+# Foot Locker (KXEARNINGSMENTIONAS-26AUG18-FOOT) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAS-26AUG18-FOOT"
+phrase           = "foot locker"
+variants         = ["foot locker"]
+max_price_cents  = 97  # posture: HIGH — study 10/9 ratio 1.11 >= floor 1.00
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Iran / Middle East (KXEARNINGSMENTIONAS-26AUG18-IRAN) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAS-26AUG18-IRAN"
+phrase           = "iran"
+variants         = ["iran", "irans", "middle east"]
+max_price_cents  = 97  # posture: HIGH — study 28/27 ratio 1.04 >= floor 1.00
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Norvan (KXEARNINGSMENTIONAS-26AUG18-NORV) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAS-26AUG18-NORV"
+phrase           = "norvan"
+variants         = ["norvan", "norvans"]
+max_price_cents  = 97  # posture: HIGH — study 22/18 ratio 1.22 >= floor 1.00
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Oil (KXEARNINGSMENTIONAS-26AUG18-OIL) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAS-26AUG18-OIL"
+phrase           = "oil"
+variants         = ["oil", "oils"]
+max_price_cents  = 1  # posture: OBSERVE (k<=2 OVERRIDE) — study 32/18 ratio 1.78 would have earned the HIGH band, but variant(s) oil=2tok assemble from partial audio at near-ceiling confidence (SNAP "game" class). The study measures RECALL, not precision, so a high ratio here is exactly the misleading case — demoted to the small band
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Olympic / Olympics (KXEARNINGSMENTIONAS-26AUG18-OLYM) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAS-26AUG18-OLYM"
+phrase           = "olympic"
+variants         = ["olympic", "olympics"]
+max_price_cents  = 97  # posture: HIGH — study 52/18 ratio 2.89 >= floor 1.00
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Pickleball (KXEARNINGSMENTIONAS-26AUG18-PICK) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAS-26AUG18-PICK"
+phrase           = "pickleball"
+variants         = ["pickleball", "pickleballs"]
+max_price_cents  = 97  # posture: HIGH — study 36/18 ratio 2.00 >= floor 1.00
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# REI (KXEARNINGSMENTIONAS-26AUG18-REI) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAS-26AUG18-REI"
+phrase           = "rei"
+variants         = ["rei", "reis", "r e i", "ar ee eye"]  # widened 2026-08-18 by variant-widen.py (rules; study confirmed:0) — UNSTUDIED until variant-study.sh re-scores it
+max_price_cents  = 1  # posture: OBSERVE — study 2/36 ratio 0.06 < floor 1.00; also k<=2 (rei, reis)
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Sabalenka (KXEARNINGSMENTIONAS-26AUG18-SABA) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAS-26AUG18-SABA"
+phrase           = "sabalenka"
+variants         = ["sabalenka", "sabalenkas"]
+max_price_cents  = 1  # posture: OBSERVE — study 6/18 ratio 0.33 < floor 1.00
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Supreme Court (KXEARNINGSMENTIONAS-26AUG18-SUPR) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill) ; ⚠ compound/symbol phrase — review variants
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAS-26AUG18-SUPR"
+phrase           = "supreme court"
+variants         = ["supreme court"]
+max_price_cents  = 97  # posture: HIGH — study 20/9 ratio 2.22 >= floor 1.00
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Tariff (KXEARNINGSMENTIONAS-26AUG18-TARI) — corpus-tuned; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAS-26AUG18-TARI"
+phrase           = "tariff"
+variants         = ["tariff", "tariffs"]
+max_price_cents  = 97  # posture: HIGH — study 34/18 ratio 1.89 >= floor 1.00
+budget_contracts = 1
+policy           = "confirmed_only"
+confirmed_threshold = 0.1
+# boost            = 3.0
+# ^ COMMENTED OUT 2026-08-17, not deleted — this is the corpus-tuned sherpa_kws
+# value and it lives nowhere else (this config is untracked), so it must survive
+# a one-line revert of [detector].engine back to sherpa_kws.
+# Why it is disabled: the CTC scorer does not implement `boost` and the runtime
+# WARNs that it is IGNORED. That WARN goes to STDOUT, and
+# execution-profile.sh:121 captures `earshot account-fingerprint` with $( ),
+# which takes stdout only — so the WARN prepends itself to the sha256 line and
+# validate_fingerprint's ^sha256:[0-9a-f]{64}$ fails, refusing the plan compile
+# with the misleading "account-fingerprint did not emit exactly sha256:<64 hex>".
+# Inert on this engine: no detection change, and keywords_sha256 covers
+# ticker+phrase+variants only, so no readiness artifact is voided.
+
+# Waterproof (KXEARNINGSMENTIONAS-26AUG18-WATE) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAS-26AUG18-WATE"
+phrase           = "waterproof"
+variants         = ["waterproof", "waterproofs"]
+max_price_cents  = 97  # posture: HIGH — study 46/18 ratio 2.56 >= floor 1.00
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# Wimbledon (KXEARNINGSMENTIONAS-26AUG18-WIMB) — corpus-UNVALIDATED (engine defaults) — best-effort recall; cap: probe (non-crossing, no fill)
+[[keywords]]
+market_ticker    = "KXEARNINGSMENTIONAS-26AUG18-WIMB"
+phrase           = "wimbledon"
+variants         = ["wimbledon", "wimbledons"]
+max_price_cents  = 97  # posture: HIGH — study 40/18 ratio 2.22 >= floor 1.00
+budget_contracts = 1
+policy           = "confirmed_only"
+
+# --- prepare summary: 13 tradeable, 0 skipped (said-N-times), 0 skipped (unencodable), 0 variants dropped of 13 markets ---

@@ -21,7 +21,7 @@
 
 [event]
 id        = "KXEARNINGSMENTIONDE-26AUG20-WEBCAST"
-starts_at = "2026-08-20T00:00:00Z"  # TODO: set the real call time (UTC) — slate had none
+starts_at = "2026-08-20T14:00:00Z"
 
 [pipeline]
 chunk_ms       = 80

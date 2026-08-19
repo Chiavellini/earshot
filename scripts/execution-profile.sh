@@ -100,7 +100,12 @@ fingerprint_in_profile_env() {
     set +a
     args=("$BIN" account-fingerprint)
     [[ -z "$CONFIG" ]] || args+=(--config "$CONFIG")
-    "${args[@]}"
+    # The binary's tracing subscriber writes WARN lines to STDOUT (e.g. an
+    # inert `boost` under streaming_ctc), and they used to ride this capture
+    # into validate_fingerprint, which then lied "did not emit exactly
+    # sha256:…" (2026-08-19 WMT/DE init refused). Keep ONLY the fingerprint
+    # line; anything else is log noise, and a missing line still fails below.
+    "${args[@]}" | grep -E '^sha256:[0-9a-f]{64}$' | tail -1
   )
 }
 

@@ -685,7 +685,14 @@ doc_style = "layer"
 owns = [
   # webcast twin -> phone-only arm + its autorun env (keywords_sha256 preserved)
   "scripts/phone-lane-derive.py",
+  # webcast arm -> BOX (primary, money) twin: id suffix, verifier 2thr/500ms,
+  # env label/port, readiness clone (2026-08-19 TGT/TOL were hand-derived).
+  "scripts/webcast-box-twin.py",
   "configs/[!d]*.toml",
+  # DE (2026-08-20) is a d-issuer event; these two globs cover d-named configs
+  # while excluding dial-ins.toml (control.qualify). Remove with the last
+  # d-config again (see 2026-08-12 note below).
+  "configs/d[!i]*.toml",
   # the [!d] above exists ONLY to exclude dial-ins.toml (control.qualify's
   # registry). It also excludes any d-named config: while d-issuer event
   # configs existed (dash, dis, dkng, duol, 2026-08-04) two re-admit globs

@@ -1,0 +1,168 @@
+{
+ "config": "webcast-hd-26aug18-box-observe-wc",
+ "keywords_sha256": "98e54cc6b1e73969f953a1e766449bef793d478fb8c05551703e016cb40c4364",
+ "date": "2026-08-17",
+ "engine": "streaming_ctc",
+ "voices": [
+  "Samantha",
+  "Daniel",
+  "Paulina"
+ ],
+ "carriers": 2,
+ "keywords": [
+  {
+   "ticker": "KXEARNINGSMENTIONHD-26AUG18-COMP",
+   "phrase": "competition",
+   "variants": [
+    "competition",
+    "competitions"
+   ],
+   "clips": 18,
+   "confirmed": 38
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONHD-26AUG18-ECOM",
+   "phrase": "e commerce",
+   "variants": [
+    "e commerce"
+   ],
+   "clips": 9,
+   "confirmed": 18
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONHD-26AUG18-HEAD",
+   "phrase": "headwind",
+   "variants": [
+    "headwind",
+    "headwinds",
+    "head wind"
+   ],
+   "clips": 27,
+   "confirmed": 42
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONHD-26AUG18-INFL",
+   "phrase": "inflation",
+   "variants": [
+    "inflation",
+    "inflations"
+   ],
+   "clips": 18,
+   "confirmed": 60
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONHD-26AUG18-INNO",
+   "phrase": "innovation",
+   "variants": [
+    "innovation",
+    "innovations"
+   ],
+   "clips": 18,
+   "confirmed": 56
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONHD-26AUG18-LUMB",
+   "phrase": "lumber",
+   "variants": [
+    "lumber",
+    "lumbers"
+   ],
+   "clips": 18,
+   "confirmed": 56
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONHD-26AUG18-MEXI",
+   "phrase": "mexico",
+   "variants": [
+    "mexico",
+    "mexicos"
+   ],
+   "clips": 18,
+   "confirmed": 56
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONHD-26AUG18-REVE",
+   "phrase": "revenue",
+   "variants": [
+    "revenue",
+    "revenues"
+   ],
+   "clips": 18,
+   "confirmed": 62
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONHD-26AUG18-SHUT",
+   "phrase": "shutdown",
+   "variants": [
+    "shutdown",
+    "shutdowns",
+    "shut down"
+   ],
+   "clips": 27,
+   "confirmed": 34
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONHD-26AUG18-STOR",
+   "phrase": "storm",
+   "variants": [
+    "storm",
+    "storms"
+   ],
+   "clips": 18,
+   "confirmed": 50
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONHD-26AUG18-SYNE",
+   "phrase": "synergy",
+   "variants": [
+    "synergy",
+    "synergys"
+   ],
+   "clips": 18,
+   "confirmed": 26
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONHD-26AUG18-TAIL",
+   "phrase": "tailwind",
+   "variants": [
+    "tailwind",
+    "tailwinds",
+    "tail wind",
+    "tail winds"
+   ],
+   "clips": 36,
+   "confirmed": 66
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONHD-26AUG18-TARI",
+   "phrase": "tariff",
+   "variants": [
+    "tariff",
+    "tariffs"
+   ],
+   "clips": 18,
+   "confirmed": 34
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONHD-26AUG18-VOLA",
+   "phrase": "volatility",
+   "variants": [
+    "volatility",
+    "volatilitys"
+   ],
+   "clips": 18,
+   "confirmed": 4
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONHD-26AUG18-WEAT",
+   "phrase": "weather",
+   "variants": [
+    "weather",
+    "weathers"
+   ],
+   "clips": 18,
+   "confirmed": 24
+  }
+ ],
+ "cloned_from": "configs/.readiness/webcast-hd-26aug18-arm-wc.json"
+}
