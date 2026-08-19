@@ -1513,3 +1513,28 @@ rejected, never an intent). Three runs pooled (AS, HD-box, HD-laptop, 167
 detections): **false fires vetoed 11/11, true intents falsely vetoed 0, true
 non-intent detections falsely vetoed 4 (all proper nouns) + 2 empty decodes
 (now `Error`).**
+
+### D1 cell C4 — NeMo cache-aware FastConformer transducer en **80 ms** (`sherpa-onnx-nemo-streaming-fast-conformer-transducer-en-80ms`, greedy, no hotwords possible), run 2026-08-19 02:49–03:30Z, same 4 dev calls
+
+| cell | TP | miss | FA | recall | FA/h | consumed_lag p50 / p95 |
+|---|---|---|---|---|---|---|
+| C0 armed CTC | 50 | 27 | 73 | 0.649 | 14.18 | 570 / 714 ms |
+| C1 zipformer-en + hotwords | 43 | 34 | 42 | 0.558 | 8.16 | 954 / 1218 ms |
+| **C4 NeMo 80 ms** | 43 | 34 | **16** | 0.558 | **3.11** | 785 / 1234 ms |
+
+Per phrase C0→C4: `foundry` 13/6/2 → **16/3/2**, `record` 5/0/15 → 5/0/3,
+`government` 13/0/11 → 11/2/1, `security` 7/0/7 → 6/1/1, `europe` 3/0/14 →
+2/1/2, `dividend` 1/0/7 → 1/0/2; but `sikorsky` 2/0 → **0/2**, `panther lake`
+2/18 → **0/20**, `nasa` 1/0 → 0/1, `morfius` 0/3 everywhere.
+
+**Verdict:** bar A PASSES decisively (−78 % FA/h — the cleanest engine on
+generic words by far); bar B FAILS (−9.1 pts, all proper nouns: no hotword
+path exists for NeMo online transducers in sherpa); bar C FAILS (+215 ms p50 —
+better than zipformer's +384, but the 80 ms quantum did not buy latency here:
+the transducer needs right-context to emit and our completion rule waits for
+the next word). **Do not promote as the sole engine.** It is the strongest
+evidence yet that (1) proper-noun recall needs biasing or in-domain training
+(D4), and (2) generic-word false fires vanish under a real ASR — which the
+verifier delivers today on the fill path without the recall cost. Worth
+pre-registering next: a two-engine fanout (CTC spotter for proper nouns +
+NeMo for generic words, OR'd at the decision) under the verifier gate.

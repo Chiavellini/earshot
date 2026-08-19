@@ -116,3 +116,11 @@ detections): rejected `A terrorist`→tariff (the AS fill), `innovative`,
 proper nouns it misheard (`Winburton`, `Foot Walker`) and 2 empty decodes (now
 `Error`, not a veto). Decode p50 ~300–365 ms, p95 < 400 ms on the box (4
 threads). Gate per-ticker opt-in, generic words first.
+
+## D1 C4 — NeMo cache-aware FastConformer 80 ms (2026-08-19): best precision, same recall gap
+
+FA/h 3.11 vs armed CTC 14.18 (−78 %), recall 0.558 vs 0.649 (proper nouns
+lost: sikorsky, panther lake, nasa — no hotwords on NeMo online), lag +215 ms.
+Not a sole-engine promotion; the candidate for a CTC+NeMo two-engine fanout
+under the verifier gate, and the model whose generic-word cleanliness the
+verifier already provides on the fill path.
