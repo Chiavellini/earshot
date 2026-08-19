@@ -148,7 +148,15 @@ AccessPlan resolver on a bounded schedule until the plan's `deadline_utc`
 (pages once per failure class; `browser-resolve` exit 5 — a registration
 wall — pages its own message and keeps retrying so an operator fix inside the
 window still arms), and expands portable `$HOME/` tokens in the resolver argv
-before executing it. It also **exports** `RESOLVER_DEADLINE_EPOCH` into the
+before executing it. The **PCM gate is likewise retried on a bounded schedule**
+until `deadline_utc` (`EARSHOT_PCM_RETRY_SECS`, default 15): a first refusal
+pages once, and only exhausting the deadline pages `NOT ARMED — PCM proof
+failed`. It was single-shot until 2026-08-19 — on AS 2026-08-18 the gate ran
+once ~20 s after the URL landed, hit a transient IVS 404, and the unit EXITED
+while the call streamed fine (the same URL 200'd a minute later); a venue that
+mints its live master a few seconds before the first segment exists (Notified,
+Q4) failed the first probe for the same reason. A refused attempt removes any
+partial `control/pcm-proof.json` before retrying. It also **exports** `RESOLVER_DEADLINE_EPOCH` into the
 resolver's environment: the value was computed and then held in a shell
 variable created by `eval`, which carries no export attribute, so no resolver
 could ever read it. A resolver that blocks rather than polls —

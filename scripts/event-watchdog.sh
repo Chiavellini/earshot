@@ -45,20 +45,49 @@ PLIST
 fi
 LOG="state/_day/watchdog-$SLUG.log"; mkdir -p state/_day; exec >>"$LOG" 2>&1
 echo "=== watchdog $SLUG $(date -u +%FT%TZ)"
-BAD=0; SUMMARY=""
+# A box-primary / laptop-failover pair has, by design, exactly ONE capturing leg
+# (memory laptop-is-not-a-capture-host / the 2026-08-19 one-trader ruling). So
+# the alarm is "NO leg is capturing", or "a leg reached capture_ready and its run
+# has since gone terminal/its unit died" — not "some leg is idle". Counts use
+# `|| true` (grep -c exits 1 on zero matches under set -e is not in play here,
+# but the old `|| echo 0` emitted a SECOND line that shifted the remote parse and
+# made box detection counts meaningless).
+ANY_READY=0; DEADAFTERREADY=0; SUMMARY=""; DETAIL=""
 for l in "${LEGS[@]}"; do
   IFS=: read -r E R HOST <<<"$l"
   if [[ "$HOST" == local ]]; then
-    RC=$(grep -c '"transition":"capture_ready"' "var/runs/$E/$R/control/receipts.jsonl" 2>/dev/null || echo 0)
-    DET=$(grep -c "decision intent\|detection ignored" "state/$E/launch.log" 2>/dev/null || echo 0)
-    FRAMES=$(grep -o "frames [0-9]*" "state/$E/launch.log" 2>/dev/null | tail -1)
+    RC=$(grep -c '"transition":"capture_ready"' "var/runs/$E/$R/control/receipts.jsonl" 2>/dev/null); RC=${RC:-0}
+    TERM=$(grep -cE '"transition":"(failed|aborted)"' "var/runs/$E/$R/control/receipts.jsonl" 2>/dev/null); TERM=${TERM:-0}
+    UA=local; DET=$(grep -c "decision intent\|detection ignored" "state/$E/launch.log" 2>/dev/null); DET=${DET:-0}
+    ALOG=$(ls -t "state/$E"/arm-on-url-*.log 2>/dev/null | head -1)
   else
-    OUT=$(ssh -i "$KEY" -o BatchMode=yes -o ConnectTimeout=10 "$HOST" "grep -c '\"transition\":\"capture_ready\"' ~/ear/var/runs/$E/$R/control/receipts.jsonl 2>/dev/null || echo 0; grep -c 'decision intent\|detection ignored' ~/ear/state/$E/launch.log 2>/dev/null || echo 0" 2>/dev/null)
-    RC=$(echo "$OUT" | sed -n 1p); DET=$(echo "$OUT" | sed -n 2p); FRAMES=""; [[ -z "$RC" ]] && { RC=UNREACHABLE; DET=0; }
+    OUT=$(ssh -n -i "$KEY" -o BatchMode=yes -o ConnectTimeout=10 "$HOST" '
+      R=~/ear/var/runs/'"$E"'/'"$R"'/control/receipts.jsonl
+      P=~/ear/var/runs/'"$E"'/'"$R"'/control/run-plan.json
+      sha=$(python3 -c "import json;print(json.load(open(\"$P\"))[\"plan_sha256\"][:20])" 2>/dev/null)
+      rc=$(grep -c "\"transition\":\"capture_ready\"" "$R" 2>/dev/null); echo "${rc:-0}"
+      tm=$(grep -cE "\"transition\":\"(failed|aborted)\"" "$R" 2>/dev/null); echo "${tm:-0}"
+      systemctl --user is-active "com.earshot.run.$sha.service" 2>/dev/null || echo unknown
+      dt=$(grep -c "decision intent\|detection ignored" ~/ear/state/'"$E"'/launch.log 2>/dev/null); echo "${dt:-0}"' 2>/dev/null)
+    RC=$(sed -n 1p <<<"$OUT"); TERM=$(sed -n 2p <<<"$OUT"); UA=$(sed -n 3p <<<"$OUT"); DET=$(sed -n 4p <<<"$OUT")
+    [[ -z "$RC" ]] && { RC=U; TERM=0; UA=UNREACHABLE; DET=0; }
+    ALOG=""
   fi
-  echo "$E @ $HOST: capture_ready=$RC detections_logged=${DET:-0} $FRAMES"
-  SUMMARY+="$E@$HOST capture_ready=$RC detections=${DET:-0}; "
-  [[ "$RC" == "1" ]] || BAD=1
+  [[ "$RC" == "1" ]] && ANY_READY=1
+  [[ "$RC" == "1" && ( "$TERM" -ge 1 || "$UA" == failed || "$UA" == inactive ) ]] && DEADAFTERREADY=1
+  echo "$E @ $HOST: capture_ready=$RC terminal=$TERM unit=$UA detections=$DET"
+  SUMMARY+="$E@$HOST ready=$RC term=$TERM unit=$UA det=$DET; "
+  if [[ "$RC" != "1" || "$TERM" -ge 1 || "$UA" == failed ]]; then
+    tail=""; [[ -n "$ALOG" && -f "$ALOG" ]] && tail=$(tail -3 "$ALOG" 2>/dev/null | tr '\n' ' ')
+    DETAIL+="[$E@$HOST] ${tail:-no arm log}
+"
+  fi
 done
-if (( BAD )); then scripts/notify.sh "WATCHDOG $SLUG: a leg is NOT capturing at $(date -u +%T)Z" "$SUMMARY" >/dev/null 2>&1 || true; fi
+if (( ! ANY_READY )); then
+  scripts/notify.sh "WATCHDOG $SLUG: NO leg is capturing at $(date -u +%T)Z" "$SUMMARY
+$DETAIL" >/dev/null 2>&1 || true
+elif (( DEADAFTERREADY )); then
+  scripts/notify.sh "WATCHDOG $SLUG: a leg WAS capturing and has since DIED at $(date -u +%T)Z" "$SUMMARY
+$DETAIL" >/dev/null 2>&1 || true
+fi
 echo "summary: $SUMMARY"

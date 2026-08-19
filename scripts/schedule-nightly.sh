@@ -470,7 +470,7 @@ else: print("ready")
       fi
       if [[ -n "$local_host" && "$host" == "$local_host" ]]; then
         if ! "$INSTALL_T0" --run-dir "$run_dir" --expected-host "$local_host" \
-            ${VERIFY_FLAG[@]+"${VERIFY_FLAG[@]}"}; then
+            ${VERIFY_FLAG[@]+"${VERIFY_FLAG[@]}"} </dev/null; then
           echo "REFUSED $event_id/$run_id: launchd install/readback failed" >&2
           critical_alert "$run_dir" "$event_id" "schedule_install_failed" \
             "nightly-schedule-install" \
@@ -480,7 +480,7 @@ else: print("ready")
       elif [[ "$host" == "$box_host" ]]; then
         if ! EARSHOT_BOX_EXECUTION_HOST="$box_host" \
             "$BOX_WEBCAST_INSTALL" --run-dir "$run_dir" \
-            ${VERIFY_FLAG[@]+"${VERIFY_FLAG[@]}"}; then
+            ${VERIFY_FLAG[@]+"${VERIFY_FLAG[@]}"} </dev/null; then
           echo "REFUSED $event_id/$run_id: box webcast dispatch/install/readback failed" >&2
           critical_alert "$run_dir" "$event_id" "schedule_webcast_box_dispatch_failed" \
             "nightly-schedule-webcast-box-dispatch" \
@@ -504,7 +504,7 @@ else: print("ready")
         PROBLEMS=$((PROBLEMS + 1)); continue
       fi
       if ! "$BOX_INSTALL" --event-env "$event_env" --run-dir "$run_dir" \
-          ${VERIFY_FLAG[@]+"${VERIFY_FLAG[@]}"}; then
+          ${VERIFY_FLAG[@]+"${VERIFY_FLAG[@]}"} </dev/null; then
         echo "REFUSED $event_id/$run_id: box dispatch/install/readback failed" >&2
         critical_alert "$run_dir" "$event_id" "schedule_dispatch_failed" \
           "nightly-schedule-dispatch" \

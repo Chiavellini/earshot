@@ -216,12 +216,35 @@ else
   echo "REFUSED: static-public source has no single endpoint the current PCM gate can bind" >&2
   exit 4
 fi
+# The PCM gate RETRIES on a bounded schedule until the AccessPlan deadline, like
+# the resolver above. It used to be single-shot: on AS 2026-08-18 the gate ran
+# once ~20 s after the url-file landed, hit a transient IVS 404, printed "THIS
+# VANTAGE IS DEAD" and the unit EXITED while the call streamed fine — the same
+# URL 200'd a minute later (memory: pcm-gate-false-negative-kills-arm). A
+# venue that mints its manifest a few seconds before the first segment exists
+# (Q4 broadcastUrl, Notified live master) fails the first probe for the same
+# reason. One failure pages once; only the deadline pages NOT ARMED.
 if [[ ! -e "$PCM_PROOF" ]]; then
-  if ! "$REPO/scripts/pcm-gate.sh" "${PCM_ARGS[@]}"; then
-    page "$PLAN_EVENT NOT ARMED — PCM proof failed" \
-      "No fresh durable PCM+continuity proof was produced for $PLAN_RUN_ID on $PLAN_HOST."
-    exit 4
-  fi
+  PCM_RETRY_SECS="${EARSHOT_PCM_RETRY_SECS:-15}"
+  PCM_PAGED=0 PCM_TRIES=0
+  while :; do
+    PCM_TRIES=$((PCM_TRIES+1))
+    echo "PCM-GATE: attempt $PCM_TRIES at $(date -u +%FT%TZ)"
+    if "$REPO/scripts/pcm-gate.sh" "${PCM_ARGS[@]}"; then break; fi
+    rm -f -- "$PCM_PROOF"   # a refused attempt must not leave a partial proof behind
+    NOW=$(date +%s)
+    if (( NOW + PCM_RETRY_SECS >= RESOLVER_DEADLINE_EPOCH )); then
+      page "$PLAN_EVENT NOT ARMED — PCM proof failed" \
+        "No fresh durable PCM+continuity proof was produced for $PLAN_RUN_ID on $PLAN_HOST after $PCM_TRIES attempt(s) up to the AccessPlan deadline."
+      exit 4
+    fi
+    if (( ! PCM_PAGED )); then
+      PCM_PAGED=1
+      page "$PLAN_EVENT PCM gate refused the URL (attempt $PCM_TRIES) — retrying" \
+        "pcm-gate.sh failed on $PLAN_HOST; retrying every ${PCM_RETRY_SECS}s until $(date -u -r "$RESOLVER_DEADLINE_EPOCH" +%FT%TZ 2>/dev/null || echo "the AccessPlan deadline"). A transient 404/empty manifest is the usual cause (AS 2026-08-18)."
+    fi
+    sleep "$PCM_RETRY_SECS"
+  done
 fi
 if ! EARSHOT_REPO="$REPO" EARSHOT_EXECUTION_HOST="$PLAN_HOST" \
   python3 "$REPO/scripts/capture-ready.py" webcast --run-dir "$RUN_DIR" \

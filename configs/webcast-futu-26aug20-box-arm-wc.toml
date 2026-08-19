@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════════
-# BOX LEG (PRIMARY, MONEY) — derived 2026-08-19T19:10Z by scripts/webcast-box-twin.py from
+# BOX LEG (PRIMARY, MONEY) — derived 2026-08-19T20:07Z by scripts/webcast-box-twin.py from
 # configs/webcast-futu-26aug20-arm-wc.toml on the operator ruling (2026-08-19): "priority is capturing
 # in the box with orders sent from the box; if the box cannot ingest, capture and work
 # from the laptop — one or the other sends actual trades, never both".
@@ -232,7 +232,7 @@ policy           = "confirmed_only"
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONFUTU-26AUG20-TAIL"
 phrase           = "tailwind"
-variants         = ["tailwind", "tailwinds"]
+variants         = ["tailwind", "tailwinds", "tail wind", "tail winds"]  # widened 2026-08-19 to the HD/KLAR-26AUG18 studied set (2-variant form scored 0/18 on AC-26AUG12 and DE-26AUG20; 4-variant form 66/36 on HD+KLAR)
 max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"

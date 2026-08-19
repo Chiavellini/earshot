@@ -115,7 +115,13 @@ on_exit() {
 }
 start_ssh_mux || { echo "REFUSED: could not allocate the SSH multiplex directory under /tmp" >&2; exit 1; }
 trap on_exit EXIT
-SSH=("$SSH_BIN" "${SSH_OPTS[@]}" "$BOX")
+# -n (stdin from /dev/null) ONLY on the command-invocation array, NOT on
+# SSH_OPTS: schedule-nightly.sh runs this installer inside `while read … done <
+# "$MANIFEST"`, and an ssh command without -n eats the rest of that fd — every
+# run after the first box dispatch was silently never scheduled (memory:
+# schedule-nightly-ssh-truncates-manifest). rsync's own ssh transport
+# (RSYNC_RSH) must keep stdin, so it deliberately does not get -n.
+SSH=("$SSH_BIN" -n "${SSH_OPTS[@]}" "$BOX")
 
 RUN_DIR=$(python3 - "$REPO" "$RUN_DIR_RAW" <<'PY'
 from pathlib import Path

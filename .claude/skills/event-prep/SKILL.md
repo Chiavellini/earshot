@@ -380,20 +380,32 @@ scripts/assert-ready.sh configs/<each-event-config>.toml
   --account ~/.earshot/<acct>.env --run-dir var/runs/<E-BOX>/<R>'`), pull
   authority back (`pull-box-state.sh --prelaunch --event <E-BOX>`), then
   `box-webcast-install.sh --run-dir <box run>` and read `systemctl --user
-  list-timers` on the box. Then wrap the LAPTOP leg's loaded launchd job so it
-  arms only if the box is not capturing by start+2:
-  `ProgramArguments = ['/bin/bash', 'scripts/laptop-failover.sh', '--event', E,
-  '--box-event', E_BOX, '--box-run', R_BOX, '--start-utc', 'HH:MM', '--', <original argv>]`
-  (bootout/bootstrap, read back). It stops the box leg (STOP file + unit) before
-  the laptop arms. `schedule-nightly` may silently drop a run that sorts after a
-  box dispatch — **run `opsctl schedule` again, or `box-webcast-install.sh` the
-  second box run directly, and read the timers back** (memory: ssh eats the
-  manifest).
+  list-timers` on the box. Then, AFTER `opsctl schedule` has loaded the laptop
+  leg's own launchd job, wrap it with the failover supervisor:
+  `scripts/laptop-failover.sh --install --run-dir <laptop run> --box-event E_BOX
+  --box-run R_BOX --start-utc HH:MM [--grace-min N]` — it reads the loaded
+  `com.earshot.run.<plan_sha[:20]>` plist, wraps `ProgramArguments`, bootout/
+  bootstraps, and reads the wrapper back (refuses if already wrapped). The
+  supervisor watches the box the WHOLE window, not once: box `capture_ready` ⇒
+  laptop stands down but keeps watching to the AccessPlan deadline (start+15) and
+  takes over LATE if the box then dies; box run terminal / unit failed|inactive
+  before the grace point ⇒ immediate takeover; UNREACHABLE at the decision counts
+  as failed (capture beats the one-trader rule). Before arming it touches the box
+  STOP and stops the box unit+timer. **Do NOT re-run `opsctl schedule` or
+  `install-t0-agents --verify-only` after wrapping** — the verify compares the
+  loaded argv to the plan argv and reads the wrapper as a mismatch (schedule the
+  laptop leg, THEN wrap). `schedule-nightly` used to silently drop a run sorting
+  after a box dispatch (ssh ate the `while read` manifest); the installer ssh now
+  carries `-n` and the scheduler redirects each installer's stdin, but still
+  **read the loaded timers back**, never `scheduled=N`.
 - **Live supervision is a LOADED job, never a session wakeup.** Install two
-  watchdogs per event day that page when any leg on any host is not
-  `capture_ready`: `scripts/event-watchdog.sh --install --slug <lc> --at-utc
-  <start+5> --leg <E-BOX>:<R_BOX>:ubuntu@<box> --leg <E>:<R>:local` and again at
-  `<start+35>`. Session-scheduled wakeups only fire while the session is idle
+  watchdogs per event day: `scripts/event-watchdog.sh --install --slug <lc>
+  --at-utc <start+5> --leg <E-BOX>:<R_BOX>:ubuntu@<box> --leg <E>:<R>:local` and
+  again at `<start+35>`. It pages when **NO** leg is capturing, or when a leg that
+  reached `capture_ready` has since gone terminal / its unit died — NOT when one
+  leg is idle (a box-primary/laptop-failover pair has exactly one capturing leg by
+  design; alarming on the idle one cries wolf every event). The page body carries
+  each leg's box unit state and its `arm-on-url-<R>.log` tail. Session-scheduled wakeups only fire while the session is idle
   and are worthless as a monitor (2026-08-19: four of them fired at 17:46Z,
   five hours after the calls). The reason is not only idleness: the 2026-08-19
   session was killed at 05:38Z by a model-safeguards flag on an ordinary

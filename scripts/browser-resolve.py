@@ -214,8 +214,11 @@ def main():
                 print(f"MANIFEST-IGNORED vod(ENDLIST) {u[:160]}", flush=True)
                 return
             found[u] = looks_master(u, body)
+            # FULL url, never truncated: url-push-job.sh parses these lines and
+            # feeds the candidates to pcm-gate/push (a tokenized Notified media
+            # playlist is >180 chars — a cut URL is a corrupt URL).
             print(f"MANIFEST-SEEN {'master' if found[u] else 'variant'} "
-                  f"[{resp.status}] {u[:180]}", flush=True)
+                  f"[{resp.status}] {u}", flush=True)
 
         ctx.on("response", on_response)
 

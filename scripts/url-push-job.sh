@@ -59,6 +59,13 @@ if [[ "$MODE" == check ]]; then
   chk "utc->local conversion" "06:31" "$got"
   # hosts default to the box unless --host local follows the run-dir
   chk "host default" "${EARSHOT_BOX:-ubuntu@3.212.174.94}" "$( RUNS=(); HOSTS=(); HOSTS+=("__PENDING__"); for i in "${!HOSTS[@]}"; do [[ "${HOSTS[$i]}" == "__PENDING__" ]] && HOSTS[$i]="${EARSHOT_BOX:-ubuntu@3.212.174.94}"; done; echo "${HOSTS[0]}")"
+  # a bounded leg is killed at the bound and reports 124 (never outlives --until-utc)
+  UNTIL_EPOCH=$(( $(date +%s) + 7 )); tmpl="$(mktemp "${TMPDIR:-/tmp}/url-push-check.XXXXXX")"
+  run_bounded_leg() { local logf="$1"; shift; local budget=$(( UNTIL_EPOCH - $(date +%s) )); (( budget > 5 )) || budget=5
+    "$@" > "$logf" 2>&1 & local pid=$!; local waited=0
+    while kill -0 "$pid" 2>/dev/null; do if (( waited >= budget )); then kill -TERM "$pid" 2>/dev/null; sleep 2; kill -KILL "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; echo "LEG-BOUND" >> "$logf"; return 124; fi; sleep 1; waited=$((waited+1)); done; wait "$pid"; }
+  run_bounded_leg "$tmpl" sleep 60; chk "bounded leg killed at the bound (exit 124)" "124" "$?"
+  run_bounded_leg "$tmpl" true; chk "bounded leg passes a fast exit through" "0" "$?"; rm -f "$tmpl"
   (( F )) && { echo "SELFTEST FAIL ($F failed, $P passed)"; exit 1; }; echo "SELFTEST PASS ($P checks)"; exit 0
 fi
 [[ -n "$SLUG" && ${#RUNS[@]} -gt 0 && -n "$UNTIL" ]] || { echo "USAGE-ERROR: need --slug, --until-utc and >=1 --run-dir" >&2; exit 2; }
@@ -108,10 +115,31 @@ RESOLVE_ARGV=(); while IFS= read -r part; do RESOLVE_ARGV+=("$part"); done < <(
   plan_field "${RUNS[0]}" '"\n".join(x.replace("$HOME/", __import__("os").path.expanduser("~")+"/") for x in a["resolver"]["preresolve"]["argv"])')
 [[ ${#RESOLVE_ARGV[@]} -gt 0 ]] || { log "REFUSED: ${RUNS[0]} records no preresolve argv"; exit 1; }
 log "=== url-push-job slug=$SLUG until=${UNTIL}Z targets=$(for i in "${!RUNS[@]}"; do printf '%s@%s ' "${EVENTS[$i]}" "${HOSTS[$i]}"; done) leg=${RESOLVE_ARGV[0]} ${RESOLVE_ARGV[1]:-}"
+# Every resolve leg is BOUNDED to --until-utc. The loop condition is only
+# evaluated between iterations, and a browser-resolve leg carries its own
+# --wait-secs (6600 on the FUTU plan) — unbounded, one leg could outlive the
+# window and this job would never reach its NOT ARMED page.
+UNTIL_EPOCH=$(python3 -c 'import sys,datetime as d
+h,m=map(int,sys.argv[1].split(":")); n=d.datetime.now(d.timezone.utc)
+t=n.replace(hour=h,minute=m,second=0,microsecond=0)
+if t<n-d.timedelta(hours=12): t+=d.timedelta(days=1)
+print(int(t.timestamp()))' "$UNTIL")
+run_bounded_leg() {  # run_bounded_leg <logfile> <argv...> -> exit code (124 = bound hit)
+  local logf="$1"; shift
+  local budget=$(( UNTIL_EPOCH - $(date +%s) )); (( budget > 5 )) || budget=5
+  # own process group, so the bound kills the headless browser too, not just python
+  python3 -c 'import os,sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])' "$@" > "$logf" 2>&1 & local pid=$!
+  local waited=0
+  while kill -0 "$pid" 2>/dev/null; do
+    if (( waited >= budget )); then kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null; sleep 2; kill -KILL -- "-$pid" 2>/dev/null; wait "$pid" 2>/dev/null; echo "LEG-BOUND: killed after ${waited}s (until ${UNTIL}Z)" >> "$logf"; return 124; fi
+    sleep 1; waited=$((waited+1))
+  done
+  wait "$pid"
+}
 until [[ "$(date -u +%H:%M)" > "$UNTIL" ]]; do
   rm -f "$HOME/$BASE"
   LEGLOG="$(mktemp "${TMPDIR:-/tmp}/url-push-leg.XXXXXX")"
-  "${RESOLVE_ARGV[@]}" > "$LEGLOG" 2>&1; RC=$?
+  run_bounded_leg "$LEGLOG" "${RESOLVE_ARGV[@]}"; RC=$?
   cat "$LEGLOG" >> "state/${EVENTS[0]}/push.log"
   # Candidates: the minted url-file first, then every other manifest the leg SAW
   # (MANIFEST-SEEN lines), masters before variants. TOL 2026-08-19 minted a

@@ -22,7 +22,7 @@ export HOME="$TMP/home"
 mkdir -p "$HOME/.earshot"
 printf 'EARSHOT_ACCOUNT_FIXTURE=1\n' > "$HOME/.earshot/account.env"
 
-for path in eventctl.py access-plan.py capture-ready.py pcm-gate.sh \
+for path in eventctl.py access-plan.py capture-ready.py pcm-gate.sh schedule-proof.py \
   arm-on-url.sh push-url-file.sh install-t0-agents.sh; do
   cp "$ROOT/scripts/$path" "$REPO/scripts/$path"
 done
@@ -213,7 +213,7 @@ grep -q 'master.m3u8' "$REPO/state/KXEARNINGSMENTIONPRE1-TEST-WEBCAST/url-push.j
 
 RC=$(arm "$RUN1")
 assert_not_rig_timeout "case 1"
-[[ "$RC" == 0 ]] || fail "case 1: arm exited $RC with a fresh pushed url-file"
+[[ "$RC" == 0 ]] || fail "case 1: arm exited $RC with a fresh pushed url-file; stderr: $(tail -3 "$TMP/arm-stderr.log" 2>/dev/null | tr "\n" " "); log: $(tail -3 "$(arm_log "$RUN1")" 2>/dev/null | tr "\n" " ")"
 [[ "$(launches)" == 1 ]] || fail "case 1: expected exactly one launch, got $(launches)"
 [[ -f "$RUN1/control/pcm-proof.json" ]] || fail "case 1: no PCM proof was produced"
 grep -q 'RESOLVER_DEADLINE_EPOCH=<unset>' "$STUB/wait-env" \
@@ -282,6 +282,37 @@ grep -q 'URLFILE-ABSENT\|URLFILE-WAIT ABSENT' "$(arm_log "$RUN4")" \
 [[ "$(launches)" == "$BEFORE" ]] || fail "case 4: an unresolved plan reached the launcher"
 [[ "$(grep -c 'NOT ARMED — resolver failed' "$STUB/pages")" == 1 ]] \
   || fail "case 4: expected exactly one deadline page"
+
+# ── Case 6: the PCM gate fails ONCE (transient 404 / empty first segment) ─────
+# AS 2026-08-18: the gate ran once ~20 s after the url-file landed, got a
+# transient IVS 404, and the unit EXITED while the call streamed fine. The gate
+# now retries on a bounded schedule like the resolver: a first refusal pages
+# once, the second attempt passes, exactly one launch follows.
+RUN6=$(make_run 6 pre6-stream.url)
+: > "$STUB/pages"
+BEFORE=$(launches)
+bind_preresolved "$RUN6" pre6-stream.url "$(soon 90)"
+printf 'https://media.example.invalid/live/master6.m3u8\n' > "$TMP/minted6.url"
+EARSHOT_REPO="$REPO" EARSHOT_SSH="$STUB/bin/ssh" \
+  "$REPO/scripts/push-url-file.sh" --run-dir "$RUN6" --from-file "$TMP/minted6.url" \
+  --host stub-box --key "$TMP/no-key" > "$TMP/push6.log" 2>&1 \
+  || fail "case 6: push refused: $(tail -1 "$TMP/push6.log")"
+# flaky ffmpeg: first call yields zero bytes, every later call the full window
+cat > "$STUB/bin/ffmpeg" <<SH
+#!/usr/bin/env bash
+if [[ ! -e "$STUB/ffmpeg-calls" ]]; then touch "$STUB/ffmpeg-calls"; exit 1; fi
+head -c 192000 /dev/zero
+SH
+chmod +x "$STUB/bin/ffmpeg"
+RC=$(EARSHOT_PCM_RETRY_SECS=1 arm "$RUN6")
+assert_not_rig_timeout "case 6"
+[[ "$RC" == 0 ]] || fail "case 6: arm exited $RC after a transient PCM-gate failure; log: $(grep -c 'PCM-GATE: attempt' "$(arm_log "$RUN6")" 2>/dev/null) attempts, stderr: $(tail -1 "$TMP/arm-stderr.log" 2>/dev/null)"
+[[ "$(grep -c 'PCM-GATE: attempt' "$(arm_log "$RUN6")")" -ge 2 ]] || fail "case 6: the gate did not retry"
+[[ "$(launches)" == "$((BEFORE+1))" ]] || fail "case 6: expected exactly one launch, got $(( $(launches) - BEFORE ))"
+[[ -f "$RUN6/control/pcm-proof.json" ]] || fail "case 6: no PCM proof after the retry"
+[[ "$(grep -c 'PCM gate refused' "$STUB/pages")" == 1 ]] || fail "case 6: expected exactly one retry page, got $(grep -c 'PCM gate refused' "$STUB/pages")"
+grep -q 'NOT ARMED — PCM proof failed' "$STUB/pages" && fail "case 6: a transient failure paged NOT ARMED"
+printf '#!/usr/bin/env bash\nhead -c 192000 /dev/zero\n' > "$STUB/bin/ffmpeg"; chmod +x "$STUB/bin/ffmpeg"
 
 # ── Seam S-E: the laptop installer must accept a preresolved plan ─────────────
 # Verified, not assumed. install-t0-agents refuses static-public only; if this

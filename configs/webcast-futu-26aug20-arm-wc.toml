@@ -220,7 +220,7 @@ policy           = "confirmed_only"
 [[keywords]]
 market_ticker    = "KXEARNINGSMENTIONFUTU-26AUG20-TAIL"
 phrase           = "tailwind"
-variants         = ["tailwind", "tailwinds"]
+variants         = ["tailwind", "tailwinds", "tail wind", "tail winds"]  # widened 2026-08-19 to the HD/KLAR-26AUG18 studied set (2-variant form scored 0/18 on AC-26AUG12 and DE-26AUG20; 4-variant form 66/36 on HD+KLAR)
 max_price_cents  = 1
 budget_contracts = 1
 policy           = "confirmed_only"
