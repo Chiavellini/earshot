@@ -97,7 +97,8 @@ for: EV/fee economics (executor) or market validation (validator).
 ## How to replace or edit this layer
 - Everything is `src/risk.rs`. Contract: check order shown above, hard-const
   non-overridability, ledger-before-send, session-scoped kill.
-- M2→M4 evolution: `PROBE_LEDGER_CAP_CENTS` is now the ONLY cumulative bound
+- M2→M4 evolution: `PROBE_LEDGER_CAP_CENTS` (20_000¢ per event dir since
+  2026-08-19, from 13_000) is now the ONLY cumulative bound
   in this layer — the per-event notional budget it was expected to hand off to
   was removed instead (2026-08-18, O8). Replacing it is a reviewed code change
   here plus an update to this doc and the executor doc.

@@ -696,8 +696,11 @@ the operator rules:
 - **O1** `daily_loss_cap_cents` is parsed, clamped, and **never read** — there
   is no realized-P&L accumulator (`src/risk.rs:101,157,177`). The $1,000 daily
   backstop is a comment.
-- **O2** `PROBE_LEDGER_CAP_CENTS = 13_000` is per-event, not cumulative,
-  despite its doc comment (casino143 §IV.7): real exposure is $130 × events.
+- **O2** `PROBE_LEDGER_CAP_CENTS` is per-event, not cumulative, despite its
+  doc comment (casino143 §IV.7): real exposure is the cap × events. **RAISED
+  13_000 → 20_000 on 2026-08-19** (operator ruling: ramp only confident words,
+  doubled size tiers 3.0:20 / 2.0:10 / 1.0:4, low band 2, no event caps, only
+  per-word caps) — TOL 08-19 prices out at 15,132¢ worst case, TGT 11,058¢.
 - **O3** `book_stale_enforce` defaults false (`src/risk.rs:159`): unknown book
   age refuses, known-but-old only warns; COHR showed book_age p90/max 60 s.
 - **O4** `MENTION_FILL_CAP_CENTS = 97` sits exactly where depth has twice been
@@ -730,8 +733,8 @@ the operator rules:
   **What still bounds spend:** `max_order_notional_cents` (per order), the
   per-word study posture (`MENTION_FILL_CAP_CENTS` 97¢ / OBSERVE 1¢), the
   one-shot table (one order per keyword), and `PROBE_LEDGER_CAP_CENTS`
-  (13,000¢, per event dir). Practical worst case is #FILL-words × 97¢ ≈ $14.55
-  on a 15-word board, ≈$58 on a four-event slate. **There is still no daily
+  (20,000¢ since 2026-08-19, per event dir). At the doubled tiers the practical
+  worst case is #tiered contracts × 97¢ — ≈$110–150 on a 13–14-word board. **There is still no daily
   aggregate bound** — `daily_loss_cap_cents` remains parsed, clamped and never
   read (**O1**), and removing the per-event cap makes O1 the sharpest open
   money defect in this file. The probe ledger and the M4 gate on real-size

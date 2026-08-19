@@ -63,7 +63,18 @@ pub const HARD_DAILY_LOSS_CENTS: u64 = 100_000; // $1,000
 /// matches the "cumulative across ALL live drills/sessions" intent stated above
 /// is an OPEN question the operator deferred on 2026-08-11; do not read this
 /// constant as a global spend bound until that is settled.
-pub const PROBE_LEDGER_CAP_CENTS: u64 = 13_000;
+///
+/// RAISED 13_000 → 20_000 on 2026-08-19 (operator ruling, event-prep for
+/// TGT/TOL 08-19: "ramp up trading only for words we are confident in — use
+/// the tiering system, double it: high confidence $20 and the ladder goes down;
+/// no event caps, only per-word caps"). Sizes are now `--size-tiers
+/// 3.0:20,2.0:10,1.0:4 --low-band-budget 2` at the 97¢ ceiling, so the per-word
+/// cap is 20 × 97 = 1940¢ (`[risk].max_order_notional_cents = 1940` in those
+/// configs) and a full board prices out above the old 13_000: TOL 08-19 worst
+/// case 156 contracts = 15,132¢, TGT 114 = 11,058¢. 20_000 lets both boards
+/// fill every tier without a `Refusal::ProbeLedger` tail; the sign argument
+/// above is unchanged (break-even precision at 97¢ is 97 % at every size).
+pub const PROBE_LEDGER_CAP_CENTS: u64 = 20_000;
 /// Fillable mention posture (the deliberate step past the 1¢ no-fill probe):
 /// a single order's price may cross a real ask up to this ceiling so the
 /// executor can actually fill. This is a per-order PRICE bound only — real
