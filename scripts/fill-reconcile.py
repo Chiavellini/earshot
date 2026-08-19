@@ -13,7 +13,8 @@ on earshot's own event markets — the two extra ones placed by `sweep-hft`,
 a separate project that shares this Kalshi account (memory: "shares ONLY the
 Kalshi + PM accounts"). One of them, `KXEARNINGSMENTIONHD-26AUG18-INFL`
 bought at 49¢, settled NO. Earshot had itself detected `inflation` on that
-market and been refused by its own event-notional cap — so the position exists
+market and been refused by the then-existing per-event notional cap (removed
+that same day by operator ruling, SYSTEM-STATE O8) — so the position exists
 on the account, the loss is real, and no earshot artifact mentions it.
 
 The system already KNEW the account was shared — `CLAUDE.md` warns that the
@@ -38,12 +39,10 @@ Three outcomes per fill:
                because a nightly alarm for a known-legitimate condition trains
                the operator to ignore the alarm that matters.
 
-It also reports, per event, our own notional beside the ACCOUNT's notional on
-that event's markets, against the earshot config's `max_event_notional_cents`.
-Earshot enforces that cap per-process; the account is not bound by it, and on
-2026-08-18 the HD event carried 141¢ across both systems against a 100¢ cap.
-That number is reported, never enforced — event caps are the operator's
-(SYSTEM-STATE §4).
+It also reports, per board, our own notional beside the ACCOUNT's notional on
+that board's markets. It reports; it never enforces — spend policy is the
+operator's (SYSTEM-STATE §4). There is no per-event notional cap to compare
+against any more: it was removed on 2026-08-18 (O8).
 
 Read-only. Signs GET requests only (`/portfolio/fills`, `/portfolio/orders/…`);
 it can neither place nor cancel anything. Writes only its JSON report.
@@ -191,35 +190,14 @@ def our_boards(date, runs_dir=None, repo=REPO):
             "client_order_ids": set(),
         })
         lane = board["lanes"].setdefault(event_id, {
-            "event_id": event_id, "cap_cents": None, "run_ids": [],
+            "event_id": event_id, "run_ids": [],
         })
         lane["run_ids"].append(plan.get("run_id"))
-        if lane["cap_cents"] is None:
-            lane["cap_cents"] = event_cap_cents(plan.get("config_path"), repo)
         run_dir = os.path.dirname(os.path.dirname(plan_path))
         report_rel = (plan.get("artifacts") or {}).get(
             "runtime_report", "report/report.json")
         collect_orders(os.path.join(run_dir, report_rel), board, event_id)
     return boards
-
-
-def event_cap_cents(config_path, repo=REPO):
-    """`max_event_notional_cents` from the run's own config, or None. Read for
-    REPORTING only — this tool never enforces a cap."""
-    if not config_path:
-        return None
-    path = config_path if os.path.isabs(config_path) else os.path.join(repo, config_path)
-    try:
-        with open(path, "rb") as fh:
-            cfg = tomllib.load(fh)
-    except (OSError, tomllib.TOMLDecodeError):
-        return None
-    for section in ("risk", "execution", "order"):
-        value = (cfg.get(section) or {}).get("max_event_notional_cents")
-        if isinstance(value, int):
-            return value
-    value = cfg.get("max_event_notional_cents")
-    return value if isinstance(value, int) else None
 
 
 def collect_orders(report_path, board, event_id):
@@ -327,10 +305,9 @@ def classify(fills, boards, fetch_order=None):
 def summarize(boards, rows):
     """Per-board ledger view: what we placed, what the account holds, and the
     difference. `foreign_notional_cents` is exposure on a board we trade that
-    earshot did not place — reported, never enforced. The lanes' configured
-    event caps ride along as context: earshot enforces them per-process, so an
-    account total above a lane's cap is an observation about the ACCOUNT, not a
-    breach of anything earshot promised (SYSTEM-STATE §4 is the operator's)."""
+    earshot did not place — reported, never enforced; spend policy is the
+    operator's (SYSTEM-STATE §4). There is no per-event notional cap to compare
+    an account total against any more (removed 2026-08-18, O8)."""
     per_board = {}
     for prefix, board in boards.items():
         mine = [r for r in rows if r["market_event_ticker"] == prefix
@@ -343,8 +320,7 @@ def summarize(boards, rows):
         foreign_cents = sum(r["cost_cents"] for r in foreign)
         per_board[prefix] = {
             "lanes": [{"event_id": lane["event_id"],
-                       "run_ids": lane["run_ids"],
-                       "earshot_event_cap_cents": lane["cap_cents"]}
+                       "run_ids": lane["run_ids"]}
                       for lane in sorted(board["lanes"].values(),
                                          key=lambda l: l["event_id"])],
             "recorded_fills": len(mine),
@@ -388,17 +364,14 @@ def render(payload):
     out = []
     s = payload["summary"]
     for prefix, board in sorted(payload["boards"].items()):
-        caps = ", ".join(
-            f"{_lane_label(prefix, lane['event_id'])} cap "
-            f"{lane['earshot_event_cap_cents']}¢"
-            for lane in board["lanes"]
-            if lane["earshot_event_cap_cents"] is not None)
+        lanes = ", ".join(_lane_label(prefix, lane["event_id"])
+                          for lane in board["lanes"])
         line = (f"  {prefix}: ours {board['recorded_fills']} fill(s) "
                 f"{board['our_notional_cents']:.0f}¢, "
                 f"foreign {board['foreign_fills']} fill(s) "
                 f"{board['foreign_notional_cents']:.0f}¢, "
                 f"account {board['account_notional_cents']:.0f}¢")
-        out.append(line + (f"  [{caps}]" if caps else ""))
+        out.append(line + (f"  [{lanes}]" if lanes else ""))
     for row in payload["fills"]:
         if row["classification"] == "recorded":
             continue
@@ -427,12 +400,12 @@ def check():
             return {"fills": fills, "cursor": ""}
         return get
 
-    def write_lane(runs, event_id, run_id, cap_toml, orders, repo):
+    def write_lane(runs, event_id, run_id, orders, repo):
         run_dir = os.path.join(runs, event_id, run_id)
         os.makedirs(os.path.join(run_dir, "control"))
         os.makedirs(os.path.join(run_dir, "report"))
         cfg = os.path.join(repo, event_id + ".toml")
-        open(cfg, "w").write(cap_toml)
+        open(cfg, "w").write("[risk]\nmax_order_notional_cents = 100\n")
         json.dump({"kind": "run-plan", "event_id": event_id, "run_id": run_id,
                    "market_event_ticker": "KXEARNINGSMENTIONHD-26AUG18",
                    "starts_at_utc": "2026-08-18T13:00:00Z", "config_path": cfg,
@@ -457,10 +430,8 @@ def check():
         runs = os.path.join(d, "runs")
         # TWO earshot lanes on ONE Kalshi board — the 26AUG18 HD shape (laptop
         # arm + box 1¢ observe). The box lane sorts first and placed nothing.
-        write_lane(runs, BOX, "20260818T130000Z-p3-box",
-                   "[risk]\nmax_event_notional_cents = 100\n", [], d)
-        write_lane(runs, LAPTOP, "20260818T130000Z-p3-laptop",
-                   "[risk]\nmax_event_notional_cents = 100\n", [
+        write_lane(runs, BOX, "20260818T130000Z-p3-box", [], d)
+        write_lane(runs, LAPTOP, "20260818T130000Z-p3-laptop", [
                        {"ticker": BOARD + "-INNO", "order_id": "ours-1",
                         "client_order_id": "coid-1", "price_cents": 97,
                         "order_status": "filled",
@@ -474,6 +445,8 @@ def check():
         boards = our_boards("2026-08-18", runs_dir=runs, repo=d)
         assert set(boards) == {BOARD}, boards
         assert set(boards[BOARD]["lanes"]) == {LAPTOP, BOX}, boards[BOARD]["lanes"]
+        # No per-event cap exists to read any more (O8, 2026-08-18).
+        assert "cap_cents" not in boards[BOARD]["lanes"][LAPTOP], boards[BOARD]
         # A plan declaring another date is NOT this date's board.
         assert our_boards("2026-08-19", runs_dir=runs, repo=d) == {}
 
@@ -490,7 +463,6 @@ def check():
         assert (b["our_notional_cents"], b["foreign_notional_cents"],
                 b["account_notional_cents"]) == (92, 49, 141), b
         assert b["foreign_exposure"] is True, b
-        assert [lane["earshot_event_cap_cents"] for lane in b["lanes"]] == [100, 100], b
 
         # The SAME unmatched fill is UNRECORDED, not foreign, when the order's
         # client id is one of ours — we placed it and lost the receipt.
@@ -518,8 +490,7 @@ def check():
     # order ids: a closed attempt can have reached the wire.
     with tempfile.TemporaryDirectory() as d:
         runs = os.path.join(d, "runs")
-        write_lane(runs, LAPTOP, "20260818T130000Z-p3-first",
-                   "[risk]\nmax_event_notional_cents = 100\n", [
+        write_lane(runs, LAPTOP, "20260818T130000Z-p3-first", [
                        {"ticker": BOARD + "-INNO", "order_id": "ours-1",
                         "client_order_id": "coid-1", "order_status": "filled",
                         "fill": {"cumulative_contracts": "1.00",

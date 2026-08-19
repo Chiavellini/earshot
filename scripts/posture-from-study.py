@@ -295,11 +295,15 @@ def main() -> int:
     print(f"   => {len(fill)} FILL / {len(observe)} OBSERVE of {len(fill)+len(observe)}"
           + (f"  ({len(short_forced)} forced down by the k<=2 rule)" if short_forced else ""))
 
-    # The worst case the CONFIG must admit. Printed because the event cap going
-    # unraised is a SILENT failure, not a loud one: on 26AUG06 CELH a 100¢
-    # max_event_notional_cents against a 97¢ fill cap let exactly ONE order
-    # reach the wire and refused the rest on EventNotional, so the board looked
-    # like a detection problem when it was a config arithmetic problem.
+    # The worst case this posture can spend on one board. The per-event
+    # notional cap was REMOVED on 2026-08-18 (operator ruling), so this number
+    # no longer has to be admitted by a config key — but it is still the honest
+    # per-event exposure and the probe ledger still has to clear it. It is
+    # printed because the old cap's failure mode was silent: on 26AUG06 CELH,
+    # and again on all three 26AUG18 boards, a 100¢ cap against a 97¢ fill
+    # price let exactly ONE order per event reach the wire and refused the
+    # rest, so the board looked like a detection problem when it was config
+    # arithmetic.
     if tiers or a.low_band_budget:
         worst_hi = sum(a.fill_cap * n for _, _, _, _, n in fill if n)
         worst_lo = sum(low_cap * n for _, _, _, _, n in observe if n)
@@ -310,9 +314,9 @@ def main() -> int:
             print(f"   NOTE: the low band is REAL money now ({len(observe)} words × "
                   f"{low_cap * a.low_band_budget}¢). At a {a.fill_cap}¢ ceiling a word must be "
                   f"right >{a.fill_cap}% of the time to break even, in EITHER band.")
-        print(f"   -> [risk] max_event_notional_cents must be >= {worst}, and "
-              f"PROBE_LEDGER_CAP_CENTS (src/risk.rs, per-event) >= {worst}, "
-              f"or the tail of this posture silently refuses.")
+        print(f"   -> PROBE_LEDGER_CAP_CENTS (src/risk.rs, per-event) must be "
+              f">= {worst}, or the tail of this posture silently refuses. There "
+              f"is no per-event notional cap to raise any more.")
 
     if a.dry_run:
         print("   (dry-run — nothing written)")

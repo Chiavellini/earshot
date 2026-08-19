@@ -105,8 +105,11 @@ while [[ $# -gt 0 ]]; do
     # The precision caveat W7 was built for still stands and is UNRESOLVED:
     # docs/BAKEOFF.md G4 is not scored, and the .readiness studies measure
     # RECALL, not precision. Money is bounded elsewhere — MENTION_FILL_CAP_CENTS
-    # (a per-ORDER price bound), [risk].max_event_notional_cents, and the
-    # per-event probe ledger.
+    # (a per-ORDER price bound), [risk].max_order_notional_cents, and the
+    # per-event probe ledger. There is NO per-event notional cap: it was
+    # removed 2026-08-18 by operator ruling because at 97¢ against a 100¢ cap
+    # it admitted exactly one order per event and spent it on whichever
+    # keyword fired first, not the best-priced one.
     #
     # THE NUMBERS IN THIS NOTE WENT STALE TWICE; do not read them from here.
     # It said "50¢/order" (raised to 97 on 2026-08-05) and "the per-event $1
@@ -817,7 +820,7 @@ if (( LIVE )); then
                   | grep -oE '[0-9]+$' | sort -n | tail -1)
     CFG_MAX_SIZE=$(grep -oE '^budget_contracts[[:space:]]*=[[:space:]]*[0-9]+' "$CONFIG" \
                    | grep -oE '[0-9]+$' | sort -n | tail -1)
-    POSTURE="LIVE mention-FILL (orders MAY cross the ask and FILL; max cap ${CFG_MAX_CAP:-?}¢ × ${CFG_MAX_SIZE:-?} contract(s) per order, spend bound by configured notional caps + the event ledger)"
+    POSTURE="LIVE mention-FILL (orders MAY cross the ask and FILL; max cap ${CFG_MAX_CAP:-?}¢ × ${CFG_MAX_SIZE:-?} contract(s) per order, spend bound by the per-order notional cap + the probe ledger; NO per-event cap)"
   else
     POSTURE="LIVE mention-probe (cap ≤ 1¢ non-crossing — an order reaches the wire ONLY if the ask is ≤ 1¢; otherwise it short-circuits unsent)"
   fi
