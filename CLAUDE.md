@@ -45,7 +45,10 @@ layer, `docs/ARCHITECTURE.md` maps the exact typed doors and
   `--fillable` (requires `--i-am-live --allow-mention`) is the mention-FILL
   posture: orders on Mentions markets may cross the ask up to
   `MENTION_FILL_CAP_CENTS` (50¢/order price bound); real spend stays clamped
-  by the config notional caps AND the $1 ledger. Removing the ledger/notional
+  by `max_order_notional_cents` AND the $1 ledger. There is NO per-event
+  notional cap — it was removed 2026-08-18 by operator ruling (SYSTEM-STATE §4
+  O8) because at a 97¢ fill price against a 100¢ cap it admitted exactly one
+  order per event and spent it on whichever keyword fired first. Removing the ledger/notional
   clamps (real-size trading) stays gated until M4.
 
 ## Quick commands

@@ -183,8 +183,34 @@ the work orders reference them.
   unexpanded literal `$HOME` in the pem path, now expanded and pinned).
   **RESIDUAL, and it is an operator question, not a grader one:** the HD board
   carried 141¢ across both systems against each lane's 100¢
-  `max_event_notional_cents`. Earshot enforces that cap per-process; the
+  the then-existing `max_event_notional_cents` (that cap was removed the same
+  day — **O8**). Earshot enforced it per-process; the
   account is not bound by it. Filed as **O7**.
+- **E16 CLOSED 2026-08-18 — a finished run's proof depended on a MUTABLE file.**
+  A RunPlan pins `config_sha256`, but every verifier re-read the config from the
+  WORKTREE. `TERMINALS` names only failure transitions and `closed` requires
+  `archived`, so a SUCCESSFUL run stays `active` forever — meaning a graded run
+  had to keep its config byte-identical on disk for all time or become
+  unauditable. Surfaced by **O8**: stripping `max_event_notional_cents` from
+  every config retroactively refused all four already-graded 26AUG18 runs
+  (`pinned config … has drifted from the plan hash`), turning `audit-day` red on
+  a day it had passed hours earlier. **FIX:** `eventctl init` banks the pinned
+  bytes as `control/pinned-config.toml`; `run-audit` reads the transport from
+  that snapshot when it hashes to the pin; `verify` softens a GRADED run to
+  `pinned inputs superseded (run is graded)` only while the snapshot still
+  carries those bytes, and `graded` joins the record-time pinned-exempt set as a
+  post-hoc verdict that advances no work. The snapshot is SELF-PROVING —
+  accepted only on a hash match, so a forged one is indistinguishable from a
+  corrupt one and both are refused — and `_check_pinned_inputs` deliberately
+  does NOT consult it, so the ACTIVE-run tripwire stays hard
+  (`test_config_mutation_blocks_typed_record` still bites).
+  **Proof:** 14 snapshots backfilled from bytes reconstructed to an exact
+  sha256 match; re-auditing KLAR then produced an `already-identical`
+  `grade/verdict.json`, i.e. the re-derived grade is byte-for-byte what the
+  pre-edit config produced. 21 superseded attempts pinning older config
+  revisions remain unrecoverable and still fail loud, which is correct.
+  **Residual:** the snapshot only exists for runs initialised after this change
+  or backfilled by hand; there is no sweep that backfills every historical run.
 - **E2** No growth-based tape liveness check exists anywhere in the tree; the
   "book-tape ran 2d21h past its deadline and went deaf with no close row"
   defect (casino143 §III.5) has a stronger close path in `examples/book-tape.rs`
@@ -679,13 +705,45 @@ the operator rules:
   ev_gate has no P(wrong) term and gates nothing (shadow only).
 - **O5** No pre-arm liquidity survey and no depth-aware sizing; on 08-11 most
   intents found `best_ask=None` or depth above the cap.
+- **O8 RULED + EXECUTED 2026-08-18 — there is no per-event notional cap.**
+  `max_event_notional_cents = 100` against a 97¢ fill price admitted **exactly
+  one order per event**, and the one-shot table handed that single order to
+  whichever keyword fired FIRST — never the best-priced one. Measured across
+  all three armed 26AUG18 boards: 27 intents → 3 wire → 3 fills, with **6
+  refused on `EventNotional`**. Every market where we genuinely beat the market
+  to the reprice was among the refused: weather (ask 34¢, we led 48.2 s, 420
+  contracts resting ≤97¢), profitability (56¢, 11.4 s, 419), tailwind (60¢,
+  4.3 s, 491), wimbledon (85¢, 7.2 s, 279). The three that DID fill were all
+  already-repriced 92–97¢ markets. Realized +15¢ gross against roughly +165¢
+  available on the four declined winners — and the cheap entries are also where
+  the precision margin is widest, since break-even precision equals the fill
+  price.
+  **Removed entirely, no replacement** (operator ruling): `Refusal::EventNotional`,
+  `RiskConfig::max_event_notional_cents`, `HARD_MAX_EVENT_NOTIONAL_CENTS`, the
+  `event_spent_cents` accumulator, the key in all 49 configs, and the line
+  `prepare` emitted into generated configs. `RiskConfig` is
+  `deny_unknown_fields`, so code and configs had to move together — a config
+  still carrying the key now refuses to load, which is the intended loud
+  failure. Pinned by `many_orders_in_one_event_are_not_capped_by_the_event`
+  (ten 97¢ orders in one event pass; a 194¢ single order still refuses on
+  `OrderNotional`).
+  **What still bounds spend:** `max_order_notional_cents` (per order), the
+  per-word study posture (`MENTION_FILL_CAP_CENTS` 97¢ / OBSERVE 1¢), the
+  one-shot table (one order per keyword), and `PROBE_LEDGER_CAP_CENTS`
+  (13,000¢, per event dir). Practical worst case is #FILL-words × 97¢ ≈ $14.55
+  on a 15-word board, ≈$58 on a four-event slate. **There is still no daily
+  aggregate bound** — `daily_loss_cap_cents` remains parsed, clamped and never
+  read (**O1**), and removing the per-event cap makes O1 the sharpest open
+  money defect in this file. The probe ledger and the M4 gate on real-size
+  trading are deliberately UNCHANGED by this ruling.
 - **O7 OPEN 2026-08-18 — two systems, one account, the same boards.** Earshot
   and `sweep-hft` both trade earshot's own mention boards on one Kalshi
   account, and each enforces its notional caps **per-process**. Measured
   26AUG18 (`var/audits/fills-2026-08-18.json`, **E15**):
   `KXEARNINGSMENTIONHD-26AUG18` carried 141¢ of account exposure — earshot's
-  92¢ fill plus sweep's 49¢ — against a 100¢ `max_event_notional_cents` in each
-  lane's config. Nothing was breached: neither process exceeded its own cap,
+  92¢ fill plus sweep's 49¢ — against the 100¢ `max_event_notional_cents` each
+  lane's config carried at the time (that cap has since been removed, **O8**,
+  which makes the account-level question sharper, not softer). Nothing was breached: neither process exceeded its own cap,
   and no rule says the account total is bounded. That is precisely the ruling
   owed. The reconciler reports the number and never enforces it. Adjacent to
   **O2** (per-event vs cumulative) and **O5** (no depth-aware sizing); note
@@ -703,9 +761,13 @@ the operator rules:
   **The correction:** this is not an unguarded path. Exposure is bounded by
   policy that is already deliberate and standing — per-word `max_price_cents`
   set from the study (`posture-from-study.py`: FILL 97¢ / OBSERVE 1¢, the
-  evidence-gated rule), plus `max_event_notional_cents`, which at 100 vs a 97¢
-  fill cap admits **exactly one order per event** (measured 26AUG06 CELH), plus
-  the `risk.rs` hard caps. The §8 drill was inert by that same mechanism (1¢
+  evidence-gated rule), plus (at the time) `max_event_notional_cents`, which at
+  100 vs a 97¢ fill cap admitted **exactly one order per event** (measured
+  26AUG06 CELH), plus the `risk.rs` hard caps. **Amended 2026-08-18:** that
+  per-event cap has been REMOVED (**O8**), so the bound it contributed to this
+  argument is gone. What remains is the per-word study posture,
+  `max_order_notional_cents`, the one-shot table (one order per keyword), and
+  `PROBE_LEDGER_CAP_CENTS`. The §8 drill was inert by that same mechanism (1¢
   non-crossing OBSERVE + settled-market allowlist), which is the designed
   control, not a workaround.
   **RULED + CLOSED 2026-08-16 (operator chose a rehearsal posture).** Posture
@@ -726,7 +788,8 @@ the operator rules:
   exports `PLAN_POSTURE`, because it writes the unit from `argv` while
   `ExecStart=` is built separately in bash — that duplication was a real bug
   found during this change. Money policy in `src/risk.rs` is untouched; the
-  per-word study caps and event notional cap remain exactly as before. The
+  per-word study caps remained exactly as before (the event notional cap was
+  removed later, on 2026-08-18 — **O8**). The
   drill config now carries `rehearsal = true`, so drill inertness is
   structural. `src/config.rs` gained one `#[serde(default)] rehearsal: bool`,
   required only because `EventSection` is `deny_unknown_fields`.

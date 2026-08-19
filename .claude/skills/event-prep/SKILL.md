@@ -285,9 +285,13 @@ python3 scripts/posture-from-study.py configs/<event>-arm.toml \
 - `--compile-with`/`--model-dir` are load-bearing: the short-token (k≤2)
   override cannot run without them and says so (SNAP "game" fired 3× and
   settled NO).
-- Read back the printed WORST-CASE notional vs `[risk].max_event_notional_cents`
-  and `PROBE_LEDGER_CAP_CENTS` — at cap 97 vs a 100¢ event cap exactly ONE
-  order reaches the wire.
+- Read back the printed WORST-CASE notional against `PROBE_LEDGER_CAP_CENTS`
+  — that ledger is now the only cumulative bound. **There is no
+  `[risk].max_event_notional_cents` any more** (removed 2026-08-18, O8): at a
+  97¢ fill price against the old 100¢ cap exactly ONE order per event reached
+  the wire, and it went to whichever keyword fired first rather than the
+  best-priced one. An event may now place one order per FILL-posture keyword,
+  so the worst case is real exposure — read it, do not just check it fits.
 - Posture edits change config bytes ⇒ the preflight verdict is void ⇒ re-run
   Phase 8. Do posture BEFORE preflight, not the night the study finishes red.
 

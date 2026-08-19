@@ -73,10 +73,13 @@ detections → intents (one-shot table) → send-requested → WIRE-ATTEMPTED
 - `lost_races` aggregate is broken on fanout runs (reports 0 while records
   carry `lost_race: true`) — count records.
 - Separate the outcome classes the way the 26AUG06 CELH lesson demands:
-  filled / lost-race / notional-refused (EventNotional at cap 97 vs event cap
-  100 lets exactly ONE order through) / no-offers (`best_ask=None` — most of
+  filled / lost-race / notional-refused / no-offers (`best_ask=None` — most of
   08-11) / observe-by-design (1¢ non-crossing is a designed observe, not a
-  lost race).
+  lost race). **The per-event notional cap is gone** (removed 2026-08-18, O8),
+  so `EventNotional` refusals exist only in runs banked on or before that date
+  — on 26AUG18 they were 6 of 27 intents and capped the day at 3 fills. In new
+  runs a notional refusal can only be per-ORDER
+  (`max_order_notional_cents`) or the probe ledger; if you see one, say which.
 
 ## Phase 3 — SETTLE
 

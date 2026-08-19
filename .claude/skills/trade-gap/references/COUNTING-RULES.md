@@ -58,8 +58,11 @@ success-conditioned (their absence is not speed).
 Outcome classes to report separately (26AUG06 CELH ruling): **filled /
 lost-race / notional-refused / no-offers / observe-by-design**. A 1¢
 non-crossing record is a DESIGNED observe (memory: "OBSERVE 1¢ is not a $1
-bet"), not a lost race; an EventNotional refusal at cap 97 vs event cap 100 is
-arithmetic, not a bug — but its frequency is a finding for the operator.
+bet"), not a lost race. An `EventNotional` refusal is arithmetic, not a bug —
+but it can only appear in runs banked on or before 2026-08-18: the per-event
+notional cap was removed that day (O8) precisely because its frequency WAS the
+finding. Post-ruling, a notional refusal is per-ORDER or the probe ledger, and
+you must say which.
 
 ## Evidence location (say which you read)
 

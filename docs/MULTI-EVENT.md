@@ -83,13 +83,17 @@ current, with a `→ §8` marker where the item is now addressed.
   can still be breached. Mooted by the two-account design: each account gets its own
   `--state-dir` ledger (§8).
 
-- **Event-notional cap silently doubles.** `HARD_MAX_EVENT_NOTIONAL_CENTS = $2,000`
-  (`src/risk.rs`) is enforced against a per-`RiskGate` `AtomicU64` `event_spent_cents`
-  (checked in `check_order`, debited in `record_send`). Two processes = two independent
-  $2,000 budgets = up to **$4,000 of account exposure** with no account-level ceiling.
-  There is no per-market attribution either — `record_send` takes no ticker, so it is
-  already a flat per-process sum. (Two separate accounts each carry their own $2,000 by
-  design — §8.)
+- **~~Event-notional cap silently doubles.~~ RESOLVED 2026-08-18 by removal, and the
+  concern inverted.** There is no per-event notional cap any more: `EventNotional`,
+  `max_event_notional_cents`, `HARD_MAX_EVENT_NOTIONAL_CENTS` and the per-`RiskGate`
+  `event_spent_cents` accumulator were all removed (operator ruling **O8**). The
+  per-process doubling this entry described cannot happen because the per-process budget
+  no longer exists. What replaces the worry: an event's spend is now bounded only by
+  `max_order_notional_cents` × the one-shot table (one order per FILL keyword) and
+  `PROBE_LEDGER_CAP_CENTS`, and concurrency multiplies THAT. Two processes = two
+  independent probe ledgers, and there is still **no account-level ceiling anywhere**
+  — see **O1** (`daily_loss_cap_cents` parsed, clamped, never read) and **O7**
+  (a second system trades the same boards on this account).
 
 - **`OrderRegistry` has no event key.** It is a flat `Arc<Mutex<Vec<String>>>` of
   server order ids (`src/kalshi/mod.rs:57`), and its own doc comment states the ids are

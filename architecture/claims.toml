@@ -297,6 +297,29 @@ paths = [
   # outside the KXEARNINGSMENTION namespace, so it is inert to
   # missed-arm-check.py's staging globs AND its denominator.
   "configs/webcast-boxdrill-26aug14-wc.toml",
+  # 2026-08-18 O8: the per-event notional cap was removed from the runtime,
+  # and `RiskConfig` is `deny_unknown_fields` — so every config still
+  # carrying `max_event_notional_cents` would REFUSE TO LOAD. Code and
+  # configs had to move in one change set; these are the tracked configs
+  # the key was stripped from (proved both ways: a stripped config loads,
+  # a config with the key re-added exits 1 naming the unknown field).
+  "configs/rehearsal-nflx.toml",
+  "configs/twilio-live-ctc.toml",
+  "configs/twilio-live.toml",
+  "configs/webcast-aal-arm.toml",
+  "configs/webcast-axp-arm.toml",
+  "configs/webcast-fanout-arm-ctc.toml",
+  "configs/webcast-fanout-arm-spec.toml",
+  "configs/webcast-fanout-arm.toml",
+  "configs/webcast-fed-26jul29-arm.toml",
+  "configs/webcast-hood-ytdlp-arm.toml",
+  "configs/webcast-intc-arm-fill.toml",
+  "configs/webcast-intc-arm.toml",
+  "configs/webcast-lmt-arm.toml",
+  "configs/webcast-vz-arm.toml",
+  "configs/webcast-yeti-26aug13-arm-wc.toml",
+  "configs/wing-progressive-arm.toml",
+  "configs/yeti-26aug13-raw.toml",
 ]
 verification = [
   "cargo test --lib prepare",
