@@ -1,0 +1,150 @@
+{
+ "config": "webcast-rost-26aug20-arm-wc",
+ "keywords_sha256": "dcfb4760418f7b11cd17c2835ed099041b950ab857f2c908bd27cfc571351bb5",
+ "date": "2026-08-19",
+ "engine": "streaming_ctc",
+ "voices": [
+  "Samantha",
+  "Daniel",
+  "Paulina"
+ ],
+ "carriers": 2,
+ "keywords": [
+  {
+   "ticker": "KXEARNINGSMENTIONROST-26AUG20-BANK",
+   "phrase": "bankruptcy",
+   "variants": [
+    "bankruptcy",
+    "bankruptcys"
+   ],
+   "clips": 18,
+   "confirmed": 26
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONROST-26AUG20-BEAU",
+   "phrase": "beauty",
+   "variants": [
+    "beauty",
+    "beautys"
+   ],
+   "clips": 18,
+   "confirmed": 42
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONROST-26AUG20-CALI",
+   "phrase": "california",
+   "variants": [
+    "california",
+    "californias"
+   ],
+   "clips": 18,
+   "confirmed": 54
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONROST-26AUG20-CLOS",
+   "phrase": "closeout",
+   "variants": [
+    "closeout",
+    "closeouts"
+   ],
+   "clips": 18,
+   "confirmed": 26
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONROST-26AUG20-DRES",
+   "phrase": "dress for less",
+   "variants": [
+    "dress for less"
+   ],
+   "clips": 9,
+   "confirmed": 16
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONROST-26AUG20-FLYW",
+   "phrase": "flywheel",
+   "variants": [
+    "flywheel",
+    "flywheels"
+   ],
+   "clips": 18,
+   "confirmed": 52
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONROST-26AUG20-HOME",
+   "phrase": "home",
+   "variants": [
+    "home",
+    "homes"
+   ],
+   "clips": 18,
+   "confirmed": 26
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONROST-26AUG20-KORE",
+   "phrase": "korean",
+   "variants": [
+    "korean",
+    "koreans"
+   ],
+   "clips": 18,
+   "confirmed": 30
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONROST-26AUG20-NEWY",
+   "phrase": "new york",
+   "variants": [
+    "new york"
+   ],
+   "clips": 9,
+   "confirmed": 24
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONROST-26AUG20-NORT",
+   "phrase": "northeast",
+   "variants": [
+    "northeast",
+    "northeasts"
+   ],
+   "clips": 18,
+   "confirmed": 46
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONROST-26AUG20-OFFP",
+   "phrase": "off price",
+   "variants": [
+    "off price"
+   ],
+   "clips": 9,
+   "confirmed": 14
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONROST-26AUG20-PACK",
+   "phrase": "packaway",
+   "variants": [
+    "packaway",
+    "packaways"
+   ],
+   "clips": 18,
+   "confirmed": 36
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONROST-26AUG20-SELF",
+   "phrase": "self checkout",
+   "variants": [
+    "self checkout"
+   ],
+   "clips": 9,
+   "confirmed": 10
+  },
+  {
+   "ticker": "KXEARNINGSMENTIONROST-26AUG20-TEXA",
+   "phrase": "texas",
+   "variants": [
+    "texas"
+   ],
+   "clips": 9,
+   "confirmed": 12
+  }
+ ],
+ "cloned_from": "configs/.readiness/webcast-rost-26aug20-box-arm-wc.json"
+}
