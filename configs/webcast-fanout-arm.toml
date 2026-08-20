@@ -4,7 +4,10 @@
 #                         (−11.7..−13.65 s vs default join, RUNBOOK 07-17 + 07-20)
 #   leg 2 "pipe_tuned"  — tuned-ffmpeg backstop (-live_start_index -1 = the only
 #                         flag that moves the join point; −10.6..−11.65 s vs default)
-# Both legs run FULL detect chains OR-ed at the one-shot decision table
+#   leg 3 "edge_fetch"  — re-resolves master→media after variant rotation
+#   leg 4 "cachebust"   — defeats append-only CDN playlist caching with a
+#                         unique query parameter on every reload
+# All legs run FULL detect chains OR-ed at the one-shot decision table
 # ([arbiter] mode = "fanout") — different legs hear different audio (07-22 TARI).
 #
 # Instantiate per event with scripts/stage-webcast-arm.sh, then:
@@ -60,6 +63,24 @@ cmd = [
   "ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 2000000 -analyzeduration 5000000 -live_start_index -1 -http_persistent 1 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2 -i \"$(cat $HOME/__LC__-stream.url)\" -vn -f s16le -ac 1 -ar 16000 -",
 ]
 
+[[sources]]
+kind = "pipe"
+label = "edge_fetch"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "python3 scripts/hls-edge-fetch.py \"$(cat $HOME/__LC__-stream.url)\" 250 2 | ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -i - -vn -f s16le -ac 1 -ar 16000 -",
+]
+
+[[sources]]
+kind = "pipe"
+label = "cachebust"
+sample_rate_hz = 16000
+cmd = [
+  "/bin/sh", "-c",
+  "scripts/cdn-cachebust-fetch.sh $HOME/__LC__-stream.url 1 | ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 200000 -analyzeduration 200000 -ignore_unknown -fflags +discardcorrupt -f mpegts -i pipe:0 -vn -f s16le -ac 1 -ar 16000 -",
+]
+
 # NOTE (SUPERSEDED 2026-07-24 night — kept as the evidence trail): this file
 # used to say the edge-fetcher leg delivers "+0 ms" and that "the gap is decode,
 # not acquisition". BOTH clauses are now refuted (docs/LATENCY-PROOF.md parts
@@ -69,8 +90,11 @@ cmd = [
 # Measured against the encoder instead, a speculative fetcher runs 4.5 s fresher
 # than this template's legs with ~5x less run-to-run variance.
 #
-# THIS TEMPLATE IS DELIBERATELY UNCHANGED — it is the proven stack, and FOMC
-# 2026-07-29 runs it. The speculative posture lives in
+# The original two-leg template was deliberately retained through FOMC
+# 2026-07-29. That posture is superseded: CBRS/COHR 2026-08-12 proved the two
+# survivor fetchers, TOL 2026-08-19 repeated a zero-frame generic-leg failure,
+# and ROST 2026-08-20 repeated it again. A newly staged direct-HLS event must
+# carry both complementary survivor legs. The speculative posture lives in
 # configs/webcast-fanout-arm-spec.toml (staged with
 # `stage-webcast-arm.sh --speculative`) and is gated on off-FOMC validation,
 # because its probing could get the box's IP rate-limited and that would take

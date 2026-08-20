@@ -175,6 +175,10 @@ while [ $# -gt 0 ]; do
 done
 printf '%s|%s|%s|%s|%s|%s\n' "$EARSHOT_RUN_PLAN" "$EARSHOT_EXECUTION_HOST" "$EARSHOT_KALSHI_ACCOUNT_FINGERPRINT" "$EARSHOT_CANONICAL_STATE_ROOT" "$sd" "$report" > "$RUNPLAN_CAPTURE"
 mkdir -p "$sd" "$(dirname "$report")"
+if [ -f "$sd/STOP" ]; then
+  echo "stale STOP reached fresh arm" >&2
+  exit 42
+fi
 printf '{"port":0,"pid":%s,"unix_ts":1}\n' "$$" > "$sd/listener.ready"
 write_source_marker() {
   python3 - "$EARSHOT_RUN_PLAN" "$sd/source.attached" "$$" <<'PY'
@@ -214,6 +218,10 @@ json.dump(value, open(path, "w", encoding="utf-8"))
 PY
     ;;
   no-attach) write_good_report;;
+  wait-no-attach)
+    while [ ! -f "$sd/STOP" ]; do sleep 0.05; done
+    write_good_report
+    ;;
   wrong-marker)
     write_source_marker
     python3 - "$sd/source.attached" <<'PY'
@@ -588,8 +596,8 @@ fn exit_before_detector_path_media_goes_straight_to_failed() {
     assert!(!out.status.success());
     let status = rig.status();
     assert!(
-        reached(&status, "launched"),
-        "listener readiness was not recorded: {status}"
+        !reached(&status, "launched"),
+        "listener readiness without detector-path audio was falsely launched: {status}"
     );
     assert!(
         reached(&status, "failed"),
@@ -615,10 +623,69 @@ fn mismatched_source_marker_cannot_advance_supervision() {
     let out = rig.launch("wrong-marker", false, &[]);
     assert!(!out.status.success());
     let status = rig.status();
-    assert!(reached(&status, "launched"), "{status}");
+    assert!(!reached(&status, "launched"), "{status}");
     assert!(!reached(&status, "source_attached"), "{status}");
     assert!(!reached(&status, "supervising"), "{status}");
     assert!(reached(&status, "failed"), "{status}");
+}
+
+#[test]
+fn live_webcast_bounds_zero_frame_startup_before_launched() {
+    let rig = WebcastRunPlanRig::new();
+    let started = std::time::Instant::now();
+    let out = rig
+        .command("wait-no-attach", true, &[])
+        .env("EARSHOT_SOURCE_ATTACH_TIMEOUT_SECS", "1")
+        .output()
+        .unwrap();
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        !out.status.success(),
+        "zero-frame runtime passed: {combined}"
+    );
+    assert!(started.elapsed() < Duration::from_secs(15), "{combined}");
+    assert!(combined.contains("source attachment timeout"), "{combined}");
+    let status = rig.status();
+    assert!(!reached(&status, "launched"), "{status}");
+    assert!(reached(&status, "failed"), "{status}");
+}
+
+#[test]
+fn terminal_predecessor_stop_is_quarantined_before_fresh_attempt() {
+    let rig = WebcastRunPlanRig::new();
+    let state = rig.root.join("state").join(RUNPLAN_EVENT);
+    std::fs::create_dir_all(&state).unwrap();
+    std::fs::write(state.join("STOP"), b"").unwrap();
+    std::fs::write(state.join("arm.pid"), b"99999999\n").unwrap();
+    let out = rig.launch("good", true, &[]);
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        out.status.success(),
+        "fresh attempt inherited STOP: {combined}"
+    );
+    assert!(!state.join("STOP").exists(), "stale STOP was not moved");
+    let quarantined = std::fs::read_dir(&state)
+        .unwrap()
+        .filter_map(Result::ok)
+        .any(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("STOP.stale.run-test.")
+        });
+    assert!(
+        quarantined,
+        "stale STOP was discarded instead of quarantined"
+    );
+    assert!(reached(&rig.status(), "supervising"));
 }
 
 #[test]

@@ -64,7 +64,12 @@ could not be audited and restarts kept overwriting fixed report paths.
 - `scripts/event-prep-audit.py` — the read-only whole-event join. It starts
   from every earnings event in the refreshed date slate, requires an active
   schema-3 attempt and all preparation/schedule proofs, verifies measured
-  posture markers, and reads loaded launchd support jobs. A preresolved event
+  posture markers, and reads loaded launchd support jobs. A resolved direct-HLS
+  webcast is not READY unless its pinned config contains both production
+  survivor transports: master/media edge re-resolution and per-reload CDN
+  cache busting. This applies to already-staged configs, not only the current
+  template, so a vulnerable two-leg RunPlan must be replaced before scheduling.
+  A preresolved event
   needs its PCM-gated push, a multi-host event needs its failover proof, and
   every event needs two watchdogs before the word READY is emitted.
 - `tests/eventctl_lifecycle.py` — the ledger's isolated test suite

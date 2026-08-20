@@ -82,6 +82,11 @@ CACHEBUST_FETCH="${EARSHOT_CACHEBUST_FETCH:-$SCRIPT_REPO/scripts/cdn-cachebust-f
 # most of a minute after STOP.  The launcher owns a larger outer budget; a
 # smaller value would turn a healthy coordinated drain into evidence loss.
 SHUTDOWN_GRACE_SECS="${EARSHOT_LAUNCH_SHUTDOWN_GRACE_SECS:-90}"
+# `listener.ready` proves only that the detector graph exists. A webcast is not
+# launched until the exact runtime source has delivered post-preprocessor audio.
+# TOL and ROST both left a live process behind with zero detector frames; bound
+# that state so failover/watchdogs see a terminal failure in seconds.
+SOURCE_ATTACH_TIMEOUT_SECS="${EARSHOT_SOURCE_ATTACH_TIMEOUT_SECS:-20}"
 ARM_PID="" SHUTDOWN_STARTED="" FINALIZERS_UNRESOLVED=0
 RUN_DIR="" PLAN_PATH="" PLAN_REPORT="" PLAN_SHA256="" PLAN_RUN_ID=""
 ACCOUNT_SOURCED=0 LIFECYCLE_LAUNCHED=0 LIFECYCLE_SUPERVISING=0
@@ -142,6 +147,10 @@ fi
 }
 [[ "$WAIT_LIVE_TIMEOUT_SECS" =~ ^[1-9][0-9]*$ ]] || {
   echo "--wait-live-timeout-secs must be a positive integer (got ${WAIT_LIVE_TIMEOUT_SECS})" >&2
+  exit 2
+}
+[[ "$SOURCE_ATTACH_TIMEOUT_SECS" =~ ^[1-9][0-9]*$ ]] || {
+  echo "EARSHOT_SOURCE_ATTACH_TIMEOUT_SECS must be a positive integer (got ${SOURCE_ATTACH_TIMEOUT_SECS})" >&2
   exit 2
 }
 
@@ -555,6 +564,29 @@ if [[ -f "${STATE_DIR}/preflight-result.json" ]]; then
 fi
 jnl launch-start info "config=$CONFIG"
 
+# STOP is an event-level compatibility file, while execution identity is now a
+# RunPlan attempt. A STOP left by a terminal predecessor otherwise kills the
+# next attempt before its first frame (ROST 2026-08-20). Quarantine it only at
+# the boundary of a verified fresh live attempt and only when no prior arm PID
+# is alive. A live PID remains an overlap refusal; an operator who wants to
+# prevent a future attempt must abort/disable that attempt, not pre-seed a
+# session-scoped kill file.
+if (( LIVE )) && [[ -e "${STATE_DIR}/STOP" ]]; then
+  [[ -f "${STATE_DIR}/STOP" && ! -L "${STATE_DIR}/STOP" ]] || {
+    echo "REFUSING live launch: ${STATE_DIR}/STOP is not a regular non-symlink file" >&2
+    exit 7
+  }
+  PRIOR_ARM_PID=$(tr -dc '0-9' < "${STATE_DIR}/arm.pid" 2>/dev/null || true)
+  if [[ -n "$PRIOR_ARM_PID" ]] && kill -0 "$PRIOR_ARM_PID" 2>/dev/null; then
+    echo "REFUSING live launch: prior arm pid ${PRIOR_ARM_PID} is still alive while STOP exists" >&2
+    exit 7
+  fi
+  STALE_STOP="${STATE_DIR}/STOP.stale.${PLAN_RUN_ID}.$(date -u +%Y%m%dT%H%M%SZ).$$"
+  mv -- "${STATE_DIR}/STOP" "$STALE_STOP"
+  echo "attempt boundary: quarantined stale STOP as $(basename "$STALE_STOP")"
+  jnl attempt-boundary ok "quarantined stale STOP from terminal predecessor"
+fi
+
 # Self-check for post-mortem #3: prove this shell can trap SIGTERM and write
 # the state dir — a sandboxed parent that swallows signals or blocks writes
 # fails HERE, before the event, not 60 s into the call.
@@ -871,34 +903,34 @@ if ! listener_marker_matches_arm; then
 fi
 echo "listener ready for arm pid ${ARM_PID}"
 jnl listener-ready ok "pid=${ARM_PID}"
-if ! lifecycle_record launched "listener.ready accepted; arm_pid=${ARM_PID} state=${STATE_DIR}"; then
-  echo "REFUSING to supervise: failed to append durable launched receipt for ${RUN_DIR}" >&2
-  shutdown_arm "launched receipt failure"
-  finalize_lifecycle || true
-  exit 7
-fi
-LIFECYCLE_LAUNCHED=1
 
-# Source attachment is stronger than process existence or a decodable URL: the
-# runtime publishes this marker only after its in-process evidence bank has
-# durably accepted a post-preprocessor frame that is eligible for detection.
-while kill -0 "$ARM_PID" 2>/dev/null; do
-  ATTACH_RC=0
-  accept_source_marker || ATTACH_RC=$?
-  if [[ "$ATTACH_RC" -eq 0 ]]; then
-    break
-  elif [[ "$ATTACH_RC" -eq 2 ]]; then
-    echo "LIFECYCLE FAILURE: source attached but source_attached/supervising receipt failed" >&2
-    shutdown_arm "source lifecycle receipt failure"
+# Source attachment is stronger than process existence, listener readiness, or
+# a decodable URL. Do not publish `launched` until the exact configured runtime
+# source has fed the in-process evidence bank. This turns zero-frame startup
+# into a bounded pre-launch failure instead of a false launched state.
+ATTACH_DEADLINE=$(( $(date +%s) + SOURCE_ATTACH_TIMEOUT_SECS ))
+while kill -0 "$ARM_PID" 2>/dev/null && ! source_marker_matches_run; do
+  if (( $(date +%s) >= ATTACH_DEADLINE )); then
+    echo "source attachment timeout after ${SOURCE_ATTACH_TIMEOUT_SECS}s; exact configured decoder produced no detector-path frames" >&2
+    jnl source-attached refused "timeout=${SOURCE_ATTACH_TIMEOUT_SECS}s arm_pid=${ARM_PID}"
+    shutdown_arm "source attachment timeout"
     break
   fi
   sleep 0.1
 done
-if [[ "$LIFECYCLE_SUPERVISING" == 0 ]] && source_marker_matches_run; then
+if source_marker_matches_run; then
+  if ! lifecycle_record launched "listener.ready + source.attached accepted; arm_pid=${ARM_PID} state=${STATE_DIR}"; then
+    echo "REFUSING to supervise: failed to append durable launched receipt for ${RUN_DIR}" >&2
+    shutdown_arm "launched receipt failure"
+    finalize_lifecycle || true
+    exit 7
+  fi
+  LIFECYCLE_LAUNCHED=1
   ATTACH_RC=0
   accept_source_marker || ATTACH_RC=$?
   if [[ "$ATTACH_RC" -eq 2 ]]; then
-    echo "LIFECYCLE FAILURE: completed source attached but lifecycle receipt failed" >&2
+    echo "LIFECYCLE FAILURE: source attached but source_attached/supervising receipt failed" >&2
+    shutdown_arm "source lifecycle receipt failure"
   fi
 fi
 

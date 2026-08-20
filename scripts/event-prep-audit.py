@@ -85,6 +85,32 @@ def postured(config: Path) -> tuple[bool, str]:
     return True, "measured markers present"
 
 
+def resilient_hls_sources(config: Path) -> tuple[bool, str]:
+    """Require both production survivor transports for a resolved HLS URL."""
+    try:
+        parsed = tomllib.loads(config.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
+        return False, f"config unreadable: {exc}"
+    sources = parsed.get("sources")
+    if not isinstance(sources, list):
+        return False, "config sources are missing"
+    commands = []
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        cmd = source.get("cmd")
+        if isinstance(cmd, list) and all(isinstance(part, str) for part in cmd):
+            commands.append(" ".join(cmd))
+    missing = []
+    if not any("hls-edge-fetch.py" in command for command in commands):
+        missing.append("edge_fetch")
+    if not any("cdn-cachebust-fetch.sh" in command for command in commands):
+        missing.append("cachebust")
+    if missing:
+        return False, "missing production HLS survivor source(s): " + ",".join(missing)
+    return True, "edge re-resolution and cache-busting sources present"
+
+
 def launchctl_snapshot() -> tuple[str, str | None]:
     command = os.environ.get("_EARSHOT_EVENT_PREP_LAUNCHCTL", "launchctl")
     try:
@@ -161,6 +187,7 @@ def classify_group(
             issues["NEEDS-PREFLIGHT"].append(f"{event_id}: missing prepared proof receipt")
         if plan.get("lane") == "webcast":
             access_path = run / "control" / "access-plan.json"
+            resolver_kind = None
             if "access_acquired" not in got or not access_path.is_file():
                 issues["NEEDS-ACCESS"].append(f"{event_id}: AccessPlan/access receipt missing")
             else:
@@ -168,10 +195,15 @@ def classify_group(
                     access = load_json(access_path)
                     if access.get("schema") != 2:
                         issues["NEEDS-ACCESS"].append(f"{event_id}: AccessPlan is not schema 2")
-                    preresolved |= access.get("resolver", {}).get("kind") == "preresolved"
+                    resolver_kind = access.get("resolver", {}).get("kind")
+                    preresolved |= resolver_kind == "preresolved"
                 except (OSError, ValueError, json.JSONDecodeError) as exc:
                     issues["NEEDS-ACCESS"].append(f"{event_id}: AccessPlan unreadable: {exc}")
         config = repo / str(plan.get("config_path", ""))
+        if plan.get("lane") == "webcast" and resolver_kind not in (None, "youtube-live", "static-public"):
+            transport_ok, transport_detail = resilient_hls_sources(config)
+            if not transport_ok:
+                issues["NEEDS-TRANSPORT"].append(f"{event_id}: {transport_detail}")
         ready = repo / "configs" / ".readiness" / f"{config.stem}.json"
         try:
             artifact = load_json(ready)
@@ -195,7 +227,7 @@ def classify_group(
 
     # Support jobs are meaningful only after the underlying run is schedulable.
     if not any(issues[key] for key in (
-        "NEEDS-STAGE", "NEEDS-ACCESS", "NEEDS-STUDY", "NEEDS-POSTURE",
+        "NEEDS-STAGE", "NEEDS-ACCESS", "NEEDS-TRANSPORT", "NEEDS-STUDY", "NEEDS-POSTURE",
         "NEEDS-PREFLIGHT", "NEEDS-SCHEDULE",
     )):
         slug = issuer_slug(ticker)
@@ -214,7 +246,7 @@ def classify_group(
                 issues["NEEDS-SUPPORT"].append(f"{slug}: box-primary/laptop-failover wrapper not proven")
 
     priority = (
-        "NEEDS-STAGE", "NEEDS-ACCESS", "NEEDS-STUDY", "NEEDS-POSTURE",
+        "NEEDS-STAGE", "NEEDS-ACCESS", "NEEDS-TRANSPORT", "NEEDS-STUDY", "NEEDS-POSTURE",
         "NEEDS-PREFLIGHT", "NEEDS-SCHEDULE", "NEEDS-SUPPORT",
     )
     for status in priority:
@@ -222,6 +254,7 @@ def classify_group(
             actions = {
                 "NEEDS-STAGE": "scripts/opsctl.sh stage --date DATE",
                 "NEEDS-ACCESS": "bind the exact active RunPlan, then scripts/opsctl.sh access --date DATE",
+                "NEEDS-TRANSPORT": "stage a fresh RunPlan from the resilient four-leg webcast template",
                 "NEEDS-STUDY": "scripts/opsctl.sh study --date DATE",
                 "NEEDS-POSTURE": "run posture-from-study on the active config, then publish a new RunPlan attempt",
                 "NEEDS-PREFLIGHT": "scripts/opsctl.sh preflight --date DATE",

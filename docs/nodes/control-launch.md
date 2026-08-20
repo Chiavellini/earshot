@@ -64,9 +64,12 @@ runtime-report path contained by that run. Live state is the canonical
 `<repo>/state/<event>` and `--report` is the RunPlan's
 `artifacts.runtime_report`, not the legacy state report.
 
-After the arm writes a `listener.ready` owned by that arm PID, launch durably
-records `launched`. Phone then gates dialing as described below. Both live
-launchers wait for the runtime-owned `<state-dir>/source.attached` marker,
+After the arm writes a `listener.ready` owned by that arm PID, webcast waits a
+bounded 20 seconds for the runtime-owned `<state-dir>/source.attached` marker
+before it records `launched`; listener readiness without detector-path audio is
+a pre-launch failure, not a launched session. Phone retains its listener-first
+ordering because that token is the gate that permits dialing. Both live
+launchers validate the `source.attached` marker,
 whose run/event/plan/PID identity must match and whose positive frame count
 proves the in-process evidence stage durably accepted actual post-preprocessor
 media. Only then do they record `source_attached` and `supervising`; process
@@ -74,6 +77,13 @@ existence, `stream.connected`, a live manifest, and decoder success are not
 substitutes. A receipt append failure asserts STOP rather than running without
 lifecycle evidence. On phone, `stream.connected` remains solely the
 phone-session no-stream/redial health signal.
+
+The multi-host webcast watchdog and laptop failover make the same distinction:
+`capture_ready` alone never suppresses failover and never counts as a healthy
+leg. Health requires both the run's `supervising` receipt and an active (or
+systemd `activating` oneshot) launcher. Thus a URL-level PCM pass followed by a
+zero-frame runtime decoder pages and reaches the backup at the bounded grace
+point instead of standing it down.
 
 After phone launch has durably recorded `source_attached` and `supervising`, it
 starts one held-admission watcher for the remaining arm lifetime. The watcher
@@ -296,3 +306,8 @@ phone dialing, notification, and process supervision. Consolidate them behind
 `LaunchRequest -> RunHandle + ListenerReady`; preserve the current safe
 ready-before-dial order (the `listener.ready` token, not a port probe) while
 moving the dial itself to `control.phone_session`.
+Webcast's compatibility STOP file is event-scoped, while execution is
+attempt-scoped. At the verified fresh-attempt boundary, the launcher
+quarantines a predecessor's regular STOP only when the prior `arm.pid` is not
+alive; a live predecessor is an overlap refusal. This prevents a terminal
+attempt's shutdown token from killing a new immutable attempt at frame zero.

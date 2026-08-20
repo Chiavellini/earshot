@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -184,7 +185,10 @@ class SlateStageIntegrationTests(unittest.TestCase):
         for directory in (self.repo / "scripts", self.repo / "configs", self.repo / "slate",
                           self.home / ".kalshi"):
             directory.mkdir(parents=True, exist_ok=True)
-        for name in ("slate-stage.sh", "stage-reconcile.py", "stage-webcast-arm.sh"):
+        for name in (
+            "slate-stage.sh", "stage-reconcile.py", "stage-webcast-arm.sh",
+            "hls-edge-fetch.py", "cdn-cachebust-fetch.sh",
+        ):
             shutil.copy2(REPO / "scripts" / name, self.repo / "scripts" / name)
             (self.repo / "scripts" / name).chmod(0o755)
         notify = self.repo / "scripts" / "notify.sh"
@@ -206,6 +210,19 @@ engine = "sherpa_kws"
 
 [[sources]]
 kind = "pipe"
+label = "streamlink"
+
+[[sources]]
+kind = "pipe"
+label = "pipe_tuned"
+
+[[sources]]
+kind = "pipe"
+label = "edge_fetch"
+
+[[sources]]
+kind = "pipe"
+label = "cachebust"
 
 [kalshi]
 env = "demo"
@@ -294,7 +311,7 @@ budget_contracts = 1
                 "--slate",
                 str(self.slate),
             ],
-            cwd=self.repo, env=self.env, text=True, capture_output=True, timeout=30,
+            cwd=self.repo, env=self.env, text=True, capture_output=True, timeout=60,
         )
 
     def test_todo_then_time_reconciles_config_and_creates_missing_env(self):
@@ -321,6 +338,11 @@ budget_contracts = 1
         self.assertIn("RECONCILED", second.stdout)
         self.assertIn(f'starts_at = "{self.call_time}"', cfg.read_text())
         self.assertNotIn("TODO", cfg.read_text())
+        parsed = tomllib.loads(cfg.read_text())
+        self.assertEqual(
+            [source.get("label") for source in parsed["sources"]],
+            ["streamlink", "pipe_tuned", "edge_fetch", "cachebust"],
+        )
         self.assertTrue(env.is_file())
         env_text = env.read_text()
         self.assertIn(f'EVENT_DATE="{self.call_date}"', env_text)

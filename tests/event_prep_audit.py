@@ -32,6 +32,7 @@ class EventPrepAuditTest(unittest.TestCase):
             "#!/usr/bin/env bash\n"
             "echo com.earshot.watchdog.test.1205\n"
             "echo com.earshot.watchdog.test.1235\n"
+            "echo com.earshot.push.test\n"
         )
         launchctl.chmod(0o755)
         env = {
@@ -105,6 +106,40 @@ class EventPrepAuditTest(unittest.TestCase):
         result = self.run_audit(root, env)
         self.assertEqual(result.returncode, 1)
         self.assertEqual(json.loads(result.stdout)["events"][0]["status"], "NEEDS-POSTURE")
+
+    def test_resolved_hls_without_survivor_sources_is_not_ready(self) -> None:
+        root, env = self.fixture()
+        self.write_slate(root)
+        run = self.write_ready_run(root)
+        (run / "control" / "access-plan.json").write_text(json.dumps({
+            "schema": 2, "resolver": {"kind": "preresolved"},
+        }))
+        result = self.run_audit(root, env)
+        self.assertEqual(result.returncode, 1)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["events"][0]["status"], "NEEDS-TRANSPORT")
+        self.assertIn("config sources are missing", payload["events"][0]["details"][0])
+
+    def test_resolved_hls_with_both_survivor_sources_is_ready(self) -> None:
+        root, env = self.fixture()
+        self.write_slate(root)
+        run = self.write_ready_run(root)
+        (run / "control" / "access-plan.json").write_text(json.dumps({
+            "schema": 2, "resolver": {"kind": "preresolved"},
+        }))
+        config = root / "configs" / "event.toml"
+        config.write_text(config.read_text() + '''
+[[sources]]
+kind = "pipe"
+cmd = ["python3", "scripts/hls-edge-fetch.py"]
+
+[[sources]]
+kind = "pipe"
+cmd = ["/bin/sh", "-c", "scripts/cdn-cachebust-fetch.sh $HOME/test-stream.url"]
+''')
+        result = self.run_audit(root, env)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(json.loads(result.stdout)["ready"])
 
 
 if __name__ == "__main__":

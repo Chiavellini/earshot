@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # stage-webcast-arm.sh [--speculative] <ticker-lc> <EVENT_TICKER> <START_ISO_UTC>
 # e.g.: stage-webcast-arm.sh axp KXEARNINGSMENTIONAXP-26JUL24 2026-07-24T12:30:00Z
-# Instantiates the FANOUT ARM config (streamlink edge-join + tuned-ffmpeg legs,
-# multi-leg OR'd detection) from configs/webcast-fanout-arm.toml. Companion to
+# Instantiates the FANOUT ARM config (streamlink + tuned-ffmpeg + re-resolving
+# edge fetch + cache-busting fetch, multi-leg OR'd detection) from
+# configs/webcast-fanout-arm.toml. Companion to
 # stage-webcast-capture.sh (the 4-leg STUDY kit); this one ARMS.
 #
 # --speculative uses configs/webcast-fanout-arm-spec.toml instead: the
@@ -33,6 +34,13 @@ if (( SPEC )); then
   echo "posture: SPECULATIVE (spec_edge + pipe_tuned) — check ~/spec_edge.err SUMMARY after the run"
 else
   TPL="$EARDIR/configs/webcast-fanout-arm.toml"
+  # These are production sources in the default template. Refuse staging when
+  # either implementation is missing/broken; discovering that at fire time is
+  # the TOL/ROST zero-frame failure class.
+  python3 "$EARDIR/scripts/hls-edge-fetch.py" --selftest >/dev/null \
+    || { echo "REFUSING: hls-edge-fetch.py --selftest failed"; exit 1; }
+  bash -n "$EARDIR/scripts/cdn-cachebust-fetch.sh" \
+    || { echo "REFUSING: cdn-cachebust-fetch.sh syntax check failed"; exit 1; }
 fi
 CFG="$EARDIR/configs/webcast-$LC-arm.toml"
 [[ -f "$TPL" ]] || { echo "template missing: $TPL"; exit 1; }

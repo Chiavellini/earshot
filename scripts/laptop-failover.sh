@@ -6,7 +6,7 @@
 #
 # The laptop leg's T-75 arm job is WRAPPED so the laptop arms live ONLY if the box
 # leg is not capturing. It watches the box the whole window, not once:
-#   - box run reaches capture_ready              -> laptop stands down (keeps watching)
+#   - box run reaches supervising with live unit -> laptop stands down (keeps watching)
 #   - box run/unit dies BEFORE the grace point   -> laptop takes over immediately
 #   - box not capture_ready at start+grace       -> laptop takes over
 #   - box was capturing then dies before deadline -> laptop takes over (late failover)
@@ -40,27 +40,49 @@ while [[ $# -gt 0 ]]; do case "$1" in
   --check) CHECK=1; shift;; --) shift; break;; *) echo "unknown arg $1" >&2; exit 2;; esac; done
 
 decide_hhmm() { python3 -c 'import sys;h,m=map(int,sys.argv[1].split(":"));m+=int(sys.argv[2]);print(f"{(h+m//60)%24:02d}{m%60:02d}")' "$1" "$2"; }
+classify_box_observation() { # capture_ready_count supervising_count terminal_count unit_state
+  local ready="$1" supervising="$2" terminal="$3" unit="$4"
+  if [[ "$terminal" =~ ^[1-9][0-9]*$ || "$unit" == failed ]]; then
+    printf 'DEAD'
+  elif [[ "$supervising" =~ ^[1-9][0-9]*$ ]]; then
+    if [[ "$unit" == active || "$unit" == activating ]]; then printf 'READY'; else printf 'DEAD'; fi
+  elif [[ "$ready" =~ ^[1-9][0-9]*$ ]]; then
+    # URL-level PCM was proven, but the exact runtime source has not attached.
+    # Keep the grace clock running; this state must never stand the laptop down.
+    printf 'LAUNCHED'
+  else
+    printf 'NOTYET'
+  fi
+}
 
 if (( CHECK )); then
   ok=1
   [[ "$(decide_hhmm 12:00 2)" == "1202" ]] || ok=0
   [[ "$(decide_hhmm 12:59 2)" == "1301" ]] || ok=0
   [[ "$(decide_hhmm 23:50 15)" == "0005" ]] || ok=0   # deadline wraps past midnight UTC
-  (( ok )) && { echo "SELFTEST PASS (3 checks)"; exit 0; } || { echo "SELFTEST FAIL"; exit 1; }
+  [[ "$(classify_box_observation 1 1 0 activating)" == READY ]] || ok=0
+  [[ "$(classify_box_observation 1 0 0 activating)" == LAUNCHED ]] || ok=0
+  [[ "$(classify_box_observation 1 1 0 inactive)" == DEAD ]] || ok=0
+  [[ "$(classify_box_observation 1 1 1 active)" == DEAD ]] || ok=0
+  (( ok )) && { echo "SELFTEST PASS (7 checks)"; exit 0; } || { echo "SELFTEST FAIL"; exit 1; }
 fi
 
 # box_state -> "STATE unit-active"  (STATE: READY|LAUNCHED|NOTYET|DEAD|UNREACHABLE)
 box_state() {
-  ssh -i "$KEY" -o BatchMode=yes -o ConnectTimeout=10 "$BOX" '
+  local out rc supervising terminal unit state
+  out=$(ssh -n -i "$KEY" -o BatchMode=yes -o ConnectTimeout=10 "$BOX" '
     R=~/ear/var/runs/'"$EB"'/'"$BR"'/control/receipts.jsonl
     P=~/ear/var/runs/'"$EB"'/'"$BR"'/control/run-plan.json
     sha=$(python3 -c "import json;print(json.load(open(\"$P\"))[\"plan_sha256\"][:20])" 2>/dev/null)
-    ua=$(systemctl --user is-active "com.earshot.run.$sha.service" 2>/dev/null || echo unknown)
-    if grep -q "\"transition\":\"capture_ready\"" "$R" 2>/dev/null; then echo "READY $ua"
-    elif grep -qE "\"transition\":\"(failed|aborted)\"" "$R" 2>/dev/null; then echo "DEAD $ua"
-    elif [ "$ua" = failed ]; then echo "DEAD $ua"
-    elif grep -q "\"transition\":\"launched\"" "$R" 2>/dev/null; then echo "LAUNCHED $ua"
-    else echo "NOTYET $ua"; fi' 2>/dev/null
+    rc=$(grep -c "\"transition\":\"capture_ready\"" "$R" 2>/dev/null); rc=${rc:-0}
+    sp=$(grep -c "\"transition\":\"supervising\"" "$R" 2>/dev/null); sp=${sp:-0}
+    tm=$(grep -cE "\"transition\":\"(failed|aborted)\"" "$R" 2>/dev/null); tm=${tm:-0}
+    ua=$(systemctl --user is-active "com.earshot.run.$sha.service" 2>/dev/null || true); ua=${ua:-unknown}
+    printf "%s %s %s %s\n" "$rc" "$sp" "$tm" "$ua"' 2>/dev/null) || { echo "UNREACHABLE unreachable"; return; }
+  read -r rc supervising terminal unit <<<"$out"
+  [[ -n "$rc" && -n "$supervising" && -n "$terminal" && -n "$unit" ]] || { echo "UNREACHABLE unreachable"; return; }
+  state=$(classify_box_observation "$rc" "$supervising" "$terminal" "$unit")
+  echo "$state $unit"
 }
 stop_box() {
   ssh -i "$KEY" -o BatchMode=yes -o ConnectTimeout=10 "$BOX" '
@@ -122,8 +144,8 @@ while :; do
   if [[ "$ST" == READY ]]; then
     # Keep watching until the AccessPlan deadline; a box that dies after going ready still fails over.
     if [[ "$NOW" > "$DLINE" || "$NOW" == "$DLINE" ]]; then
-      echo "$(date -u +%T) BOX CAPTURED THROUGH THE DEADLINE — laptop stands down (no arm, no orders)"
-      scripts/notify.sh "$E: box captured, laptop stood down" "box $EB/$BR held capture_ready to ${DEADLINE}Z" --quiet >/dev/null 2>&1 || true
+      echo "$(date -u +%T) BOX SUPERVISED DETECTOR AUDIO THROUGH THE DEADLINE — laptop stands down (no arm, no orders)"
+      scripts/notify.sh "$E: box captured, laptop stood down" "box $EB/$BR held supervising detector-path audio to ${DEADLINE}Z" --quiet >/dev/null 2>&1 || true
       exit 0
     fi
     sleep 20; continue
