@@ -65,7 +65,7 @@ ACCESS_JSON=$(EARSHOT_REPO="$REPO" python3 scripts/access-plan.py validate \
 
 EXPORTS=$(ACCESS_JSON="$ACCESS_JSON" python3 - "$REPO" "$RUN_DIR" "$LIVE" <<'PY'
 import datetime as dt
-import json, os, shlex, subprocess, sys
+import hashlib, json, os, shlex, subprocess, sys
 from pathlib import Path
 repo, run, live = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3] == "1"
 plan = json.loads((run / "control/run-plan.json").read_text())
@@ -92,13 +92,25 @@ if "launched" in reached: raise SystemExit("RunPlan already launched")
 if not state["active"]: raise SystemExit("RunPlan is terminal/archived")
 resolver = access["resolver"]
 deadline = dt.datetime.fromisoformat(resolver["deadline_utc"].replace("Z", "+00:00"))
-if dt.datetime.now(dt.timezone.utc) > deadline:
-    raise SystemExit("AccessPlan resolver deadline has passed")
 url_files = access["endpoint"]["url_files"]
 if len(url_files) > 1:
     raise SystemExit("runtime supports exactly zero or one AccessPlan URL file")
 portable = url_files[0] if url_files else ""
 url_path = str(Path.home() / portable[len("$HOME/"):]) if portable else ""
+if dt.datetime.now(dt.timezone.utc) > deadline:
+    # A service restart after the wait deadline may reuse only evidence that
+    # was atomically pushed on time for this exact RunPlan. The deadline bounds
+    # acquisition, not recovery from a launcher/gate failure after acquisition.
+    path = Path(url_path)
+    sidecar = Path(url_path + ".meta")
+    if not portable or not path.is_file() or path.is_symlink() or not sidecar.is_file() or sidecar.is_symlink():
+        raise SystemExit("AccessPlan resolver deadline has passed without durable URL evidence")
+    meta = json.loads(sidecar.read_text())
+    pushed = dt.datetime.fromisoformat(str(meta.get("pushed_utc", "")).replace("Z", "+00:00"))
+    if pushed > deadline or meta.get("run_plan_sha256") != plan["plan_sha256"]:
+        raise SystemExit("post-deadline URL evidence was not pushed on time for this RunPlan")
+    if meta.get("url_sha256") != hashlib.sha256(path.read_bytes()).hexdigest():
+        raise SystemExit("post-deadline URL evidence hash mismatch")
 kind = "youtube" if resolver["kind"] == "youtube-live" else "hls"
 source_argv = access["sources"][0]["argv"]
 account = os.environ.get("EARSHOT_ACCOUNT_ENV", "")
