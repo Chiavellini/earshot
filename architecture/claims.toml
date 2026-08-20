@@ -243,8 +243,8 @@ evidence = ["docs/TWILIO.md"]
 [[claim]]
 id = "phone.prepare"
 node = "control.prepare"
-worker = "phone-lane + execution-identity-lane + generic-stage-reconcile + cerebras-live-lane + 26aug20-five-events-lane + rost-webcast-reliability"
-branch = "codex/rost-live-20260820"
+worker = "phone-lane + execution-identity-lane + generic-stage-reconcile + cerebras-live-lane + 26aug20-five-events-lane"
+branch = "webcast-lane"
 state = "active"
 contract_change = true
 paths = [
@@ -259,10 +259,6 @@ paths = [
   # script, doc, or test reads them by exact path.
   "configs/twilio-aapl-26jul30-arm.toml",
   "scripts/slate-stage.sh",
-  # 2026-08-20 ROST: the generic staged fanout still omitted both survivor
-  # fetchers documented by runtime.source.pipe after CBRS/COHR. Notified then
-  # reproduced the known zero-frame generic streamlink/ffmpeg failure.
-  "scripts/stage-webcast-arm.sh",
   "scripts/stage-reconcile.py",
   "tests/stage_reconcile.py",
   # 2026-08-11: also emits a literal, portable EARSHOT_ACCOUNT_PROFILE
@@ -350,7 +346,6 @@ verification = [
   "python3 scripts/slate-time-merge.py --self-test",
   "python3 tests/stage_reconcile.py",
   "scripts/preflight-event.sh --help",
-  "bash -n scripts/stage-webcast-arm.sh",
 ]
 evidence = ["docs/layers/prepare.md"]
 
@@ -401,8 +396,8 @@ evidence = ["docs/nodes/control-operator.md"]
 [[claim]]
 id = "phone.supervise"
 node = "control.supervise"
-worker = "phone-lane + typed-scheduler-lane + cerebras-live-lane + coherent-live-lane + ledger-authority-lane + ssh-mux-lane + 26aug20-five-events-lane + rost-webcast-reliability"
-branch = "codex/rost-live-20260820"
+worker = "phone-lane + typed-scheduler-lane + cerebras-live-lane + coherent-live-lane + ledger-authority-lane + ssh-mux-lane + 26aug20-five-events-lane"
+branch = "webcast-lane"
 state = "active"
 contract_change = true
 paths = [
@@ -469,8 +464,8 @@ evidence = ["docs/history/PHONE-LANE-HANDOFF.md"]
 [[claim]]
 id = "phone_tls.launch"
 node = "control.launch"
-worker = "phone-lane + tls-box-lane + admission-evidence-lane + typed-scheduler-lane + capture-reliability-lane + rost-webcast-reliability"
-branch = "codex/rost-live-20260820"
+worker = "phone-lane + tls-box-lane + admission-evidence-lane + typed-scheduler-lane + capture-reliability-lane"
+branch = "webcast-lane"
 state = "active"
 contract_change = true
 paths = [
@@ -514,8 +509,6 @@ paths = [
 verification = [
   "bash -n scripts/launch-event.sh",
   "bash -n scripts/launch-webcast.sh",
-  "scripts/event-watchdog.sh --check",
-  "scripts/laptop-failover.sh --check",
   "bash -n scripts/run-arm.sh",
   "bash -n scripts/pcm-gate.sh",
   "bash -n scripts/arm-on-url.sh",
@@ -1347,8 +1340,8 @@ evidence = ["VERIFICATIONS.md"]
 [[claim]]
 id = "ops.lifecycle_ledger"
 node = "control.operate"
-worker = "event-lifecycle-lane + execution-identity-lane + typed-scheduler-lane + runplan-day-selection-lane + nightly-alert-lane + cerebras-live-lane + coherent-live-lane + ledger-authority-lane + rost-webcast-reliability"
-branch = "codex/rost-live-20260820"
+worker = "event-lifecycle-lane + execution-identity-lane + typed-scheduler-lane + runplan-day-selection-lane + nightly-alert-lane + cerebras-live-lane + coherent-live-lane + ledger-authority-lane"
+branch = "webcast-lane"
 state = "active"
 contract_change = true
 # 2026-08-11 handoff: the historical prep-night claim had no dirty paths and
@@ -1371,7 +1364,6 @@ paths = [
   "scripts/schedule-nightly.sh",
   "scripts/execution-profile.sh",
   "scripts/opsctl.sh",
-  "scripts/event-prep-audit.py",
   "scripts/journal.sh",
   "scripts/assert-ready.sh",
   "scripts/descope-event.sh",
@@ -1390,7 +1382,6 @@ paths = [
   "tests/study_nightly_selector.py",
   "tests/run_host_boundary.py",
   "tests/opsctl.py",
-  "tests/event_prep_audit.py",
   "tests/execution_profile.sh",
 ]
 verification = [
@@ -1401,7 +1392,6 @@ verification = [
   "bash -n scripts/study-nightly.sh scripts/schedule-nightly.sh scripts/opsctl.sh",
   "scripts/schedule-nightly.sh --check",
   "python3 tests/opsctl.py",
-  "python3 tests/event_prep_audit.py",
   "bash -n scripts/journal.sh scripts/event-status.sh scripts/stage-nightly.sh",
   "cargo test --test architecture_contract",
   "scripts/doc-lint.sh",
