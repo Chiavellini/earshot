@@ -234,6 +234,22 @@ if [[ "$KIND" == "hls" ]]; then
     exit 1
   fi
   echo "endlist: absent"
+
+  # Notified's append-only EVENT playlists expose 4 s segments while ffmpeg's
+  # near-tail read (-live_start_index -1) exits after one complete segment.
+  # A fixed 6 s / 80% byte gate is therefore impossible even on healthy audio:
+  # one segment cannot supply the required 4.8 s. Clamp only this playlist
+  # class to one second below its target duration. The byte floor remains 80%,
+  # and the independent 12 s advancing-tail proof below is still mandatory.
+  if grep -q '^#EXT-X-PLAYLIST-TYPE:EVENT' <<<"$PL_BODY"; then
+    TARGET_DURATION=$(sed -n 's/^#EXT-X-TARGETDURATION:\([0-9][0-9]*\).*/\1/p' <<<"$PL_BODY" | head -1)
+    if [[ "$TARGET_DURATION" =~ ^[2-9][0-9]*$ ]] && (( SECS >= TARGET_DURATION )); then
+      SECS=$(( TARGET_DURATION - 1 ))
+      EXPECT=$(( SECS * 32000 ))
+      FLOOR=$(( EXPECT * 80 / 100 ))
+      echo "window : EVENT target=${TARGET_DURATION}s; near-tail proof clamped to ${SECS}s (floor $FLOOR)"
+    fi
+  fi
 fi
 
 # yt-dlp owns YouTube's segment addressing; ffmpeg alone cannot fetch those
