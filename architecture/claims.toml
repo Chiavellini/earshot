@@ -1103,7 +1103,7 @@ evidence = ["slate/hunt-status.json", "docs/HUNT.md"]
 [[claim]]
 id = "readiness.today_discovery"
 node = "control.discover"
-worker = "readiness-lane + event-prep-reconstruction"
+worker = "readiness-lane"
 branch = "webcast-lane"
 state = "complete_pending_commit"
 contract_change = true
@@ -1169,7 +1169,7 @@ evidence = ["docs/CTC-MODEL-SOURCING.md"]
 [[claim]]
 id = "bench.model_dir_grid"
 node = "evidence.benchmark"
-worker = "latency-lane + event-prep-reconstruction"
+worker = "latency-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
@@ -1210,11 +1210,6 @@ paths = [
   # nothing. The lexicon carries live-validated sets (nvidia 0/18 -> 122/45 on
   # LYFT, and UBER's NVID fired and placed a real order on that set).
   "scripts/variant-widen.py",
-  # 2026-08-20: a sandboxed macOS `say` returned a 78-byte WAV header with no
-  # samples. The study counted it as a requested clip and could publish a
-  # readiness verdict from zero audio. Validate every clip and the concat.
-  "scripts/variant-study.sh",
-  "tests/variant_study_wav.sh",
 ]
 verification = [
   "cargo test --release --lib bench::",
@@ -1321,7 +1316,7 @@ evidence = [
 [[claim]]
 id = "missed_arm.schedule"
 node = "platform.runtime"
-worker = "admission-evidence-lane + event-prep-reconstruction"
+worker = "admission-evidence-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = false
@@ -1335,7 +1330,6 @@ paths = [
   "configs/launchd/com.earshot.stage-nightly.plist",
   "configs/launchd/com.earshot.study-nightly.plist",
   "configs/launchd/com.earshot.preflight-nightly.plist",
-  "docs/nodes/platform-runtime.md",
   "src/perf.rs",
 ]
 verification = [
@@ -1346,7 +1340,7 @@ evidence = ["VERIFICATIONS.md"]
 [[claim]]
 id = "ops.lifecycle_ledger"
 node = "control.operate"
-worker = "event-lifecycle-lane + execution-identity-lane + typed-scheduler-lane + runplan-day-selection-lane + nightly-alert-lane + cerebras-live-lane + coherent-live-lane + ledger-authority-lane + event-prep-reconstruction"
+worker = "event-lifecycle-lane + execution-identity-lane + typed-scheduler-lane + runplan-day-selection-lane + nightly-alert-lane + cerebras-live-lane + coherent-live-lane + ledger-authority-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
@@ -1370,7 +1364,6 @@ paths = [
   "scripts/schedule-nightly.sh",
   "scripts/execution-profile.sh",
   "scripts/opsctl.sh",
-  "scripts/event-prep-audit.py",
   "scripts/journal.sh",
   "scripts/assert-ready.sh",
   "scripts/descope-event.sh",
@@ -1389,13 +1382,7 @@ paths = [
   "tests/study_nightly_selector.py",
   "tests/run_host_boundary.py",
   "tests/opsctl.py",
-  "tests/event_prep_audit.py",
   "tests/execution_profile.sh",
-  # The authoritative live skill must evolve with this facade. The archived
-  # copies under docs/history remain frozen evidence.
-  ".claude/skills/event-prep/SKILL.md",
-  ".claude/skills/event-prep/references/TRAPS.md",
-  ".claude/skills/event-prep/references/BOX-CHECKS.md",
 ]
 verification = [
   "python3 -m py_compile scripts/eventctl.py tests/eventctl_lifecycle.py",
