@@ -317,6 +317,7 @@ opts=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -o|-i) opts+=("$1" "$2"); shift 2 ;;
+    -n) opts+=("$1"); shift ;;
     *) break ;;
   esac
 done
