@@ -164,6 +164,96 @@ def argv_pair_matches(argv: list[str], flag: str, value: str) -> bool:
     )
 
 
+def launchctl_calendar(snapshot: str) -> dict[str, int] | None:
+    """Read one launchd calendar descriptor without accepting duplicates."""
+    result: dict[str, int] = {}
+    for key in ("Month", "Day", "Hour", "Minute"):
+        values = re.findall(rf'(?m)^\s*"?{key}"?\s*(?:=>|=)\s*(\d+)\s*$', snapshot)
+        if len(values) != 1:
+            return None
+        result[key] = int(values[0])
+    return result
+
+
+def calendar_matches(snapshot: str, instant: dt.datetime) -> bool:
+    local = instant.astimezone()
+    return launchctl_calendar(snapshot) == {
+        "Month": local.month,
+        "Day": local.day,
+        "Hour": local.hour,
+        "Minute": local.minute,
+    }
+
+
+def push_support_issues(repo: Path, slug: str, rows: list[dict]) -> list[str]:
+    """Validate the exact loaded URL-push job for one preresolved event."""
+    label = f"com.earshot.push.{slug}"
+    loaded_job, job_error = launchctl_job_snapshot(label)
+    issues = []
+    if job_error:
+        issues.append(job_error)
+    argv = launchctl_argv(loaded_job)
+    program = str(repo / "scripts" / "url-push-job.sh")
+    if len(argv) < 2 or argv[0] != "/bin/bash" or argv[1] != program:
+        issues.append("loaded URL-push argv has wrong program")
+    if not argv_pair_matches(argv, "--slug", slug) or argv.count("--run") != 1:
+        issues.append("loaded URL-push argv has wrong mode/slug")
+
+    expected_pairs = set()
+    local_id = os.environ.get("EARSHOT_LOCAL_EXECUTION_HOST", "bernardos-macbook-air-5")
+    box_id = os.environ.get("EARSHOT_BOX_EXECUTION_HOST", "earshot-useast1")
+    for row in rows:
+        identity = str(row["plan"].get("execution_host_id", ""))
+        if identity == local_id:
+            host = "local"
+        elif identity == box_id:
+            host = os.environ.get("EARSHOT_BOX", "ubuntu@3.212.174.94")
+        else:
+            issues.append(f"URL-push RunPlan has unsupported execution host {identity!r}")
+            continue
+        expected_pairs.add((str(row["run"].resolve()), host))
+    actual_pairs = set()
+    for index, token in enumerate(argv):
+        if token != "--run-dir" or index + 3 >= len(argv):
+            continue
+        if argv[index + 2] == "--host":
+            actual_pairs.add((str(Path(argv[index + 1]).resolve()), argv[index + 3]))
+    if argv.count("--run-dir") != len(expected_pairs) or actual_pairs != expected_pairs:
+        issues.append("loaded URL-push targets do not match every exact host RunPlan")
+
+    deadlines = set()
+    starts = set()
+    for row in rows:
+        try:
+            access = row["access"]
+            deadline = dt.datetime.fromisoformat(
+                str(access["resolver"]["deadline_utc"]).replace("Z", "+00:00")
+            ).astimezone(dt.timezone.utc)
+            start = dt.datetime.fromisoformat(
+                str(row["plan"]["starts_at_utc"]).replace("Z", "+00:00")
+            ).astimezone(dt.timezone.utc)
+        except (KeyError, TypeError, ValueError):
+            continue
+        deadlines.add(deadline)
+        starts.add(start)
+    if len(deadlines) != 1 or len(starts) != 1:
+        issues.append("URL-push host plans disagree on start or resolver deadline")
+        return issues
+    deadline = next(iter(deadlines))
+    start = next(iter(starts))
+    allowed_until = {deadline.strftime("%H:%M"), (deadline - dt.timedelta(minutes=1)).strftime("%H:%M")}
+    until_values = [argv[index + 1] for index, token in enumerate(argv[:-1]) if token == "--until-utc"]
+    if len(until_values) != 1 or until_values[0] not in allowed_until:
+        issues.append("loaded URL-push deadline does not match the AccessPlan")
+    # The resolver must be awake before T0 and remain bounded through the
+    # AccessPlan deadline. Allow the documented T-60..T0 window; the exact
+    # minute is venue policy, but a different date or post-start job is wrong.
+    allowed_fire = (start - dt.timedelta(minutes=offset) for offset in range(61))
+    if not any(calendar_matches(loaded_job, instant) for instant in allowed_fire):
+        issues.append("loaded URL-push calendar is not on the event date in the T-60..T0 window")
+    return issues
+
+
 def failover_support_issues(repo: Path, local: dict, box: dict) -> list[str]:
     """Validate the durable proof and loaded wrapper for one host pair."""
     local_plan, box_plan = local["plan"], box["plan"]
@@ -179,6 +269,12 @@ def failover_support_issues(repo: Path, local: dict, box: dict) -> list[str]:
     if not isinstance(plan_sha, str) or len(plan_sha) < 20:
         return ["local RunPlan has no valid plan_sha256 for failover label"]
     label = f"com.earshot.run.{plan_sha[:20]}"
+    expected_fields = {
+        "schema", "kind", "label", "laptop_run", "box_event", "box_run",
+        "start_utc", "grace_min", "deadline_utc", "box",
+    }
+    if set(proof) != expected_fields or proof.get("schema") != 1 or proof.get("kind") != "laptop-failover-install-proof":
+        return ["failover proof has unsupported schema or fields"]
     raw_local_run = proof.get("laptop_run")
     try:
         proven_local_run = Path(str(raw_local_run))
@@ -195,7 +291,16 @@ def failover_support_issues(repo: Path, local: dict, box: dict) -> list[str]:
         "box_run": box_plan.get("run_id"),
         "start_utc": expected_start,
     }
-    issues = []
+    try:
+        deadline = dt.datetime.fromisoformat(
+            str(local["access"]["resolver"]["deadline_utc"]).replace("Z", "+00:00")
+        ).astimezone(dt.timezone.utc).strftime("%H:%M")
+    except (KeyError, TypeError, ValueError):
+        deadline = ""
+        issues = ["local AccessPlan cannot bind the failover deadline"]
+    else:
+        issues = []
+        comparisons["deadline_utc"] = deadline
     if proven_local_run != local["run"].resolve():
         issues.append("laptop_run does not select the exact local RunPlan")
     for field, wanted in comparisons.items():
@@ -216,6 +321,7 @@ def failover_support_issues(repo: Path, local: dict, box: dict) -> list[str]:
         ("--box-run", str(box_plan.get("run_id", ""))),
         ("--start-utc", expected_start),
         ("--grace-min", str(proof.get("grace_min", ""))),
+        ("--deadline-utc", str(proof.get("deadline_utc", ""))),
         ("--box", str(proof.get("box", ""))),
     )
     mismatched = [flag for flag, value in required_pairs if not argv_pair_matches(argv, flag, value)]
@@ -223,6 +329,22 @@ def failover_support_issues(repo: Path, local: dict, box: dict) -> list[str]:
         issues.append("loaded failover argv mismatch: " + ",".join(mismatched))
     if argv.count("--") != 1:
         issues.append("loaded failover argv has no unique launcher boundary")
+    else:
+        boundary = argv.index("--")
+        try:
+            schedule = load_json(local["run"] / "control" / "schedule-proof.json")
+            readback = schedule["readback"]
+            expected_launcher = readback["program_arguments"]
+            fire = dt.datetime.fromisoformat(
+                str(readback["fire_at_utc"]).replace("Z", "+00:00")
+            ).astimezone(dt.timezone.utc)
+        except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+            issues.append("local schedule proof cannot bind the failover wrapper")
+        else:
+            if argv[boundary + 1:] != expected_launcher:
+                issues.append("loaded failover launcher tail differs from the scheduled RunPlan")
+            if not calendar_matches(loaded_job, fire):
+                issues.append("loaded failover calendar differs from the scheduled fire instant")
     return issues
 
 
@@ -290,6 +412,7 @@ def classify_group(
             else:
                 try:
                     access = load_json(access_path)
+                    row["access"] = access
                     if access.get("schema") != 2:
                         issues["NEEDS-ACCESS"].append(f"{event_id}: AccessPlan is not schema 2")
                     resolver_kind = access.get("resolver", {}).get("kind")
@@ -338,15 +461,15 @@ def classify_group(
             }
         except (KeyError, TypeError, ValueError):
             start_times = set()
-        expected_watchdogs: set[str] = set()
+        expected_watchdogs: dict[str, dt.datetime] = {}
         if len(start_times) == 1:
             start = next(iter(start_times))
             expected_watchdogs = {
-                f"com.earshot.watchdog.{slug}.{(start + dt.timedelta(minutes=offset)):%H%M}"
-                for offset in (5, 35)
+                f"com.earshot.watchdog.{slug}.{instant:%H%M}": instant
+                for instant in (start + dt.timedelta(minutes=offset) for offset in (5, 35))
             }
-        if len(expected_watchdogs) != 2 or not expected_watchdogs.issubset(watchdogs):
-            missing_labels = sorted(expected_watchdogs - watchdogs)
+        if len(expected_watchdogs) != 2 or not set(expected_watchdogs).issubset(watchdogs):
+            missing_labels = sorted(set(expected_watchdogs) - watchdogs)
             detail = ",".join(missing_labels) if missing_labels else "inconsistent start times"
             issues["NEEDS-SUPPORT"].append(f"{slug}: exact start+5/start+35 watchdogs missing: {detail}")
         else:
@@ -354,7 +477,7 @@ def classify_group(
                 f"{row['plan']['event_id']}:{row['plan']['run_id']}:"
                 for row in rows
             ]
-            for label in sorted(expected_watchdogs):
+            for label, expected_fire in sorted(expected_watchdogs.items()):
                 loaded_job, job_error = launchctl_job_snapshot(label)
                 argv = launchctl_argv(loaded_job)
                 missing = []
@@ -368,20 +491,30 @@ def classify_group(
                     matches = [token for token in argv if token.startswith(expected_leg)]
                     if len(matches) != 1 or not matches[0][len(expected_leg):]:
                         missing.append(f"missing exact leg {expected_leg}")
+                if not calendar_matches(loaded_job, expected_fire):
+                    missing.append("wrong calendar date/time")
                 if missing:
                     issues["NEEDS-SUPPORT"].append(
                         f"{label}: loaded argv invalid: " + "; ".join(missing)
                     )
-        if preresolved and f"com.earshot.push.{slug}" not in launchctl:
-            issues["NEEDS-SUPPORT"].append(f"{slug}: PCM-gated multi-host URL push job not loaded")
+        if preresolved:
+            if f"com.earshot.push.{slug}" not in launchctl:
+                issues["NEEDS-SUPPORT"].append(f"{slug}: PCM-gated multi-host URL push job not loaded")
+            else:
+                for detail in push_support_issues(repo, slug, rows):
+                    issues["NEEDS-SUPPORT"].append(f"{slug}: {detail}")
         hosts = {str(row["plan"].get("execution_host_id")) for row in rows}
         if len(hosts) > 1:
-            local = next((row for row in rows if "-BOX-" not in row["plan"].get("event_id", "")), None)
-            box = next((row for row in rows if "-BOX-" in row["plan"].get("event_id", "")), None)
-            if local is None or box is None:
-                issues["NEEDS-SUPPORT"].append(f"{slug}: host pair cannot identify laptop and box RunPlans")
+            local_id = os.environ.get("EARSHOT_LOCAL_EXECUTION_HOST", "bernardos-macbook-air-5")
+            box_id = os.environ.get("EARSHOT_BOX_EXECUTION_HOST", "earshot-useast1")
+            local_rows = [row for row in rows if row["plan"].get("execution_host_id") == local_id]
+            box_rows = [row for row in rows if row["plan"].get("execution_host_id") == box_id]
+            if len(local_rows) != 1 or len(box_rows) != 1 or len(rows) != 2:
+                issues["NEEDS-SUPPORT"].append(
+                    f"{slug}: host pair does not contain exactly one configured laptop and box RunPlan"
+                )
             else:
-                for detail in failover_support_issues(repo, local, box):
+                for detail in failover_support_issues(repo, local_rows[0], box_rows[0]):
                     issues["NEEDS-SUPPORT"].append(f"{slug}: {detail}")
 
     priority = (
@@ -398,7 +531,7 @@ def classify_group(
                 "NEEDS-POSTURE": "run posture-from-study on the active config, then publish a new RunPlan attempt",
                 "NEEDS-PREFLIGHT": "scripts/opsctl.sh preflight --date DATE",
                 "NEEDS-SCHEDULE": "scripts/opsctl.sh schedule --date DATE",
-                "NEEDS-SUPPORT": "install/read back URL push, failover, and two watchdog jobs for this event",
+                "NEEDS-SUPPORT": "scripts/opsctl.sh support --date DATE",
             }
             return status, issues[status], actions[status]
     return "READY", ["all code-enforced preparation and support proofs present"], "none"

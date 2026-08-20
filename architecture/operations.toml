@@ -19,7 +19,7 @@ name = "prepare-day"
 argv = ["scripts/opsctl.sh", "prepare-day"]
 arguments = "--date YYYY-MM-DD [--dry-run] [--no-mail]"
 host = "laptop"
-purpose = "Refresh discovery, stage, check access, study, preflight, schedule, and audit whole-event readiness for one UTC date."
+purpose = "Refresh discovery, stage, check access, study, preflight, schedule, install support, and audit whole-event readiness for one UTC date."
 
 [[operator_command]]
 name = "stage"
@@ -62,6 +62,13 @@ argv = ["scripts/opsctl.sh", "schedule"]
 arguments = "--date YYYY-MM-DD [--dry-run]"
 host = "laptop"
 purpose = "Install only preflight-passed runs and prove the loaded job readback."
+
+[[operator_command]]
+name = "support"
+argv = ["scripts/opsctl.sh", "support"]
+arguments = "--date YYYY-MM-DD [--dry-run]"
+host = "laptop"
+purpose = "Install exact URL-push, failover, and watchdog jobs for scheduled events."
 
 [[operator_command]]
 name = "status"
@@ -132,6 +139,10 @@ owner = "control.operate"
 
 [[internal_adapter]]
 path = "scripts/event-prep-audit.py"
+owner = "control.operate"
+
+[[internal_adapter]]
+path = "scripts/support-nightly.py"
 owner = "control.operate"
 
 [[internal_adapter]]

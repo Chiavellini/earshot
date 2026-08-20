@@ -55,7 +55,7 @@ python3 scripts/event-prep-audit.py --date YYYY-MM-DD
 
 `prepare-day` is now exactly:
 
-`discover → stage → access → study → preflight → schedule → readiness audit`.
+`discover → stage → access → study → preflight → schedule → support → readiness audit`.
 
 Discovery is a fresh broad plus per-series sweep, not yesterday’s slate. It
 retries transient DNS/5xx/429 failures and atomically publishes the result. The
@@ -192,7 +192,15 @@ Scheduling is host-directed from immutable `execution_host_id`. It must publish
 
 ### NEEDS-SUPPORT
 
-Install support only after scheduling, then read it back.
+Run the typed support installer only after scheduling; it derives exact host
+RunPlans and readbacks instead of relying on hand-transcribed event/run strings:
+
+```bash
+scripts/opsctl.sh support --date YYYY-MM-DD
+```
+
+The commands below document the adapters it drives and remain recovery tools,
+not the normal preparation path.
 
 For any `preresolved` event, use one multi-host push job. Start at T−2; the job
 may retry through the AccessPlan deadline and publishes only after host-local

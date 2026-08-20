@@ -15,7 +15,14 @@
   </array>
   <key>WorkingDirectory</key><string>/Users/bernardodelrio/Code/ear</string>
   <key>EnvironmentVariables</key>
-  <dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/bernardodelrio/.cargo/bin</string></dict>
+  <dict>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/bernardodelrio/.cargo/bin</string>
+    <!-- schedule-nightly fails closed when the local execution identity is
+         absent. launchd does not inherit the interactive shell exports, so
+         the unattended full-chain job must carry both stable host IDs. -->
+    <key>EARSHOT_LOCAL_EXECUTION_HOST</key><string>bernardos-macbook-air-5</string>
+    <key>EARSHOT_BOX_EXECUTION_HOST</key><string>earshot-useast1</string>
+  </dict>
   <key>StartCalendarInterval</key>
   <dict><key>Hour</key><integer>23</integer><key>Minute</key><integer>30</integer></dict>
   <key>RunAtLoad</key><false/>

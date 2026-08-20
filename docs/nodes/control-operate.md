@@ -53,14 +53,18 @@ could not be audited and restarts kept overwriting fixed report paths.
   `authority.write_authority/transferred_to/since_utc/by` additively.
 - `scripts/opsctl.sh` — the public generic facade. `prepare-day` takes one UTC
   date and runs fresh public discovery, stage, canonical access checks, study,
-  proof-bearing preflight, typed scheduling, and the final readiness audit in
-  order. Each aggregate stage continues across sibling
+  proof-bearing preflight, typed scheduling, exact support installation, and
+  the final readiness audit in order. Each aggregate stage continues across sibling
   events, but the facade
   returns nonzero if any stage reports trouble; ready siblings proceed and a
   failed run is never called scheduled. Status, terminal-only box retrieval,
   deterministic run audit, and recorded descope are exposed by the same
   command. The facade contains no issuer/date map, credential, market posture,
   resolver, scheduler implementation, or runtime composer.
+- `scripts/support-nightly.py` — derives URL-push targets, the two watchdog
+  instants, and laptop/box failover identity from scheduled active RunPlans and
+  their AccessPlans. It refuses an unknown host, an incomplete host pair, a
+  past event, or a non-current UTC date before invoking any installer.
 - `scripts/event-prep-audit.py` — the read-only whole-event join. It starts
   from every earnings event in the refreshed date slate, requires an active
   schema-3 attempt and all preparation/schedule proofs, verifies measured
@@ -77,7 +81,11 @@ could not be audited and restarts kept overwriting fixed report paths.
   a job carrying a full run-directory string where the parser expects a Run ID
   is rejected before the event. Multi-host failover proof is likewise parsed,
   not existence-checked: its local path, box event/run, start time, launcher
-  label, grace, and the loaded wrapper argv must all match the selected pair.
+  label, grace, loaded calendar, and complete scheduled launcher tail must all
+  match the selected pair. The watchdog calendars must be the event's exact
+  start+5/start+35 instants. A preresolved URL-push label is not enough: its
+  loaded argv must name every exact host RunPlan, the AccessPlan deadline, and
+  a fire calendar on the event date between T-60 and T0.
 - `tests/eventctl_lifecycle.py` — the ledger's isolated test suite
   (temp-repo fixtures, never the working tree; includes cross-process
   flock/concurrency and truncated-tail recovery cases).
@@ -190,12 +198,16 @@ could not be audited and restarts kept overwriting fixed report paths.
   delivery failure never changes the original nonzero scheduling result, and
   dry-run invokes neither installers nor notification adapters.
 
-  A `preresolved` box webcast still needs the laptop-produced URL file pushed
-  into the box attempt's freshness window. Until the S5 resolve-push launchd
-  mode exists, this is an explicit operator step through lane R's
-  `scripts/push-url-file.sh`; this node does not reproduce or edit that
-  transport. The systemd timer remains T-75 and waits through the AccessPlan's
-  resolver leg, but scheduling the URL push itself remains open boundary work.
+  If a scheduled local job has already been wrapped by box-primary failover,
+  a rerun delegates to `laptop-failover.sh --verify-install` instead of asking
+  the original launchd installer to reject the intentional argv change. The
+  failover verifier binds the exact wrapper and the original schedule-proof
+  launcher tail, environment, and calendar.
+- `scripts/support-nightly.py` is the post-schedule support join. It groups
+  active RunPlans by market event, refuses incomplete or ambiguous host sets,
+  and derives one PCM-gated URL-push job when `preresolved`, two watchdogs, and
+  the box-primary/laptop failover wrapper from immutable plan identities. It
+  never infers a laptop from an issuer or event-name suffix.
 
 ## Does not own
 

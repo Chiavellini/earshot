@@ -40,6 +40,7 @@ class OpsctlTest(unittest.TestCase):
             "run-audit.py",
             "descope-event.sh",
             "event-prep-audit.py",
+            "support-nightly.py",
         ):
             path = scripts / name
             if name.endswith(".py"):
@@ -328,6 +329,7 @@ phrase = "foo"
                 "study-nightly.sh\t--date 2026-08-14",
                 "preflight-nightly.sh\t--date 2026-08-14",
                 "schedule-nightly.sh\t--date 2026-08-14",
+                "support-nightly.py\t--date 2026-08-14",
                 "event-prep-audit.py\t--date 2026-08-14",
             ],
         )
@@ -345,6 +347,7 @@ phrase = "foo"
                 "study-nightly.sh",
                 "preflight-nightly.sh",
                 "schedule-nightly.sh",
+                "support-nightly.py",
                 "event-prep-audit.py",
             ],
         )
@@ -369,6 +372,15 @@ phrase = "foo"
         self.assertEqual(
             log.read_text().splitlines(),
             ["access-plan.py\tcheck-day --date 2026-08-14"],
+        )
+
+    def test_support_delegates_one_utc_date_to_the_typed_installer(self) -> None:
+        root, log, env = self.fixture()
+        result = self.run_ops(root, env, "support", "--date", "2026-08-14", "--dry-run")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(
+            log.read_text().splitlines(),
+            ["support-nightly.py\t--date 2026-08-14 --dry-run"],
         )
 
     def test_bind_access_delegates_exact_run_bound_arguments(self) -> None:

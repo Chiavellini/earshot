@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
+import datetime as dt
 import json
 import os
 import shutil
@@ -48,6 +49,37 @@ arguments = {{
     {EVENT}:{RUN}:local
 }}
 EOF
+    case "$target" in
+      *.1205) minute=5 ;;
+      *) minute=35 ;;
+    esac
+    echo '"Month" => 8'
+    echo '"Day" => 20'
+    echo '"Hour" => 12'
+    echo '"Minute" => '"$minute"
+    ;;
+  */com.earshot.push.test)
+    cat <<'EOF'
+arguments = {{
+    /bin/bash
+    {root.resolve()}/scripts/url-push-job.sh
+    --run
+    --slug
+    test
+    --until-utc
+    12:15
+    --pcm-secs
+    6
+    --run-dir
+    {root.resolve()}/var/runs/{EVENT}/{RUN}
+    --host
+    local
+}}
+EOF
+    echo '"Month" => 8'
+    echo '"Day" => 20'
+    echo '"Hour" => 11'
+    echo '"Minute" => 45'
     ;;
   *)
     echo com.earshot.watchdog.test.1205
@@ -61,7 +93,10 @@ esac
         env = {
             **os.environ,
             "EARSHOT_REPO": str(root),
+            "EARSHOT_LOCAL_EXECUTION_HOST": "laptop",
+            "EARSHOT_BOX_EXECUTION_HOST": "box",
             "_EARSHOT_EVENT_PREP_LAUNCHCTL": str(launchctl),
+            "TZ": "UTC",
         }
         return root, env
 
@@ -138,6 +173,14 @@ arguments = {{
     {EVENT}:var/runs/{EVENT}/{RUN}:local
 }}
 EOF
+    case "$target" in
+      *.1205) minute=5 ;;
+      *) minute=35 ;;
+    esac
+    echo '"Month" => 8'
+    echo '"Day" => 20'
+    echo '"Hour" => 12'
+    echo '"Minute" => '"$minute"
     ;;
   *)
     echo com.earshot.watchdog.test.1205
@@ -168,6 +211,18 @@ esac
         self.assertEqual(payload["events"][0]["status"], "NEEDS-SUPPORT")
         self.assertIn("exact start+5/start+35 watchdogs missing", payload["events"][0]["details"][0])
 
+    def test_exact_watchdog_labels_on_wrong_date_are_not_ready(self) -> None:
+        root, env = self.fixture()
+        self.write_slate(root)
+        self.write_ready_run(root)
+        launchctl = Path(env["_EARSHOT_EVENT_PREP_LAUNCHCTL"])
+        launchctl.write_text(launchctl.read_text().replace('"Day" => 20', '"Day" => 19'))
+        result = self.run_audit(root, env)
+        self.assertEqual(result.returncode, 1)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["events"][0]["status"], "NEEDS-SUPPORT")
+        self.assertIn("wrong calendar date/time", payload["events"][0]["details"][0])
+
     def test_missing_posture_is_a_distinct_blocker(self) -> None:
         root, env = self.fixture()
         self.write_slate(root)
@@ -183,7 +238,9 @@ esac
         self.write_slate(root)
         run = self.write_ready_run(root)
         (run / "control" / "access-plan.json").write_text(json.dumps({
-            "schema": 2, "resolver": {"kind": "preresolved"},
+            "schema": 2, "resolver": {
+                "kind": "preresolved", "deadline_utc": f"{DATE}T12:15:00Z",
+            },
         }))
         result = self.run_audit(root, env)
         self.assertEqual(result.returncode, 1)
@@ -196,7 +253,9 @@ esac
         self.write_slate(root)
         run = self.write_ready_run(root)
         (run / "control" / "access-plan.json").write_text(json.dumps({
-            "schema": 2, "resolver": {"kind": "preresolved"},
+            "schema": 2, "resolver": {
+                "kind": "preresolved", "deadline_utc": f"{DATE}T12:15:00Z",
+            },
         }))
         config = root / "configs" / "event.toml"
         config.write_text(config.read_text() + '''
@@ -212,35 +271,102 @@ cmd = ["/bin/sh", "-c", "scripts/cdn-cachebust-fetch.sh $HOME/test-stream.url"]
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertTrue(json.loads(result.stdout)["ready"])
 
+    def test_url_push_job_with_wrong_run_target_is_not_ready(self) -> None:
+        root, env = self.fixture()
+        self.write_slate(root)
+        run = self.write_ready_run(root)
+        (run / "control" / "access-plan.json").write_text(json.dumps({
+            "schema": 2, "resolver": {
+                "kind": "preresolved", "deadline_utc": f"{DATE}T12:15:00Z",
+            },
+        }))
+        config = root / "configs" / "event.toml"
+        config.write_text(config.read_text() + '''
+[[sources]]
+kind = "pipe"
+cmd = ["python3", "scripts/hls-edge-fetch.py"]
+
+[[sources]]
+kind = "pipe"
+cmd = ["/bin/sh", "-c", "scripts/cdn-cachebust-fetch.sh $HOME/test-stream.url"]
+''')
+        launchctl = Path(env["_EARSHOT_EVENT_PREP_LAUNCHCTL"])
+        exact = f"{root.resolve()}/var/runs/{EVENT}/{RUN}"
+        launchctl.write_text(launchctl.read_text().replace(exact, exact + "-wrong"))
+        result = self.run_audit(root, env)
+        self.assertEqual(result.returncode, 1)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["events"][0]["status"], "NEEDS-SUPPORT")
+        self.assertIn("targets do not match", payload["events"][0]["details"][0])
+
+    def test_url_push_job_on_wrong_calendar_is_not_ready(self) -> None:
+        root, env = self.fixture()
+        self.write_slate(root)
+        run = self.write_ready_run(root)
+        (run / "control" / "access-plan.json").write_text(json.dumps({
+            "schema": 2, "resolver": {
+                "kind": "preresolved", "deadline_utc": f"{DATE}T12:15:00Z",
+            },
+        }))
+        config = root / "configs" / "event.toml"
+        config.write_text(config.read_text() + '''
+[[sources]]
+kind = "pipe"
+cmd = ["python3", "scripts/hls-edge-fetch.py"]
+
+[[sources]]
+kind = "pipe"
+cmd = ["/bin/sh", "-c", "scripts/cdn-cachebust-fetch.sh $HOME/test-stream.url"]
+''')
+        launchctl = Path(env["_EARSHOT_EVENT_PREP_LAUNCHCTL"])
+        launchctl.write_text(launchctl.read_text().replace('"Hour" => 11', '"Hour" => 9'))
+        result = self.run_audit(root, env)
+        self.assertEqual(result.returncode, 1)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["events"][0]["status"], "NEEDS-SUPPORT")
+        self.assertIn("T-60..T0", payload["events"][0]["details"][0])
+
     def test_failover_proof_and_loaded_argv_are_exactly_bound(self) -> None:
         root, env = self.fixture()
         local_run = root / "var" / "runs" / EVENT / RUN
         box_event = TICKER + "-BOX-WEBCAST"
         box_run_id = RUN + "-box"
         box_run = root / "var" / "runs" / box_event / box_run_id
-        local_run.mkdir(parents=True)
+        (local_run / "control").mkdir(parents=True)
         box_run.mkdir(parents=True)
         plan_sha = "a" * 64
         local = {"run": local_run, "plan": {
             "event_id": EVENT, "run_id": RUN, "plan_sha256": plan_sha,
             "starts_at_utc": f"{DATE}T12:00:00Z",
-        }}
+        }, "access": {"resolver": {"deadline_utc": f"{DATE}T12:15:00Z"}}}
         box = {"run": box_run, "plan": {
             "event_id": box_event, "run_id": box_run_id,
         }}
         proof_dir = root / "state" / EVENT
         proof_dir.mkdir(parents=True)
         proof = {
+            "schema": 1,
+            "kind": "laptop-failover-install-proof",
             "label": f"com.earshot.run.{plan_sha[:20]}",
             "laptop_run": str(local_run),
             "box_event": box_event,
             "box_run": box_run_id,
             "start_utc": "12:00",
             "grace_min": 2,
+            "deadline_utc": "12:15",
             "box": "fixture-box",
         }
         proof_path = proof_dir / "failover-install.json"
         proof_path.write_text(json.dumps(proof))
+        fire = dt.datetime.fromisoformat(f"{DATE}T10:45:00+00:00")
+        local_fire = fire.astimezone()
+        launcher = ["/bin/echo"]
+        (local_run / "control" / "schedule-proof.json").write_text(json.dumps({
+            "readback": {
+                "fire_at_utc": f"{DATE}T10:45:00Z",
+                "program_arguments": launcher,
+            },
+        }))
         launchctl = Path(env["_EARSHOT_EVENT_PREP_LAUNCHCTL"])
         launchctl.write_text(f'''#!/usr/bin/env bash
 cat <<'EOF'
@@ -257,12 +383,18 @@ arguments = {{
     12:00
     --grace-min
     2
+    --deadline-utc
+    12:15
     --box
     fixture-box
     --
     /bin/echo
 }}
 EOF
+echo '"Month" => {local_fire.month}'
+echo '"Day" => {local_fire.day}'
+echo '"Hour" => {local_fire.hour}'
+echo '"Minute" => {local_fire.minute}'
 ''')
         old = os.environ.get("_EARSHOT_EVENT_PREP_LAUNCHCTL")
         os.environ["_EARSHOT_EVENT_PREP_LAUNCHCTL"] = str(launchctl)

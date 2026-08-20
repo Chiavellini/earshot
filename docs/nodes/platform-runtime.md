@@ -18,6 +18,12 @@ the only scheduled arrow that reaches scheduling plus the final readiness
 audit. Using UTC makes a missed firing on morning wake target the event day
 rather than silently advancing to tomorrow.
 
+The LaunchAgent also carries the stable laptop and box execution-host IDs.
+`launchd` does not inherit an operator shell's exports, while the typed
+scheduler deliberately refuses to guess which non-box RunPlan belongs to the
+laptop. Omitting those two non-secret IDs therefore makes the advertised
+unattended chain incapable of scheduling any local webcast.
+
 ## Does not own
 
 It does not deploy project source, prepare an event, install event timers,

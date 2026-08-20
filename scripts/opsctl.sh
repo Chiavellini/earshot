@@ -18,6 +18,7 @@ usage:
   scripts/opsctl.sh study --date YYYY-MM-DD [--dry-run]
   scripts/opsctl.sh preflight --date YYYY-MM-DD [--no-mail]
   scripts/opsctl.sh schedule --date YYYY-MM-DD [--dry-run]
+  scripts/opsctl.sh support --date YYYY-MM-DD [--dry-run]
   scripts/opsctl.sh status <EVENT_ID | YYYY-MM-DD | today>
   scripts/opsctl.sh pull (--date YYYY-MM-DD | --event EVENT_ID) [--dry-run]
   scripts/opsctl.sh audit --run-dir var/runs/EVENT_ID/RUN_ID
@@ -28,7 +29,7 @@ usage:
   scripts/opsctl.sh descope EVENT_TICKER "reason" [--fallbacks "..."]
 
 prepare-day means exactly: discover -> stage -> access -> study -> preflight ->
-schedule -> readiness audit.
+schedule -> support installation -> readiness audit.
 Each stage continues across sibling events, and the command returns nonzero if
 any stage reports a problem. It accepts one UTC date and no event-specific
 switches. bind-access is the explicit, RunPlan-bound declaration of public or
@@ -83,10 +84,11 @@ case "$command" in
       echo "  scripts/study-nightly.sh --date $OPS_DATE --dry-run"
       echo "  scripts/preflight-nightly.sh --date $OPS_DATE --no-mail"
       echo "  scripts/schedule-nightly.sh --date $OPS_DATE --dry-run"
+      echo "  python3 scripts/support-nightly.py --date $OPS_DATE --dry-run"
       echo "  python3 scripts/event-prep-audit.py --date $OPS_DATE"
       exit 0
     fi
-    discovery_rc=0 stage_rc=0 access_rc=0 study_rc=0 preflight_rc=0 schedule_rc=0 readiness_rc=0
+    discovery_rc=0 stage_rc=0 access_rc=0 study_rc=0 preflight_rc=0 schedule_rc=0 support_rc=0 readiness_rc=0
     discovery_tmp=$(mktemp "${TMPDIR:-/tmp}/earshot-discovery.XXXXXX")
     if python3 scripts/discover-events.py --json "$discovery_tmp" --days 21; then
       mkdir -p slate
@@ -102,9 +104,10 @@ case "$command" in
     [[ "$OPS_NO_MAIL" == 1 ]] && preflight_args+=(--no-mail)
     scripts/preflight-nightly.sh "${preflight_args[@]}" || preflight_rc=$?
     scripts/schedule-nightly.sh --date "$OPS_DATE" || schedule_rc=$?
+    python3 scripts/support-nightly.py --date "$OPS_DATE" || support_rc=$?
     python3 scripts/event-prep-audit.py --date "$OPS_DATE" || readiness_rc=$?
-    echo "prepare-day: date=$OPS_DATE discovery=$discovery_rc stage=$stage_rc access=$access_rc study=$study_rc preflight=$preflight_rc schedule=$schedule_rc readiness=$readiness_rc"
-    if (( discovery_rc || stage_rc || access_rc || study_rc || preflight_rc || schedule_rc || readiness_rc )); then
+    echo "prepare-day: date=$OPS_DATE discovery=$discovery_rc stage=$stage_rc access=$access_rc study=$study_rc preflight=$preflight_rc schedule=$schedule_rc support=$support_rc readiness=$readiness_rc"
+    if (( discovery_rc || stage_rc || access_rc || study_rc || preflight_rc || schedule_rc || support_rc || readiness_rc )); then
       echo "prepare-day: PROBLEMS — ready siblings were processed; failed runs were not marked scheduled" >&2
       exit 1
     fi
@@ -135,6 +138,11 @@ case "$command" in
     date_args "$@"; [[ "$OPS_NO_MAIL" == 0 ]] || refuse "schedule does not accept --no-mail"
     args=(--date "$OPS_DATE"); [[ "$OPS_DRY" == 1 ]] && args+=(--dry-run)
     exec scripts/schedule-nightly.sh "${args[@]}"
+    ;;
+  support)
+    date_args "$@"; [[ "$OPS_NO_MAIL" == 0 ]] || refuse "support does not accept --no-mail"
+    args=(--date "$OPS_DATE"); [[ "$OPS_DRY" == 1 ]] && args+=(--dry-run)
+    exec python3 scripts/support-nightly.py "${args[@]}"
     ;;
   status)
     [[ $# -eq 1 ]] || refuse "status needs EVENT_ID, YYYY-MM-DD, or today"

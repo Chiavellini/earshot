@@ -747,6 +747,7 @@ owns = [
   "scripts/eventctl.py",
   "scripts/run-host-boundary.py",
   "scripts/schedule-nightly.sh",
+  "scripts/support-nightly.py",
   # One-time, external-account-profile bootstrap: derives the stable public
   # signer fingerprint through the pinned binary and atomically maintains only
   # non-secret host/account identity fields in the already external account
@@ -755,6 +756,7 @@ owns = [
   "scripts/opsctl.sh",
   "scripts/event-prep-audit.py",
   "tests/event_prep_audit.py",
+  "tests/support_nightly.py",
   # The live operator skill is executable control-plane guidance, not frozen
   # historical evidence. Keep it beside the facade and readiness contract it
   # drives so reliability fixes can update code and instructions together.

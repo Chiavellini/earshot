@@ -57,13 +57,21 @@ or listen-only safety posture.
 The supported operator entrypoint is `scripts/opsctl.sh`. Its generic
 `prepare-day --date YYYY-MM-DD` chain now runs fresh atomic discovery, stage,
 canonical access checks, study, preflight, typed schedule, and the whole-event
-readiness audit for every event on the date; problems remain nonzero and loud
+support installer plus whole-event readiness audit for every event on the date;
+problems remain nonzero and loud
 while ready siblings continue. The audit refuses READY without two watchdogs
 and any required PCM-gated multi-host URL push and laptop failover. Missing
 public/session access prints the exact generic `bind-access` action rather than
 inviting an issuer-specific patch. The scheduled nightly completion job runs
 this full current-UTC-date facade; the older stage/study jobs are head starts,
 not the final arrow.
+
+The unattended LaunchAgent carries both stable execution-host IDs because
+`launchd` does not inherit the interactive shell exports required by the typed
+scheduler. `support-nightly.py` now derives push, failover, and start+5/start+35
+watchdog argv from scheduled RunPlans instead of manual transcription. READY
+reads each loaded job's exact argv and calendar; a label on the wrong date,
+wrong host pair, wrong RunPlan, or wrong launcher tail does not count.
 
 The 2026-08-20 reconstruction closed three concrete autonomy defects:
 transient DNS/5xx discovery failures now retry and preserve the prior slate

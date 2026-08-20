@@ -126,6 +126,7 @@ class OpsSurfaceTest(unittest.TestCase):
                 "  scripts/study-nightly.sh --date 2026-08-14 --dry-run",
                 "  scripts/preflight-nightly.sh --date 2026-08-14 --no-mail",
                 "  scripts/schedule-nightly.sh --date 2026-08-14 --dry-run",
+                "  python3 scripts/support-nightly.py --date 2026-08-14 --dry-run",
                 "  python3 scripts/event-prep-audit.py --date 2026-08-14",
             ],
         )

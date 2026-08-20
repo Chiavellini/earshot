@@ -18,6 +18,7 @@ cd "$REPO" || exit 2
 INSTALL_T0="${_EARSHOT_SCHEDULE_INSTALL_T0:-$REPO/scripts/install-t0-agents.sh}"
 BOX_INSTALL="${_EARSHOT_SCHEDULE_BOX_INSTALL:-$REPO/scripts/box-event-install.sh}"
 BOX_WEBCAST_INSTALL="${_EARSHOT_SCHEDULE_BOX_WEBCAST_INSTALL:-$REPO/scripts/box-webcast-install.sh}"
+FAILOVER_VERIFY="${_EARSHOT_SCHEDULE_FAILOVER_VERIFY:-$REPO/scripts/laptop-failover.sh}"
 NOTIFY="${_EARSHOT_SCHEDULE_NOTIFY:-$REPO/scripts/notify.sh}"
 ALERTCTL="${_EARSHOT_SCHEDULE_ALERTCTL:-$REPO/scripts/alertctl.py}"
 ALERT_DIR="${EARSHOT_ALERT_DIR:-$REPO/state/alerts}"
@@ -193,6 +194,10 @@ EOF
 #!/usr/bin/env bash
 printf 'box-web %s\n' "$*" >> "$EARSHOT_CHECK_CALLS"
 EOF
+  cat > "$repo/scripts/failover-verify-stub.sh" <<'EOF'
+#!/usr/bin/env bash
+printf 'failover-verify %s\n' "$*" >> "$EARSHOT_CHECK_CALLS"
+EOF
   cat > "$repo/scripts/notify-stub.sh" <<'EOF'
 #!/usr/bin/env bash
 printf 'legacy-page %s\n' "$*" >> "$EARSHOT_CHECK_NOTIFICATIONS"
@@ -338,6 +343,33 @@ EOF
   grep -q "host 'earshot-unknown-host' matches neither" "$repo/calls/unknown-host.log"
   grep -q 'run-alert raise .*--code schedule_host_unsupported' \
     "$repo/calls/notifications"
+
+  # A rerun after support wrapped the already scheduled local launchd job must
+  # verify that exact wrapper. Calling install-t0 --verify-only here would
+  # reject the intentional argv wrapper and make prepare-day non-idempotent.
+  local_run=$(find "$repo/var/runs/$event_web_local" -mindepth 1 -maxdepth 1 -type d | head -1)
+  printf '{}\n' > "$local_run/control/schedule-proof.json"
+  EARSHOT_REPO="$repo" python3 "$repo/scripts/eventctl.py" record \
+    --run-dir "$local_run" --transition scheduled \
+    --artifact control/schedule-proof.json >/dev/null
+  mkdir -p "$repo/state/$event_web_local"
+  printf '{}\n' > "$repo/state/$event_web_local/failover-install.json"
+  : > "$repo/calls/invocations"
+  EARSHOT_REPO="$repo" \
+    EARSHOT_LOCAL_EXECUTION_HOST="earshot-test-local" \
+    EARSHOT_BOX_EXECUTION_HOST="earshot-test-box" \
+    EARSHOT_CHECK_CALLS="$repo/calls/invocations" \
+    EARSHOT_CHECK_NOTIFICATIONS="$repo/calls/notifications" \
+    _EARSHOT_SCHEDULE_INSTALL_T0="$repo/scripts/install-t0-stub.sh" \
+    _EARSHOT_SCHEDULE_BOX_INSTALL="$repo/scripts/box-install-stub.sh" \
+    _EARSHOT_SCHEDULE_BOX_WEBCAST_INSTALL="$repo/scripts/box-webcast-install-stub.sh" \
+    _EARSHOT_SCHEDULE_FAILOVER_VERIFY="$repo/scripts/failover-verify-stub.sh" \
+    _EARSHOT_SCHEDULE_NOTIFY="$repo/scripts/notify-stub.sh" \
+    _EARSHOT_SCHEDULE_ALERTCTL="$repo/scripts/alert-stub.sh" \
+    bash "$repo/scripts/schedule-nightly.sh" --date "$date" >/dev/null
+  grep -q "^failover-verify --verify-install --run-dir $local_run$" \
+    "$repo/calls/invocations"
+  must_not grep -q "^local-web --run-dir $local_run" "$repo/calls/invocations"
   echo "schedule-nightly --check: PASS"
 }
 
@@ -469,8 +501,13 @@ else: print("ready")
         PROBLEMS=$((PROBLEMS + 1)); continue
       fi
       if [[ -n "$local_host" && "$host" == "$local_host" ]]; then
-        if ! "$INSTALL_T0" --run-dir "$run_dir" --expected-host "$local_host" \
-            ${VERIFY_FLAG[@]+"${VERIFY_FLAG[@]}"} </dev/null; then
+        if [[ "$STATE" == scheduled && -f "$REPO/state/$event_id/failover-install.json" ]]; then
+          schedule_command=("$FAILOVER_VERIFY" --verify-install --run-dir "$run_dir")
+        else
+          schedule_command=("$INSTALL_T0" --run-dir "$run_dir" --expected-host "$local_host")
+          schedule_command+=( ${VERIFY_FLAG[@]+"${VERIFY_FLAG[@]}"} )
+        fi
+        if ! "${schedule_command[@]}" </dev/null; then
           echo "REFUSED $event_id/$run_id: launchd install/readback failed" >&2
           critical_alert "$run_dir" "$event_id" "schedule_install_failed" \
             "nightly-schedule-install" \

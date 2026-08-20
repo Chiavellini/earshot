@@ -11,8 +11,9 @@ scripts/opsctl.sh prepare-day --date YYYY-MM-DD
 scripts/opsctl.sh status YYYY-MM-DD
 ```
 
-`prepare-day` always runs the same seven aggregate stages—fresh discovery,
-stage, access, study, preflight, schedule, and the final readiness audit. It
+`prepare-day` always runs the same eight aggregate stages—fresh discovery,
+stage, access, study, preflight, schedule, exact support installation, and the
+final readiness audit. It
 keeps ready sibling events moving when one event is blocked, but returns
 nonzero if any stage reports a problem. A failed run is never marked scheduled
 and an event without push/failover/watchdog coverage is never called READY. Use
@@ -88,7 +89,7 @@ For a no-write preview of the sequence:
 scripts/opsctl.sh prepare-day --date YYYY-MM-DD --dry-run
 ```
 
-The seven stages are:
+The eight stages are:
 
 1. `discover-events.py` performs a fresh broad plus per-series public sweep and
    atomically publishes `slate/latest.json`. DNS/connectivity failures retry
@@ -114,7 +115,11 @@ The seven stages are:
 6. `schedule-nightly.sh` enumerates RunPlans, not filenames. Only an active run
    with `preflight_passed` reaches an installer. A date with no RunPlans is a
    refusal, not a green no-op.
-7. `event-prep-audit.py` joins the refreshed slate back to active RunPlans and
+7. `support-nightly.py` derives the exact URL-push, failover, and start+5/
+   start+35 watchdog jobs from the scheduled RunPlans, then requires each
+   adapter's loaded-job readback. It refuses incomplete host pairs and unknown
+   execution-host identities before installing any job for that event.
+8. `event-prep-audit.py` joins the refreshed slate back to active RunPlans and
    refuses READY unless access, study, measured posture, preflight, schedule
    proof, two watchdogs, and any required PCM-gated URL push plus laptop
    failover are all present. This closes the gap where each individual command
@@ -158,6 +163,11 @@ must expose `TimeoutStopSec >= 150` and `KillMode=mixed`.
 Only after `control/schedule-proof.json` is atomically published may the ledger
 append `scheduled`. Verification is read-only and idempotent; a loaded job that
 does not match rolls back/refuses rather than claiming coverage.
+After the support stage wraps a local job for box-primary failover, subsequent
+schedule passes use the failover proof's dedicated verifier. That verifier
+requires the exact wrapper, original scheduled launcher tail, environment, and
+calendar, so a full `prepare-day` rerun remains idempotent without treating a
+foreign or nested wrapper as valid.
 The installer, fire-time resolver, PCM gate, and preflight each independently
 require canonical schema 2, so a legacy AccessPlan cannot bypass the date gate
 through a lower-level adapter.

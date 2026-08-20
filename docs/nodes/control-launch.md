@@ -84,6 +84,13 @@ leg. Health requires both the run's `supervising` receipt and an active (or
 systemd `activating` oneshot) launcher. Thus a URL-level PCM pass followed by a
 zero-frame runtime decoder pages and reaches the backup at the bounded grace
 point instead of standing it down.
+Failover installation is idempotent only when the already loaded wrapper names
+the same laptop run, box event/run, timing, grace, and host; any mismatch is a
+hard refusal rather than a second layer of wrapping.
+Its schema-1 install proof also binds the AccessPlan deadline. The read-only
+`--verify-install` path requires the wrapper's tail to equal the original
+schedule-proof launcher argv and preserves the scheduled environment/calendar;
+this is the only valid schedule reconciliation after wrapping.
 
 After phone launch has durably recorded `source_attached` and `supervising`, it
 starts one held-admission watcher for the remaining arm lifetime. The watcher
