@@ -215,3 +215,36 @@ Follow the main handoff §5.1-5.4 exactly, extended:
   fix it (DNS permitting) and will COMMIT slate/ — expect an autonomous commit
   mid-evening; don't be surprised by it.
 - Nothing scheduled/installed for AAP/ROST anywhere (laptop launchd or box systemd).
+
+## ADDENDUM 21:55Z — stage-nightly fired at ~20:50 local and MOVED THE STATE
+
+Read this before acting on §2 or on any run-dir id in either handoff:
+
+1. **A parallel lane postured the three laptop arm configs** (uncommitted M:
+   webcast-{de,futu,wmt}-26aug20-arm-wc.toml — cap 100→1940 + comment, DE
+   dropped the IRAN market/keyword). Config bytes changed ⇒ stage-nightly's
+   init-date **superseded (blocked+archived) ALL prior laptop run-dirs** and
+   initialized fresh ones:
+   - DE   laptop: `20260820T140000Z-p3-09c8a9552b07`
+   - FUTU laptop: `20260820T113000Z-p3-c745a23a0898`
+   - WMT  laptop: `20260820T120000Z-p3-5b9aeb6dfdc5`
+   These have **NO AccessPlans** — re-bind all three (shapes: main handoff §6),
+   including WMT whose old PASS bind is now archived.
+2. **Box twins survived untouched** (init-date refused them on
+   execution_host_id, as predicted — that refusal is benign). But their configs
+   still carry the OLD cap (100) while the laptop configs now say 1940: the
+   box twins must be RE-DERIVED from the postured laptop configs
+   (webcast-box-twin.py, per main handoff §5.2) — do NOT bind or dispatch the
+   current box run-dirs until then. Check whether the parallel lane already ran
+   posture-from-study (the 1940 edit looks like its prologue) before redoing it.
+3. **AAP + ROST are now STAGED** (configs/webcast-{aap,rost}-26aug20-arm-wc.toml
+   exist, plus bj-26aug21) **but NEEDS-TIME**: starts_at carries TODO, no
+   autorun env, init REFUSED both. §2 steps 3-5 collapse to: add the two
+   call-times.json entries (§2 step 1, evidence in §1), re-run
+   `scripts/slate-stage.sh --slate <timed> --issuer AAP` (RECONCILED path fills
+   the time + writes the env), then eventctl init one-at-a-time, then box twins.
+   BJ 26AUG21 is a real next-day event — needs a call time too (not tonight's
+   problem, don't lose it).
+4. **Coordinate before editing**: an unknown session is actively editing the
+   arm configs in this worktree. `git status` before every step; the readiness
+   JSONs + postured configs are uncommitted and belong to that lane, not you.
