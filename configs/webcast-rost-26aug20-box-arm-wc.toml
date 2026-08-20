@@ -64,20 +64,20 @@ mode = "fanout"
 
 [[sources]]
 kind = "pipe"
-label = "streamlink"
+label = "edge_cachebust_1s"
 sample_rate_hz = 16000
 cmd = [
   "/bin/sh", "-c",
-  "streamlink --stdout --hls-live-edge 1 --hls-segment-stream-data --hls-playlist-reload-time segment \"$(cat $HOME/rost-stream.url)\" best | ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 2000000 -analyzeduration 5000000 -i - -vn -f s16le -ac 1 -ar 16000 -",
+  "scripts/cdn-cachebust-fetch.sh \"$HOME/rost-stream.url\" 1 | ffmpeg -loglevel warning -probesize 200000 -analyzeduration 200000 -ignore_unknown -fflags +discardcorrupt -f mpegts -i pipe:0 -vn -f s16le -ac 1 -ar 16000 -",
 ]
 
 [[sources]]
 kind = "pipe"
-label = "pipe_tuned"
+label = "edge_cachebust_2s"
 sample_rate_hz = 16000
 cmd = [
   "/bin/sh", "-c",
-  "ffmpeg -loglevel warning -fflags nobuffer -flags low_delay -probesize 2000000 -analyzeduration 5000000 -live_start_index -1 -http_persistent 1 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2 -i \"$(cat $HOME/rost-stream.url)\" -vn -f s16le -ac 1 -ar 16000 -",
+  "scripts/cdn-cachebust-fetch.sh \"$HOME/rost-stream.url\" 2 | ffmpeg -loglevel warning -probesize 200000 -analyzeduration 200000 -ignore_unknown -fflags +discardcorrupt -f mpegts -i pipe:0 -vn -f s16le -ac 1 -ar 16000 -",
 ]
 
 # NOTE (SUPERSEDED 2026-07-24 night — kept as the evidence trail): this file
