@@ -396,8 +396,8 @@ evidence = ["docs/nodes/control-operator.md"]
 [[claim]]
 id = "phone.supervise"
 node = "control.supervise"
-worker = "phone-lane + typed-scheduler-lane + cerebras-live-lane + coherent-live-lane + ledger-authority-lane + ssh-mux-lane + 26aug20-five-events-lane + support-rerun-test-repair"
-branch = "codex/rost-live-20260820"
+worker = "phone-lane + typed-scheduler-lane + cerebras-live-lane + coherent-live-lane + ledger-authority-lane + ssh-mux-lane + 26aug20-five-events-lane"
+branch = "webcast-lane"
 state = "active"
 contract_change = true
 paths = [
