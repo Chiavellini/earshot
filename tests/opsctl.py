@@ -29,6 +29,7 @@ class OpsctlTest(unittest.TestCase):
         shutil.copy2(OPSCTL, scripts / "opsctl.sh")
         log = root / "calls"
         for name in (
+            "discover-events.py",
             "stage-nightly.sh",
             "access-plan.py",
             "study-nightly.sh",
@@ -38,14 +39,22 @@ class OpsctlTest(unittest.TestCase):
             "pull-box-state.sh",
             "run-audit.py",
             "descope-event.sh",
+            "event-prep-audit.py",
         ):
             path = scripts / name
             if name.endswith(".py"):
+                extra = ""
+                if name == "discover-events.py":
+                    extra = (
+                        "if '--json' in sys.argv:\n"
+                        "    pathlib.Path(sys.argv[sys.argv.index('--json') + 1]).write_text('{\\\"events\\\": []}')\n"
+                    )
                 path.write_text(
                     "#!/usr/bin/env python3\n"
                     "import os, pathlib, sys\n"
                     "with pathlib.Path(os.environ['OPSCTL_TEST_LOG']).open('a') as f:\n"
                     "    f.write(pathlib.Path(sys.argv[0]).name + '\\t' + ' '.join(sys.argv[1:]) + '\\n')\n"
+                    + extra
                     + ("raise SystemExit(23)\n" if name == fail_stage else "")
                 )
             else:
@@ -309,11 +318,17 @@ phrase = "foo"
         self.assertEqual(
             log.read_text().splitlines(),
             [
+                "discover-events.py\t--json " + next(
+                    line.split("\t", 1)[1].split()[1]
+                    for line in log.read_text().splitlines()
+                    if line.startswith("discover-events.py\t")
+                ) + " --days 21",
                 "stage-nightly.sh\t--date 2026-08-14",
                 "access-plan.py\tcheck-day --date 2026-08-14",
                 "study-nightly.sh\t--date 2026-08-14",
                 "preflight-nightly.sh\t--date 2026-08-14",
                 "schedule-nightly.sh\t--date 2026-08-14",
+                "event-prep-audit.py\t--date 2026-08-14",
             ],
         )
 
@@ -324,14 +339,17 @@ phrase = "foo"
         self.assertEqual(
             [line.split("\t", 1)[0] for line in log.read_text().splitlines()],
             [
+                "discover-events.py",
                 "stage-nightly.sh",
                 "access-plan.py",
                 "study-nightly.sh",
                 "preflight-nightly.sh",
                 "schedule-nightly.sh",
+                "event-prep-audit.py",
             ],
         )
         self.assertIn("preflight=23", result.stdout)
+        self.assertIn("discovery=0", result.stdout)
         self.assertIn("failed runs were not marked scheduled", result.stderr)
 
     def test_prepare_day_no_mail_is_forwarded_only_to_preflight(self) -> None:
@@ -341,8 +359,8 @@ phrase = "foo"
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         calls = log.read_text().splitlines()
-        self.assertEqual(calls[3], "preflight-nightly.sh\t--date 2026-08-14 --no-mail")
-        self.assertNotIn("--no-mail", calls[0] + calls[1] + calls[2] + calls[4])
+        self.assertEqual(calls[4], "preflight-nightly.sh\t--date 2026-08-14 --no-mail")
+        self.assertNotIn("--no-mail", "".join(calls[:4] + calls[5:]))
 
     def test_access_delegates_one_utc_date_to_the_canonical_gate(self) -> None:
         root, log, env = self.fixture()

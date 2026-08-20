@@ -120,11 +120,13 @@ class OpsSurfaceTest(unittest.TestCase):
             result.stdout.splitlines(),
             [
                 "DRY-RUN prepare-day 2026-08-14",
+                "  python3 scripts/discover-events.py --json <temporary> --days 21; publish slate/latest.json",
                 "  scripts/stage-nightly.sh --date 2026-08-14",
                 "  python3 scripts/access-plan.py check-day --date 2026-08-14",
                 "  scripts/study-nightly.sh --date 2026-08-14 --dry-run",
                 "  scripts/preflight-nightly.sh --date 2026-08-14 --no-mail",
                 "  scripts/schedule-nightly.sh --date 2026-08-14 --dry-run",
+                "  python3 scripts/event-prep-audit.py --date 2026-08-14",
             ],
         )
 

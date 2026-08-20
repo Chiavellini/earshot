@@ -11,6 +11,12 @@ The box: `ubuntu@3.212.174.94` (instance `i-04c50d76572aa092e`, c6a.4xlarge,
 `box-ready.sh` and `deploy-box.sh` resolve it live from the instance id when
 the AWS CLI is available.
 
+Host GO is necessary but not whole-event READY. After box dispatch, run
+`python3 scripts/event-prep-audit.py --date YYYY-MM-DD`; a box-primary event
+also needs schedule proof for every active host, the laptop failover install
+proof, two loaded watchdogs, and (for `preresolved`) one PCM-gated URL-push job
+that names the box and laptop together.
+
 **The laptop repo is `$HOME/Code/ear`. The box repo is `$HOME/ear`.** A path
 hardcoded for one silently yields empty on the other — a host-absolute
 `ACCOUNT_ENV` path killed both CAVA and CRWV dials on 2026-08-11, and

@@ -52,14 +52,21 @@ could not be audited and restarts kept overwriting fixed report paths.
   write refuses. The refusal is one line naming the pull. `status` exposes
   `authority.write_authority/transferred_to/since_utc/by` additively.
 - `scripts/opsctl.sh` — the public generic facade. `prepare-day` takes one UTC
-  date and runs stage, canonical access checks, study, proof-bearing preflight,
-  and typed scheduling in order. Each aggregate stage continues across sibling
+  date and runs fresh public discovery, stage, canonical access checks, study,
+  proof-bearing preflight, typed scheduling, and the final readiness audit in
+  order. Each aggregate stage continues across sibling
   events, but the facade
   returns nonzero if any stage reports trouble; ready siblings proceed and a
   failed run is never called scheduled. Status, terminal-only box retrieval,
   deterministic run audit, and recorded descope are exposed by the same
   command. The facade contains no issuer/date map, credential, market posture,
   resolver, scheduler implementation, or runtime composer.
+- `scripts/event-prep-audit.py` — the read-only whole-event join. It starts
+  from every earnings event in the refreshed date slate, requires an active
+  schema-3 attempt and all preparation/schedule proofs, verifies measured
+  posture markers, and reads loaded launchd support jobs. A preresolved event
+  needs its PCM-gated push, a multi-host event needs its failover proof, and
+  every event needs two watchdogs before the word READY is emitted.
 - `tests/eventctl_lifecycle.py` — the ledger's isolated test suite
   (temp-repo fixtures, never the working tree; includes cross-process
   flock/concurrency and truncated-tail recovery cases).

@@ -60,9 +60,12 @@ lives at slate/latest.json — state/ is gitignored.)
 """
 import argparse
 import html as html_mod
+import io
 import json
+import os
 import re
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -121,7 +124,7 @@ def issuer_of(series_ticker):
 
 
 def get(path, tries=4, pace=0.35):
-    """GET with backoff. 429 is expected under load, not exceptional."""
+    """GET with bounded backoff for rate limits and transient network loss."""
     delay = 1.0
     for attempt in range(tries):
         try:
@@ -130,7 +133,17 @@ def get(path, tries=4, pace=0.35):
                 time.sleep(pace)          # be a good citizen between calls
                 return json.load(r)
         except urllib.error.HTTPError as e:
-            if e.code == 429 and attempt < tries - 1:
+            if (e.code == 429 or 500 <= e.code <= 599) and attempt < tries - 1:
+                time.sleep(delay)
+                delay *= 2
+                continue
+            raise
+        except (urllib.error.URLError, TimeoutError):
+            # Aug 18's one-shot DNS failure made the slate two days stale,
+            # hid AAP/ROST, and also killed the failure email. Discovery is a
+            # required morning input, so resolver/connectivity transients get
+            # the same bounded retry discipline as 429s.
+            if attempt < tries - 1:
                 time.sleep(delay)
                 delay *= 2
                 continue
@@ -740,7 +753,27 @@ def self_test():
     assert r5["call_date_confirmed"] is None and not r5["call_date_disputed"], f"{r5}"
     assert "fetch failed" in (r5["call_date_evidence"] or ""), f"{r5}"
 
-    print("self-test: OK (BA fixture — date-from-sub_title, misleading-ticker "
+    # A transient resolver failure must not abort the daily census on its first
+    # request. Keep this offline by replacing urlopen and sleep.
+    attempts = []
+    original_urlopen, original_sleep = urllib.request.urlopen, time.sleep
+    class Response(io.BytesIO):
+        def __enter__(self): return self
+        def __exit__(self, *_args): self.close()
+    def flaky(_request, timeout=0):
+        attempts.append(timeout)
+        if len(attempts) < 3:
+            raise urllib.error.URLError("temporary DNS failure")
+        return Response(b'{"ok": true}')
+    try:
+        urllib.request.urlopen = flaky
+        time.sleep = lambda _seconds: None
+        assert get("offline-retry", tries=4, pace=0) == {"ok": True}
+        assert len(attempts) == 3, attempts
+    finally:
+        urllib.request.urlopen, time.sleep = original_urlopen, original_sleep
+
+    print("self-test: OK (BA fixture — date-from_sub_title, misleading-ticker "
           "detection, cry-wolf guard, FED issuer; HOOD fixture — "
           "settlement-source dispute, time-of-day recovery, landing-page "
           "no-cry-wolf, agreeing-page confirm, fetch-failure tolerance; "
@@ -912,8 +945,22 @@ def main():
         "events": rows,
     }
     if a.json:
-        with open(a.json, "w") as fh:
-            json.dump(slate, fh, indent=2)
+        destination = os.path.abspath(a.json)
+        directory = os.path.dirname(destination) or "."
+        os.makedirs(directory, exist_ok=True)
+        fd, temporary = tempfile.mkstemp(prefix=".slate.", suffix=".tmp", dir=directory)
+        try:
+            with os.fdopen(fd, "w") as fh:
+                json.dump(slate, fh, indent=2)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(temporary, destination)
+        except Exception:
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
+            raise
         print(f"\nwrote {a.json}")
 
     if a.assert_ba:

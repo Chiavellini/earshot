@@ -1,5 +1,5 @@
 ---
-as_of: 2026-08-13
+as_of: 2026-08-20
 authority: current-project-state
 ---
 
@@ -55,12 +55,23 @@ or listen-only safety posture.
 ## One operational surface
 
 The supported operator entrypoint is `scripts/opsctl.sh`. Its generic
-`prepare-day --date YYYY-MM-DD` chain runs stage, canonical access checks,
-study, preflight, and typed schedule for every event on the date; problems
-remain nonzero and loud while ready siblings continue. Missing public/session
-access prints the exact generic `bind-access` action rather than inviting an
-issuer-specific patch. Status, pull, single-run/date audit, alerts,
-acknowledgement, and descope are exposed by the same facade.
+`prepare-day --date YYYY-MM-DD` chain now runs fresh atomic discovery, stage,
+canonical access checks, study, preflight, typed schedule, and the whole-event
+readiness audit for every event on the date; problems remain nonzero and loud
+while ready siblings continue. The audit refuses READY without two watchdogs
+and any required PCM-gated multi-host URL push and laptop failover. Missing
+public/session access prints the exact generic `bind-access` action rather than
+inviting an issuer-specific patch. The scheduled nightly completion job runs
+this full current-UTC-date facade; the older stage/study jobs are head starts,
+not the final arrow.
+
+The 2026-08-20 reconstruction closed three concrete autonomy defects:
+transient DNS/5xx discovery failures now retry and preserve the prior slate
+until an atomic replacement; header-only macOS TTS output cannot count as a
+keyword-study clip; and `scripts/event-prep-audit.py` joins discovery back to
+the active immutable attempts and loaded support jobs. Its current ROST verdict
+is correctly `NEEDS-ACCESS` for both active post-posture runs—readiness and
+proof on the superseded attempts are not reused.
 
 `architecture/operations.toml` classifies the public commands, internal
 adapters, retired live entrypoints, and historical scripts. Normal doc lint

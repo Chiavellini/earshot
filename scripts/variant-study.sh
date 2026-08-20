@@ -24,6 +24,38 @@
 # D1g caveat). A keyword failing on clean studio TTS will not fire live.
 # macOS only (uses `say`). Run from repo root.
 set -uo pipefail
+
+# A successful `say`/ffmpeg exit is not audio evidence. On 2026-08-20 a
+# sandboxed `say` produced a syntactically valid 78-byte WAV with zero sample
+# frames; the old loop appended it and increased EXPECTED as though a voice had
+# actually been exercised. Require the exact replay format and real payload.
+valid_pcm_wav() { # valid_pcm_wav <path> [minimum sample frames]
+  python3 - "$1" "${2:-1600}" <<'PY'
+import sys, wave
+path, minimum = sys.argv[1], int(sys.argv[2])
+try:
+    with wave.open(path, "rb") as wav:
+        ok = (
+            wav.getnchannels() == 1
+            and wav.getsampwidth() == 2
+            and wav.getframerate() == 16000
+            and wav.getnframes() >= minimum
+            and bool(wav.readframes(1))
+        )
+except (OSError, EOFError, wave.Error):
+    ok = False
+raise SystemExit(0 if ok else 1)
+PY
+}
+
+if [[ "${1:-}" == "--check-wav" ]]; then
+  [[ $# -ge 2 && $# -le 3 ]] || {
+    echo "usage: variant-study.sh --check-wav FILE [MIN_FRAMES]" >&2; exit 2;
+  }
+  valid_pcm_wav "$2" "${3:-1600}"
+  exit $?
+fi
+
 CFG="${1:?usage: variant-study.sh <config.toml> [outdir]}"
 OUT="${2:-/tmp/variant-study-$(basename "$CFG" .toml)}"
 BIN="${EARSHOT_BIN:-target/release/earshot}"
@@ -173,14 +205,29 @@ while IFS=$'\t' read -r TICKER PHRASE VARIANTS; do
           TTS_FAILURES=$((TTS_FAILURES+1))
           continue
         fi
-        ffmpeg -nostdin -v error -y -i "$C.aiff" -ac 1 -ar 16000 -c:a pcm_s16le "$C.wav" </dev/null && rm -f "$C.aiff"
+        if ! ffmpeg -nostdin -v error -y -i "$C.aiff" -ac 1 -ar 16000 -c:a pcm_s16le "$C.wav" </dev/null \
+          || ! valid_pcm_wav "$C.wav"; then
+          echo "⚠ variant-study: TTS produced no usable PCM: $TICKER variant=$V voice=$VOICE form=$IDX" >&2
+          TTS_FAILURES=$((TTS_FAILURES+1))
+          rm -f "$C.aiff" "$C.wav"
+          continue
+        fi
+        rm -f "$C.aiff"
         printf "file '%s'\nfile '%s'\n" "$C.wav" "$SIL" >> "$LIST"
         EXPECTED=$((EXPECTED+1))
       done
     done
   done
   WAV="$OUT/clips/$SLUG.wav"
-  ffmpeg -nostdin -v error -y -f concat -safe 0 -i "$LIST" -c:a pcm_s16le "$WAV" </dev/null
+  if (( EXPECTED == 0 )) \
+    || ! ffmpeg -nostdin -v error -y -f concat -safe 0 -i "$LIST" -c:a pcm_s16le "$WAV" </dev/null \
+    || ! valid_pcm_wav "$WAV"; then
+    echo "⚠ variant-study: no usable concatenated PCM for $TICKER (valid clips=$EXPECTED)" >&2
+    TTS_FAILURES=$((TTS_FAILURES+1))
+    printf "%s\t%s\t0/0\tFAIL\n" "$TICKER" "$PHRASE" | tee -a "$REPORT"
+    FAILS=$((FAILS+1))
+    continue
+  fi
 
   # Per-keyword operating point (2026-07-30): mirror this ticker's
   # confirmed_threshold from the source config into the mini config. Without

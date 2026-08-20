@@ -37,6 +37,7 @@ citation_globs = [
 # exactly one node owner. Local/generated/vendor surfaces stay outside it.
 govern_root_files = true
 governed_globs = [
+  ".claude/skills/event-prep/**",
   "architecture/**",
   "benches/**",
   "configs/**",
@@ -57,9 +58,9 @@ excluded_globs = [
   ".git/**",
   ".agents/**",
   ".codex/**",
-  # Agent-harness surface, not runtime: skills are procedures for an assistant,
-  # and the procedure they encode lives in the nodes they call, not in a node of
-  # their own. Excluded explicitly rather than by accident of glob coverage.
+  # Agent harnesses are normally outside the runtime universe. event-prep is
+  # deliberately re-included below because its READY contract is maintained
+  # with the control.operate facade it drives.
   ".claude/**",
   ".venv*/**",
   "target/**",
@@ -95,6 +96,9 @@ excluded_globs = [
 ]
 # These three checked-in reports are durable evidence, not local run state.
 reincluded_paths = [
+  ".claude/skills/event-prep/SKILL.md",
+  ".claude/skills/event-prep/references/TRAPS.md",
+  ".claude/skills/event-prep/references/BOX-CHECKS.md",
   "state/KXEARNINGSMENTIONAAL-26JUL23/box/capture-report.json",
   "state/KXEARNINGSMENTIONINTC-26JUL23/report-box.json",
   "state/KXEARNINGSMENTIONLMT-26JUL23/box/capture-report.json",
@@ -749,6 +753,14 @@ owns = [
   # env.  Event configs never carry this host-specific identity.
   "scripts/execution-profile.sh",
   "scripts/opsctl.sh",
+  "scripts/event-prep-audit.py",
+  "tests/event_prep_audit.py",
+  # The live operator skill is executable control-plane guidance, not frozen
+  # historical evidence. Keep it beside the facade and readiness contract it
+  # drives so reliability fixes can update code and instructions together.
+  ".claude/skills/event-prep/SKILL.md",
+  ".claude/skills/event-prep/references/TRAPS.md",
+  ".claude/skills/event-prep/references/BOX-CHECKS.md",
   "tests/eventctl_lifecycle.py",
   "tests/study_nightly_selector.py",
   "tests/execution_profile.sh",
@@ -1187,6 +1199,7 @@ owns = [
   "scripts/prior-call-study.py",
   "scripts/verify-occurrences.py",
   "tests/bench_fixture.rs",
+  "tests/variant_study_wav.sh",
 ]
 inputs = [
   "project.build.workspace",

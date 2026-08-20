@@ -10,6 +10,14 @@ Runtime tuning hooks in `src/perf.rs`, Linux tuning checks/application in
 `scripts/os-tune-check.sh` and `scripts/os-tune-apply.sh`, the scheduled
 runtime profile under `configs/launchd/`, and `docs/OS-TUNING.md`.
 
+`com.earshot.preflight-nightly` is the legacy label for the nightly completion
+job. Its loaded command is now the canonical `opsctl prepare-day` facade for
+the current UTC date, not a preflight-only fragment. Earlier slate/stage/study
+jobs remain useful head starts; this last job repeats idempotent phases and is
+the only scheduled arrow that reaches scheduling plus the final readiness
+audit. Using UTC makes a missed firing on morning wake target the event day
+rather than silently advancing to tomorrow.
+
 ## Does not own
 
 It does not deploy project source, prepare an event, install event timers,
@@ -37,7 +45,8 @@ require coordination across concurrent events.
 ## Failure contract
 
 Wrong platform, missing privilege/tool/library, unsafe RT throttling, invalid
-core map, disabled user lingering, or unverified timer returns nonzero or loud
+core map, disabled user lingering, an unverified timer, or a nightly completion
+job whose loaded argv does not name `opsctl prepare-day` returns nonzero or loud
 degradation. No script silently edits bootloader configuration.
 
 ## Parallel work boundary

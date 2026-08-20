@@ -19,7 +19,7 @@ name = "prepare-day"
 argv = ["scripts/opsctl.sh", "prepare-day"]
 arguments = "--date YYYY-MM-DD [--dry-run] [--no-mail]"
 host = "laptop"
-purpose = "Run stage, access binding checks, study, proof-bearing preflight, and typed scheduling for one UTC date."
+purpose = "Refresh discovery, stage, check access, study, preflight, schedule, and audit whole-event readiness for one UTC date."
 
 [[operator_command]]
 name = "stage"
@@ -128,6 +128,10 @@ owner = "control.operate"
 
 [[internal_adapter]]
 path = "scripts/event-status.sh"
+owner = "control.operate"
+
+[[internal_adapter]]
+path = "scripts/event-prep-audit.py"
 owner = "control.operate"
 
 [[internal_adapter]]
@@ -261,4 +265,3 @@ reason = "Slug-based arm path bypassed immutable RunPlan scheduling."
 path = "scripts/wing-autorun.sh"
 replacement = "scripts/opsctl.sh prepare-day --date YYYY-MM-DD"
 reason = "Issuer-specific resolver and arm were replaced by typed generic acquisition and supervision."
-

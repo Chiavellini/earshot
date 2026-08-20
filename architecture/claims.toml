@@ -243,7 +243,7 @@ evidence = ["docs/TWILIO.md"]
 [[claim]]
 id = "phone.prepare"
 node = "control.prepare"
-worker = "phone-lane + execution-identity-lane + generic-stage-reconcile + cerebras-live-lane"
+worker = "phone-lane + execution-identity-lane + generic-stage-reconcile + cerebras-live-lane + 26aug20-five-events-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
@@ -273,6 +273,21 @@ paths = [
   "src/prepare.rs",
   "scripts/slate-time-merge.py",
   "slate/call-times.json",
+  # 2026-08-20 five-event takeover: AAP/ROST were discovered after the stale
+  # daily slate had already staged the first three events. Reconcile their
+  # verified call times into the exact staged artifacts without touching the
+  # independently owned FUTU/WMT/DE posture edits.
+  "configs/aap-26aug20-raw.toml",
+  "configs/rost-26aug20-raw.toml",
+  "configs/webcast-aap-26aug20-arm-wc.toml",
+  "configs/webcast-rost-26aug20-arm-wc.toml",
+  "configs/webcast-aap-26aug20-box-arm-wc.toml",
+  "configs/webcast-rost-26aug20-box-arm-wc.toml",
+  "configs/webcast-futu-26aug20-arm-wc.toml",
+  "configs/webcast-futu-26aug20-box-arm-wc.toml",
+  "configs/webcast-wmt-26aug20-arm-wc.toml",
+  "configs/webcast-de-26aug20-arm-wc.toml",
+  "configs/webcast-de-26aug20-box-arm-wc.toml",
   # 2026-08-11 staged event artifacts (upcoming events only). These stay
   # exact-file claims so the reusable lifecycle never turns a dated config
   # into a public interface.
@@ -381,7 +396,7 @@ evidence = ["docs/nodes/control-operator.md"]
 [[claim]]
 id = "phone.supervise"
 node = "control.supervise"
-worker = "phone-lane + typed-scheduler-lane + cerebras-live-lane + coherent-live-lane + ledger-authority-lane + ssh-mux-lane"
+worker = "phone-lane + typed-scheduler-lane + cerebras-live-lane + coherent-live-lane + ledger-authority-lane + ssh-mux-lane + 26aug20-five-events-lane"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
@@ -417,6 +432,12 @@ paths = [
   "configs/cbrs-26aug12-autorun.env",
   "configs/cbrs-26aug12-safe-observe-autorun.env",
   "configs/cohr-26aug12-autorun.env",
+  # 2026-08-20 five-event takeover: generic stage reconciliation emitted
+  # these exact upcoming-event environments alongside the AAP/ROST configs.
+  "configs/aap-26aug20-autorun.env",
+  "configs/rost-26aug20-autorun.env",
+  "configs/aap-26aug20-box-autorun.env",
+  "configs/rost-26aug20-box-autorun.env",
   # 2026-08-14 box-webcast §8 rehearsal: the drill's event env. It exists only
   # so install-event-timer.sh:152-176 can derive EARSHOT_ACCOUNT_ENV for the
   # systemd unit on the box. Named to the `*-autorun.env` convention this
@@ -1082,7 +1103,7 @@ evidence = ["slate/hunt-status.json", "docs/HUNT.md"]
 [[claim]]
 id = "readiness.today_discovery"
 node = "control.discover"
-worker = "readiness-lane"
+worker = "readiness-lane + event-prep-reconstruction"
 branch = "webcast-lane"
 state = "complete_pending_commit"
 contract_change = true
@@ -1148,7 +1169,7 @@ evidence = ["docs/CTC-MODEL-SOURCING.md"]
 [[claim]]
 id = "bench.model_dir_grid"
 node = "evidence.benchmark"
-worker = "latency-lane"
+worker = "latency-lane + event-prep-reconstruction"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
@@ -1189,6 +1210,11 @@ paths = [
   # nothing. The lexicon carries live-validated sets (nvidia 0/18 -> 122/45 on
   # LYFT, and UBER's NVID fired and placed a real order on that set).
   "scripts/variant-widen.py",
+  # 2026-08-20: a sandboxed macOS `say` returned a 78-byte WAV header with no
+  # samples. The study counted it as a requested clip and could publish a
+  # readiness verdict from zero audio. Validate every clip and the concat.
+  "scripts/variant-study.sh",
+  "tests/variant_study_wav.sh",
 ]
 verification = [
   "cargo test --release --lib bench::",
@@ -1295,7 +1321,7 @@ evidence = [
 [[claim]]
 id = "missed_arm.schedule"
 node = "platform.runtime"
-worker = "admission-evidence-lane"
+worker = "admission-evidence-lane + event-prep-reconstruction"
 branch = "webcast-lane"
 state = "active"
 contract_change = false
@@ -1309,6 +1335,7 @@ paths = [
   "configs/launchd/com.earshot.stage-nightly.plist",
   "configs/launchd/com.earshot.study-nightly.plist",
   "configs/launchd/com.earshot.preflight-nightly.plist",
+  "docs/nodes/platform-runtime.md",
   "src/perf.rs",
 ]
 verification = [
@@ -1319,7 +1346,7 @@ evidence = ["VERIFICATIONS.md"]
 [[claim]]
 id = "ops.lifecycle_ledger"
 node = "control.operate"
-worker = "event-lifecycle-lane + execution-identity-lane + typed-scheduler-lane + runplan-day-selection-lane + nightly-alert-lane + cerebras-live-lane + coherent-live-lane + ledger-authority-lane"
+worker = "event-lifecycle-lane + execution-identity-lane + typed-scheduler-lane + runplan-day-selection-lane + nightly-alert-lane + cerebras-live-lane + coherent-live-lane + ledger-authority-lane + event-prep-reconstruction"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
@@ -1343,6 +1370,7 @@ paths = [
   "scripts/schedule-nightly.sh",
   "scripts/execution-profile.sh",
   "scripts/opsctl.sh",
+  "scripts/event-prep-audit.py",
   "scripts/journal.sh",
   "scripts/assert-ready.sh",
   "scripts/descope-event.sh",
@@ -1361,7 +1389,13 @@ paths = [
   "tests/study_nightly_selector.py",
   "tests/run_host_boundary.py",
   "tests/opsctl.py",
+  "tests/event_prep_audit.py",
   "tests/execution_profile.sh",
+  # The authoritative live skill must evolve with this facade. The archived
+  # copies under docs/history remain frozen evidence.
+  ".claude/skills/event-prep/SKILL.md",
+  ".claude/skills/event-prep/references/TRAPS.md",
+  ".claude/skills/event-prep/references/BOX-CHECKS.md",
 ]
 verification = [
   "python3 -m py_compile scripts/eventctl.py tests/eventctl_lifecycle.py",

@@ -11,12 +11,12 @@ scripts/opsctl.sh prepare-day --date YYYY-MM-DD
 scripts/opsctl.sh status YYYY-MM-DD
 ```
 
-`prepare-day` always runs the same five aggregate stages—stage, access, study,
-preflight, schedule. It keeps ready sibling events moving when one event is
-blocked, but returns nonzero if any stage reports a problem. A failed run is
-never marked scheduled. Use `scripts/opsctl.sh surface` to list every supported
-operator command. Launchers, proof writers, and OS installers are internal
-adapters and must not be hand-assembled at T-0.
+`prepare-day` always runs the same seven aggregate stages—fresh discovery,
+stage, access, study, preflight, schedule, and the final readiness audit. It
+keeps ready sibling events moving when one event is blocked, but returns
+nonzero if any stage reports a problem. A failed run is never marked scheduled
+and an event without push/failover/watchdog coverage is never called READY. Use
+`scripts/opsctl.sh surface` to list every supported operator command.
 
 ## 1. One-time host/account setup
 
@@ -88,28 +88,37 @@ For a no-write preview of the sequence:
 scripts/opsctl.sh prepare-day --date YYYY-MM-DD --dry-run
 ```
 
-The five stages are:
+The seven stages are:
 
-1. `stage-nightly.sh` merges independently verified times, generates every
+1. `discover-events.py` performs a fresh broad plus per-series public sweep and
+   atomically publishes `slate/latest.json`. DNS/connectivity failures retry
+   with bounded backoff; exhaustion remains nonzero and cannot be mistaken for
+   a zero-event day.
+2. `stage-nightly.sh` merges independently verified times, generates every
    lane config/env from the slate, and compiles schema-3 RunPlans. Placeholder
    times, ambiguous mappings, host-absolute generated paths, or identity
    failures are problems and make the stage nonzero.
-2. `access-plan.py check-day` requires every active webcast RunPlan to carry
+3. `access-plan.py check-day` requires every active webcast RunPlan to carry
    an immutable schema-2 AccessPlan. Access is explicitly classified as
    public, registered-session, or signed-in-session. A missing prerequisite
    prints the exact generic `opsctl bind-access` action and keeps the date red;
    the system never guesses, registers, signs in, or stores cookies/tokens.
-3. `study-nightly.sh` measures every RunPlan-pinned config in call order. A
+4. `study-nightly.sh` measures every RunPlan-pinned config in call order. A
    spelling proposal never mutates that pinned config: it is reviewed and, if
    adopted, produces a new config hash and new RunPlan attempt before another
    measurement. Measured non-crossing/unserved residue may be acknowledged; a
    phrase mismatch remains a descope decision.
-4. `preflight-nightly.sh` runs the proof-bearing preflight for each staged env.
+5. `preflight-nightly.sh` runs the proof-bearing preflight for each staged env.
    Missing account identity is a failure, not a skip. A green result durably
    publishes its report and prerequisite receipts before `preflight_passed`.
-5. `schedule-nightly.sh` enumerates RunPlans, not filenames. Only an active run
+6. `schedule-nightly.sh` enumerates RunPlans, not filenames. Only an active run
    with `preflight_passed` reaches an installer. A date with no RunPlans is a
    refusal, not a green no-op.
+7. `event-prep-audit.py` joins the refreshed slate back to active RunPlans and
+   refuses READY unless access, study, measured posture, preflight, schedule
+   proof, two watchdogs, and any required PCM-gated URL push plus laptop
+   failover are all present. This closes the gap where each individual command
+   succeeded but no component checked whether the whole event would fire.
 
 The supported explicit outcomes are: fix the failing event, descope it on the
 record, or leave the date command nonzero. Silence is not an outcome.

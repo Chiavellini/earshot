@@ -58,12 +58,16 @@ middle of a cleanup. Re-run `git log --oneline -3` before trusting any
 minutes-old read, and never `git add -A` in this repo — other actors' work will
 be dirty.
 
-## `posture-from-study.py` is invoked by nothing automatic (2026-08-12)
+## Posture remains explicit, but silence is now blocked (2026-08-12/20)
 
-`opsctl prepare-day` stages, studies, preflights, and schedules — it never sets
-posture. A board whose study came back green still ships at whatever caps the
-config already had (usually 1¢ observe) unless you run posture explicitly. And
-posture edits change config bytes ⇒ void the preflight verdict ⇒ re-preflight.
+`opsctl prepare-day` does not invent a money policy, so it never chooses size
+tiers or a low-band budget. A board whose study came back green retains the
+config's existing caps until `posture-from-study.py` applies an already recorded
+operator policy. The 2026-08-20 change is that this omission can no longer look
+green: `event-prep-audit.py` emits `NEEDS-POSTURE` when any keyword lacks the
+measured marker. Posture edits change config bytes ⇒ new RunPlan ⇒ rebind ⇒
+re-study/access/preflight/schedule. Proof from the superseded attempt never
+travels to the new bytes.
 
 ## Never pipe a gate through `head` or `tail`
 
@@ -298,3 +302,35 @@ one-command door yet — only box→laptop does (`--prelaunch`, above).
 - **Laptop load gates.** preflight FAILS above 2×cores load; your own
   transcription/bench job (load 30–130 on this laptop) trips it and, worse,
   degrades capture (C5). Nothing heavy on the laptop on event days.
+
+## 2026-08-20 — DE/AAP/ROST: fragments succeeded; the day did not
+
+- **One DNS failure hid two events.** The Aug 18 daily slate sweep died on its
+  first resolver failure; its email failed on the same DNS outage. AAP and
+  ROST were absent until a human found them. `discover-events.py` now retries
+  URLError/timeouts/5xx/429 and publishes atomically. `opsctl prepare-day`
+  begins with a fresh sweep; zero events is a failure.
+- **The scheduled chain ended at preflight.** Separate nightly stage, study,
+  and preflight jobs existed, but no loaded daily arrow invoked scheduling or
+  asked whether every event had coverage. The legacy
+  `com.earshot.preflight-nightly` label now runs the complete current-UTC-date
+  facade, ending in `event-prep-audit.py`.
+- **A successful TTS process produced zero audio.** In the sandbox, `say`
+  yielded a 78-byte WAV header. The old study incremented its expected count
+  without validating samples. Every clip and concat now must be mono 16-kHz
+  16-bit PCM with a non-empty payload; otherwise the artifact stays red.
+- **Posture superseded the only prepared ROST/AAP attempts.** Their new config
+  hashes had active RunPlans but only `plan_compiled`; access and preparation
+  remained on old/blocked attempts. The final audit selects active attempts and
+  reports the missing lifecycle phase instead of reading any sibling proof.
+- **Q4 phone entry was not checked first.** A visible participant dial-in on
+  the event page is a real attendee lane and must be qualified before relying
+  on browser media. `configuration.dialIn.speaker=true` is only presenter
+  bridge metadata; do not claim listener access without the actual participant
+  number/PIN.
+- **Individual greens did not compose.** DE captured and fired, but several
+  eligible detections safely could not cross because the book had no ask or the
+  ask exceeded the cap. That is execution truth, not capture failure. The prep
+  defect was that no machine joined discovery, access, study, posture,
+  scheduling, URL delivery, failover, and watchdogs into one READY verdict.
+  `event-prep-audit.py` is now that join.

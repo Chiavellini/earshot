@@ -7,7 +7,11 @@
   <array>
     <string>/bin/bash</string>
     <string>-c</string>
-    <string>cd /Users/bernardodelrio/Code/ear &amp;&amp; exec scripts/preflight-nightly.sh</string>
+    <!-- The UTC date is intentional. At 23:30 CDMX the UTC day has already
+         rolled to the US-morning event date; if the laptop wakes late the
+         same expression still catches up today's events instead of preparing
+         tomorrow and silently skipping the current slate. -->
+    <string>cd /Users/bernardodelrio/Code/ear &amp;&amp; exec scripts/opsctl.sh prepare-day --date "$(date -u +%F)"</string>
   </array>
   <key>WorkingDirectory</key><string>/Users/bernardodelrio/Code/ear</string>
   <key>EnvironmentVariables</key>
@@ -15,7 +19,7 @@
   <key>StartCalendarInterval</key>
   <dict><key>Hour</key><integer>23</integer><key>Minute</key><integer>30</integer></dict>
   <key>RunAtLoad</key><false/>
-  <key>StandardOutPath</key><string>/Users/bernardodelrio/Library/Logs/earshot/preflight-nightly.log</string>
-  <key>StandardErrorPath</key><string>/Users/bernardodelrio/Library/Logs/earshot/preflight-nightly.log</string>
+  <key>StandardOutPath</key><string>/Users/bernardodelrio/Library/Logs/earshot/event-prep-nightly.log</string>
+  <key>StandardErrorPath</key><string>/Users/bernardodelrio/Library/Logs/earshot/event-prep-nightly.log</string>
 </dict>
 </plist>
