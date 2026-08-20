@@ -41,6 +41,7 @@ done
 [[ -n "$KIND" ]] || { echo "usage: pcm-gate.sh --kind youtube|hls (--url U | --url-file F) [--secs N] [--label L]" >&2; exit 2; }
 [[ "$KIND" == "youtube" || "$KIND" == "hls" ]] || { echo "--kind must be youtube or hls" >&2; exit 2; }
 [[ "$SECS" =~ ^[1-9][0-9]*$ ]] || { echo "--secs must be a positive integer" >&2; exit 2; }
+DECODE_SECS="$SECS"
 [[ -n "$RUN_DIR" && -n "$PROOF_JSON" || -z "$RUN_DIR" && -z "$PROOF_JSON" ]] || {
   echo "--run-dir and --proof-json must be supplied together" >&2; exit 2;
 }
@@ -269,9 +270,9 @@ else
   if command -v setsid >/dev/null 2>&1; then PG=(setsid); else PG=(perl -e 'setpgrp(0,0); exec @ARGV or die "exec failed: $!"' --); fi
   "${PG[@]}" "$FFMPEG" -loglevel error -fflags nobuffer -flags low_delay \
       -probesize 200000 -analyzeduration 3000000 -live_start_index -1 \
-      -i "$URL" -vn -f s16le -ac 1 -ar 16000 -t "$SECS" - \
+      -i "$URL" -vn -f s16le -ac 1 -ar 16000 -t "$DECODE_SECS" - \
       > "$PCM_TMP" 2>"$ERR" </dev/null & PCM_PID=$!
-  PCM_END=$(( $(date +%s) + SECS + ${PCM_GATE_DECODE_GRACE_SECS:-20} ))
+  PCM_END=$(( $(date +%s) + DECODE_SECS + ${PCM_GATE_DECODE_GRACE_SECS:-20} ))
   while kill -0 "$PCM_PID" 2>/dev/null; do
     if (( $(date +%s) >= PCM_END )); then
       kill -TERM -- "-$PCM_PID" 2>/dev/null; sleep 2
