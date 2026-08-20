@@ -8,7 +8,7 @@ authority = "open-collaboration-claims"
 [[claim]]
 id = "root.architecture"
 node = "project.architecture"
-worker = "event-lifecycle-lane + ledger-authority-lane + ssh-mux-lane"
+worker = "event-lifecycle-lane + ledger-authority-lane + ssh-mux-lane + event-prep-handoff"
 branch = "webcast-lane"
 state = "active"
 contract_change = true
@@ -48,6 +48,7 @@ paths = [
   # 2026-08-17: how to read the ledger, for the agent picking up the
   # reliability program next.
   "docs/work/HANDOFF-RELIABILITY-26AUG17.md",
+  "HANDOFF-EVENT-PREP-26AUG20.md",
 ]
 verification = [
   "python3 scripts/doc-lint.py --self-test",
