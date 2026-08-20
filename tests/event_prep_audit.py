@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import shutil
@@ -17,6 +18,11 @@ TICKER = "KXEARNINGSMENTIONTEST-26AUG20"
 EVENT = TICKER + "-WEBCAST"
 RUN = "20260820T120000Z-p3-" + "a" * 12
 
+SPEC = importlib.util.spec_from_file_location("event_prep_audit", AUDIT)
+assert SPEC and SPEC.loader
+AUDIT_MODULE = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(AUDIT_MODULE)
+
 
 class EventPrepAuditTest(unittest.TestCase):
     def fixture(self) -> tuple[Path, dict[str, str]]:
@@ -29,10 +35,27 @@ class EventPrepAuditTest(unittest.TestCase):
         shutil.copy2(AUDIT, root / "scripts" / AUDIT.name)
         launchctl = root / "launchctl"
         launchctl.write_text(
-            "#!/usr/bin/env bash\n"
-            "echo com.earshot.watchdog.test.1205\n"
-            "echo com.earshot.watchdog.test.1235\n"
-            "echo com.earshot.push.test\n"
+            f'''#!/usr/bin/env bash
+target="${{2:-}}"
+case "$target" in
+  */com.earshot.watchdog.test.1205|*/com.earshot.watchdog.test.1235)
+    cat <<'EOF'
+arguments = {{
+    /bin/bash
+    {root.resolve()}/scripts/event-watchdog.sh
+    --run
+    --leg
+    {EVENT}:{RUN}:local
+}}
+EOF
+    ;;
+  *)
+    echo com.earshot.watchdog.test.1205
+    echo com.earshot.watchdog.test.1235
+    echo com.earshot.push.test
+    ;;
+esac
+'''
         )
         launchctl.chmod(0o755)
         env = {
@@ -97,6 +120,54 @@ class EventPrepAuditTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertTrue(json.loads(result.stdout)["ready"])
 
+    def test_loaded_watchdog_with_wrong_leg_identity_is_not_ready(self) -> None:
+        root, env = self.fixture()
+        self.write_slate(root)
+        self.write_ready_run(root)
+        launchctl = Path(env["_EARSHOT_EVENT_PREP_LAUNCHCTL"])
+        launchctl.write_text(f'''#!/usr/bin/env bash
+target="${{2:-}}"
+case "$target" in
+  */com.earshot.watchdog.test.1205|*/com.earshot.watchdog.test.1235)
+    cat <<'EOF'
+arguments = {{
+    /bin/bash
+    {root.resolve()}/scripts/event-watchdog.sh
+    --run
+    --leg
+    {EVENT}:var/runs/{EVENT}/{RUN}:local
+}}
+EOF
+    ;;
+  *)
+    echo com.earshot.watchdog.test.1205
+    echo com.earshot.watchdog.test.1235
+    echo com.earshot.push.test
+    ;;
+esac
+''')
+        result = self.run_audit(root, env)
+        self.assertEqual(result.returncode, 1)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["events"][0]["status"], "NEEDS-SUPPORT")
+        self.assertIn("loaded argv invalid", payload["events"][0]["details"][0])
+
+    def test_two_watchdogs_at_arbitrary_times_are_not_ready(self) -> None:
+        root, env = self.fixture()
+        self.write_slate(root)
+        self.write_ready_run(root)
+        launchctl = Path(env["_EARSHOT_EVENT_PREP_LAUNCHCTL"])
+        launchctl.write_text(
+            "#!/usr/bin/env bash\n"
+            "echo com.earshot.watchdog.test.1206\n"
+            "echo com.earshot.watchdog.test.1236\n"
+        )
+        result = self.run_audit(root, env)
+        self.assertEqual(result.returncode, 1)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["events"][0]["status"], "NEEDS-SUPPORT")
+        self.assertIn("exact start+5/start+35 watchdogs missing", payload["events"][0]["details"][0])
+
     def test_missing_posture_is_a_distinct_blocker(self) -> None:
         root, env = self.fixture()
         self.write_slate(root)
@@ -140,6 +211,72 @@ cmd = ["/bin/sh", "-c", "scripts/cdn-cachebust-fetch.sh $HOME/test-stream.url"]
         result = self.run_audit(root, env)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertTrue(json.loads(result.stdout)["ready"])
+
+    def test_failover_proof_and_loaded_argv_are_exactly_bound(self) -> None:
+        root, env = self.fixture()
+        local_run = root / "var" / "runs" / EVENT / RUN
+        box_event = TICKER + "-BOX-WEBCAST"
+        box_run_id = RUN + "-box"
+        box_run = root / "var" / "runs" / box_event / box_run_id
+        local_run.mkdir(parents=True)
+        box_run.mkdir(parents=True)
+        plan_sha = "a" * 64
+        local = {"run": local_run, "plan": {
+            "event_id": EVENT, "run_id": RUN, "plan_sha256": plan_sha,
+            "starts_at_utc": f"{DATE}T12:00:00Z",
+        }}
+        box = {"run": box_run, "plan": {
+            "event_id": box_event, "run_id": box_run_id,
+        }}
+        proof_dir = root / "state" / EVENT
+        proof_dir.mkdir(parents=True)
+        proof = {
+            "label": f"com.earshot.run.{plan_sha[:20]}",
+            "laptop_run": str(local_run),
+            "box_event": box_event,
+            "box_run": box_run_id,
+            "start_utc": "12:00",
+            "grace_min": 2,
+            "box": "fixture-box",
+        }
+        proof_path = proof_dir / "failover-install.json"
+        proof_path.write_text(json.dumps(proof))
+        launchctl = Path(env["_EARSHOT_EVENT_PREP_LAUNCHCTL"])
+        launchctl.write_text(f'''#!/usr/bin/env bash
+cat <<'EOF'
+arguments = {{
+    /bin/bash
+    {root.resolve()}/scripts/laptop-failover.sh
+    --event
+    {EVENT}
+    --box-event
+    {box_event}
+    --box-run
+    {box_run_id}
+    --start-utc
+    12:00
+    --grace-min
+    2
+    --box
+    fixture-box
+    --
+    /bin/echo
+}}
+EOF
+''')
+        old = os.environ.get("_EARSHOT_EVENT_PREP_LAUNCHCTL")
+        os.environ["_EARSHOT_EVENT_PREP_LAUNCHCTL"] = str(launchctl)
+        self.addCleanup(
+            lambda: os.environ.pop("_EARSHOT_EVENT_PREP_LAUNCHCTL", None)
+            if old is None else os.environ.__setitem__("_EARSHOT_EVENT_PREP_LAUNCHCTL", old)
+        )
+        self.assertEqual(AUDIT_MODULE.failover_support_issues(root.resolve(), local, box), [])
+        proof["box_run"] = "wrong-run"
+        proof_path.write_text(json.dumps(proof))
+        self.assertIn(
+            "box_run does not match exact host-pair identity",
+            AUDIT_MODULE.failover_support_issues(root.resolve(), local, box),
+        )
 
 
 if __name__ == "__main__":

@@ -159,9 +159,11 @@ even WITHOUT respawn, so the assertions are the respawn count and the frames
 that arrive after the kill, never the exit status.
 
 `python3 scripts/test-deaf-leg.py` exercises the edge fetcher against a
-rotating-variant origin and must report OVERALL PASS. Running the same fixture
-against `scripts/cdn-cachebust-fetch.sh` is expected to go deaf after the
-rotation; that is the documented blind spot above, not a regression.
+rotating-variant origin and the cache-busting fetcher against a ROST/CBRS-shaped
+origin whose ordinary media-playlist response is frozen while unique `_cb`
+reloads advance. Both subtests must report PASS. Running the rotating-variant
+half against `scripts/cdn-cachebust-fetch.sh` is still expected to go deaf after
+the rotation; that is the documented blind spot above, not a regression.
 
 ## Migration status
 

@@ -111,11 +111,11 @@ def resilient_hls_sources(config: Path) -> tuple[bool, str]:
     return True, "edge re-resolution and cache-busting sources present"
 
 
-def launchctl_snapshot() -> tuple[str, str | None]:
+def launchctl_read(target: str) -> tuple[str, str | None]:
     command = os.environ.get("_EARSHOT_EVENT_PREP_LAUNCHCTL", "launchctl")
     try:
         proc = subprocess.run(
-            [command, "print", f"gui/{os.getuid()}"],
+            [command, "print", target],
             text=True,
             capture_output=True,
             timeout=20,
@@ -127,6 +127,103 @@ def launchctl_snapshot() -> tuple[str, str | None]:
         detail = (proc.stderr or proc.stdout).strip().splitlines()
         return "", f"launchctl readback failed: {detail[-1] if detail else proc.returncode}"
     return proc.stdout, None
+
+
+def launchctl_snapshot() -> tuple[str, str | None]:
+    return launchctl_read(f"gui/{os.getuid()}")
+
+
+def launchctl_job_snapshot(label: str) -> tuple[str, str | None]:
+    return launchctl_read(f"gui/{os.getuid()}/{label}")
+
+
+def launchctl_argv(snapshot: str) -> list[str]:
+    """Extract exact ProgramArguments tokens from ``launchctl print`` output."""
+    argv: list[str] = []
+    in_arguments = False
+    for line in snapshot.splitlines():
+        stripped = line.strip()
+        if not in_arguments:
+            if stripped == "arguments = {":
+                in_arguments = True
+            continue
+        if stripped == "}":
+            break
+        if stripped:
+            argv.append(stripped)
+    return argv
+
+
+def argv_pair_matches(argv: list[str], flag: str, value: str) -> bool:
+    """Require one exact flag occurrence followed by its exact value."""
+    positions = [index for index, token in enumerate(argv) if token == flag]
+    return (
+        len(positions) == 1
+        and positions[0] + 1 < len(argv)
+        and argv[positions[0] + 1] == value
+    )
+
+
+def failover_support_issues(repo: Path, local: dict, box: dict) -> list[str]:
+    """Validate the durable proof and loaded wrapper for one host pair."""
+    local_plan, box_plan = local["plan"], box["plan"]
+    local_event = str(local_plan.get("event_id", ""))
+    proof_path = repo / "state" / local_event / "failover-install.json"
+    if proof_path.is_symlink() or not proof_path.is_file():
+        return ["box-primary/laptop-failover wrapper proof missing"]
+    try:
+        proof = load_json(proof_path)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        return [f"failover proof unreadable: {exc}"]
+    plan_sha = local_plan.get("plan_sha256")
+    if not isinstance(plan_sha, str) or len(plan_sha) < 20:
+        return ["local RunPlan has no valid plan_sha256 for failover label"]
+    label = f"com.earshot.run.{plan_sha[:20]}"
+    raw_local_run = proof.get("laptop_run")
+    try:
+        proven_local_run = Path(str(raw_local_run))
+        proven_local_run = (
+            proven_local_run if proven_local_run.is_absolute()
+            else repo / proven_local_run
+        ).resolve()
+    except (OSError, ValueError):
+        proven_local_run = Path("/")
+    expected_start = str(local_plan.get("starts_at_utc", ""))[11:16]
+    comparisons = {
+        "label": label,
+        "box_event": box_plan.get("event_id"),
+        "box_run": box_plan.get("run_id"),
+        "start_utc": expected_start,
+    }
+    issues = []
+    if proven_local_run != local["run"].resolve():
+        issues.append("laptop_run does not select the exact local RunPlan")
+    for field, wanted in comparisons.items():
+        if proof.get(field) != wanted:
+            issues.append(f"{field} does not match exact host-pair identity")
+    if type(proof.get("grace_min")) is not int or proof["grace_min"] < 0:
+        issues.append("grace_min is not a nonnegative integer")
+    loaded_job, job_error = launchctl_job_snapshot(label)
+    if job_error:
+        issues.append(job_error)
+    argv = launchctl_argv(loaded_job)
+    wrapper = str(repo / "scripts" / "laptop-failover.sh")
+    if len(argv) < 2 or argv[0] != "/bin/bash" or argv[1] != wrapper:
+        issues.append("loaded failover argv has wrong wrapper program")
+    required_pairs = (
+        ("--event", local_event),
+        ("--box-event", str(box_plan.get("event_id", ""))),
+        ("--box-run", str(box_plan.get("run_id", ""))),
+        ("--start-utc", expected_start),
+        ("--grace-min", str(proof.get("grace_min", ""))),
+        ("--box", str(proof.get("box", ""))),
+    )
+    mismatched = [flag for flag, value in required_pairs if not argv_pair_matches(argv, flag, value)]
+    if mismatched:
+        issues.append("loaded failover argv mismatch: " + ",".join(mismatched))
+    if argv.count("--") != 1:
+        issues.append("loaded failover argv has no unique launcher boundary")
+    return issues
 
 
 def expected_events(repo: Path, date: str) -> tuple[set[str], list[str]]:
@@ -234,16 +331,58 @@ def classify_group(
         if launch_error:
             issues["NEEDS-SUPPORT"].append(launch_error)
         watchdogs = set(re.findall(rf"com\.earshot\.watchdog\.{re.escape(slug)}\.\d{{4}}", launchctl))
-        if len(watchdogs) < 2:
-            issues["NEEDS-SUPPORT"].append(f"{slug}: {len(watchdogs)}/2 watchdog jobs loaded")
+        try:
+            start_times = {
+                dt.datetime.fromisoformat(str(row["plan"]["starts_at_utc"]).replace("Z", "+00:00"))
+                for row in rows
+            }
+        except (KeyError, TypeError, ValueError):
+            start_times = set()
+        expected_watchdogs: set[str] = set()
+        if len(start_times) == 1:
+            start = next(iter(start_times))
+            expected_watchdogs = {
+                f"com.earshot.watchdog.{slug}.{(start + dt.timedelta(minutes=offset)):%H%M}"
+                for offset in (5, 35)
+            }
+        if len(expected_watchdogs) != 2 or not expected_watchdogs.issubset(watchdogs):
+            missing_labels = sorted(expected_watchdogs - watchdogs)
+            detail = ",".join(missing_labels) if missing_labels else "inconsistent start times"
+            issues["NEEDS-SUPPORT"].append(f"{slug}: exact start+5/start+35 watchdogs missing: {detail}")
+        else:
+            expected_legs = [
+                f"{row['plan']['event_id']}:{row['plan']['run_id']}:"
+                for row in rows
+            ]
+            for label in sorted(expected_watchdogs):
+                loaded_job, job_error = launchctl_job_snapshot(label)
+                argv = launchctl_argv(loaded_job)
+                missing = []
+                if job_error:
+                    missing.append(job_error)
+                if len(argv) < 2 or argv[0] != "/bin/bash" or argv[1] != str(repo / "scripts" / "event-watchdog.sh"):
+                    missing.append("wrong program")
+                if argv.count("--run") != 1 or argv.count("--leg") != len(expected_legs):
+                    missing.append("missing run/leg argv")
+                for expected_leg in expected_legs:
+                    matches = [token for token in argv if token.startswith(expected_leg)]
+                    if len(matches) != 1 or not matches[0][len(expected_leg):]:
+                        missing.append(f"missing exact leg {expected_leg}")
+                if missing:
+                    issues["NEEDS-SUPPORT"].append(
+                        f"{label}: loaded argv invalid: " + "; ".join(missing)
+                    )
         if preresolved and f"com.earshot.push.{slug}" not in launchctl:
             issues["NEEDS-SUPPORT"].append(f"{slug}: PCM-gated multi-host URL push job not loaded")
         hosts = {str(row["plan"].get("execution_host_id")) for row in rows}
         if len(hosts) > 1:
             local = next((row for row in rows if "-BOX-" not in row["plan"].get("event_id", "")), None)
-            proof = repo / "state" / str(local["plan"].get("event_id")) / "failover-install.json" if local else None
-            if proof is None or not proof.is_file():
-                issues["NEEDS-SUPPORT"].append(f"{slug}: box-primary/laptop-failover wrapper not proven")
+            box = next((row for row in rows if "-BOX-" in row["plan"].get("event_id", "")), None)
+            if local is None or box is None:
+                issues["NEEDS-SUPPORT"].append(f"{slug}: host pair cannot identify laptop and box RunPlans")
+            else:
+                for detail in failover_support_issues(repo, local, box):
+                    issues["NEEDS-SUPPORT"].append(f"{slug}: {detail}")
 
     priority = (
         "NEEDS-STAGE", "NEEDS-ACCESS", "NEEDS-TRANSPORT", "NEEDS-STUDY", "NEEDS-POSTURE",

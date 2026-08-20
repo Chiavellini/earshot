@@ -30,6 +30,7 @@ set -uo pipefail
 REPO="${EARSHOT_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"; REPO=$(cd "$REPO" && pwd -P); cd "$REPO"
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 BOX="${EARSHOT_BOX:-ubuntu@3.212.174.94}"; KEY="${EARSHOT_BOX_KEY:-$HOME/.ssh/earshot-useast1.pem}"
+SSH_BIN="${EARSHOT_SSH:-ssh}"
 MODE=live E="" EB="" BR="" START="" GRACE=2 DEADLINE="" RUNDIR="" CHECK=0
 while [[ $# -gt 0 ]]; do case "$1" in
   --install) MODE=install; shift;;
@@ -54,6 +55,15 @@ classify_box_observation() { # capture_ready_count supervising_count terminal_co
     printf 'NOTYET'
   fi
 }
+exec_takeover_argv() { # reason, exact launcher argv...
+  local reason="$1"
+  shift
+  [[ $# -gt 0 ]] || {
+    echo "REFUSED: failover takeover has no launcher argv (reason=$reason)" >&2
+    return 2
+  }
+  exec "$@"
+}
 
 if (( CHECK )); then
   ok=1
@@ -64,13 +74,56 @@ if (( CHECK )); then
   [[ "$(classify_box_observation 1 0 0 activating)" == LAUNCHED ]] || ok=0
   [[ "$(classify_box_observation 1 1 0 inactive)" == DEAD ]] || ok=0
   [[ "$(classify_box_observation 1 1 1 active)" == DEAD ]] || ok=0
-  (( ok )) && { echo "SELFTEST PASS (7 checks)"; exit 0; } || { echo "SELFTEST FAIL"; exit 1; }
+  marker=$(mktemp "${TMPDIR:-/tmp}/earshot-failover-argv.XXXXXX") || exit 1
+  rm -f -- "$marker"
+  (exec_takeover_argv "fixture reason" /bin/sh -c 'printf forwarded > "$1"' _ "$marker") || ok=0
+  [[ "$(cat "$marker" 2>/dev/null)" == forwarded ]] || ok=0
+  rm -f -- "$marker"
+  if (exec_takeover_argv "missing command" >/dev/null 2>&1); then ok=0; fi
+  # Exercise the real decision loop, both SSH boundaries, and final exec with
+  # an inert primary observation. This is the regression the pure argv split
+  # alone cannot catch: callers once passed only the English reason string.
+  check_root=$(mktemp -d "${TMPDIR:-/tmp}/earshot-failover-check.XXXXXX") || exit 1
+  cleanup_check() { rm -rf -- "$check_root"; }
+  trap cleanup_check EXIT
+  mkdir -p "$check_root/repo/scripts" "$check_root/bin"
+  cp "$0" "$check_root/repo/scripts/laptop-failover.sh"
+  cat > "$check_root/repo/scripts/notify.sh" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+  cat > "$check_root/bin/ssh" <<'SH'
+#!/usr/bin/env bash
+count=$(cat "$EARSHOT_FAILOVER_STUB_STATE" 2>/dev/null || echo 0)
+count=${count:-0}
+if [[ "$count" == 0 ]]; then
+  printf '1\n' > "$EARSHOT_FAILOVER_STUB_STATE"
+  echo '1 0 0 inactive'
+else
+  echo box-stopped
+fi
+SH
+  chmod +x "$check_root/repo/scripts/"*.sh "$check_root/bin/ssh"
+  now_hm=$(date -u +%H:%M)
+  : > "$check_root/ssh-count"
+  EARSHOT_REPO="$check_root/repo" EARSHOT_SSH="$check_root/bin/ssh" \
+    EARSHOT_FAILOVER_STUB_STATE="$check_root/ssh-count" \
+    "$check_root/repo/scripts/laptop-failover.sh" \
+      --event CHECK-LAPTOP --box-event CHECK-BOX --box-run run-check \
+      --start-utc "$now_hm" --grace-min 0 --deadline-utc "$now_hm" \
+      -- /bin/sh -c 'printf takeover-ok > "$1"' _ "$check_root/takeover.marker" \
+      || ok=0
+  [[ "$(cat "$check_root/takeover.marker" 2>/dev/null)" == takeover-ok ]] || ok=0
+  grep -q 'LAPTOP TAKES OVER' "$check_root/repo/state/CHECK-LAPTOP/failover.log" 2>/dev/null || ok=0
+  cleanup_check
+  trap - EXIT
+  (( ok )) && { echo "SELFTEST PASS (11 checks, including takeover exec)"; exit 0; } || { echo "SELFTEST FAIL"; exit 1; }
 fi
 
 # box_state -> "STATE unit-active"  (STATE: READY|LAUNCHED|NOTYET|DEAD|UNREACHABLE)
 box_state() {
   local out rc supervising terminal unit state
-  out=$(ssh -n -i "$KEY" -o BatchMode=yes -o ConnectTimeout=10 "$BOX" '
+  out=$("$SSH_BIN" -n -i "$KEY" -o BatchMode=yes -o ConnectTimeout=10 "$BOX" '
     R=~/ear/var/runs/'"$EB"'/'"$BR"'/control/receipts.jsonl
     P=~/ear/var/runs/'"$EB"'/'"$BR"'/control/run-plan.json
     sha=$(python3 -c "import json;print(json.load(open(\"$P\"))[\"plan_sha256\"][:20])" 2>/dev/null)
@@ -85,7 +138,7 @@ box_state() {
   echo "$state $unit"
 }
 stop_box() {
-  ssh -i "$KEY" -o BatchMode=yes -o ConnectTimeout=10 "$BOX" '
+  "$SSH_BIN" -i "$KEY" -o BatchMode=yes -o ConnectTimeout=10 "$BOX" '
     P=~/ear/var/runs/'"$EB"'/'"$BR"'/control/run-plan.json
     sha=$(python3 -c "import json;print(json.load(open(\"$P\"))[\"plan_sha256\"][:20])" 2>/dev/null)
     mkdir -p ~/ear/state/'"$EB"' && touch ~/ear/state/'"$EB"'/STOP
@@ -132,11 +185,13 @@ mkdir -p "state/$E"; LOG="state/$E/failover.log"; exec >>"$LOG" 2>&1
 echo "=== failover $(date -u +%FT%TZ) laptop=$E box=$EB/$BR start=${START}Z grace=${GRACE}m deadline=${DEADLINE}Z argv=[$*]"
 DECIDE=$(decide_hhmm "$START" "$GRACE"); DLINE="${DEADLINE/:/}"; FIRE="${START/:/}"; LAST=""
 takeover() {
-  echo "$(date -u +%T) DECISION: $1 — LAPTOP TAKES OVER"
+  local reason="$1"
+  shift
+  echo "$(date -u +%T) DECISION: $reason — LAPTOP TAKES OVER"
   stop_box
-  scripts/notify.sh "$E: BOX FAILED — laptop arming live" "$1 at $(date -u +%T)Z" >/dev/null 2>&1 || true
+  scripts/notify.sh "$E: BOX FAILED — laptop arming live" "$reason at $(date -u +%T)Z" >/dev/null 2>&1 || true
   echo "$(date -u +%T) exec: $*"
-  exec "$@"
+  exec_takeover_argv "$reason" "$@"
 }
 while :; do
   NOW=$(date -u +%H%M); read -r ST UA < <(box_state); [[ -z "$ST" ]] && { ST=UNREACHABLE; UA=unreachable; }
@@ -150,11 +205,11 @@ while :; do
     fi
     sleep 20; continue
   fi
-  if [[ "$ST" == DEAD ]]; then takeover "box run/unit DEAD (unit=$UA)"; fi
+  if [[ "$ST" == DEAD ]]; then takeover "box run/unit DEAD (unit=$UA)" "$@"; fi
   # box unit gone/failed after the timer should have fired = dead primary
   if [[ ( "$NOW" > "$FIRE" || "$NOW" == "$FIRE" ) && ( "$UA" == failed || "$UA" == inactive ) && "$ST" != LAUNCHED ]]; then
-    takeover "box unit $UA past fire time, not capturing"
+    takeover "box unit $UA past fire time, not capturing" "$@"
   fi
-  if [[ "$NOW" > "$DECIDE" || "$NOW" == "$DECIDE" ]]; then takeover "box=$ST at start+${GRACE}m (UNREACHABLE counts as failed — capture beats the one-trader rule)"; fi
+  if [[ "$NOW" > "$DECIDE" || "$NOW" == "$DECIDE" ]]; then takeover "box=$ST at start+${GRACE}m (UNREACHABLE counts as failed — capture beats the one-trader rule)" "$@"; fi
   sleep 20
 done

@@ -71,7 +71,13 @@ could not be audited and restarts kept overwriting fixed report paths.
   template, so a vulnerable two-leg RunPlan must be replaced before scheduling.
   A preresolved event
   needs its PCM-gated push, a multi-host event needs its failover proof, and
-  every event needs two watchdogs before the word READY is emitted.
+  every event needs two watchdogs before the word READY is emitted. A watchdog
+  label alone is not support proof: the audit reads each loaded job and requires
+  the watchdog program plus every exact `<event_id>:<run_id>:` leg identity, so
+  a job carrying a full run-directory string where the parser expects a Run ID
+  is rejected before the event. Multi-host failover proof is likewise parsed,
+  not existence-checked: its local path, box event/run, start time, launcher
+  label, grace, and the loaded wrapper argv must all match the selected pair.
 - `tests/eventctl_lifecycle.py` — the ledger's isolated test suite
   (temp-repo fixtures, never the working tree; includes cross-process
   flock/concurrency and truncated-tail recovery cases).
