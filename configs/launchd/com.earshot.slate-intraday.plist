@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Intraday listed-late watcher (scripts/slate-intraday.sh). Every 2 hours
+     from 10Z to 22Z (04:00 to 16:00 CDMX local, UTC-6) to catch markets
+     listed after the nightly sweep but before call time (INDI/FED-FAMI class).
+     
+     CRITICAL: This job was DESIGNED but NOT INSTALLED — the script exists
+     (scripts/slate-intraday.sh) and documents the 2h cadence, but no plist
+     shipped. Two markets were missed because of this gap (2026-07-29).
+     
+     Install:
+       cp configs/launchd/com.earshot.slate-intraday.plist ~/Library/LaunchAgents/
+       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.earshot.slate-intraday.plist
+     Remove:
+       launchctl bootout gui/$(id -u)/com.earshot.slate-intraday
+       
+     Schedule: 04,06,08,10,12,14,16 local (CDMX UTC-6) = 10,12,14,16,18,20,22 UTC.
+     Uses StartCalendarInterval array (macOS launchd does not support cron-style ranges).
+     Missed-while-asleep firings run on wake (RunAtLoad not set, so only scheduled fires).
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.earshot.slate-intraday</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/bernardodelrio/Code/ear/scripts/slate-intraday.sh</string>
+  </array>
+  <!-- Multiple firing times: 10,12,14,16,18,20,22 UTC daily -->
+  <key>StartCalendarInterval</key>
+  <array>
+    <!-- 10Z = 04:00 local -->
+    <dict>
+      <key>Hour</key>
+      <integer>4</integer>
+      <key>Minute</key>
+      <integer>0</integer>
+    </dict>
+    <!-- 12Z = 06:00 local -->
+    <dict>
+      <key>Hour</key>
+      <integer>6</integer>
+      <key>Minute</key>
+      <integer>0</integer>
+    </dict>
+    <!-- 14Z = 08:00 local -->
+    <dict>
+      <key>Hour</key>
+      <integer>8</integer>
+      <key>Minute</key>
+      <integer>0</integer>
+    </dict>
+    <!-- 16Z = 10:00 local -->
+    <dict>
+      <key>Hour</key>
+      <integer>10</integer>
+      <key>Minute</key>
+      <integer>0</integer>
+    </dict>
+    <!-- 18Z = 12:00 local -->
+    <dict>
+      <key>Hour</key>
+      <integer>12</integer>
+      <key>Minute</key>
+      <integer>0</integer>
+    </dict>
+    <!-- 20Z = 14:00 local -->
+    <dict>
+      <key>Hour</key>
+      <integer>14</integer>
+      <key>Minute</key>
+      <integer>0</integer>
+    </dict>
+    <!-- 22Z = 16:00 local -->
+    <dict>
+      <key>Hour</key>
+      <integer>16</integer>
+      <key>Minute</key>
+      <integer>0</integer>
+    </dict>
+  </array>
+  <key>StandardOutPath</key>
+  <string>/Users/bernardodelrio/Library/Logs/earshot/slate-intraday.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/bernardodelrio/Library/Logs/earshot/slate-intraday.log</string>
+</dict>
+</plist>

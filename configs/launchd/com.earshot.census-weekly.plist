@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Weekly census sweep (scripts/mentions-census.py) to detect new series
+     outside the known KXEARNINGSMENTION/KXFEDMENTION/KXWORLDNEWSMENTION prefixes.
+     
+     WHY WEEKLY, NOT DAILY: mentions-census.py queries EVERY series in the
+     Mentions category (398 as of 2026-07-30, ~400 paced GETs, ~3 min). Kalshi
+     rate-limits at 429, and the script already backs off. Running this nightly
+     would be rude (400 requests/night to 400 issuer domains) and unnecessary —
+     new series appear infrequently (BA, KXFEDMENTION, KXWORLDNEWSMENTION are
+     the three documented instances over the system's lifetime).
+     
+     Schedule: Sunday 21:00 local (03:00Z Monday, after weekend slack, before
+     Monday's slate-daily at 02:00Z next cycle). Runs AFTER slate-daily (which
+     fires 20:00 Sunday = 02:00Z Monday) would be safer, but launchd weekday
+     numbering makes "Monday 03:00" awkward (Weekday=1 Hour=3, but conflicts
+     with the intent to fire ONCE per week, not every Monday). Sunday 21:00 is
+     clear airspace (slate-daily 20:00, hunt-daily 20:30, stage-nightly 20:50
+     all finished by 21:00).
+     
+     Install:
+       cp configs/launchd/com.earshot.census-weekly.plist ~/Library/LaunchAgents/
+       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.earshot.census-weekly.plist
+     Remove:
+       launchctl bootout gui/$(id -u)/com.earshot.census-weekly
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.earshot.census-weekly</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>/Users/bernardodelrio/Code/ear/scripts/mentions-census.py</string>
+    <string>--baseline</string>
+    <string>/Users/bernardodelrio/Code/ear/slate/census.json</string>
+    <string>--out</string>
+    <string>/Users/bernardodelrio/Code/ear/slate/census.json</string>
+    <string>--horizon-days</string>
+    <string>21</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key>
+    <integer>0</integer> <!-- Sunday -->
+    <key>Hour</key>
+    <integer>21</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/Users/bernardodelrio/Library/Logs/earshot/census-weekly.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/bernardodelrio/Library/Logs/earshot/census-weekly.log</string>
+  <key>WorkingDirectory</key>
+  <string>/Users/bernardodelrio/Code/ear</string>
+</dict>
+</plist>
